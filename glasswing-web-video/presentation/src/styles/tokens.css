@@ -1,73 +1,77 @@
-/* ─────────────────────────────────────────────────────────────────────
- * Theme · terminal-green
- *   80s phosphor terminal. True-black backdrop, single phosphor green.
- *   JetBrains Mono is the ONLY font. Sharp 0-2px corners. CRT scanline
- *   overlay. Snappy motion (240ms / 480ms / 800ms) — terminal speed.
- *
- *   character knobs:
- *     • hero numbers   — mono, 0 letter-spacing, glow drop-shadow
- *     • rule           — 1px solid phosphor green
- *     • card           — 0 radius (terminal cells)
- *     • surface        — horizontal scanlines (2px) + soft phosphor glow
- *     • motion         — snappy + linear (terminal not springy)
- * ───────────────────────────────────────────────────────────────────── */
+/*
+ * Theme: terminal-green, brightened for vertical social video.
+ * Keeps the phosphor terminal identity, but lifts the global surfaces so
+ * recorded output reads as a deep green screen instead of a near-black UI.
+ */
 :root {
-  /* ─── palette ─── */
-  --shell:        #06140d;
-  --surface:      #0a1f14;
-  --surface-2:    #103221;
-  --surface-3:    #17452e;
-  --text:         #41ff97;
-  --text-2:       #2ed084;
-  --text-mute:    #2ca86d;
-  --text-faint:   #197449;
-  --rule:         rgba(65, 255, 151, 0.42);
-  --accent:       #41ff97;
-  --accent-soft:  rgba(65, 255, 151, 0.16);
-  --accent-glow:  rgba(65, 255, 151, 0.78);
+  --shell: #0d2a1c;
+  --surface: #123924;
+  --surface-2: #184b31;
+  --surface-3: #20663f;
 
-  /* ─── fonts (mono everywhere) ─── */
+  --text: #9dffc8;
+  --text-2: #73f5ad;
+  --text-mute: #66c996;
+  --text-faint: #3c8f64;
+
+  --rule: rgba(157, 255, 200, 0.34);
+  --accent: #53ff9d;
+  --accent-soft: rgba(83, 255, 157, 0.18);
+  --accent-glow: rgba(83, 255, 157, 0.56);
+
   --font-display-cn: "JetBrains Mono", "Noto Sans Mono CJK SC", monospace;
   --font-display-en: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
-  --font-body:       "JetBrains Mono", "SF Mono", ui-monospace, monospace;
-  --font-mono:       "JetBrains Mono", "SF Mono", ui-monospace, monospace;
-  --font-features:   "ss05", "zero", "tnum";
+  --font-body: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  --font-features: "ss05", "zero", "tnum";
 
-  /* ─── motion: snappy terminal ─── */
-  --ease-quart:    cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-expo:     cubic-bezier(0.25, 0.1, 0.25, 1);
-  --dur-quick:     180ms;
-  --dur-base:      400ms;
-  --dur-slow:      650ms;
+  --ease-quart: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-expo: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --dur-quick: 180ms;
+  --dur-base: 400ms;
+  --dur-slow: 650ms;
   --dur-cinematic: 1000ms;
 
-  /* ─── design identity: terminal cells ─── */
-  --r-card:        var(--r-flat);    /* SIGNATURE — sharp corners */
-  --r-stage:       0;
-  --rule-w:        1px;
-  --rule-style:    solid;
-  --hero-num-font:    var(--font-mono);
-  --hero-num-style:   normal;
-  --hero-num-weight:  500;
-  --hero-num-track:   0;
-  --stage-pad-x:   80px;
-  --stage-pad-y:   60px;
-  --text-shadow:   0 0 8px rgba(65, 255, 151, 0.5);
-  --card-shadow:   inset 0 0 0 1px var(--rule), 0 0 34px rgba(65, 255, 151, 0.10);
-  --shadow-stage:
-    0 60px 160px rgba(65, 255, 151, 0.16),
-    0 0 0 1px rgba(65, 255, 151, 0.24);
+  --r-card: var(--r-flat);
+  --r-stage: 0;
+  --rule-w: 1px;
+  --rule-style: solid;
 
-  /* ─── decoration: CRT scanlines ─── */
+  --hero-num-font: var(--font-mono);
+  --hero-num-style: normal;
+  --hero-num-weight: 500;
+  --hero-num-track: 0;
+
+  --stage-pad-x: 80px;
+  --stage-pad-y: 60px;
+
+  --text-shadow:
+    0 0 8px rgba(83, 255, 157, 0.38),
+    0 0 24px rgba(83, 255, 157, 0.18);
+
+  --card-shadow:
+    inset 0 0 0 1px var(--rule),
+    0 0 34px rgba(83, 255, 157, 0.12);
+
+  --shadow-stage:
+    0 50px 140px rgba(83, 255, 157, 0.12),
+    0 0 0 1px rgba(157, 255, 200, 0.2);
+
   --surface-pattern:
     repeating-linear-gradient(
       0deg,
       transparent 0px,
       transparent 2px,
-      rgba(65, 255, 151, 0.055) 2px,
-      rgba(65, 255, 151, 0.055) 3px
+      rgba(157, 255, 200, 0.035) 2px,
+      rgba(157, 255, 200, 0.035) 3px
     );
+
   --surface-pattern-size: 100% 100%;
+
   --surface-vignette:
-    radial-gradient(ellipse at center, transparent 36%, rgba(2, 24, 13, 0.34) 100%);
+    radial-gradient(
+      ellipse at center,
+      transparent 42%,
+      rgba(4, 35, 20, 0.18) 100%
+    );
 }
