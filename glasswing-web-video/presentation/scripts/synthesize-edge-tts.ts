@@ -1,17 +1,12 @@
+import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { spawn } from "node:child_process";
-import { narrations as breachCount } from "../src/chapters/01-breach-count/narrations";
-import { narrations as blastRadius } from "../src/chapters/02-blast-radius/narrations";
-import { narrations as bottleneckShift } from "../src/chapters/03-bottleneck-shift/narrations";
-import { narrations as defenderAdvantage } from "../src/chapters/04-defender-advantage/narrations";
+import { NEWS_STORY } from "../src/chapters/url-news/story-data";
 
-const chapters = [
-  ["breach-count", breachCount],
-  ["blast-radius", blastRadius],
-  ["bottleneck-shift", bottleneckShift],
-  ["defender-advantage", defenderAdvantage],
-] as const;
+const chapters = NEWS_STORY.chapters.map((chapter) => [
+  chapter.id,
+  chapter.steps.map((step) => step.narration),
+] as const);
 
 const voice = process.env.EDGE_TTS_VOICE ?? "zh-CN-YunyangNeural";
 const rate = process.env.EDGE_TTS_RATE ?? "+18%";
