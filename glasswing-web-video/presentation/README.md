@@ -53,6 +53,15 @@ src/components/visual/
 </SceneShell>
 ```
 
+最后一页示例使用了自然背景主题：
+
+```text
+public/images/defender-final-nature-bg.png
+src/chapters/04-defender-advantage/DefenderAdvantage.nature.css
+```
+
+这里背景图只负责环境氛围，标题、文字、卡片和连接线仍由 React + CSS 渲染，方便后续改文案、做动画和保持视频导出清晰。
+
 ## 配置
 
 提交版配置：

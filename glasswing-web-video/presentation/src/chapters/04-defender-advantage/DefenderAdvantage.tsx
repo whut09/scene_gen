@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { ConnectorLine, GlowGrid, SceneShell, SceneStatus, SignalCard } from "../../components/visual";
 import type { ChapterStepProps } from "../../registry/types";
 import "./DefenderAdvantage.css";
+import "./DefenderAdvantage.nature.css";
 
 const legacyLines = ["unsafe pointer", "manual memory", "buffer risk", "legacy module"];
 const safeLines = ["bounds checked", "ownership", "safe runtime", "verified patch"];
@@ -122,7 +123,7 @@ export default function DefenderAdvantage({ step }: ChapterStepProps) {
   }
 
   return (
-    <SceneShell tone="terminal-bright" className="da-final-shell">
+    <SceneShell tone="terminal-bright" className="da-final-shell da-final-nature">
       <SceneStatus left="防守方优势" center={`第 ${step + 1} / 7 屏`} right="最终判断" />
       <GlowGrid cells={56} />
 
