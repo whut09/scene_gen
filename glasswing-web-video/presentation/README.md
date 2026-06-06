@@ -25,6 +25,34 @@ src/chapters/<NN>-<id>/
 
 `narrations.ts` 是 step 数和配音文本的唯一真相源。
 
+## 视觉组件层
+
+通用视觉能力沉淀在：
+
+```text
+src/components/visual/
+  SceneShell.tsx
+  SceneStatus.tsx
+  SignalCard.tsx
+  ConnectorLine.tsx
+  GlowGrid.tsx
+  TerminalFrame.tsx
+```
+
+推荐新章节优先组合这些组件，再写少量章节级 CSS。这样新闻主题、文案和数据可以变化，但状态栏、信号卡、连接线、终端框、背景网格等画面语言保持复用。
+
+示例：
+
+```tsx
+<SceneShell tone="terminal-bright">
+  <SceneStatus left="防守方优势" center="第 7 / 7 屏" right="最终判断" />
+  <GlowGrid />
+  <SignalCard>不是谁先找到漏洞</SignalCard>
+  <ConnectorLine />
+  <SignalCard accent>而是谁更快、更安全地修完</SignalCard>
+</SceneShell>
+```
+
 ## 配置
 
 提交版配置：

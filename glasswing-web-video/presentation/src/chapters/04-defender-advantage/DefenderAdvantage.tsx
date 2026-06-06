@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { ConnectorLine, GlowGrid, SceneShell, SceneStatus, SignalCard } from "../../components/visual";
 import type { ChapterStepProps } from "../../registry/types";
 import "./DefenderAdvantage.css";
 
@@ -121,15 +122,18 @@ export default function DefenderAdvantage({ step }: ChapterStepProps) {
   }
 
   return (
-    <div className="da-scene da-final">
-      <Status step={step} />
-      <span className="mono">最终信号</span>
-      <h2>AI 安全真正的比赛</h2>
-      <div className="da-final-quote">
-        <strong>不是谁先找到漏洞</strong>
-        <i />
-        <strong>而是谁更快、更安全地修完</strong>
-      </div>
-    </div>
+    <SceneShell tone="terminal-bright" className="da-final-shell">
+      <SceneStatus left="防守方优势" center={`第 ${step + 1} / 7 屏`} right="最终判断" />
+      <GlowGrid cells={56} />
+
+      <section className="signal-final">
+        <span className="signal-kicker mono">最终信号</span>
+        <h2 className="signal-title">AI 安全真正的比赛</h2>
+
+        <SignalCard>不是谁先找到漏洞</SignalCard>
+        <ConnectorLine />
+        <SignalCard accent>而是谁更快、更安全地修完</SignalCard>
+      </section>
+    </SceneShell>
   );
 }

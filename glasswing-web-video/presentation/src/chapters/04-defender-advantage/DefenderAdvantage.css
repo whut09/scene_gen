@@ -80,8 +80,7 @@
 .da-gap > span,
 .da-scale > span,
 .da-not-race > span,
-.da-process > span,
-.da-final > span {
+.da-process > span {
   position: absolute;
   top: 150px;
   left: 58px;
@@ -203,8 +202,7 @@
 }
 
 .da-not-race h2,
-.da-process h2,
-.da-final h2 {
+.da-process h2 {
   top: 230px;
 }
 
@@ -273,32 +271,25 @@
   font-weight: 500;
 }
 
-.da-final-quote {
-  position: absolute;
-  left: 58px;
-  right: 58px;
-  top: 625px;
+.signal-final {
+  z-index: 2;
   display: grid;
-  gap: 55px;
+  gap: 28px;
+  margin: 188px 16px 0;
 }
 
-.da-final-quote strong {
-  display: block;
-  border: 1px solid var(--rule);
-  padding: 48px 42px;
-  color: var(--accent);
-  font-size: 62px;
-  line-height: 1.35;
+.signal-kicker {
+  color: var(--text-mute);
+  font-size: 28px;
+}
+
+.signal-title {
+  margin: 0 0 34px;
+  color: var(--text);
+  font-size: 76px;
+  line-height: 1.16;
   font-weight: 500;
-  text-shadow: 0 0 42px var(--accent-glow);
-}
-
-.da-final-quote i {
-  justify-self: center;
-  width: 5px;
-  height: 150px;
-  background: var(--accent);
-  box-shadow: 0 0 30px var(--accent-glow);
+  text-shadow: var(--text-shadow);
 }
 
 @keyframes da-line {
