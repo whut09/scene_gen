@@ -1,0 +1,234 @@
+.co-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 74px 96px;
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.co-masthead {
+  display: flex;
+  justify-content: space-between;
+  border-top: var(--rule-w) var(--rule-style) var(--rule);
+  border-bottom: var(--rule-w) var(--rule-style) var(--rule);
+  padding: 14px 0;
+  font-family: var(--font-mono);
+  color: var(--text-mute);
+  text-transform: uppercase;
+}
+
+.co-headline {
+  margin-top: 90px;
+  max-width: 1420px;
+}
+
+.co-headline-enter {
+  animation: coPrintIn 900ms ease both;
+}
+
+.co-kicker {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 30px;
+  text-transform: uppercase;
+}
+
+.co-headline h1 {
+  margin: 24px 0 42px;
+  font-family: var(--font-display-en);
+  font-size: 116px;
+  line-height: 0.95;
+  font-weight: 700;
+}
+
+.co-cut {
+  height: 760px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 22px;
+  align-items: center;
+}
+
+.co-cut-block {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  border-top: 8px solid var(--text);
+  border-bottom: 8px solid var(--text);
+  font-family: var(--font-display-en);
+  font-size: 78px;
+  font-weight: 900;
+  transform: translateY(24px);
+  animation: coBlockUp 800ms ease both;
+}
+
+.co-cut-block:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.co-cut-block:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+.co-cut-accent {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-style: italic;
+}
+
+.co-cut p {
+  position: absolute;
+  left: 96px;
+  bottom: 82px;
+  max-width: 980px;
+  font-size: 42px;
+  line-height: 1.2;
+}
+
+.co-ledger {
+  position: relative;
+  height: 800px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+  align-items: center;
+}
+
+.co-ledger-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 8px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: coDrawLine 900ms ease both;
+}
+
+.co-company {
+  position: relative;
+  min-height: 360px;
+  padding: 42px 34px;
+  background: var(--surface-2);
+  transform: translateY(40px);
+  animation: coCardRise 850ms ease both;
+}
+
+.co-company:nth-child(3) {
+  animation-delay: 160ms;
+}
+
+.co-company:nth-child(4) {
+  animation-delay: 320ms;
+}
+
+.co-company strong {
+  display: block;
+  margin-top: 46px;
+  font-family: var(--font-display-en);
+  font-size: 66px;
+}
+
+.co-company small {
+  display: block;
+  margin-top: 22px;
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: 24px;
+  text-transform: uppercase;
+}
+
+.co-turn {
+  height: 760px;
+  display: grid;
+  grid-template-columns: 1fr 180px 1fr;
+  gap: 30px;
+  align-items: center;
+}
+
+.co-ticket {
+  min-height: 360px;
+  padding: 46px;
+  background: var(--surface-2);
+  animation: coPrintIn 800ms ease both;
+}
+
+.co-ticket span {
+  display: block;
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: 26px;
+  text-transform: uppercase;
+}
+
+.co-ticket b {
+  display: block;
+  margin-top: 36px;
+  font-family: var(--font-display-en);
+  font-size: 74px;
+  line-height: 1;
+}
+
+.co-ticket-hot {
+  background: var(--accent-soft);
+}
+
+.co-ticket-hot b {
+  color: var(--accent);
+}
+
+.co-arrow {
+  height: 8px;
+  background: var(--text);
+  position: relative;
+  animation: coDrawLine 700ms ease both;
+}
+
+.co-arrow::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: -18px;
+  width: 42px;
+  height: 42px;
+  border-right: 8px solid var(--text);
+  border-top: 8px solid var(--text);
+  transform: rotate(45deg);
+}
+
+@keyframes coPrintIn {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes coBlockUp {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes coDrawLine {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes coCardRise {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

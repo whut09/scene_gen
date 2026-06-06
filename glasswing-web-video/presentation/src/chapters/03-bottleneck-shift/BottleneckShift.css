@@ -1,0 +1,302 @@
+.bs-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.bs-status {
+  position: absolute;
+  z-index: 20;
+  top: 38px;
+  left: 42px;
+  right: 42px;
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--text-mute);
+  font-size: 22px;
+}
+
+.bs-why > span,
+.bs-window > span,
+.bs-before > span,
+.bs-after > span,
+.bs-tools > span {
+  position: absolute;
+  top: 150px;
+  left: 58px;
+  color: var(--text-mute);
+  font-size: 28px;
+}
+
+.bs-why h2,
+.bs-risk h2,
+.bs-before h2,
+.bs-after h2,
+.bs-tools h2 {
+  position: absolute;
+  top: 230px;
+  left: 58px;
+  right: 58px;
+  margin: 0;
+  color: var(--text);
+  font-size: 78px;
+  line-height: 1.18;
+  font-weight: 500;
+  text-shadow: var(--text-shadow);
+}
+
+.bs-three {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  top: 680px;
+  display: grid;
+  gap: 32px;
+}
+
+.bs-three div {
+  height: 240px;
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  animation: bs-rise .36s var(--ease-quart) both;
+  animation-delay: calc(var(--i) * 150ms);
+}
+
+.bs-three strong {
+  color: var(--accent);
+  font-size: 76px;
+  font-weight: 500;
+}
+
+.bs-three i {
+  width: 70%;
+  height: 12px;
+  background: var(--accent);
+  box-shadow: 0 0 18px var(--accent-glow);
+}
+
+.bs-window strong {
+  position: absolute;
+  top: 270px;
+  left: 58px;
+  color: var(--accent);
+  font-size: 212px;
+  text-shadow: 0 0 70px var(--accent-glow);
+  animation: bs-glitch .58s steps(5) both;
+}
+
+.bs-window p {
+  position: absolute;
+  top: 620px;
+  left: 58px;
+  right: 58px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 46px;
+  line-height: 1.45;
+}
+
+.bs-model-field {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  bottom: 100px;
+  height: 730px;
+  border: 1px solid var(--rule);
+  background-image:
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size: 76px 76px;
+}
+
+.bs-model-field i {
+  position: absolute;
+  left: calc(8% + (var(--i) % 6) * 15%);
+  top: calc(10% + (var(--i) / 6) * 13%);
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 18px var(--accent-soft);
+  animation: bs-dot .32s steps(2) both;
+  animation-delay: calc(var(--i) * 28ms);
+}
+
+.bs-risk h2 {
+  top: 160px;
+}
+
+.bs-risk-stack {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  top: 510px;
+  display: grid;
+  gap: 30px;
+}
+
+.bs-risk-stack div {
+  height: 220px;
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  align-items: center;
+  padding: 0 34px;
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+}
+
+.bs-risk-stack span {
+  color: var(--text-2);
+  font-size: 46px;
+}
+
+.bs-risk-stack strong {
+  color: var(--accent);
+  font-size: 94px;
+  text-align: center;
+}
+
+.bs-risk p {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  bottom: 92px;
+  margin: 0;
+  color: var(--text-mute);
+  font-size: 38px;
+  line-height: 1.45;
+}
+
+.bs-before strong {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  top: 545px;
+  color: var(--accent);
+  font-size: 84px;
+  line-height: 1.25;
+  font-weight: 500;
+  text-shadow: 0 0 60px var(--accent-glow);
+}
+
+.bs-before-scan {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  bottom: 160px;
+  height: 620px;
+  border: 1px solid var(--rule);
+  background:
+    linear-gradient(90deg, transparent, var(--accent-soft), transparent),
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size: 100% 100%, 70px 70px, 70px 70px;
+  box-shadow: inset 0 0 90px var(--accent-soft);
+  animation: bs-scan 2s linear infinite;
+}
+
+.bs-queue {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  top: 560px;
+  display: grid;
+  gap: 22px;
+}
+
+.bs-queue div {
+  height: 170px;
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+  display: grid;
+  grid-template-columns: 80px 1fr 190px;
+  align-items: center;
+  padding: 0 28px;
+  opacity: 0;
+  animation: bs-rise .35s var(--ease-quart) both;
+  animation-delay: calc(var(--i) * 120ms);
+}
+
+.bs-queue span {
+  color: var(--text-mute);
+  font: 22px var(--font-mono);
+}
+
+.bs-queue strong {
+  color: var(--text-2);
+  font-size: 44px;
+  font-weight: 500;
+}
+
+.bs-queue i {
+  height: 14px;
+  background: var(--accent);
+  transform-origin: left;
+  animation: bs-fill .75s steps(8) both;
+  animation-delay: calc(var(--i) * 150ms);
+}
+
+.bs-tool-list {
+  position: absolute;
+  left: 58px;
+  right: 58px;
+  top: 570px;
+  display: grid;
+  gap: 26px;
+}
+
+.bs-tool-list div {
+  height: 190px;
+  padding: 28px 32px;
+  border: 1px solid var(--rule);
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  opacity: 0;
+  animation: bs-rise .35s var(--ease-quart) both;
+  animation-delay: calc(var(--i) * 120ms);
+}
+
+.bs-tool-list span {
+  color: var(--text-mute);
+  font: 24px var(--font-mono);
+}
+
+.bs-tool-list strong {
+  color: var(--accent);
+  font-size: 54px;
+  font-weight: 500;
+}
+
+@keyframes bs-rise {
+  from { opacity: 0; transform: translateY(36px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bs-glitch {
+  from { opacity: 0; transform: translateX(-30px); filter: blur(12px); }
+  to { opacity: 1; transform: translateX(0); filter: blur(0); }
+}
+
+@keyframes bs-dot {
+  from { opacity: 0; transform: scale(.3); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes bs-scan {
+  from { background-position: -1000px 0, 0 0, 0 0; }
+  to { background-position: 1000px 0, 0 0, 0 0; }
+}
+
+@keyframes bs-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}

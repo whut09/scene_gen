@@ -1,0 +1,26 @@
+{
+  "name": "glasswing-web-video-presentation",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "lint:types": "tsc --noEmit",
+    "tts:edge": "tsx scripts/synthesize-edge-tts.ts",
+    "export:mp4": "tsx scripts/export-mp4.ts",
+    "news:url": "tsx scripts/news-url-to-brief.ts"
+  },
+  "dependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "playwright": "^1.60.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.6"
+  }
+}

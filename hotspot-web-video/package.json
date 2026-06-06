@@ -1,0 +1,11 @@
+{
+  "name": "hotspot-web-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix presentation run dev",
+    "build": "npm --prefix presentation run build",
+    "lint:types": "npm --prefix presentation run lint:types"
+  }
+}

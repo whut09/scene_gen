@@ -1,0 +1,5 @@
+{
+  "OPENAI_API_KEY": "xxx",
+  "OPENAI_BASE_URL": "https://deepkey.top/v1",
+  "OPENAI_MODEL": "gpt-5.5"
+}

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Local secrets
+.env
+.env.local
+*.local.json
+config/llm.local.json
+glasswing-web-video/presentation/config/llm.local.json
+
+# Generated media and build output
+dist/
+public/generated/
+glasswing-web-video/presentation/dist/
+glasswing-web-video/presentation/exports/
+glasswing-web-video/presentation/public/audio/
+glasswing-web-video/presentation/public/assets/url-news-source.png
+glasswing-web-video/presentation/review-step-*.png
+glasswing-web-video/presentation/vertical-review-*.png
+glasswing-web-video/url-news/
+
+# Tool caches
+.vite/
+.vite-temp/
+*.log

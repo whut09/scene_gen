@@ -1,0 +1,49 @@
+{
+  "rss": [
+    {
+      "name": "OpenAI News",
+      "url": "https://openai.com/news/rss.xml",
+      "weight": 1.3
+    },
+    {
+      "name": "Google AI Blog",
+      "url": "https://blog.google/technology/ai/rss/",
+      "weight": 1.1
+    }
+  ],
+  "github": [
+    {
+      "repo": "openai/openai-python",
+      "weight": 0.9
+    },
+    {
+      "repo": "modelcontextprotocol/typescript-sdk",
+      "weight": 0.9
+    },
+    {
+      "repo": "huggingface/transformers",
+      "weight": 0.8
+    }
+  ],
+  "hackerNews": {
+    "queries": ["AI model", "LLM", "agent", "RAG", "OpenAI", "Claude"],
+    "weight": 0.7
+  },
+  "keywords": [
+    "agent",
+    "benchmark",
+    "model",
+    "openai",
+    "anthropic",
+    "claude",
+    "gemini",
+    "deepseek",
+    "mcp",
+    "rag",
+    "github",
+    "release",
+    "llm",
+    "reasoning",
+    "coding"
+  ]
+}

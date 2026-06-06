@@ -1,0 +1,35 @@
+{
+  "name": "scene-gen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "tsx src/pipeline/generate.ts",
+    "generate:stories": "tsx src/pipeline/generate-stories.ts",
+    "render": "tsx src/pipeline/render.ts",
+    "render:stories": "tsx src/pipeline/render-stories.ts",
+    "make": "npm run generate:stories && npm run render:stories",
+    "preview": "remotion preview src/remotion/index.tsx",
+    "lint:types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@remotion/bundler": "^4.0.469",
+    "@remotion/renderer": "^4.0.469",
+    "fast-xml-parser": "^5.3.2",
+    "jsdom": "^27.2.0",
+    "playwright": "^1.60.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "remotion": "^4.0.469",
+    "tsx": "^4.21.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}
