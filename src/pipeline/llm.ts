@@ -31,7 +31,7 @@ export async function improveWithOpenAI(
     },
     body: JSON.stringify({
       model,
-      temperature: 0.5,
+      temperature: 0.45,
       messages: [
         {
           role: "system",
@@ -44,8 +44,9 @@ export async function improveWithOpenAI(
             currentNarration: project.narration,
             sources: project.sources.map((item) => ({
               title: item.title,
-              source: options?.forbidAttribution ? "原文信号" : item.source,
+              source: options?.forbidAttribution ? "核心事实" : item.source,
               summary: item.summary,
+              content: item.content,
               tags: item.tags,
               score: item.score,
             })),

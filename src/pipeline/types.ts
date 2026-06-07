@@ -7,6 +7,7 @@ export interface HotItem {
   url: string;
   source: string;
   summary: string;
+  content?: string;
   publishedAt?: string;
   score: number;
   tags: string[];

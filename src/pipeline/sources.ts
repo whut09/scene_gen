@@ -205,7 +205,8 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
       const dom = new JSDOM(html, { url });
       const article = new Readability(dom.window.document).parse();
       const title = compactText(article?.title ?? dom.window.document.title ?? url, 140);
-      const summary = compactText(article?.excerpt ?? article?.textContent ?? title, 280);
+      const content = compactText(article?.textContent ?? title, 4200);
+      const summary = compactText(article?.excerpt ?? content ?? title, 360);
       const joined = `${title} ${summary}`;
       items.push({
         id: stableId("webpage", url, title),
@@ -214,6 +215,7 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         url,
         source: domainFromUrl(url),
         summary,
+        content,
         publishedAt: new Date().toISOString(),
         score: scoreItem(joined, new Date().toISOString(), 1, config.keywords),
         tags: normalizeTags(joined, config.keywords),

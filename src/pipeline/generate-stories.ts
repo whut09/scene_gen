@@ -94,7 +94,9 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, targetSeconds ?? project.meta.durationSeconds);
-  project = await improveWithOpenAI(project, { targetSeconds, forbidAttribution: true });
+  if (!urlOnly) {
+    project = await improveWithOpenAI(project, { targetSeconds, forbidAttribution: true });
+  }
   project = scrubProject(project) as VideoProject;
   project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
   if (targetSeconds && project.audio?.durationSeconds) {

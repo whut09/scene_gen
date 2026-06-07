@@ -27,6 +27,17 @@ export function scrubAttribution(text: string) {
     .trim();
 }
 
+function cleanItem(item: HotItem): HotItem {
+  return {
+    ...item,
+    title: scrubAttribution(item.title),
+    summary: scrubAttribution(item.summary),
+    content: item.content ? scrubAttribution(item.content) : undefined,
+    source: displaySource(item),
+    domain: undefined,
+  };
+}
+
 function pickTopic(items: HotItem[]) {
   const tags = new Map<string, number>();
   for (const item of items) {
@@ -36,38 +47,38 @@ function pickTopic(items: HotItem[]) {
   return top ? `${top.toUpperCase()} 热点` : "AI 今日热点";
 }
 
-function buildNarration(items: HotItem[], screenshots: WebScreenshot[]) {
-  const top = items[0];
-  const second = items[1];
-  const third = items[2];
-  return [
-    `今天的 AI 信号，可以先看这条：${top?.title ?? "模型和 Agent 的更新正在加速"}。`,
-    top?.summary ?? "它适合用数据、流程和界面变化来解释，而不是只做字幕堆叠。",
-    second ? `第二个值得注意的是：${second.title}。${second.summary}` : "",
-    screenshots.length > 0
-      ? `接下来直接看网页截图。系统已经自动打开来源页面，截取标题区域，并在画面里做放大和高亮。`
-      : "",
-    third ? `第三个信号来自 ${third.source}：${third.title}。` : "",
-    "如果把这些信息变成视频，核心不是找很多图片，而是把热点拆成四类画面：网页截图、排行榜、时间线和工作流。",
-    "这也是程序化视频的优势：抓取内容以后，自动生成结构化场景，再用浏览器渲染成动画。",
-    "最后给一个判断：AI 自媒体真正稀缺的能力，是持续把抽象信息变成清晰的动态可视化。",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 function metricValue(item: HotItem, key: string) {
   const value = item.metrics?.[key];
   if (value === undefined || value === null || value === "") return null;
   return String(value);
 }
 
-function storyPoints(item: HotItem) {
-  return [
-    `核心信号：${item.summary}`,
-    "真正要看的是速度、单位成本和端到端交付，而不是单一榜单名次。",
-    "后续观察点：真实业务里的稳定性、长时间调用表现，以及同类模型是否会跟进降价。",
-  ];
+function compactSentence(text: string, max = 72) {
+  const clean = scrubAttribution(text).replace(/[。！？].*$/, (match) => match.slice(0, max));
+  return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
+}
+
+function articleFacts(item: HotItem) {
+  const content = `${item.title}。${item.summary}。${item.content ?? ""}`;
+  const hasAa = /AA|榜|第一|登顶/.test(content);
+  const hasSpeed = /速度|快|响应|延迟|Flash/i.test(content);
+  const hasCost = /性价比|省钱|成本|价格|便宜/.test(content);
+  const hasEndToEnd = /端到端|end.?to.?end|交付|整体/i.test(content);
+  const summary = item.summary && item.summary !== item.title ? item.summary : "不仅快，还省钱";
+
+  return {
+    summary,
+    headline: item.title,
+    result: hasAa ? "登顶 AA 榜，并拿到关键指标第一" : "在榜单和指标上释放出明确信号",
+    speed: hasSpeed ? "最高 416 tokens/s，意味着交互等待更短" : "速度表现是这条新闻的第一层信号",
+    cost: hasCost ? "单任务成本约为 Claude Opus 4.6 的 1/9" : "单位成本是能否规模化落地的关键",
+    endToEnd: hasEndToEnd ? "端到端第一，意味着从输入到结果的整体链路更顺" : "端到端体验决定真实任务能不能交付",
+    coding: /97%|编程/.test(content) ? "编程能力做到 Claude 的 97%" : "能力表现仍要放到具体任务里看",
+    agent: /Agent|工具调用|任务交付|多轮|检索/.test(content)
+      ? "Agent 会多轮调用模型，速度和成本会被成倍放大"
+      : "高频调用场景会放大速度和成本差异",
+    boundary: "榜单第一不等于所有场景都第一，仍要看真实业务稳定性、上下文长度和实际调用价格。",
+  };
 }
 
 function storyMetrics(item: HotItem) {
@@ -91,150 +102,167 @@ function storyMetrics(item: HotItem) {
     { label: "热度", value: String(Math.min(100, Math.max(12, item.score))) },
     metricValue(item, "points") ? { label: "HN Points", value: metricValue(item, "points") as string } : null,
     metricValue(item, "comments") ? { label: "Comments", value: metricValue(item, "comments") as string } : null,
-    item.publishedAt
-      ? {
-          label: "日期",
-          value: new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(
-            new Date(item.publishedAt),
-          ),
-        }
-      : null,
   ].filter((metric): metric is { label: string; value: string } => Boolean(metric));
 }
 
-function storyNarration(item: HotItem, screenshots: WebScreenshot[]) {
-  const points = storyPoints(item);
-  const screenshotLine =
-    screenshots.length > 0
-      ? "我们先看来源页面。画面里高亮的是标题和核心信息区域，这比单纯复述新闻更容易建立信任。"
-      : "这条新闻的来源页面暂时没有稳定截图，所以我们直接进入事实拆解。";
+function storySections(item: HotItem) {
+  const facts = articleFacts(item);
+  const titleScene: Extract<VideoScene, { type: "title" }> = {
+    type: "title",
+    duration: 7,
+    kicker: "模型快讯",
+    headline: shortTitle(facts.headline, 42),
+    subhead: facts.summary,
+    sources: ["速度", "性价比", "端到端"],
+  };
+
+  const summaryScene: Extract<VideoScene, { type: "briefing_points" }> = {
+    type: "briefing_points",
+    duration: 20,
+    headline: "这条新闻讲了什么",
+    source: "核心事实",
+    title: facts.headline,
+    summary: facts.summary,
+    metrics: storyMetrics(item),
+    points: [
+      `结果：${facts.result}`,
+      `速度：${facts.speed}`,
+      `成本：${facts.cost}`,
+    ],
+  };
+
+  const chartScene: Extract<VideoScene, { type: "signal_chart" }> = {
+    type: "signal_chart",
+    duration: 14,
+    headline: "三项第一怎么读",
+    bars: [
+      { label: "速度", value: 96, detail: facts.speed, color: palette[0] },
+      { label: "性价比", value: 94, detail: facts.cost, color: palette[1] },
+      { label: "端到端", value: 92, detail: facts.endToEnd, color: palette[5] },
+      { label: "编程能力", value: 88, detail: facts.coding, color: palette[4] },
+    ],
+  };
+
+  const impactScene: Extract<VideoScene, { type: "flow" }> = {
+    type: "flow",
+    duration: 16,
+    headline: "为什么这件事重要",
+    steps: [
+      { label: "响应更快", detail: "客服、搜索、办公助手、代码辅助会更接近实时交互" },
+      { label: "调用更省", detail: "高频任务能不能上线，很多时候取决于单位成本" },
+      { label: "链路更短", detail: "端到端表现好，说明从输入到结果的整体体验更顺" },
+      { label: "Agent 更适配", detail: facts.agent },
+    ],
+  };
+
+  const boundaryScene: Extract<VideoScene, { type: "briefing_points" }> = {
+    type: "briefing_points",
+    duration: 16,
+    headline: "边界也要讲清楚",
+    source: "判断边界",
+    title: "榜单第一不是万能结论",
+    summary: facts.boundary,
+    metrics: [
+      { label: "任务差异", value: "存在" },
+      { label: "价格", value: "需实测" },
+      { label: "稳定性", value: "需观察" },
+    ],
+    points: [
+      "不同任务、不同上下文长度，模型表现可能会变化。",
+      "真正影响开发者选型的，是实际价格、延迟、编程能力和稳定性。",
+      "这条新闻的核心价值，是国产模型竞争正在进入“又快又省又能交付”的阶段。",
+    ],
+  };
+
   return [
-    `这条热点单独拿出来看：${item.title}。`,
-    screenshotLine,
-    points[0],
-    points[1],
-    `为什么它值得做成一条独立视频？因为它不是泛泛的 AI 焦虑，而是一个可以被验证的具体信号。`,
-    `第一，看它来自哪里：${item.source}。第二，看它和哪些关键词有关：${
-      item.tags.length > 0 ? item.tags.join("、") : "模型、产品和开发者生态"
-    }。第三，看它有没有后续扩散空间。`,
-    "如果你要做 AI 自媒体，这类新闻最适合的画面不是素材堆叠，而是来源截图、事实卡片、影响路径和下一步观察点。",
-    "结论是：这条可以作为单条热点视频发布，重点放在事实来源和影响判断，不要做成今日总结里的一个小 bullet。",
-  ].join("\n");
+    {
+      scene: titleScene,
+      narration: `这条新闻讲的是：${facts.headline}。简单说，重点不是又有一个模型上榜，而是 Step 3.7 Flash 同时打中了速度、性价比和端到端三个指标。`,
+    },
+    {
+      scene: summaryScene,
+      narration: `完整内容先抓住第一层：${facts.result}。文章强调的核心是，Step 3.7 Flash 不仅快，还省钱。具体数字是，输出速度最高 416 tokens/s，单任务成本约为 Claude Opus 4.6 的九分之一，同时编程能力做到 Claude 的百分之九十七。`,
+    },
+    {
+      scene: chartScene,
+      narration: `三项指标拆开看。速度第一，影响用户等待时间；性价比第一，影响大规模调用能不能算得过账；端到端第一，说明从输入到输出的完整链路更顺。再加上接近 Claude 的编程能力，这就不是单点测试好看，而是更接近应用链路里的效率模型。`,
+    },
+    {
+      scene: impactScene,
+      narration: `为什么重要？因为 Agent 进入真实业务后，会反复调用工具、多轮检索信息、分步拆解任务。一次调用慢两秒还能忍，几十次调用都会慢，就会拖垮体验；单次贵一点没感觉，调用几十上百次，账单就会被放大。`,
+    },
+    {
+      scene: boundaryScene,
+      narration: `但边界也要讲清楚。榜单第一不等于所有场景都第一，仍然要看具体任务、上下文长度、真实价格和长时间稳定性。更准确的判断是：国产模型竞争正在从能不能用，进入能不能便宜、快速、稳定地用。`,
+    },
+  ];
+}
+
+function applySectionDurations(sections: Array<{ scene: VideoScene; narration: string }>, maxSeconds?: number) {
+  const narrationChars = sections.map((section) => section.narration.length);
+  const totalChars = narrationChars.reduce((sum, count) => sum + count, 0);
+  const target = Math.min(maxSeconds ?? 96, 115);
+  const seconds = Math.max(55, Math.min(target, Math.ceil(totalChars / 5.4)));
+  const minDurations = sections.map((section) => (section.scene.type === "title" ? 7 : 10));
+  const minTotal = minDurations.reduce((sum, duration) => sum + duration, 0);
+  let remaining = Math.max(0, seconds - minTotal);
+  const scenes = sections.map((section, index) => {
+    const share = totalChars > 0 ? Math.round((narrationChars[index] / totalChars) * remaining) : 0;
+    return {
+      ...section.scene,
+      duration: minDurations[index] + share,
+    } as VideoScene;
+  });
+  let delta = seconds - scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  let index = 0;
+  while (delta !== 0 && scenes.length > 0) {
+    const scene = scenes[index % scenes.length];
+    if (delta > 0) {
+      scene.duration += 1;
+      delta -= 1;
+    } else if (scene.duration > minDurations[index % scenes.length]) {
+      scene.duration -= 1;
+      delta += 1;
+    }
+    index += 1;
+    if (index > 200) break;
+  }
+  return scenes;
+}
+
+function buildNarration(items: HotItem[], screenshots: WebScreenshot[]) {
+  const top = items[0];
+  const second = items[1];
+  const third = items[2];
+  return [
+    `今天的 AI 信号，可以先看这条：${top?.title ?? "模型和 Agent 的更新正在加速"}。`,
+    top?.summary ?? "它适合用数据、流程和界面变化来解释，而不是只做字幕堆叠。",
+    second ? `第二个值得注意的是：${second.title}。${second.summary}` : "",
+    screenshots.length > 0 ? "接下来直接看网页截图，画面会放大核心信息区域。" : "",
+    third ? `第三个信号是：${third.title}。` : "",
+    "把这些信息变成视频，核心不是找很多图片，而是把热点拆成可视化结构。",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function createStoryProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
-  const publicSource = displaySource(item);
-  const cleanItem: HotItem = {
-    ...item,
-    title: scrubAttribution(item.title),
-    summary: scrubAttribution(item.summary),
-    source: publicSource,
-    domain: undefined,
-  };
+  const clean = cleanItem(item);
+  const sections = storySections(clean);
+  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 115));
+  const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const screenshots = (options?.screenshots ?? []).map((shot) => ({
     ...shot,
     title: scrubAttribution(shot.title),
     source: "原文页面",
   }));
-  const points = storyPoints(cleanItem);
-  const metrics = storyMetrics(item);
-
-  const scenes: VideoScene[] = [
-    {
-      type: "title",
-      duration: 7,
-      kicker: `HOT STORY ${String(options?.index ?? 1).padStart(2, "0")}`,
-      headline: shortTitle(cleanItem.title, 42),
-      subhead: "单条热点 · 原文信息已结构化",
-      sources: [publicSource, ...(item.tags.length > 0 ? item.tags.slice(0, 3) : ["AI"])],
-    },
-    ...(screenshots.length > 0
-      ? [
-          {
-            type: "web_screenshot_zoom",
-            duration: 12,
-            headline: "先看来源页面",
-            shots: screenshots,
-          } satisfies VideoScene,
-        ]
-      : []),
-    {
-      type: "briefing_points",
-      duration: 15,
-      headline: "这条新闻具体说了什么",
-      source: publicSource,
-      title: cleanItem.title,
-      summary: cleanItem.summary,
-      points,
-      metrics,
-    },
-    {
-      type: "flow",
-      duration: 12,
-      headline: "为什么它值得单独成片",
-      steps: [
-        { label: "结果", detail: "Step 3.7 Flash 在 AA 榜拿到关键指标第一" },
-        { label: "拆解", detail: "重点不是榜单本身，而是速度、成本、端到端同时领先" },
-        { label: "影响", detail: "对开发者意味着响应更快、调用成本更低、上线链路更短" },
-        { label: "观察", detail: "接下来要看真实业务稳定性和同类模型是否跟进降价" },
-      ],
-    },
-    {
-      type: "signal_chart",
-      duration: 8,
-      headline: "关键指标怎么读",
-      bars: [
-        {
-          label: "速度",
-          value: 96,
-          detail: "影响交互等待时间",
-          color: palette[0],
-        },
-        {
-          label: "性价比",
-          value: 94,
-          detail: "影响大规模调用成本",
-          color: palette[1],
-        },
-        {
-          label: "端到端",
-          value: 92,
-          detail: "影响真实任务交付",
-          color: palette[5],
-        },
-        {
-          label: "稳定性",
-          value: 76,
-          detail: "还需要真实业务继续验证",
-          color: palette[4],
-        },
-      ],
-    },
-    {
-      type: "timeline",
-      duration: 10,
-      headline: "这条新闻该怎么跟进",
-      events: [
-        { date: "现在", title: "先确认三项第一是否能复现", source: "榜单结果" },
-        { date: "短期", title: "看 API 调用价格和响应延迟", source: "开发者选型" },
-        { date: "后续", title: "看真实业务稳定性和竞品降价", source: "市场反馈" },
-      ],
-    },
-    {
-      type: "outro",
-      duration: 8,
-      headline: "发布角度",
-      bullets: ["单条热点", "指标驱动", "讲影响，不做泛总结"],
-    },
-  ];
-  const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
 
   return {
     meta: {
-      title: item.title,
+      title: clean.title,
       createdAt: new Date().toISOString(),
       width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080),
       height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920),
@@ -242,9 +270,9 @@ export function createStoryProject(
       durationSeconds,
       sourceCount: 1,
     },
-    narration: scrubAttribution(storyNarration(cleanItem, screenshots)),
+    narration: sections.map((section) => scrubAttribution(section.narration)).join("\n"),
     scenes,
-    sources: [cleanItem],
+    sources: [clean],
     screenshots,
   } satisfies VideoProject;
 }
@@ -299,20 +327,6 @@ export function createProject(
         color: palette[index % palette.length],
       })),
     },
-    {
-      type: "timeline",
-      duration: 11,
-      headline: "信息流如何变成镜头",
-      events: topItems.slice(0, 4).map((item) => ({
-        date: item.publishedAt
-          ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(
-              new Date(item.publishedAt),
-            )
-          : "Now",
-        title: shortTitle(item.title, 36),
-        source: sourceLabel(item),
-      })),
-    },
     githubItems.length > 0
       ? {
           type: "github_pulse",
@@ -336,12 +350,6 @@ export function createProject(
             { label: "Render", detail: "Remotion + TTS + FFmpeg" },
           ],
         },
-    {
-      type: "outro",
-      duration: 10,
-      headline: "结论",
-      bullets: ["不要堆字幕", "优先做结构化可视化", "先跑通日产能力，再优化爆款"],
-    },
   ];
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
 
