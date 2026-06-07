@@ -11,6 +11,22 @@ function sourceLabel(item: HotItem) {
   return item.source || item.domain || "AI Signal";
 }
 
+function displaySource(item: HotItem) {
+  if (item.kind === "github" && item.repo) return item.repo;
+  if (item.kind === "hackernews") return "社区讨论";
+  return "核心事实";
+}
+
+export function scrubAttribution(text: string) {
+  return text
+    .replace(/QbitAI|qbitai\.com|量子位/g, "")
+    .replace(/作者\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
+    .replace(/编辑\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
+    .replace(/来源\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_. -]{0,32}/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function pickTopic(items: HotItem[]) {
   const tags = new Map<string, number>();
   for (const item of items) {
@@ -47,11 +63,10 @@ function metricValue(item: HotItem, key: string) {
 }
 
 function storyPoints(item: HotItem) {
-  const tags = item.tags.length > 0 ? item.tags.join(" / ") : "AI product signal";
   return [
     `核心信号：${item.summary}`,
-    `来源类型：${item.source}，这决定了它更像新闻、社区讨论还是产品发布。`,
-    `内容标签：${tags}。这条适合拆成网页截图、关键事实和影响判断。`,
+    "真正要看的是速度、单位成本和端到端交付，而不是单一榜单名次。",
+    "后续观察点：真实业务里的稳定性、长时间调用表现，以及同类模型是否会跟进降价。",
   ];
 }
 
@@ -79,8 +94,20 @@ export function createStoryProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
-  const screenshots = options?.screenshots ?? [];
-  const points = storyPoints(item);
+  const publicSource = displaySource(item);
+  const cleanItem: HotItem = {
+    ...item,
+    title: scrubAttribution(item.title),
+    summary: scrubAttribution(item.summary),
+    source: publicSource,
+    domain: undefined,
+  };
+  const screenshots = (options?.screenshots ?? []).map((shot) => ({
+    ...shot,
+    title: scrubAttribution(shot.title),
+    source: "原文页面",
+  }));
+  const points = storyPoints(cleanItem);
   const metrics = [
     { label: "Heat", value: String(Math.min(100, Math.max(12, item.score))) },
     metricValue(item, "points") ? { label: "HN Points", value: metricValue(item, "points") as string } : null,
@@ -100,9 +127,9 @@ export function createStoryProject(
       type: "title",
       duration: 7,
       kicker: `HOT STORY ${String(options?.index ?? 1).padStart(2, "0")}`,
-      headline: shortTitle(item.title, 42),
-      subhead: `${item.source} · ${item.domain ?? "AI news"}`,
-      sources: [item.source, ...(item.tags.length > 0 ? item.tags.slice(0, 3) : ["AI"])],
+      headline: shortTitle(cleanItem.title, 42),
+      subhead: "单条热点 · 原文信息已结构化",
+      sources: [publicSource, ...(item.tags.length > 0 ? item.tags.slice(0, 3) : ["AI"])],
     },
     ...(screenshots.length > 0
       ? [
@@ -118,9 +145,9 @@ export function createStoryProject(
       type: "briefing_points",
       duration: 15,
       headline: "这条新闻具体说了什么",
-      source: item.source,
-      title: item.title,
-      summary: item.summary,
+      source: publicSource,
+      title: cleanItem.title,
+      summary: cleanItem.summary,
       points,
       metrics,
     },
@@ -129,10 +156,10 @@ export function createStoryProject(
       duration: 12,
       headline: "为什么它值得单独成片",
       steps: [
-        { label: "Fact", detail: "先展示来源截图和原始标题" },
-        { label: "Signal", detail: "抽取产品、模型或社区变化" },
-        { label: "Impact", detail: "说明影响开发者、用户或行业叙事" },
-        { label: "Watch", detail: "给出后续观察点" },
+        { label: "Fact", detail: "先抓住模型名和榜单结果" },
+        { label: "Signal", detail: "拆成速度、成本、端到端三项指标" },
+        { label: "Impact", detail: "说明它对开发者选型有什么影响" },
+        { label: "Watch", detail: "继续观察真实业务稳定性" },
       ],
     },
     {
@@ -143,7 +170,7 @@ export function createStoryProject(
         {
           label: "Heat",
           value: Math.min(100, Math.max(12, item.score)),
-          detail: shortTitle(item.title, 28),
+          detail: shortTitle(cleanItem.title, 28),
           color: palette[0],
         },
         {
@@ -158,7 +185,7 @@ export function createStoryProject(
       type: "outro",
       duration: 8,
       headline: "发布角度",
-      bullets: ["单条热点", "来源可验证", "讲影响，不做泛总结"],
+      bullets: ["单条热点", "指标驱动", "讲影响，不做泛总结"],
     },
   ];
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
@@ -173,9 +200,9 @@ export function createStoryProject(
       durationSeconds,
       sourceCount: 1,
     },
-    narration: storyNarration(item, screenshots),
+    narration: scrubAttribution(storyNarration(cleanItem, screenshots)),
     scenes,
-    sources: [item],
+    sources: [cleanItem],
     screenshots,
   } satisfies VideoProject;
 }

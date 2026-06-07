@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { SourceConfig, VideoProject } from "./types";
-import { collectHotItems } from "./sources";
-import { createStoryProject } from "./story";
+import { collectHotItems, collectWebpage } from "./sources";
+import { createStoryProject, scrubAttribution } from "./story";
 import { improveWithOpenAI } from "./llm";
 import { captureWebScreenshots } from "./screenshots";
 import { attachNarrationAudio } from "./tts";
@@ -25,10 +25,60 @@ const screenshotLimit = Number(args.screenshots ?? process.env.SCREENSHOT_LIMIT 
 const width = Number(args.width ?? process.env.VIDEO_WIDTH ?? 1080);
 const height = Number(args.height ?? process.env.VIDEO_HEIGHT ?? 1920);
 const fps = Number(args.fps ?? process.env.VIDEO_FPS ?? 30);
+const targetSeconds = args.seconds ? Number(args.seconds) : undefined;
+const urlOnly = Boolean(args["url-only"]);
 
 const config = await readJson<SourceConfig>(fromRoot("config", "sources.json"));
-const items = (await collectHotItems(config, urls)).slice(0, count);
+const items = (
+  urlOnly && urls.length > 0 ? await collectWebpage(urls, config) : await collectHotItems(config, urls)
+).slice(0, count);
 const manifest: StoryManifestItem[] = [];
+
+function fitProjectDuration(project: VideoProject, seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return project;
+  const current = project.scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  if (current <= 0) return project;
+  const ratio = seconds / current;
+  let scenes = project.scenes.map((scene) => ({
+    ...scene,
+    duration: Math.max(2, Math.round(scene.duration * ratio)),
+  }));
+  let delta = seconds - scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  let index = 0;
+  while (delta !== 0 && scenes.length > 0) {
+    const scene = scenes[index % scenes.length];
+    if (delta > 0) {
+      scene.duration += 1;
+      delta -= 1;
+    } else if (scene.duration > 2) {
+      scene.duration -= 1;
+      delta += 1;
+    }
+    index += 1;
+    if (index > 200) break;
+  }
+  scenes = scenes.filter((scene) => scene.duration > 0);
+  const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  return {
+    ...project,
+    meta: {
+      ...project.meta,
+      durationSeconds,
+    },
+    scenes,
+  } satisfies VideoProject;
+}
+
+function scrubProject(value: unknown, key = ""): unknown {
+  if (typeof value === "string") {
+    return ["url", "src"].includes(key) ? value : scrubAttribution(value);
+  }
+  if (Array.isArray(value)) return value.map((child) => scrubProject(child, key));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, scrubProject(child, childKey)]));
+  }
+  return value;
+}
 
 for (const [index, item] of items.entries()) {
   const storyNo = index + 1;
@@ -43,8 +93,10 @@ for (const [index, item] of items.entries()) {
     screenshots,
     index: storyNo,
   });
-  project = await improveWithOpenAI(project);
-  project = await attachNarrationAudio(project, `narration-${slug}`);
+  project = fitProjectDuration(project, targetSeconds ?? project.meta.durationSeconds);
+  project = await improveWithOpenAI(project, { targetSeconds, forbidAttribution: true });
+  project = scrubProject(project) as VideoProject;
+  project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
 
   const projectPath = fromRoot("public", "generated", "stories", `${slug}.json`);
   const outputPath = fromRoot("dist", "stories", `${slug}.mp4`);
@@ -53,7 +105,7 @@ for (const [index, item] of items.entries()) {
   manifest.push({
     index: storyNo,
     title: project.meta.title,
-    source: item.source,
+    source: project.sources[0]?.source ?? "原文信号",
     score: item.score,
     projectPath,
     outputPath,

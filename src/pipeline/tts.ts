@@ -80,7 +80,7 @@ async function windowsTts(text: string, outputPath: string) {
 Add-Type -AssemblyName System.Speech
 $text = Get-Content -LiteralPath "${textPath.replace(/"/g, '`"')}" -Raw -Encoding UTF8
 $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$synth.Rate = 1
+$synth.Rate = 3
 $synth.Volume = 95
 $synth.SetOutputToWaveFile("${outputPath.replace(/"/g, '`"')}")
 $synth.Speak($text)
@@ -134,7 +134,28 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       },
     } satisfies VideoProject;
   } catch (error) {
-    console.warn(`[tts] failed, generating silent track: ${(error as Error).message}`);
+    console.warn(`[tts] primary provider failed: ${(error as Error).message}`);
+    if (provider !== "local") {
+      const fallbackLocalPath = path.join(generatedDir, `${basename}.wav`);
+      try {
+        await windowsTts(project.narration, fallbackLocalPath);
+        const fileSize = await stat(fallbackLocalPath).then((file) => file.size).catch(() => 0);
+        const duration = await probeDuration(fallbackLocalPath);
+        if (fileSize > 0 && duration > 0) {
+          return {
+            ...project,
+            audio: {
+              src: `/generated/${basename}.wav`,
+              durationSeconds: duration || project.meta.durationSeconds,
+              provider: "local",
+            },
+          } satisfies VideoProject;
+        }
+      } catch (fallbackError) {
+        console.warn(`[tts] local fallback failed: ${(fallbackError as Error).message}`);
+      }
+    }
+    console.warn("[tts] generating silent track");
     const fallbackPath = path.join(generatedDir, `${basename}.mp3`);
     await silentAudio(fallbackPath, project.meta.durationSeconds);
     const duration = await probeDuration(fallbackPath);

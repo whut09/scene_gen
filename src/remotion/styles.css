@@ -815,3 +815,49 @@ body {
     0 0 48px rgba(255, 255, 255, 0.24),
     0 0 120px rgba(255, 255, 255, 0.12);
 }
+
+.browserShell {
+  border: 2px solid rgba(255, 255, 255, 0.24);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 24px 80px rgba(0, 44, 120, 0.16);
+}
+
+.browserBar {
+  background: rgba(255, 255, 255, 0.13);
+  border-bottom-color: rgba(255, 255, 255, 0.2);
+}
+
+.address {
+  position: relative;
+  color: transparent;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.address::after {
+  content: "原文页面";
+  position: absolute;
+  inset: 9px 18px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.shotViewport {
+  background:
+    radial-gradient(circle at 20% 16%, rgba(255, 255, 255, 0.18), transparent 28%),
+    linear-gradient(180deg, rgba(8, 71, 215, 0.36), rgba(0, 166, 187, 0.28));
+}
+
+.webShot {
+  opacity: 0.72;
+  filter: saturate(0.82) brightness(1.12) contrast(0.9);
+  mix-blend-mode: screen;
+}
+
+.focusBox {
+  border-color: #fff36a;
+  box-shadow:
+    0 0 0 999px rgba(8, 71, 215, 0.16),
+    0 0 42px rgba(255, 243, 106, 0.56);
+}

@@ -24,25 +24,38 @@ export async function writeJson(filePath: string, value: unknown) {
 }
 
 export function loadDotEnv() {
+  const externalKeys = new Set(Object.keys(process.env));
+  const loadedKeys = new Set<string>();
+
+  function setEnv(key: string, value: string, overrideLocal: boolean) {
+    const normalized = value.replace(/^['"]|['"]$/g, "");
+    if (!normalized || normalized === "xxx") return;
+    if (externalKeys.has(key) && !loadedKeys.has(key)) return;
+    if (!overrideLocal && process.env[key]) return;
+    process.env[key] = normalized;
+    loadedKeys.add(key);
+  }
+
   for (const envPath of [fromRoot(".env"), fromRoot(".env.local")]) {
     if (!existsSync(envPath)) continue;
     const raw = readFileSync(envPath, "utf8").replace(/^\uFEFF/, "");
+    const overrideLocal = envPath.endsWith(".local");
     for (const line of raw.split(/\r?\n/)) {
       const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-      if (!match || process.env[match[1]]) continue;
-      process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
+      if (!match) continue;
+      setEnv(match[1], match[2], overrideLocal);
     }
   }
 
-  for (const configPath of [fromRoot("config", "llm.local.json"), fromRoot("config", "llm.example.json")]) {
+  for (const configPath of [fromRoot("config", "llm.example.json"), fromRoot("config", "llm.local.json")]) {
     if (!existsSync(configPath)) continue;
+    const overrideLocal = configPath.endsWith(".local.json");
     const config = JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, "")) as Record<
       string,
       string
     >;
     for (const [key, value] of Object.entries(config)) {
-      if (!value || value === "xxx" || process.env[key]) continue;
-      process.env[key] = value;
+      setEnv(key, value, overrideLocal);
     }
   }
 }
