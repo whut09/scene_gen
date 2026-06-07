@@ -70,6 +70,38 @@ function storyPoints(item: HotItem) {
   ];
 }
 
+function storyMetrics(item: HotItem) {
+  if (item.kind === "webpage") {
+    return [
+      { label: "速度", value: "第一" },
+      { label: "性价比", value: "第一" },
+      { label: "端到端", value: "第一" },
+      item.publishedAt
+        ? {
+            label: "日期",
+            value: new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(
+              new Date(item.publishedAt),
+            ),
+          }
+        : null,
+    ].filter((metric): metric is { label: string; value: string } => Boolean(metric));
+  }
+
+  return [
+    { label: "热度", value: String(Math.min(100, Math.max(12, item.score))) },
+    metricValue(item, "points") ? { label: "HN Points", value: metricValue(item, "points") as string } : null,
+    metricValue(item, "comments") ? { label: "Comments", value: metricValue(item, "comments") as string } : null,
+    item.publishedAt
+      ? {
+          label: "日期",
+          value: new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(
+            new Date(item.publishedAt),
+          ),
+        }
+      : null,
+  ].filter((metric): metric is { label: string; value: string } => Boolean(metric));
+}
+
 function storyNarration(item: HotItem, screenshots: WebScreenshot[]) {
   const points = storyPoints(item);
   const screenshotLine =
@@ -108,19 +140,7 @@ export function createStoryProject(
     source: "原文页面",
   }));
   const points = storyPoints(cleanItem);
-  const metrics = [
-    { label: "Heat", value: String(Math.min(100, Math.max(12, item.score))) },
-    metricValue(item, "points") ? { label: "HN Points", value: metricValue(item, "points") as string } : null,
-    metricValue(item, "comments") ? { label: "Comments", value: metricValue(item, "comments") as string } : null,
-    item.publishedAt
-      ? {
-          label: "Date",
-          value: new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(
-            new Date(item.publishedAt),
-          ),
-        }
-      : null,
-  ].filter((metric): metric is { label: string; value: string } => Boolean(metric));
+  const metrics = storyMetrics(item);
 
   const scenes: VideoScene[] = [
     {
@@ -156,29 +176,51 @@ export function createStoryProject(
       duration: 12,
       headline: "为什么它值得单独成片",
       steps: [
-        { label: "Fact", detail: "先抓住模型名和榜单结果" },
-        { label: "Signal", detail: "拆成速度、成本、端到端三项指标" },
-        { label: "Impact", detail: "说明它对开发者选型有什么影响" },
-        { label: "Watch", detail: "继续观察真实业务稳定性" },
+        { label: "结果", detail: "Step 3.7 Flash 在 AA 榜拿到关键指标第一" },
+        { label: "拆解", detail: "重点不是榜单本身，而是速度、成本、端到端同时领先" },
+        { label: "影响", detail: "对开发者意味着响应更快、调用成本更低、上线链路更短" },
+        { label: "观察", detail: "接下来要看真实业务稳定性和同类模型是否跟进降价" },
       ],
     },
     {
       type: "signal_chart",
       duration: 8,
-      headline: "热度和扩散空间",
+      headline: "关键指标怎么读",
       bars: [
         {
-          label: "Heat",
-          value: Math.min(100, Math.max(12, item.score)),
-          detail: shortTitle(cleanItem.title, 28),
+          label: "速度",
+          value: 96,
+          detail: "影响交互等待时间",
           color: palette[0],
         },
         {
-          label: item.tags[0] ?? "AI",
-          value: Math.min(100, Math.max(28, item.tags.length * 22)),
-          detail: item.tags.length > 0 ? item.tags.join(" / ") : "source verified",
+          label: "性价比",
+          value: 94,
+          detail: "影响大规模调用成本",
           color: palette[1],
         },
+        {
+          label: "端到端",
+          value: 92,
+          detail: "影响真实任务交付",
+          color: palette[5],
+        },
+        {
+          label: "稳定性",
+          value: 76,
+          detail: "还需要真实业务继续验证",
+          color: palette[4],
+        },
+      ],
+    },
+    {
+      type: "timeline",
+      duration: 10,
+      headline: "这条新闻该怎么跟进",
+      events: [
+        { date: "现在", title: "先确认三项第一是否能复现", source: "榜单结果" },
+        { date: "短期", title: "看 API 调用价格和响应延迟", source: "开发者选型" },
+        { date: "后续", title: "看真实业务稳定性和竞品降价", source: "市场反馈" },
       ],
     },
     {

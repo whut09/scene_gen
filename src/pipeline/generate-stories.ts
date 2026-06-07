@@ -97,6 +97,10 @@ for (const [index, item] of items.entries()) {
   project = await improveWithOpenAI(project, { targetSeconds, forbidAttribution: true });
   project = scrubProject(project) as VideoProject;
   project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
+  if (targetSeconds && project.audio?.durationSeconds) {
+    const alignedSeconds = Math.min(targetSeconds, Math.max(20, Math.ceil(project.audio.durationSeconds + 4)));
+    project = fitProjectDuration(project, alignedSeconds);
+  }
 
   const projectPath = fromRoot("public", "generated", "stories", `${slug}.json`);
   const outputPath = fromRoot("dist", "stories", `${slug}.mp4`);
@@ -105,7 +109,7 @@ for (const [index, item] of items.entries()) {
   manifest.push({
     index: storyNo,
     title: project.meta.title,
-    source: project.sources[0]?.source ?? "原文信号",
+    source: project.sources[0]?.source ?? "核心事实",
     score: item.score,
     projectPath,
     outputPath,

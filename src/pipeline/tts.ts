@@ -52,9 +52,9 @@ async function probeDuration(filePath: string) {
 }
 
 async function openAiTts(text: string, outputPath: string) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
-  const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+  const apiKey = process.env.OPENAI_TTS_API_KEY ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_TTS_API_KEY or OPENAI_API_KEY is not set");
+  const baseUrl = process.env.OPENAI_TTS_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/audio/speech`, {
     method: "POST",
     headers: {
@@ -66,6 +66,7 @@ async function openAiTts(text: string, outputPath: string) {
       voice: process.env.OPENAI_TTS_VOICE ?? "alloy",
       input: text,
       format: "mp3",
+      speed: Number(process.env.OPENAI_TTS_SPEED ?? 1.12),
     }),
   });
   if (!response.ok) throw new Error(`OpenAI TTS failed: ${response.status} ${await response.text()}`);
