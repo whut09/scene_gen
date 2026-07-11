@@ -91,7 +91,8 @@ console.log(`[harness] target: ${targetSeconds}s, max iterations: ${maxIteration
 console.log(`[harness] feedback applied: ${relevantFeedback.length}`);
 
 for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
-  console.log(`\n[harness] iteration ${iteration}/${maxIterations}: generate draft`);
+  console.log(`\n[harness] iteration ${iteration}/${maxIterations}: ${selectedManifest ? "evaluate local revision" : "generate draft"}`);
+  if (!selectedManifest) {
   const generateArgs = [
     "--url",
     url,
@@ -112,6 +113,10 @@ for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
   const manifest = await readJson<StoryManifestItem[]>(manifestPath);
   const story = manifest[0];
   if (!story) throw new Error("No story project was generated.");
+  selectedManifest = story;
+  }
+  const story = selectedManifest;
+  if (!story) throw new Error("No story project was generated.");
   let project = await readJson<VideoProject>(story.projectPath);
   const draft = await evaluateDraft(project, targetSeconds, feedbackGuidance);
   const iterationReport: IterationReport = { iteration, draft };
@@ -126,12 +131,22 @@ for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
       selectedProject = project;
       break;
     }
-    loopNotes = combineNotes([
-      explicitNotes,
-      feedbackGuidance ? `历史用户反馈：\n${feedbackGuidance}` : "",
-      `上一轮质量问题：\n${draft.issues.map((issue) => `- ${issue.message}`).join("\n")}`,
-      `下一轮修改要求：\n${draft.revisionNotes.map((note) => `- ${note}`).join("\n")}`,
-    ]);
+    const affectedScenes = [...new Set(draft.issues.map((issue) => issue.sceneIndex).filter((index): index is number => typeof index === "number"))];
+    if (affectedScenes.length > 0) {
+      console.log(`[harness] local draft revision: scenes ${affectedScenes.map((index) => index + 1).join(", ")}`);
+      await runScript("src/harness/revise-scenes.ts", [
+        "--project", story.projectPath,
+        "--scenes", affectedScenes.join(","),
+        "--issues", combineNotes([...draft.issues.map((issue) => issue.message), ...draft.revisionNotes]),
+      ]);
+    } else {
+      selectedManifest = undefined;
+      loopNotes = combineNotes([
+        explicitNotes,
+        feedbackGuidance ? `历史用户反馈：\n${feedbackGuidance}` : "",
+        `上一轮质量问题：\n${draft.issues.map((issue) => `- ${issue.message}`).join("\n")}`,
+      ]);
+    }
     continue;
   }
 
@@ -150,12 +165,17 @@ for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
   for (const issue of audio.issues) console.log(`[harness] audio ${issue.severity}: ${issue.code} - ${issue.message}`);
 
   if (!audio.passed && iteration < maxIterations) {
-    loopNotes = combineNotes([
-      explicitNotes,
-      feedbackGuidance ? `历史用户反馈：\n${feedbackGuidance}` : "",
-      `上一轮音频问题：\n${audio.issues.map((issue) => `- ${issue.message}`).join("\n")}`,
-      `下一轮修改要求：\n${audio.revisionNotes.map((note) => `- ${note}`).join("\n")}`,
-    ]);
+    const affectedScenes = [...new Set(audio.issues.map((issue) => issue.sceneIndex ?? (issue.code.startsWith("audio_title_") ? 0 : undefined)).filter((index): index is number => typeof index === "number"))];
+    if (affectedScenes.length > 0) {
+      console.log(`[harness] local audio revision: scenes ${affectedScenes.map((index) => index + 1).join(", ")}`);
+      await runScript("src/harness/revise-scenes.ts", [
+        "--project", story.projectPath,
+        "--scenes", affectedScenes.join(","),
+        "--issues", combineNotes([...audio.issues.map((issue) => issue.message), ...audio.revisionNotes]),
+      ]);
+    } else {
+      throw new Error("Audio quality failed without an isolated scene; rendering stopped.");
+    }
     continue;
   }
 

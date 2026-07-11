@@ -1,3 +1,4 @@
+import type { VideoProject } from "../pipeline/types";
 import type { VideoScene } from "../pipeline/types";
 
 export function escapeHtml(value: unknown) {
@@ -7,6 +8,12 @@ export function escapeHtml(value: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+export function projectSourceUrl(project: VideoProject) {
+  const url = project.sources[0]?.url ?? "";
+  if (!/^https?:\/\/github\.com\//i.test(url)) return "";
+  return url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
 }
 
 export function headlineFontSize(text: string, max = 88, min = 58) {

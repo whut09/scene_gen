@@ -14,6 +14,7 @@
     "lint:types": "tsc --noEmit",
     "video": "tsx src/harness/run-video-agent.ts",
     "video:check": "tsx src/harness/check-video.ts",
+    "video:revise": "tsx src/harness/revise-scenes.ts",
     "feedback:add": "tsx src/harness/add-feedback.ts",
     "synthesize:story": "tsx src/pipeline/synthesize-story.ts",
     "video:remotion": "tsx src/harness/run-video-agent.ts --engine remotion",

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -261,7 +262,6 @@ export async function renderHtmlVideoProject(
 ): Promise<HtmlVideoRenderResult> {
   const slug = slugify(project.meta.title, "story");
   const workDir = fromRoot("public", "generated", "html-video", slug);
-  await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   await ensureDir(workDir);
   await ensureDir(path.dirname(outputPath));
 
@@ -289,16 +289,43 @@ export async function renderHtmlVideoProject(
     );
     const htmlPath = path.join(workDir, `${node.id}-${template.id}.html`);
     const videoPath = path.join(workDir, `${node.id}-${template.id}.mp4`);
+    const cachePath = `${videoPath}.cache.json`;
+    const sceneCacheData = { ...scene, duration: undefined };
+    const cacheKey = createHash("sha256").update(JSON.stringify({ scene: sceneCacheData, templateId: node.templateId, templateVersion: template.version, variantId: node.variantId, width: project.meta.width, height: project.meta.height, fps: project.meta.fps })).digest("hex");
     await writeFile(htmlPath, html, "utf8");
-    console.log(`[html-video] recording ${node.id} with ${template.id}:${node.variantId}`);
-    const detectedMotionSec = await recordHtmlFrame({
-      htmlPath,
-      outputPath: videoPath,
-      durationSec: node.durationSec,
-      width: project.meta.width,
-      height: project.meta.height,
-      fps: project.meta.fps,
-    });
+    let detectedMotionSec = 0;
+    let cacheHit = false;
+    if (existsSync(videoPath) && existsSync(cachePath)) {
+      const cached = JSON.parse(await readFile(cachePath, "utf8")) as { cacheKey?: string; detectedMotionSec?: number; durationSec?: number };
+      if (cached.cacheKey === cacheKey) {
+        cacheHit = true;
+        detectedMotionSec = cached.detectedMotionSec ?? 0;
+        const cachedDuration = cached.durationSec ?? node.durationSec;
+        if (Math.abs(cachedDuration - node.durationSec) > 0.001) {
+          const adjustedPath = `${videoPath}.adjusted.mp4`;
+          const ratio = node.durationSec / cachedDuration;
+          await ffmpeg(["-y", "-i", videoPath, "-vf", `setpts=${ratio.toFixed(9)}*PTS,tpad=stop_mode=clone:stop_duration=1`, "-t", String(node.durationSec), "-r", String(project.meta.fps), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "20", adjustedPath]);
+          await rm(videoPath, { force: true });
+          await (await import("node:fs/promises")).rename(adjustedPath, videoPath);
+          console.log(`[html-video] retiming ${node.id} from ${cachedDuration.toFixed(3)}s to ${node.durationSec.toFixed(3)}s`);
+        } else {
+          console.log(`[html-video] reusing ${node.id} with ${template.id}:${node.variantId}`);
+        }
+        await writeFile(cachePath, JSON.stringify({ cacheKey, detectedMotionSec, durationSec: node.durationSec }), "utf8");
+      }
+    }
+    if (!cacheHit) {
+      console.log(`[html-video] recording ${node.id} with ${template.id}:${node.variantId}`);
+      detectedMotionSec = await recordHtmlFrame({
+        htmlPath,
+        outputPath: videoPath,
+        durationSec: node.durationSec,
+        width: project.meta.width,
+        height: project.meta.height,
+        fps: project.meta.fps,
+      });
+      await writeFile(cachePath, JSON.stringify({ cacheKey, detectedMotionSec, durationSec: node.durationSec }), "utf8");
+    }
     frames.push({
       id: node.id,
       htmlPath,

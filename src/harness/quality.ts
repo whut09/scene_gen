@@ -13,6 +13,7 @@ export interface QualityIssue {
   severity: "warning" | "error";
   code: string;
   message: string;
+  sceneIndex?: number;
 }
 
 export interface QualityEvaluation {
@@ -22,6 +23,20 @@ export interface QualityEvaluation {
   revisionNotes: string[];
   scores?: Record<string, number>;
   metrics: Record<string, number | string | boolean>;
+}
+
+function issueSceneIndex(message: string) {
+  const match = message.match(/第\s*(\d+)\s*屏/);
+  if (!match) return undefined;
+  const index = Number(match[1]) - 1;
+  return Number.isInteger(index) && index >= 0 ? index : undefined;
+}
+
+function attachIssueSceneIndexes(issues: QualityIssue[]) {
+  return issues.map((issue) => ({
+    ...issue,
+    sceneIndex: issue.sceneIndex ?? issueSceneIndex(issue.message),
+  }));
 }
 
 function normalizeText(text: string) {
@@ -252,7 +267,8 @@ export async function evaluateDraft(
         Object.entries(judged.scores).map(([key, value]) => [key, Math.max(0, Math.min(100, Number(value) || 0))]),
       );
       for (const issue of judged.issues ?? []) {
-        issues.push({ severity: "warning", code: "llm_judge", message: issue });
+        const factualConflict = /数据错误|数值错误|音画冲突|明显错误|事实错误/.test(issue);
+        issues.push({ severity: factualConflict ? "error" : "warning", code: "llm_judge", message: issue });
       }
       revisionNotes.push(...(judged.revisionNotes ?? []));
     }
@@ -277,7 +293,7 @@ export async function evaluateDraft(
   return {
     stage: "draft",
     passed,
-    issues,
+    issues: attachIssueSceneIndexes(issues),
     revisionNotes: [...new Set(revisionNotes.filter(Boolean))],
     scores,
     metrics: {
@@ -305,6 +321,8 @@ export async function evaluateDraft(
 function canonicalSpeechText(text: string) {
   return text
     .toLowerCase()
+    .replace(/gitnexus|吉特奈克瑟斯|吉特奈克萨斯|其特奈克色思|其特奈克瑟斯|d(?:i|e)maxs?|dinex/g, "gitnexus")
+    .replace(/贷马库|貸馬庫/g, "代码库")
     .replace(/a[.\s]*i[.]?/g, "ai")
     .replace(/ai[ -]?berkshire|ai伯克希尔|ai伯克希爾|艾伯克希尔|艾伯克希爾|艾伯是/g, "ai伯克希尔")
     .replace(/斯大师/g, "四大师")

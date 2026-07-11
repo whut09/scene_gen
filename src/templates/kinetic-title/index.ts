@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, projectSourceUrl, sceneHeadline } from "../html-utils";
 
 export const kineticTitleTemplate: HtmlTemplateDefinition = {
   id: "kinetic-title",
@@ -35,12 +35,13 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
   license: { spdx: "MIT", attributionRequired: false, redistributionAllowed: true, commercialUse: true },
   provenance: { kind: "original", note: "Original Scene Gen implementation inspired by metadata-driven HTML video systems." },
   performance: { tier: "light", expectedRenderRatio: 0.3 },
-  renderHtml: ({ scene, width, height, variantId }) => {
+  renderHtml: ({ project, scene, width, height, variantId }) => {
     const isTitle = scene.type === "title";
     const headline = isTitle ? scene.headline : scene.type === "outro" ? scene.headline : sceneHeadline(scene);
     const supporting = isTitle ? scene.subhead : scene.type === "outro" ? scene.bullets.slice(0, 3).join(" / ") : "";
     const kicker = isTitle ? scene.kicker : "最终结论";
     const titleSize = headlineFontSize(headline, 88, 60);
+    const repoUrl = projectSourceUrl(project);
     const body =
       '<main class="hv-main kt-main kt-' + variantId + '" style="--kt-title-size:' + titleSize + 'px">' +
       '<div class="kt-index">' + (isTitle ? "01" : "05") + '</div>' +
@@ -48,7 +49,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
       '<h1 class="kt-title">' + escapeHtml(headline).replace(/\n/g, "<br />") + '</h1>' +
       '<div class="kt-rule"><i></i><i></i><i></i></div>' +
       '<p class="kt-support">' + escapeHtml(supporting) + '</p>' +
-      '<div class="kt-stamp">NEWS / SIGNAL</div>' +
+      '<div class="kt-stamp">' + (repoUrl ? escapeHtml(repoUrl) : 'NEWS / SIGNAL') + '</div>' +
       '</main>';
     const css =
       '.kt-main{inset:112px 58px 72px;display:flex;flex-direction:column;justify-content:center;}' +

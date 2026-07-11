@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectSourceUrl, sceneHeadline } from "../html-utils";
 
 function sceneItems(scene: Parameters<HtmlTemplateDefinition["renderHtml"]>[0]["scene"]) {
   if (scene.type === "briefing_points") return scene.points.map((detail, index) => ({ label: scene.metrics[index]?.label ?? `研究 ${index + 1}`, detail }));
@@ -40,9 +40,10 @@ export const investmentResearchTemplate: HtmlTemplateDefinition = {
   license: { spdx: "MIT", attributionRequired: false, redistributionAllowed: true, commercialUse: true },
   provenance: { kind: "original", note: "Original Scene Gen investment editorial composition." },
   performance: { tier: "standard", expectedRenderRatio: 0.42 },
-  renderHtml: ({ scene, width, height, variantId }) => {
+  renderHtml: ({ project, scene, width, height, variantId }) => {
     const items = sceneItems(scene).slice(0, 5);
     const title = sceneHeadline(scene);
+    const repoUrl = projectSourceUrl(project);
     const cards = items.map((item, index) => {
       const delay = pacedDelay(index, items.length, scene.duration, 1.1);
       const showMetric = scene.type === "github_pulse" && "value" in item && typeof item.value === "number";
@@ -53,7 +54,7 @@ export const investmentResearchTemplate: HtmlTemplateDefinition = {
     const titleScene = scene.type === "title";
     const cover = titleScene ? `<section class="ir-cover"><div class="ir-seal ir-s1">巴菲特</div><div class="ir-seal ir-s2">芒格</div><div class="ir-seal ir-s3">段永平</div><div class="ir-seal ir-s4">李录</div><p>${escapeHtml(scene.subhead)}</p><blockquote>PRICE IS WHAT YOU PAY<br/>VALUE IS WHAT YOU GET</blockquote></section>` : `<section class="ir-board">${cards}</section>`;
     const body = `<main class="hv-main ir-main ${variantClass} ${titleScene ? "ir-title-cover" : ""}">
-      <header class="ir-header"><span>AI BERKSHIRE / RESEARCH MEMO</span><time>VALUE × AI</time></header>
+      <header class="ir-header"><span>${repoUrl ? escapeHtml(repoUrl) : "RESEARCH / PROJECT MEMO"}</span><time>VALUE × AI</time></header>
       <h1 style="font-size:${headlineFontSize(title, 78, 58)}px">${escapeHtml(title)}</h1>
       <div class="ir-rule"><i></i></div>
       ${cover}

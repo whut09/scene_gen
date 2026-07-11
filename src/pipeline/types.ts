@@ -121,6 +121,10 @@ export interface VideoProject {
   scenes: VideoScene[];
   sources: HotItem[];
   screenshots?: WebScreenshot[];
+  revision?: {
+    changedSceneIndexes: number[];
+    updatedAt: string;
+  };
 }
 
 export interface SourceConfig {

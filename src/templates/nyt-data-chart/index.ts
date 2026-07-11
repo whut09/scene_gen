@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const nytDataChartTemplate: HtmlTemplateDefinition = {
   id: "nyt-data-chart",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "NYT Data Chart",
   description: "Editorial chart scene inspired by newspaper data storytelling.",
   engine: "html-video",
@@ -46,9 +46,12 @@ export const nytDataChartTemplate: HtmlTemplateDefinition = {
       '<article class="nyt-bar" style="animation-delay:' + pacedDelay(index, bars.length, scene.duration) + 's"><div class="nyt-bar-head"><strong>' + escapeHtml(bar.label) + '</strong><span>' + escapeHtml(bar.value) + '%</span></div>' +
       '<div class="nyt-track"><i style="width:' + bar.value + '%;background:' + escapeHtml(bar.color) + '"></i></div><p>' + escapeHtml(bar.detail) + '</p></article>'
     ).join('');
-    const ranked = bars.map((bar, index) =>
-      '<article class="nyt-rank" style="animation-delay:' + pacedDelay(index, bars.length, scene.duration) + 's"><b>0' + (index + 1) + '</b><div><span>' + escapeHtml(bar.label) + '</span><strong>关键 ' + String(index + 1).padStart(2, "0") + '</strong><p>' + escapeHtml(bar.detail) + '</p></div><i style="background:' + escapeHtml(bar.color) + '"></i></article>'
-    ).join('');
+    const ranked = bars.map((bar, index) => {
+      const metric = variantId === "category-cards"
+        ? `<strong>${escapeHtml(bar.value)}${/路径/.test(bar.label) ? " 条" : " 个"}</strong>`
+        : `<strong>关键 ${String(index + 1).padStart(2, "0")}</strong>`;
+      return '<article class="nyt-rank" style="animation-delay:' + pacedDelay(index, bars.length, scene.duration) + 's"><b>0' + (index + 1) + '</b><div><span>' + escapeHtml(bar.label) + '</span>' + metric + '<p>' + escapeHtml(bar.detail) + '</p></div><i style="background:' + escapeHtml(bar.color) + '"></i></article>';
+    }).join('');
     const deltas = bars.map((bar, index) =>
       '<article class="nyt-delta" style="animation-delay:' + pacedDelay(index, bars.length, scene.duration) + 's"><span>' + escapeHtml(bar.label) + '</span><strong>' + escapeHtml(bar.value) + '%</strong><p>' + escapeHtml(bar.detail) + '</p><i style="width:' + bar.value + '%;background:' + escapeHtml(bar.color) + '"></i></article>'
     ).join('');

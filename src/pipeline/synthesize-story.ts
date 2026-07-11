@@ -21,7 +21,9 @@ const sourceId = project.sources[0]?.id ?? slugify(project.meta.title, "story");
 const basename =
   typeof args.basename === "string" ? args.basename : `narration-agent-${slugify(sourceId, "story")}`;
 
+if (project.revision?.changedSceneIndexes.length) console.log(`Rebuilding narration scenes: ${project.revision.changedSceneIndexes.map((index) => index + 1).join(", ")}`);
 project = await attachNarrationAudio(project, basename);
+project = { ...project, revision: undefined };
 await writeJson(projectPath, project);
 
 const slug = slugify(project.meta.title, sourceId);

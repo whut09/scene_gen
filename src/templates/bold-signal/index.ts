@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, projectSourceUrl, sceneHeadline } from "../html-utils";
 
 export const boldSignalTemplate: HtmlTemplateDefinition = {
   id: "bold-signal",
@@ -39,16 +39,18 @@ export const boldSignalTemplate: HtmlTemplateDefinition = {
   },
   provenance: { kind: "original", note: "Scene Gen original template." },
   performance: { tier: "light", expectedRenderRatio: 0.35 },
-  renderHtml: ({ scene, width, height }) => {
+  renderHtml: ({ project, scene, width, height }) => {
     const isTitle = scene.type === "title";
     const headline = isTitle ? scene.headline : scene.type === "outro" ? scene.headline : sceneHeadline(scene);
     const titleSize = headlineFontSize(headline, 88, 60);
+    const repoUrl = projectSourceUrl(project);
     const sub = isTitle ? scene.subhead : scene.type === "outro" ? scene.bullets.join(" / ") : "";
     const body = `<main class="hv-main" style="display:grid;align-content:center;inset:120px 58px 120px;">
       <div class="hv-kicker">${escapeHtml(isTitle ? scene.kicker : "Final Signal")}</div>
       <h1 style="font-size:${titleSize}px;max-width:940px;">${escapeHtml(headline)}</h1>
       <p style="margin-top:34px;max-width:860px;font-size:36px;">${escapeHtml(sub)}</p>
       <div style="margin-top:52px;width:360px;height:10px;background:#fff36a;transform-origin:left center;animation:hv-width 1s .25s both;"></div>
+      ${repoUrl ? `<div style="position:absolute;left:0;bottom:6px;font-size:22px;font-weight:850;letter-spacing:.04em;color:rgba(255,255,255,.72)">${escapeHtml(repoUrl)}</div>` : ""}
     </main>`;
     return commonHtml({ title: headline, body, width, height, durationSec: scene.duration, theme: "blue" });
   },
