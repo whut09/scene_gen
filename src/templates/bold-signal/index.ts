@@ -3,13 +3,20 @@ import { commonHtml, escapeHtml, sceneHeadline } from "../html-utils";
 
 export const boldSignalTemplate: HtmlTemplateDefinition = {
   id: "bold-signal",
+  version: "1.1.0",
   name: "Bold Signal",
   description: "High-impact title and outro frame for short-form news videos.",
   engine: "html-video",
   category: "title-card",
+  subcategory: "social-hook",
   tags: ["title", "outro", "bold", "signal"],
   bestFor: ["opening hook", "final takeaway", "viral short title"],
+  notFor: ["long-form documentary", "photo montage"],
+  supportedIntents: ["hook", "summary"],
   supportedScenes: ["title", "outro"],
+  dataDensity: ["low", "medium"],
+  motionFamily: "kinetic",
+  visualFamily: "scene-gen-editorial-v2",
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",
@@ -25,6 +32,8 @@ export const boldSignalTemplate: HtmlTemplateDefinition = {
     redistributionAllowed: true,
     commercialUse: true,
   },
+  provenance: { kind: "original", note: "Scene Gen original template." },
+  performance: { tier: "light", expectedRenderRatio: 0.35 },
   renderHtml: ({ scene, width, height }) => {
     const isTitle = scene.type === "title";
     const headline = isTitle ? scene.headline : scene.type === "outro" ? scene.headline : sceneHeadline(scene);

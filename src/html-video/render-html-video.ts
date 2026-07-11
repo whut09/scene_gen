@@ -6,14 +6,20 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { VideoProject } from "../pipeline/types";
 import { ensureDir, fromRoot, slugify } from "../pipeline/utils";
-import { getTemplateById, selectTemplateForScene } from "../templates/template-registry";
-import { buildHtmlVideoContentGraph, type HtmlVideoContentGraph } from "./content-graph";
+import { getTemplateById } from "../templates/template-registry";
+import {
+  buildHtmlVideoContentGraph,
+  topoSortHtmlVideoGraph,
+  type HtmlVideoContentGraph,
+} from "./content-graph";
 
 interface RenderedFrame {
   id: string;
   htmlPath: string;
   videoPath: string;
   durationSec: number;
+  templateId: string;
+  detectedMotionSec: number;
 }
 
 export interface HtmlVideoRenderResult {
@@ -61,13 +67,17 @@ async function waitForFonts(page: {
       () =>
         new Promise<void>((resolve) => {
           const fonts = document.fonts;
-          if (!fonts?.ready) {
+          const finish = () => requestAnimationFrame(() => requestAnimationFrame(() => {
+            document.body?.getBoundingClientRect();
             resolve();
+          }));
+          if (!fonts?.ready) {
+            finish();
             return;
           }
-          const finish = () => requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-          const timer = setTimeout(finish, 5000);
-          fonts.ready
+          const timer = setTimeout(finish, 8000);
+          Promise.all([...fonts].map((face) => face.load().catch(() => undefined)))
+            .then(() => fonts.ready)
             .then(() => {
               clearTimeout(timer);
               finish();
@@ -100,6 +110,7 @@ async function recordHtmlFrame({
   const recordDir = await mkdtemp(path.join(tmpdir(), "scene-gen-html-video-"));
   let browser: Awaited<ReturnType<typeof playwright.chromium.launch>> | undefined;
   let leadInMs = 0;
+  let detectedMotionSec = 0;
   try {
     browser = await playwright.chromium.launch({
       headless: true,
@@ -120,13 +131,27 @@ async function recordHtmlFrame({
       const attach = () => (document.head || document.documentElement).appendChild(style);
       if (document.head || document.documentElement) attach();
       else document.addEventListener("DOMContentLoaded", attach, { once: true });
+      const pauseSvg = () => document.querySelectorAll("svg").forEach((svg) => svg.pauseAnimations?.());
+      const resumeSvg = () => document.querySelectorAll("svg").forEach((svg) => svg.unpauseAnimations?.());
+      document.addEventListener("DOMContentLoaded", pauseSvg, { once: true });
       (window as unknown as { __sgUnfreeze?: () => void }).__sgUnfreeze = () => {
         document.getElementById("__sg_freeze")?.remove();
+        resumeSvg();
       };
     });
 
     await page.goto(pathToFileURL(htmlPath).href, { waitUntil: "domcontentloaded" });
     await waitForFonts(page);
+    detectedMotionSec = await page.evaluate(() => {
+      const durations = document.getAnimations().map((animation) => {
+        const timing = animation.effect?.getComputedTiming();
+        return typeof timing?.endTime === "number" && Number.isFinite(timing.endTime) ? timing.endTime / 1000 : 0;
+      });
+      return durations.length ? Math.max(...durations) : 0;
+    }).catch(() => 0);
+    if (detectedMotionSec > durationSec + 0.25) {
+      console.warn(`[html-video] motion ${detectedMotionSec.toFixed(2)}s exceeds scene ${durationSec.toFixed(2)}s; scene timing remains narration-led`);
+    }
     await page.waitForTimeout(100);
     await page.evaluate(() => {
       (window as unknown as { __sgUnfreeze?: () => void }).__sgUnfreeze?.();
@@ -170,6 +195,7 @@ async function recordHtmlFrame({
     outputPath,
   ]);
   await rm(recordDir, { recursive: true, force: true }).catch(() => undefined);
+  return detectedMotionSec;
 }
 
 function concatFileLine(filePath: string) {
@@ -243,10 +269,14 @@ export async function renderHtmlVideoProject(
   const graph: HtmlVideoContentGraph = await writeHtmlVideoContentGraph(project, graphPath);
   const frames: RenderedFrame[] = [];
 
-  for (const node of graph.nodes) {
+  const nodeOrder = topoSortHtmlVideoGraph(graph);
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  for (const nodeId of nodeOrder) {
+    const node = nodesById.get(nodeId);
+    if (!node) continue;
     const scene = project.scenes[node.sceneIndex];
-    const selected = selectTemplateForScene(scene, project);
-    const template = getTemplateById(node.templateId) ?? selected;
+    const template = getTemplateById(node.templateId);
+    if (!template) throw new Error(`Template ${node.templateId} was selected but is not registered.`);
     const html = rewritePublicAssetUrls(
       template.renderHtml({
         project,
@@ -260,7 +290,7 @@ export async function renderHtmlVideoProject(
     const videoPath = path.join(workDir, `${node.id}-${template.id}.mp4`);
     await writeFile(htmlPath, html, "utf8");
     console.log(`[html-video] recording ${node.id} with ${template.id}`);
-    await recordHtmlFrame({
+    const detectedMotionSec = await recordHtmlFrame({
       htmlPath,
       outputPath: videoPath,
       durationSec: node.durationSec,
@@ -268,7 +298,14 @@ export async function renderHtmlVideoProject(
       height: project.meta.height,
       fps: project.meta.fps,
     });
-    frames.push({ id: node.id, htmlPath, videoPath, durationSec: node.durationSec });
+    frames.push({
+      id: node.id,
+      htmlPath,
+      videoPath,
+      durationSec: node.durationSec,
+      templateId: template.id,
+      detectedMotionSec,
+    });
   }
 
   const silentVideoPath = path.join(workDir, "video-no-audio.mp4");

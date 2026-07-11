@@ -2,8 +2,10 @@
 import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { fromRoot } from "../pipeline/utils";
+import { getTemplateById } from "../templates/template-registry";
 
 export type QualityStage = "draft" | "audio" | "video";
 
@@ -163,6 +165,27 @@ export async function evaluateDraft(
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const minimumChars = Math.round(targetSeconds * 6);
   const maximumChars = Math.round(targetSeconds * 11);
+  const templateGraph = buildHtmlVideoContentGraph(project);
+  const templateIds = templateGraph.nodes.map((node) => node.templateId);
+  const uniqueTemplateCount = new Set(templateIds).size;
+  const adjacentTemplateRepeats = templateIds.filter((id, index) => index > 0 && id === templateIds[index - 1]).length;
+  const templateCategoryCount = new Set(templateIds.map((id) => getTemplateById(id)?.category).filter(Boolean)).size;
+  const averageTemplateScore = templateGraph.nodes.length
+    ? templateGraph.nodes.reduce((sum, node) => sum + node.templateScore, 0) / templateGraph.nodes.length
+    : 0;
+
+  if (project.scenes.length >= 5 && uniqueTemplateCount < 3) {
+    issues.push({ severity: "error", code: "template_diversity_low", message: `五屏视频只使用了 ${uniqueTemplateCount} 种模板，至少需要 3 种构图。` });
+  }
+  if (adjacentTemplateRepeats > 0) {
+    issues.push({ severity: "error", code: "template_adjacent_repeat", message: `存在 ${adjacentTemplateRepeats} 处相邻场景重复模板。` });
+  }
+  for (const node of templateGraph.nodes) {
+    const template = getTemplateById(node.templateId);
+    if (!template?.supportedScenes.includes(node.sceneType)) {
+      issues.push({ severity: "error", code: "template_scene_mismatch", message: `模板 ${node.templateId} 不支持 ${node.sceneType} 场景。` });
+    }
+  }
 
   if (project.scenes.length !== 5 || project.narrationSegments?.length !== project.scenes.length) {
     issues.push({ severity: "error", code: "scene_segment_mismatch", message: "必须是 5 个场景和 5 段对应旁白。" });
@@ -269,6 +292,11 @@ export async function evaluateDraft(
         ? Number(Math.min(...alignmentScores).toFixed(3))
         : 0,
       feedbackItemsApplied: feedbackGuidance ? feedbackGuidance.split("\n").length : 0,
+      uniqueTemplateCount,
+      templateCategoryCount,
+      adjacentTemplateRepeats,
+      averageTemplateScore: Number(averageTemplateScore.toFixed(2)),
+      templatePlan: templateIds.join(" -> "),
     },
   };
 }

@@ -2,6 +2,19 @@ import type { VideoProject, VideoScene } from "../pipeline/types";
 
 export type TemplateEngine = "remotion" | "html-video";
 
+export type SceneIntent =
+  | "hook"
+  | "briefing"
+  | "comparison"
+  | "evidence"
+  | "timeline"
+  | "workflow"
+  | "repository"
+  | "summary";
+
+export type TemplateDataDensity = "low" | "medium" | "high";
+export type TemplateMotionFamily = "kinetic" | "editorial" | "diagram" | "measured";
+
 export interface TemplateOutputSpec {
   formats: Array<"mp4" | "webm">;
   defaultFormat: "mp4" | "webm";
@@ -23,13 +36,20 @@ export interface TemplateInputSpec {
 
 export interface TemplateDefinition {
   id: string;
+  version: string;
   name: string;
   description: string;
   engine: TemplateEngine;
   category: string;
+  subcategory?: string;
   tags: string[];
   bestFor: string[];
+  notFor: string[];
+  supportedIntents: SceneIntent[];
   supportedScenes: VideoScene["type"][];
+  dataDensity: TemplateDataDensity[];
+  motionFamily: TemplateMotionFamily;
+  visualFamily: string;
   output: TemplateOutputSpec;
   inputs: TemplateInputSpec;
   license: {
@@ -38,6 +58,22 @@ export interface TemplateDefinition {
     redistributionAllowed: boolean;
     commercialUse: boolean;
   };
+  provenance: {
+    kind: "original" | "adapted" | "third-party";
+    source?: string;
+    note?: string;
+  };
+  performance: {
+    tier: "light" | "standard" | "heavy";
+    expectedRenderRatio: number;
+  };
+}
+
+export interface TemplateSelection {
+  template: HtmlTemplateDefinition;
+  score: number;
+  intent: SceneIntent;
+  reasons: string[];
 }
 
 export interface TemplateRenderContext {

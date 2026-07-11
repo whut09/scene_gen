@@ -69,6 +69,10 @@ const outputDir =
     ? path.resolve(args["out-dir"])
     : path.resolve(process.env.VIDEO_OUTPUT_DIR ?? "F:\\发布视频");
 const screenshotLimit = Number(args.screenshots ?? 0);
+const engine = typeof args.engine === "string" ? args.engine : process.env.VIDEO_RENDER_ENGINE ?? "html-video";
+if (!new Set(["remotion", "html-video"]).has(engine)) {
+  throw new Error(`Unsupported render engine: ${engine}`);
+}
 const explicitNotes = typeof args.notes === "string" ? args.notes : "";
 const feedback = await readFeedback(30);
 const relevantFeedback = feedback.filter((entry) => !entry.url || entry.url === url);
@@ -83,7 +87,7 @@ let selectedManifest: StoryManifestItem | undefined;
 let selectedProject: VideoProject | undefined;
 
 console.log(`\n[harness] URL: ${url}`);
-console.log(`[harness] target: ${targetSeconds}s, max iterations: ${maxIterations}`);
+console.log(`[harness] target: ${targetSeconds}s, max iterations: ${maxIterations}, engine: ${engine}`);
 console.log(`[harness] feedback applied: ${relevantFeedback.length}`);
 
 for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
@@ -174,6 +178,8 @@ await runScript("src/pipeline/render-stories.ts", [
   "--limit",
   "1",
   "--overwrite",
+  "--engine",
+  engine,
 ]);
 
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(selectedProject.meta.title, "video")}`;
@@ -187,6 +193,7 @@ const report = {
   projectPath: selectedManifest.projectPath,
   targetSeconds,
   maxIterations,
+  engine,
   feedbackApplied: relevantFeedback,
   iterations,
   video,
@@ -200,6 +207,7 @@ const markdown = [
   `- URL: ${url}`,
   `- Output: ${selectedManifest.outputPath}`,
   `- Target: ${targetSeconds}s`,
+  `- Engine: ${engine}`,
   `- Passed: ${passed}`,
   `- Feedback applied: ${relevantFeedback.length}`,
   "",

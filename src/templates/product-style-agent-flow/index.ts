@@ -3,13 +3,20 @@ import { commonHtml, escapeHtml, sceneHeadline } from "../html-utils";
 
 export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
   id: "product-style-agent-flow",
+  version: "1.1.0",
   name: "Product Style Agent Flow",
   description: "Clean product-demo style flow for agent, repo and workflow scenes.",
   engine: "html-video",
   category: "workflow",
+  subcategory: "step-workflow",
   tags: ["agent", "flow", "github", "product"],
   bestFor: ["agent workflow", "GitHub repo pulse", "product capability chain"],
+  notFor: ["long-form documentary", "photo montage"],
+  supportedIntents: ["workflow", "repository", "timeline"],
   supportedScenes: ["flow", "github_pulse", "timeline"],
+  dataDensity: ["medium", "high"],
+  motionFamily: "diagram",
+  visualFamily: "scene-gen-editorial-v2",
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",
@@ -25,6 +32,8 @@ export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
     redistributionAllowed: true,
     commercialUse: true,
   },
+  provenance: { kind: "original", note: "Scene Gen original template." },
+  performance: { tier: "light", expectedRenderRatio: 0.35 },
   renderHtml: ({ scene, width, height }) => {
     const items =
       scene.type === "flow"
@@ -37,10 +46,10 @@ export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
     const body = `<main class="hv-main">
       <div class="hv-kicker">Workflow</div>
       <h1>${escapeHtml(sceneHeadline(scene))}</h1>
-      <section style="position:absolute;left:0;right:0;top:280px;display:grid;gap:22px;">
+      <section style="position:absolute;left:0;right:0;top:260px;bottom:36px;display:grid;grid-template-rows:repeat(${Math.max(1, items.length)},1fr);align-items:center;gap:18px;">
         ${items
           .map(
-            (item, index) => `<article class="hv-card" style="display:grid;grid-template-columns:84px 1fr;gap:24px;align-items:center;padding:30px;animation:hv-rise .55s ${index * 0.14}s both;">
+            (item, index) => `<article class="hv-card" style="display:grid;grid-template-columns:84px 1fr;gap:24px;align-items:center;padding:30px;min-height:190px;animation:hv-rise .55s ${index * 0.14}s both;">
               <span style="width:64px;height:64px;border:3px solid rgba(255,255,255,.58);display:grid;place-items:center;font-size:28px;font-weight:900;color:#fff36a;">${String(index + 1).padStart(2, "0")}</span>
               <div><h2 style="font-size:42px;line-height:1.16;margin-bottom:10px;">${escapeHtml(item.title)}</h2>
               <p style="font-size:28px;">${escapeHtml(item.detail)}</p></div>

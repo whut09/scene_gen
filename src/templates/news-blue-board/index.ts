@@ -3,13 +3,20 @@ import { commonHtml, escapeHtml, sceneHeadline } from "../html-utils";
 
 export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
   id: "news-blue-board",
+  version: "1.1.0",
   name: "News Blue Board",
   description: "Vertical blue teaching-board layout for AI news briefings.",
   engine: "html-video",
   category: "news-explainer",
+  subcategory: "fact-board",
   tags: ["news", "briefing", "blue-board", "vertical"],
   bestFor: ["AI news summary", "briefing points", "source-light explainer"],
+  notFor: ["long-form documentary", "photo montage"],
+  supportedIntents: ["briefing", "evidence"],
   supportedScenes: ["briefing_points", "news_stack", "web_screenshot_zoom"],
+  dataDensity: ["medium", "high"],
+  motionFamily: "editorial",
+  visualFamily: "scene-gen-editorial-v2",
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",
@@ -25,10 +32,12 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
     redistributionAllowed: true,
     commercialUse: true,
   },
+  provenance: { kind: "original", note: "Scene Gen original template." },
+  performance: { tier: "light", expectedRenderRatio: 0.35 },
   renderHtml: ({ scene, width, height }) => {
     let body = "";
     if (scene.type === "briefing_points") {
-      body = `<main class="hv-main">
+      body = `<main class="hv-main" style="display:flex;flex-direction:column;">
         <div class="hv-kicker">${escapeHtml(scene.source)}</div>
         <h1>${escapeHtml(scene.headline)}</h1>
         <section class="hv-card" style="margin-top:44px;padding:34px;">
@@ -45,10 +54,10 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
             )
             .join("")}
         </section>
-        <section style="display:grid;gap:18px;margin-top:24px;">
+        <section style="display:grid;grid-template-rows:repeat(${Math.max(1, scene.points.length)},1fr);gap:18px;margin-top:24px;flex:1;min-height:640px;">
           ${scene.points
             .map(
-              (point, index) => `<div class="hv-card" style="display:grid;grid-template-columns:72px 1fr;align-items:center;gap:20px;padding:24px;animation:hv-rise .55s ${index * 0.14}s both;">
+              (point, index) => `<div class="hv-card" style="display:grid;grid-template-columns:72px 1fr;align-items:center;gap:20px;padding:24px;min-height:138px;animation:hv-rise .55s ${index * 0.14}s both;">
                 <span style="width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#fff36a;color:#0847a6;font-size:28px;font-weight:900;">${index + 1}</span>
                 <p style="font-size:30px;line-height:1.42;">${escapeHtml(point)}</p>
               </div>`,

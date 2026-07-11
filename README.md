@@ -1,6 +1,6 @@
 # Scene Gen
 
-输入一篇新闻 URL，自动抓取正文、生成时长随新闻信息量自然变化的中文旁白与五段竖屏分镜，使用 F5-TTS 配音，经 Remotion 渲染为 1080x1920 MP4，并由质量 harness 检查脚本、音频、音画同步和最终视频。
+输入一篇新闻 URL，自动抓取正文、生成时长随新闻信息量自然变化的中文旁白与五段竖屏分镜，使用 F5-TTS 配音，默认经 HTML Video 模板精修并渲染为 1080x1920 MP4，并由质量 harness 检查脚本、音频、音画同步和最终视频。
 
 ## 一键生成
 
@@ -18,18 +18,20 @@ npm.cmd run video -- --url "https://example.com/news"
 - 生成 5 个逐段对应的新闻场景和旁白；第一段旁白的第一句话逐字播报完整新闻标题。
 - 使用 F5-TTS 的本地参考音色，每屏单独合成。
 - 仅在自然范围内微调语速，超过范围时允许视频变长或变短，并按处理后的真实音频边界切屏。
+- 默认使用 HTML Video 场景级模板路由；五屏至少三种构图，相邻场景不重复模板。
 - 输出 1080x1920 MP4。
 - 默认输出到 `F:\发布视频`，质量报告输出到 `dist/quality/<run-id>/`。
 
 指定参数：
 
 ```powershell
-npm.cmd run video -- --url "新闻地址" --seconds 100 --iterations 2 --screenshots 0 --out-dir "F:\发布视频" --notes "本次额外事实边界"
+npm.cmd run video -- --url "新闻地址" --seconds 100 --iterations 2 --screenshots 0 --engine html-video --out-dir "F:\发布视频" --notes "本次额外事实边界"
 ```
 
 - `--seconds`：建议时长锚点，默认 100；不是硬限制，质量门默认接受约 0.7 到 1.65 倍的自然时长。
 - `--iterations`：脚本生成和质量修订的最大轮数，默认 2，范围 1 到 4。
 - `--screenshots`：最多抓取的网页截图数；默认 0，避免截图与统一背景不匹配。
+- `--engine`：`html-video` 为质量优先路径，`remotion` 为速度优先路径；一键命令默认 `html-video`。
 - `--out-dir`：MP4 输出目录。
 - `--notes`：本次新闻的额外事实校正或表达约束。
 
@@ -176,6 +178,12 @@ npm.cmd run render:stories
 # Remotion 本地预览
 npm.cmd run preview
 
+# 质量优先一键生成（默认）
+npm.cmd run video:html -- --url "https://example.com/news"
+
+# 速度优先一键生成
+npm.cmd run video:remotion -- --url "https://example.com/news"
+
 # 生成 html-video compatible content graph 并渲染
 npm.cmd run render:html-video
 
@@ -183,7 +191,7 @@ npm.cmd run render:html-video
 npm.cmd run lint:types
 ```
 
-项目还保留模板注册表与 html-video compatible content graph，可让同一份 `VideoProject` 选择 Remotion 批量渲染或 HTML Video 精修模板。
+项目保留 Remotion 和 HTML Video 双渲染器。同一份 `VideoProject` 会导出 ContentGraph v2，由可解释模板选择器按场景意图、信息密度、画幅、时长和历史使用情况选择构图。详细设计见 `docs/html-video-integration.md`。
 
 ## 安全约定
 

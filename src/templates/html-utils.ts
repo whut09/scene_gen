@@ -20,13 +20,22 @@ export function commonHtml({
   width,
   height,
   theme = "blue",
+  extraCss = "",
+  chrome = false,
 }: {
   title: string;
   body: string;
   width: number;
   height: number;
   theme?: "blue" | "dark" | "paper";
+  extraCss?: string;
+  chrome?: boolean;
 }) {
+  const themeCss =
+    theme === "paper"
+      ? "body{color:#123b56}.hv-kicker{color:#ff5f5f}h1{color:#062f50;text-shadow:none}p{color:#31546c}"
+      : "";
+
   const background =
     theme === "paper"
       ? "linear-gradient(145deg,#fbf7ed 0%,#eef7ff 45%,#fffdf8 100%)"
@@ -108,11 +117,13 @@ export function commonHtml({
       from { transform: scaleX(0); }
       to { transform: scaleX(1); }
     }
+    ${themeCss}
+    ${extraCss}
   </style>
 </head>
 <body>
   <div class="hv-root">
-    <header class="hv-top"><span class="hv-brand">SG</span><span>${escapeHtml(title)}</span><span>HTML Video</span></header>
+    ${chrome ? `<header class="hv-top"><span class="hv-brand">SG</span><span>${escapeHtml(title)}</span><span>HTML Video</span></header>` : ""}
     ${body}
   </div>
 </body>
