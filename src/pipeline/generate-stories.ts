@@ -1,4 +1,5 @@
 import path from "node:path";
+import { writeHtmlVideoContentGraph } from "../html-video/render-html-video";
 import type { SourceConfig, VideoProject } from "./types";
 import { collectHotItems, collectWebpage } from "./sources";
 import { createStoryProject, scrubAttribution } from "./story";
@@ -13,6 +14,7 @@ interface StoryManifestItem {
   source: string;
   score: number;
   projectPath: string;
+  htmlVideoGraphPath?: string;
   outputPath: string;
 }
 
@@ -27,6 +29,10 @@ const height = Number(args.height ?? process.env.VIDEO_HEIGHT ?? 1920);
 const fps = Number(args.fps ?? process.env.VIDEO_FPS ?? 30);
 const targetSeconds = args.seconds ? Number(args.seconds) : undefined;
 const urlOnly = Boolean(args["url-only"]);
+const editorialNotes = typeof args.notes === "string" ? args.notes : undefined;
+const skipTts = Boolean(args["skip-tts"]);
+const outputDir =
+  typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : fromRoot("dist", "stories");
 
 const config = await readJson<SourceConfig>(fromRoot("config", "sources.json"));
 const items = (
@@ -71,7 +77,11 @@ function fitProjectDuration(project: VideoProject, seconds: number) {
 
 function scrubProject(value: unknown, key = ""): unknown {
   if (typeof value === "string") {
-    return ["url", "src"].includes(key) ? value : scrubAttribution(value);
+    if (["url", "src"].includes(key)) return value;
+    if (key === "headline") {
+      return value.split(/\r?\n/).map((line) => scrubAttribution(line)).join("\n");
+    }
+    return scrubAttribution(value);
   }
   if (Array.isArray(value)) return value.map((child) => scrubProject(child, key));
   if (value && typeof value === "object") {
@@ -82,7 +92,6 @@ function scrubProject(value: unknown, key = ""): unknown {
 
 for (const [index, item] of items.entries()) {
   const storyNo = index + 1;
-  const slug = `${String(storyNo).padStart(2, "0")}-${slugify(item.title, item.id)}`;
   console.log(`\n[story ${storyNo}/${items.length}] ${item.title}`);
 
   const screenshots = await captureWebScreenshots([item], screenshotLimit);
@@ -94,19 +103,29 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, targetSeconds ?? project.meta.durationSeconds);
-  if (!urlOnly) {
-    project = await improveWithOpenAI(project, { targetSeconds, forbidAttribution: true });
-  }
+  project = await improveWithOpenAI(project, {
+    targetSeconds,
+    forbidAttribution: true,
+    editorialNotes,
+  });
   project = scrubProject(project) as VideoProject;
-  project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
-  if (targetSeconds && project.audio?.durationSeconds) {
-    const alignedSeconds = Math.min(targetSeconds, Math.max(20, Math.ceil(project.audio.durationSeconds + 4)));
-    project = fitProjectDuration(project, alignedSeconds);
+  if (!skipTts) {
+    project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
+    if (
+      project.audio?.durationSeconds &&
+      !project.narrationSegments?.every((segment) => typeof segment.durationSeconds === "number")
+    ) {
+      const audioAlignedSeconds = Math.max(20, Math.ceil(project.audio.durationSeconds + 2));
+      project = fitProjectDuration(project, audioAlignedSeconds);
+    }
   }
 
+  const slug = `${String(storyNo).padStart(2, "0")}-${slugify(project.meta.title, item.id)}`;
   const projectPath = fromRoot("public", "generated", "stories", `${slug}.json`);
-  const outputPath = fromRoot("dist", "stories", `${slug}.mp4`);
+  const htmlVideoGraphPath = fromRoot("public", "generated", "html-video", slug, "content-graph.json");
+  const outputPath = path.join(outputDir, `${slug}.mp4`);
   await writeJson(projectPath, project);
+  await writeHtmlVideoContentGraph(project, htmlVideoGraphPath);
 
   manifest.push({
     index: storyNo,
@@ -114,6 +133,7 @@ for (const [index, item] of items.entries()) {
     source: project.sources[0]?.source ?? "核心事实",
     score: item.score,
     projectPath,
+    htmlVideoGraphPath,
     outputPath,
   });
 }

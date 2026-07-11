@@ -1,14 +1,22 @@
 import { spawn } from "node:child_process";
-import { stat, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { VideoProject } from "./types";
 import { ensureDir, fromRoot } from "./utils";
 
-function run(command: string, args: string[], options?: { input?: string }) {
+const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
+const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
+const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|浼|棰|勭/g;
+
+type TtsProvider = "openai" | "f5" | "local";
+
+function run(command: string, args: string[], options?: { input?: string; env?: NodeJS.ProcessEnv }) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: options?.input ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      env: { ...process.env, ...options?.env },
     });
     let stderr = "";
     child.stderr?.on("data", (chunk) => {
@@ -92,6 +100,278 @@ $synth.Dispose()
   await run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath]);
 }
 
+function resolveF5Python() {
+  const venv = process.env.F5_TTS_VENV ?? "F:\\codex\\.venvs\\scene_gen_f5_py39";
+  const python = path.join(venv, "Scripts", "python.exe");
+  return process.env.F5_TTS_PYTHON ?? python;
+}
+
+function resolveF5RefAudio() {
+  return (
+    process.env.F5_TTS_REF_AUDIO ??
+    path.join(
+      process.env.F5_TTS_VENV ?? "F:\\codex\\.venvs\\scene_gen_f5_py39",
+      "Lib",
+      "site-packages",
+      "f5_tts",
+      "infer",
+      "examples",
+      "basic",
+      "basic_ref_zh.wav",
+    )
+  );
+}
+
+function normalizeFilePath(filePath: string) {
+  return path.normalize(filePath).toLowerCase();
+}
+
+function isDefaultF5RefAudio(refAudio: string) {
+  return normalizeFilePath(refAudio).endsWith(path.normalize("infer/examples/basic/basic_ref_zh.wav").toLowerCase());
+}
+
+async function resolveF5RefText(refAudio: string) {
+  if (Object.hasOwn(process.env, "F5_TTS_REF_TEXT")) {
+    return process.env.F5_TTS_REF_TEXT ?? "";
+  }
+
+  const textPath = refAudio.replace(/\.[^.]+$/, ".txt");
+  if (existsSync(textPath)) return (await readFile(textPath, "utf8")).trim();
+  return isDefaultF5RefAudio(refAudio) ? DEFAULT_F5_REF_TEXT : "";
+}
+
+function assertCleanTtsText(text: string, refAudio: string, refText: string) {
+  if (BAD_REF_TEXT.test(text)) {
+    throw new Error("TTS input contains the default F5 reference sentence; refusing to synthesize.");
+  }
+  const mojibakeHits = text.match(MOJIBAKE_MARKERS)?.length ?? 0;
+  if (mojibakeHits >= 8) {
+    throw new Error("TTS input looks like mojibake/corrupted Chinese; refusing to synthesize.");
+  }
+  if (!isDefaultF5RefAudio(refAudio) && BAD_REF_TEXT.test(refText)) {
+    throw new Error("Custom F5 reference audio is paired with the default reference text; refusing to synthesize.");
+  }
+}
+
+async function f5Tts(text: string, outputPath: string) {
+  const python = resolveF5Python();
+  const refAudio = resolveF5RefAudio();
+  const refText = await resolveF5RefText(refAudio);
+  const model = process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base";
+  const speed = process.env.F5_TTS_SPEED ?? "1.12";
+  const nfeStep = process.env.F5_TTS_NFE_STEP ?? "16";
+  const device = process.env.F5_TTS_DEVICE ?? "cuda";
+  const outputDir = path.dirname(outputPath);
+  const outputFile = path.basename(outputPath);
+  const textPath = path.join(outputDir, `${path.basename(outputPath, path.extname(outputPath))}.txt`);
+
+  assertCleanTtsText(text, refAudio, refText);
+  await writeFile(textPath, text, "utf8");
+  await writeFile(`${textPath}.ref.txt`, refText, "utf8");
+  await run(python, [
+    "-m",
+    "f5_tts.infer.infer_cli",
+    "--model",
+    model,
+    "--ref_audio",
+    refAudio,
+    "--ref_text",
+    refText,
+    "--gen_file",
+    textPath,
+    "--output_dir",
+    outputDir,
+    "--output_file",
+    outputFile,
+    "--speed",
+    speed,
+    "--nfe_step",
+    nfeStep,
+    "--device",
+    device,
+  ], {
+    env: {
+      HF_HUB_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
+      TRANSFORMERS_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
+    },
+  });
+}
+
+function resolveTtsProvider(): TtsProvider {
+  const provider = process.env.TTS_PROVIDER ?? (process.env.OPENAI_API_KEY ? "openai" : "local");
+  return provider === "openai" || provider === "f5" ? provider : "local";
+}
+
+function providerExtension(provider: TtsProvider) {
+  return provider === "openai" ? "mp3" : "wav";
+}
+
+async function synthesizeNarration(provider: TtsProvider, text: string, outputPath: string) {
+  if (provider === "openai") {
+    await openAiTts(text, outputPath);
+  } else if (provider === "f5") {
+    await f5Tts(text, outputPath);
+  } else {
+    await windowsTts(text, outputPath);
+  }
+}
+
+async function concatNarrationSegments(
+  inputs: string[],
+  durations: number[],
+  gaps: number[],
+  outputPath: string,
+) {
+  const args = ["-y"];
+  for (const input of inputs) args.push("-i", input);
+  const filters = inputs.map((_, index) => {
+    const total = durations[index] + gaps[index];
+    return `[${index}:a]aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=${gaps[index].toFixed(3)},atrim=duration=${total.toFixed(3)}[a${index}]`;
+  });
+  filters.push(`${inputs.map((_, index) => `[a${index}]`).join("")}concat=n=${inputs.length}:v=0:a=1[out]`);
+  args.push(
+    "-filter_complex",
+    filters.join(";"),
+    "-map",
+    "[out]",
+    "-ar",
+    "24000",
+    "-ac",
+    "1",
+    "-c:a",
+    "pcm_s16le",
+    outputPath,
+  );
+  await run("ffmpeg", args);
+}
+
+async function fitNarrationSegmentsToTarget(
+  segmentPaths: string[],
+  durations: number[],
+  targetSeconds: number,
+  totalGapSeconds: number,
+) {
+  if (process.env.TTS_FIT_TARGET === "0" || !Number.isFinite(targetSeconds) || targetSeconds <= totalGapSeconds + 5) {
+    return { paths: segmentPaths, durations };
+  }
+  const speechDuration = durations.reduce((sum, duration) => sum + duration, 0);
+  const targetSpeechDuration = targetSeconds - totalGapSeconds;
+  const tempo = speechDuration / targetSpeechDuration;
+  if (Math.abs(tempo - 1) < 0.03) return { paths: segmentPaths, durations };
+  if (tempo < 0.5 || tempo > 2.5) {
+    throw new Error(`TTS tempo adjustment ${tempo.toFixed(2)}x is outside the supported quality range.`);
+  }
+
+  const fittedPaths: string[] = [];
+  const fittedDurations: number[] = [];
+  for (const [index, inputPath] of segmentPaths.entries()) {
+    const fittedPath = inputPath.replace(/\.[^.]+$/, `-fitted-${targetSeconds.toFixed(0)}s.wav`);
+    await run("ffmpeg", [
+      "-y", "-i", inputPath,
+      "-filter:a", `atempo=${tempo.toFixed(6)}`,
+      "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", fittedPath,
+    ]);
+    const fittedDuration = await probeDuration(fittedPath);
+    if (fittedDuration <= 0) throw new Error(`Fitted narration segment ${index + 1} is invalid.`);
+    fittedPaths.push(fittedPath);
+    fittedDurations.push(fittedDuration);
+  }
+  return { paths: fittedPaths, durations: fittedDurations };
+}
+async function canReuseNarrationSegment(provider: TtsProvider, text: string, segmentPath: string) {
+  if (process.env.TTS_FORCE_REBUILD === "1" || provider !== "f5" || !existsSync(segmentPath)) return false;
+  const textPath = path.join(
+    path.dirname(segmentPath),
+    `${path.basename(segmentPath, path.extname(segmentPath))}.txt`,
+  );
+  const refTextPath = `${textPath}.ref.txt`;
+  if (!existsSync(textPath) || !existsSync(refTextPath)) return false;
+  const currentRefText = await resolveF5RefText(resolveF5RefAudio());
+  const [existingText, existingRefText] = await Promise.all([
+    readFile(textPath, "utf8"),
+    readFile(refTextPath, "utf8"),
+  ]);
+  return existingText.trim() === text.trim() && existingRefText.trim() === currentRefText.trim();
+}
+async function attachSegmentedNarration(
+  project: VideoProject,
+  basename: string,
+  provider: TtsProvider,
+  generatedDir: string,
+) {
+  const segments = [...(project.narrationSegments ?? [])].sort((a, b) => a.sceneIndex - b.sceneIndex);
+  if (segments.length !== project.scenes.length) {
+    throw new Error(`Narration segment count ${segments.length} does not match scene count ${project.scenes.length}.`);
+  }
+
+  const extension = providerExtension(provider);
+  const segmentPaths: string[] = [];
+  const durations: number[] = [];
+  for (const [index, segment] of segments.entries()) {
+    if (segment.sceneIndex !== index || !segment.text.trim()) {
+      throw new Error(`Invalid narration segment at scene ${index}.`);
+    }
+    const segmentPath = path.join(
+      generatedDir,
+      `${basename}-scene-${String(index + 1).padStart(2, "0")}.${extension}`,
+    );
+    if (!(await canReuseNarrationSegment(provider, segment.text, segmentPath))) {
+      await synthesizeNarration(provider, segment.text, segmentPath);
+    }
+    const duration = await probeDuration(segmentPath);
+    if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
+    segmentPaths.push(segmentPath);
+    durations.push(duration);
+  }
+
+  const gaps = durations.map((_, index) => (index === durations.length - 1 ? 0.8 : 0.28));
+  const totalGapSeconds = gaps.reduce((sum, gap) => sum + gap, 0);
+  const fitted = await fitNarrationSegmentsToTarget(segmentPaths, durations, project.meta.durationSeconds, totalGapSeconds);
+  const playbackPaths = fitted.paths;
+  const playbackDurations = fitted.durations;
+  const outputPath = path.join(generatedDir, `${basename}.wav`);
+  await concatNarrationSegments(playbackPaths, playbackDurations, gaps, outputPath);
+
+  let audioStartSeconds = 0;
+  const alignedSegments = segments.map((segment, index) => {
+    const durationSeconds = playbackDurations[index] + gaps[index];
+    const aligned = {
+      ...segment,
+      audioStartSeconds,
+      durationSeconds,
+    };
+    audioStartSeconds += durationSeconds;
+    return aligned;
+  });
+  const combinedDuration = await probeDuration(outputPath);
+  if (combinedDuration <= 0) throw new Error("Combined narration audio is empty or invalid.");
+  const durationDelta = combinedDuration - audioStartSeconds;
+  if (alignedSegments.length > 0 && Math.abs(durationDelta) > 0.001) {
+    const last = alignedSegments[alignedSegments.length - 1];
+    last.durationSeconds = Math.max(0.1, (last.durationSeconds ?? 0) + durationDelta);
+  }
+  const scenes = project.scenes.map((scene, index) => ({
+    ...scene,
+    duration: alignedSegments[index].durationSeconds ?? scene.duration,
+  }));
+
+  return {
+    ...project,
+    meta: {
+      ...project.meta,
+      durationSeconds: combinedDuration,
+    },
+    narration: alignedSegments.map((segment) => segment.text).join("\n"),
+    narrationSegments: alignedSegments,
+    scenes,
+    audio: {
+      src: `/generated/${basename}.wav`,
+      durationSeconds: combinedDuration,
+      provider,
+    },
+  } satisfies VideoProject;
+}
+
 async function silentAudio(outputPath: string, duration: number) {
   await run("ffmpeg", [
     "-y",
@@ -112,30 +392,31 @@ async function silentAudio(outputPath: string, duration: number) {
 export async function attachNarrationAudio(project: VideoProject, basename = "narration") {
   const generatedDir = fromRoot("public", "generated");
   await ensureDir(generatedDir);
-  const provider = process.env.TTS_PROVIDER ?? (process.env.OPENAI_API_KEY ? "openai" : "local");
-  const ext = provider === "local" ? "wav" : "mp3";
-  const outputPath = path.join(generatedDir, `${basename}.${ext}`);
-  const publicSrc = `/generated/${basename}.${ext}`;
+  const provider = resolveTtsProvider();
 
   try {
-    if (provider === "openai") {
-      await openAiTts(project.narration, outputPath);
-    } else {
-      await windowsTts(project.narration, outputPath);
+    if (project.narrationSegments?.length) {
+      return await attachSegmentedNarration(project, basename, provider, generatedDir);
     }
+
+    const extension = providerExtension(provider);
+    const outputPath = path.join(generatedDir, `${basename}.${extension}`);
+    await synthesizeNarration(provider, project.narration, outputPath);
     const fileSize = await stat(outputPath).then((file) => file.size).catch(() => 0);
     const duration = await probeDuration(outputPath);
     if (fileSize === 0 || duration <= 0) throw new Error("TTS output is empty or invalid");
     return {
       ...project,
       audio: {
-        src: publicSrc,
-        durationSeconds: duration || project.meta.durationSeconds,
-        provider: provider === "openai" ? "openai" : "local",
+        src: `/generated/${basename}.${extension}`,
+        durationSeconds: duration,
+        provider,
       },
     } satisfies VideoProject;
   } catch (error) {
     console.warn(`[tts] primary provider failed: ${(error as Error).message}`);
+    if (provider === "f5" || process.env.TTS_FAIL_FAST === "1") throw error;
+
     if (provider !== "local") {
       const fallbackLocalPath = path.join(generatedDir, `${basename}.wav`);
       try {
@@ -147,7 +428,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
             ...project,
             audio: {
               src: `/generated/${basename}.wav`,
-              durationSeconds: duration || project.meta.durationSeconds,
+              durationSeconds: duration,
               provider: "local",
             },
           } satisfies VideoProject;
@@ -156,6 +437,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         console.warn(`[tts] local fallback failed: ${(fallbackError as Error).message}`);
       }
     }
+
     console.warn("[tts] generating silent track");
     const fallbackPath = path.join(generatedDir, `${basename}.mp3`);
     await silentAudio(fallbackPath, project.meta.durationSeconds);

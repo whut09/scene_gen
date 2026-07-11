@@ -37,31 +37,47 @@ function SceneFrame({
 }
 
 function TitleScene({ scene, localFrame }: { scene: Extract<VideoScene, { type: "title" }>; localFrame: number }) {
+  const intro = ease(localFrame / 20);
   const pulse = Math.sin(localFrame / 13) * 0.5 + 0.5;
+  const headlineParts = scene.headline.split(/(GPT-5\.6|Claude|1\/16|十六分之一)/gi);
   return (
-    <SceneFrame title={scene.kicker} localFrame={localFrame}>
-      <section className="hero">
-        <div className="radar" style={{ transform: `rotate(${localFrame * 0.8}deg)` }}>
-          <span />
-          <span />
-          <span />
-        </div>
-        <div className="kicker">{scene.kicker}</div>
-        <h1>{scene.headline}</h1>
-        <p>{scene.subhead}</p>
-        <div className="sourceRow">
+    <AbsoluteFill className="scene coverScene">
+      <div className="gridGlow" />
+      <div className="scanline" style={{ transform: `translateY(${(localFrame * 3) % 900}px)` }} />
+      <header className="coverTop">
+        <span>AI MODEL RELEASE</span>
+        <span>OPENAI / GPT-5.6</span>
+      </header>
+      <section
+        className="coverHero"
+        style={{ opacity: intro, transform: `translateY(${(1 - intro) * 32}px)` }}
+      >
+        <div className="coverRail" />
+        <div className="coverGhost">5.6</div>
+        <div className="coverKicker">{scene.kicker}</div>
+        <h1 className="coverHeadline">
+          {headlineParts.map((part, index) =>
+            /^(GPT-5\.6|Claude|1\/16|十六分之一)$/i.test(part) ? <mark key={index}>{part}</mark> : part,
+          )}
+        </h1>
+        <p className="coverSubhead">{scene.subhead}</p>
+        <div className="coverSignals">
           {scene.sources.map((source, index) => (
-            <div className="sourceChip" key={source} style={{ opacity: 0.62 + pulse * 0.38 }}>
+            <div className="coverSignal" key={source} style={{ opacity: 0.72 + pulse * 0.28 }}>
               <b>{String(index + 1).padStart(2, "0")}</b>
-              {source}
+              <span>{source}</span>
             </div>
           ))}
         </div>
       </section>
-    </SceneFrame>
+      <div className="radar coverRadar" style={{ transform: `rotate(${localFrame * 0.45}deg)` }}>
+        <span />
+        <span />
+        <span />
+      </div>
+    </AbsoluteFill>
   );
 }
-
 function NewsStack({
   scene,
   localFrame,

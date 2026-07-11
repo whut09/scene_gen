@@ -1,0 +1,307 @@
+﻿import { spawn } from "node:child_process";
+import { mkdir, stat } from "node:fs/promises";
+import path from "node:path";
+import type { VideoProject, VideoScene } from "../pipeline/types";
+
+export type QualityStage = "draft" | "audio" | "video";
+
+export interface QualityIssue {
+  severity: "warning" | "error";
+  code: string;
+  message: string;
+}
+
+export interface QualityEvaluation {
+  stage: QualityStage;
+  passed: boolean;
+  issues: QualityIssue[];
+  revisionNotes: string[];
+  scores?: Record<string, number>;
+  metrics: Record<string, number | string | boolean>;
+}
+
+function normalizeText(text: string) {
+  return text.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "").toLowerCase();
+}
+
+function sceneShapeIssues(scene: VideoScene, index: number) {
+  const issues: QualityIssue[] = [];
+  if (scene.type === "briefing_points" && (scene.points.length < 3 || scene.metrics.length < 2)) {
+    issues.push({ severity: "error", code: "briefing_thin", message: `第 ${index + 1} 屏事实卡信息不足。` });
+  }
+  if (scene.type === "signal_chart" && scene.bars.length < 3) {
+    issues.push({ severity: "error", code: "chart_thin", message: `第 ${index + 1} 屏图表少于 3 个信号。` });
+  }
+  if (scene.type === "flow" && scene.steps.length < 3) {
+    issues.push({ severity: "error", code: "flow_thin", message: `第 ${index + 1} 屏流程少于 3 步。` });
+  }
+  if (scene.type === "outro" && scene.bullets.length < 2) {
+    issues.push({ severity: "error", code: "outro_thin", message: `第 ${index + 1} 屏结论少于 2 条。` });
+  }
+  return issues;
+}
+
+async function callQualityJudge(project: VideoProject, feedbackGuidance: string) {
+  if (process.env.QUALITY_LLM_DISABLED === "1") return null;
+  const apiKey =
+    process.env.QUALITY_LLM_API_KEY ?? process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  const baseUrl =
+    process.env.QUALITY_LLM_BASE_URL ?? process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL;
+  const model = process.env.QUALITY_LLM_MODEL ?? process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
+  if (!baseUrl || !model) return null;
+
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "你是程序化新闻视频质量评审 agent。只返回 JSON。",
+            "sourceArticle 是唯一事实依据，不得引入外部信息。",
+            "分别对 sourceFidelity、titleHook、informationDensity、visualStructure、ttsReadability 打 0 到 100 分。",
+            "返回字段：scores、issues、revisionNotes。issues 和 revisionNotes 都是字符串数组。",
+            "标题应优先保留新闻原题核心卖点，免责声明或边界信息放副标题和正文。",
+            "旁白必须与 5 个场景逐段对应，不得出现发布建议、作者站点或无关动画说明。",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            sourceArticle: project.sources.map((source) => ({
+              title: source.title,
+              summary: source.summary,
+              content: source.content,
+            })),
+            project: {
+              title: project.meta.title,
+              narration: project.narration,
+              scenes: project.scenes,
+              narrationSegments: project.narrationSegments,
+            },
+            recentUserFeedback: feedbackGuidance,
+          }),
+        },
+      ],
+    }),
+  });
+  if (!response.ok) throw new Error(`Quality judge failed: ${response.status} ${await response.text()}`);
+  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) return null;
+  return JSON.parse(content) as {
+    scores?: Record<string, number>;
+    issues?: string[];
+    revisionNotes?: string[];
+  };
+}
+
+export async function evaluateDraft(
+  project: VideoProject,
+  targetSeconds: number,
+  feedbackGuidance: string,
+): Promise<QualityEvaluation> {
+  const issues: QualityIssue[] = [];
+  const revisionNotes: string[] = [];
+  const source = project.sources[0];
+  const narrationChars = project.narration.replace(/\s+/g, "").length;
+  const minimumChars = Math.round(targetSeconds * 10);
+  const maximumChars = Math.round(targetSeconds * 16);
+
+  if (project.scenes.length !== 5 || project.narrationSegments?.length !== project.scenes.length) {
+    issues.push({ severity: "error", code: "scene_segment_mismatch", message: "必须是 5 个场景和 5 段对应旁白。" });
+  }
+  if (narrationChars < minimumChars) {
+    issues.push({ severity: "error", code: "narration_short", message: `旁白仅 ${narrationChars} 字，目标至少 ${minimumChars} 字。` });
+    revisionNotes.push(`将总旁白扩充到 ${minimumChars} 到 ${maximumChars} 字。`);
+  }
+  if (narrationChars > maximumChars) {
+    issues.push({ severity: "warning", code: "narration_long", message: `旁白 ${narrationChars} 字，可能超过目标时长。` });
+    revisionNotes.push(`将总旁白压缩到 ${maximumChars} 字以内。`);
+  }
+  if (source && normalizeText(project.meta.title) !== normalizeText(source.title)) {
+    issues.push({ severity: "error", code: "title_rewritten", message: "主标题没有保留新闻原题。" });
+    revisionNotes.push("主标题直接使用新闻原题；分析结论放副标题或正文。 ");
+  }
+  const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
+  if (/正式发布|正式推出|即日起.{0,20}开放/.test(sourceText) && !/正式发布|正式推出|即日起.{0,20}开放/.test(project.narration)) {
+    issues.push({ severity: "error", code: "release_status_weakened", message: "原文的正式发布或开放状态被弱化。" });
+    revisionNotes.push("首段直接复述原文的正式发布状态、开放渠道和用户范围。 ");
+  }
+  const forbidden = /太乙真人|万人敬仰|新闻怎么跟进|发布角度|适合做视频|作者\s*[：:]|编辑\s*[：:]|量子位|腾讯新闻|新浪财经/;
+  if (forbidden.test(project.narration)) {
+    issues.push({ severity: "error", code: "forbidden_content", message: "旁白包含参考音频污染、站点署名或无关制作建议。" });
+  }
+  project.scenes.forEach((scene, index) => issues.push(...sceneShapeIssues(scene, index)));
+
+  let scores: Record<string, number> | undefined;
+  try {
+    const judged = await callQualityJudge(project, feedbackGuidance);
+    if (judged?.scores) {
+      scores = Object.fromEntries(
+        Object.entries(judged.scores).map(([key, value]) => [key, Math.max(0, Math.min(100, Number(value) || 0))]),
+      );
+      for (const issue of judged.issues ?? []) {
+        issues.push({ severity: "warning", code: "llm_judge", message: issue });
+      }
+      revisionNotes.push(...(judged.revisionNotes ?? []));
+    }
+  } catch (error) {
+    issues.push({ severity: "warning", code: "judge_unavailable", message: (error as Error).message });
+  }
+
+  const scoreValues = scores ? Object.values(scores) : [];
+  const scoreAverage = scoreValues.length
+    ? scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length
+    : 100;
+  const scoreMinimum = scoreValues.length ? Math.min(...scoreValues) : 100;
+  const passed = !issues.some((issue) => issue.severity === "error");
+  if (scores && (scoreAverage < 78 || scoreMinimum < 70)) {
+    issues.push({
+      severity: "warning",
+      code: "llm_score_below_target",
+      message: `LLM 质量评分未达建议值（平均 ${scoreAverage.toFixed(1)}，最低 ${scoreMinimum}），已保留改进建议。`,
+    });
+  }
+
+  return {
+    stage: "draft",
+    passed,
+    issues,
+    revisionNotes: [...new Set(revisionNotes.filter(Boolean))],
+    scores,
+    metrics: {
+      narrationChars,
+      targetSeconds,
+      scoreAverage: Number(scoreAverage.toFixed(1)),
+      scoreMinimum,
+      sceneCount: project.scenes.length,
+      feedbackItemsApplied: feedbackGuidance ? feedbackGuidance.split("\n").length : 0,
+    },
+  };
+}
+
+export function evaluateAudio(project: VideoProject, targetSeconds: number): QualityEvaluation {
+  const issues: QualityIssue[] = [];
+  const segments = project.narrationSegments ?? [];
+  const duration = project.audio?.durationSeconds ?? 0;
+  const tolerance = Math.max(10, targetSeconds * 0.15);
+  if (!project.audio || project.audio.provider === "silent") {
+    issues.push({ severity: "error", code: "audio_missing", message: "没有生成有效旁白音频。" });
+  }
+  if (Math.abs(duration - targetSeconds) > tolerance) {
+    issues.push({ severity: "error", code: "duration_out_of_range", message: `音频 ${duration.toFixed(1)} 秒，目标 ${targetSeconds} 秒。` });
+  }
+  let cursor = 0;
+  for (const [index, scene] of project.scenes.entries()) {
+    const segment = segments[index];
+    if (!segment || segment.audioStartSeconds === undefined || segment.durationSeconds === undefined) {
+      issues.push({ severity: "error", code: "segment_timing_missing", message: `第 ${index + 1} 屏缺少音频时间信息。` });
+      continue;
+    }
+    const frameTolerance = 1 / project.meta.fps + 0.002;
+    if (Math.abs(cursor - segment.audioStartSeconds) > frameTolerance || Math.abs(scene.duration - segment.durationSeconds) > frameTolerance) {
+      issues.push({ severity: "error", code: "audio_scene_drift", message: `第 ${index + 1} 屏音画边界不一致。` });
+    }
+    cursor += scene.duration;
+  }
+  return {
+    stage: "audio",
+    passed: !issues.some((issue) => issue.severity === "error"),
+    issues,
+    revisionNotes: issues.some((issue) => issue.code === "duration_out_of_range")
+      ? [duration < targetSeconds ? "增加旁白信息密度和字数。" : "压缩旁白字数。"]
+      : [],
+    metrics: {
+      targetSeconds,
+      audioDuration: duration,
+      sceneDuration: cursor,
+      alignmentDelta: Math.abs(cursor - duration),
+    },
+  };
+}
+
+function runCapture(command: string, args: string[]) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve({ stdout, stderr }) : reject(new Error(stderr))));
+  });
+}
+
+export async function evaluateVideo(videoPath: string, reportDir: string): Promise<QualityEvaluation> {
+  const issues: QualityIssue[] = [];
+  const probe = await runCapture("ffprobe", [
+    "-v",
+    "error",
+    "-show_entries",
+    "format=duration,size",
+    "-show_entries",
+    "stream=codec_type,duration,width,height",
+    "-of",
+    "json",
+    videoPath,
+  ]);
+  const data = JSON.parse(probe.stdout) as {
+    format?: { duration?: string; size?: string };
+    streams?: Array<{ codec_type?: string; duration?: string; width?: number; height?: number }>;
+  };
+  const video = data.streams?.find((stream) => stream.codec_type === "video");
+  const audio = data.streams?.find((stream) => stream.codec_type === "audio");
+  const duration = Number(data.format?.duration ?? 0);
+  if (!video || !audio) issues.push({ severity: "error", code: "stream_missing", message: "成片缺少视频流或音频流。" });
+  if (video?.width !== 1080 || video?.height !== 1920) {
+    issues.push({ severity: "error", code: "wrong_dimensions", message: `成片尺寸不是 1080x1920。` });
+  }
+  const streamDelta = Math.abs(Number(video?.duration ?? duration) - Number(audio?.duration ?? duration));
+  if (streamDelta > 0.2) issues.push({ severity: "error", code: "stream_duration_drift", message: `音视频流相差 ${streamDelta.toFixed(3)} 秒。` });
+
+  await mkdir(reportDir, { recursive: true });
+  const sampleTimes = [Math.min(4, duration / 4), duration / 2, Math.max(1, duration - 5)];
+  const frameSizes: number[] = [];
+  for (const [index, sampleTime] of sampleTimes.entries()) {
+    const framePath = path.join(reportDir, `frame-${index + 1}.jpg`);
+    await runCapture("ffmpeg", [
+      "-y",
+      "-ss",
+      sampleTime.toFixed(3),
+      "-i",
+      videoPath,
+      "-frames:v",
+      "1",
+      "-q:v",
+      "2",
+      framePath,
+    ]);
+    const size = await stat(framePath).then((value) => value.size).catch(() => 0);
+    frameSizes.push(size);
+    if (size < 20_000) issues.push({ severity: "error", code: "blank_frame", message: `抽帧 ${index + 1} 可能为空白。` });
+  }
+
+  return {
+    stage: "video",
+    passed: !issues.some((issue) => issue.severity === "error"),
+    issues,
+    revisionNotes: [],
+    metrics: {
+      duration,
+      fileSize: Number(data.format?.size ?? 0),
+      width: video?.width ?? 0,
+      height: video?.height ?? 0,
+      streamDelta,
+      minimumFrameSize: Math.min(...frameSizes),
+    },
+  };
+}

@@ -933,3 +933,138 @@ body {
   min-height: 100%;
   justify-content: center;
 }
+
+/* Dedicated high-impact title cover */
+.coverScene {
+  background:
+    radial-gradient(circle at 84% 14%, rgba(255, 243, 106, 0.18), transparent 24%),
+    radial-gradient(circle at 14% 78%, rgba(77, 232, 255, 0.22), transparent 30%),
+    linear-gradient(165deg, #073bc8 0%, #086fd2 48%, #00a6b6 100%);
+}
+
+.coverTop {
+  position: absolute;
+  z-index: 5;
+  top: 54px;
+  left: 58px;
+  right: 58px;
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 20px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.24);
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.coverHero {
+  position: absolute;
+  z-index: 4;
+  inset: 180px 58px 72px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-left: 30px;
+}
+
+.coverRail {
+  position: absolute;
+  top: 8px;
+  bottom: 0;
+  left: 0;
+  width: 7px;
+  background: linear-gradient(180deg, #fff36a 0%, rgba(255, 243, 106, 0.2) 58%, transparent 100%);
+  box-shadow: 0 0 28px rgba(255, 243, 106, 0.28);
+}
+
+.coverGhost {
+  position: absolute;
+  z-index: -1;
+  right: -44px;
+  bottom: 120px;
+  color: rgba(255, 255, 255, 0.075);
+  font-size: 390px;
+  line-height: 0.8;
+  font-weight: 900;
+}
+
+.coverKicker {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 10px 16px;
+  background: #fff36a;
+  color: #0752b4;
+  font-size: 25px;
+  font-weight: 900;
+}
+
+.coverHeadline {
+  max-width: 900px;
+  margin: 48px 0 30px;
+  color: #ffffff;
+  font-size: 78px;
+  line-height: 1.09;
+  font-weight: 900;
+  white-space: pre-line;
+  text-wrap: balance;
+  text-shadow:
+    0 4px 0 rgba(0, 42, 126, 0.28),
+    0 20px 52px rgba(0, 45, 120, 0.18);
+}
+
+.coverHeadline mark {
+  padding: 0;
+  background: transparent;
+  color: #fff36a;
+  text-shadow:
+    0 4px 0 rgba(0, 42, 126, 0.24),
+    0 0 28px rgba(255, 243, 106, 0.18);
+}
+
+.coverSubhead {
+  max-width: 840px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 33px;
+  line-height: 1.46;
+  font-weight: 650;
+}
+
+.coverSignals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: auto;
+}
+
+.coverSignal {
+  min-height: 128px;
+  padding: 22px 18px;
+  border-top: 3px solid rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.coverSignal b {
+  display: block;
+  margin-bottom: 12px;
+  color: #fff36a;
+  font-size: 22px;
+}
+
+.coverSignal span {
+  display: block;
+  color: #ffffff;
+  font-size: 27px;
+  line-height: 1.2;
+  font-weight: 850;
+}
+
+.coverRadar {
+  z-index: 2;
+  top: 210px;
+  right: -170px;
+  width: 600px;
+  height: 600px;
+  opacity: 0.24;
+}

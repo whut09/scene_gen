@@ -8,9 +8,14 @@
     "generate:stories": "tsx src/pipeline/generate-stories.ts",
     "render": "tsx src/pipeline/render.ts",
     "render:stories": "tsx src/pipeline/render-stories.ts",
+    "render:html-video": "tsx src/pipeline/render-stories.ts --engine html-video",
     "make": "npm run generate:stories && npm run render:stories",
     "preview": "remotion preview src/remotion/index.tsx",
-    "lint:types": "tsc --noEmit"
+    "lint:types": "tsc --noEmit",
+    "video": "tsx src/harness/run-video-agent.ts",
+    "video:check": "tsx src/harness/check-video.ts",
+    "feedback:add": "tsx src/harness/add-feedback.ts",
+    "synthesize:story": "tsx src/pipeline/synthesize-story.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

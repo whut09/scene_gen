@@ -47,7 +47,12 @@ export function loadDotEnv() {
     }
   }
 
-  for (const configPath of [fromRoot("config", "llm.example.json"), fromRoot("config", "llm.local.json")]) {
+  for (const configPath of [
+    fromRoot("config", "llm.example.json"),
+    fromRoot("config", "llm.local.json"),
+    fromRoot("config", "news-llm.example.json"),
+    fromRoot("config", "news-llm.local.json"),
+  ]) {
     if (!existsSync(configPath)) continue;
     const overrideLocal = configPath.endsWith(".local.json");
     const config = JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, "")) as Record<

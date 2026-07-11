@@ -94,6 +94,13 @@ export type VideoScene =
       bullets: string[];
     };
 
+export interface NarrationSegment {
+  sceneIndex: number;
+  text: string;
+  audioStartSeconds?: number;
+  durationSeconds?: number;
+}
+
 export interface VideoProject {
   meta: {
     title: string;
@@ -105,10 +112,11 @@ export interface VideoProject {
     sourceCount: number;
   };
   narration: string;
+  narrationSegments?: NarrationSegment[];
   audio?: {
     src: string;
     durationSeconds: number;
-    provider: "openai" | "local" | "silent";
+    provider: "openai" | "local" | "f5" | "silent";
   };
   scenes: VideoScene[];
   sources: HotItem[];

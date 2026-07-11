@@ -1,8 +1,16 @@
 {
   "OPENAI_API_KEY": "xxx",
-  "OPENAI_BASE_URL": "https://deepkey.top/v1",
-  "OPENAI_MODEL": "gpt-5.5",
-  "OPENAI_TTS_MODEL": "gpt-4o-mini-tts",
+  "OPENAI_BASE_URL": "xxx",
+  "OPENAI_MODEL": "xxx",
+  "OPENAI_TTS_MODEL": "xxx",
   "OPENAI_TTS_VOICE": "alloy",
-  "TTS_PROVIDER": "openai"
+  "TTS_PROVIDER": "f5",
+  "TTS_FAIL_FAST": "1",
+  "F5_TTS_VENV": "F:\\codex\\.venvs\\scene_gen_f5_py39",
+  "F5_TTS_MODEL": "F5TTS_v1_Base",
+  "F5_TTS_DEVICE": "cuda",
+  "F5_TTS_SPEED": "1.45",
+  "F5_TTS_NFE_STEP": "16",
+  "F5_TTS_REF_AUDIO": "F:\\path\\to\\voice-reference.wav",
+  "F5_TTS_REF_TEXT": ""
 }

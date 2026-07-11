@@ -1,4 +1,4 @@
-import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
+﻿import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
 
 const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15"];
 
@@ -19,10 +19,11 @@ function displaySource(item: HotItem) {
 
 export function scrubAttribution(text: string) {
   return text
-    .replace(/QbitAI|qbitai\.com|量子位/g, "")
+    .replace(/QbitAI|qbitai\.com|量子位|腾讯新闻/g, "")
     .replace(/作者\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
     .replace(/编辑\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
     .replace(/来源\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_. -]{0,32}/g, "")
+    .replace(/[_-]\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -251,6 +252,10 @@ export function createStoryProject(
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
   const clean = cleanItem(item);
+  const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
+  if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
+    return createGeneralNewsProject(clean, options);
+  }
   const sections = storySections(clean);
   const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 115));
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
@@ -271,9 +276,184 @@ export function createStoryProject(
       sourceCount: 1,
     },
     narration: sections.map((section) => scrubAttribution(section.narration)).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({
+      sceneIndex,
+      text: scrubAttribution(section.narration),
+    })),
     scenes,
     sources: [clean],
     screenshots,
+  } satisfies VideoProject;
+}
+
+function createGeneralNewsProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const topicText = `${item.title} ${item.summary}`;
+  const isChipStory =
+    /芯片|AI芯片|推理芯片|自研芯片|造芯|算力芯片/i.test(topicText) &&
+    !/发布.*模型|推出.*模型|模型.*发布|模型.*上线/i.test(item.title);
+  const title = item.title;
+  const summary =
+    item.summary && item.summary !== item.title
+      ? item.summary
+      : isChipStory
+        ? "头部模型公司开始把竞争从模型能力，推进到底层算力和推理成本控制。"
+        : "这条新闻的关键，是一个行业变量正在从表层事件变成结构性变化。";
+
+  const sections: Array<{ scene: VideoScene; narration: string }> = isChipStory
+    ? [
+        {
+          scene: {
+            type: "title",
+            duration: 7,
+            kicker: "AI 全栈战争",
+            headline: shortTitle(title, 42),
+            subhead: summary,
+            sources: ["模型", "芯片", "Token 成本"],
+          },
+          narration: `这条新闻讲的是：${title}。简单说，DeepSeek 和智谱这类模型公司，正在把竞争从模型本身，推进到底层芯片和推理成本控制。`,
+        },
+        {
+          scene: {
+            type: "briefing_points",
+            duration: 18,
+            headline: "这条新闻真正说了什么",
+            source: "核心事实",
+            title,
+            summary,
+            metrics: [
+              { label: "主线", value: "推理芯片" },
+              { label: "变量", value: "成本控制" },
+              { label: "竞争", value: "全栈化" },
+            ],
+            points: [
+              "DeepSeek 被曝正在开发面向大模型推理的自研 AI 芯片。",
+              "智谱也在评估定制 AI 芯片，原因是 GLM 系列模型需求增长。",
+              "OpenAI、Anthropic 等海外头部模型公司，也在同一时间窗口布局芯片。",
+            ],
+          },
+          narration:
+            "为什么是推理芯片？因为训练一个模型虽然很贵，但训练是阶段性的；真正每天持续烧钱的，是每一次用户调用、每一次 Agent 运行、每一次 Token 生成。",
+        },
+        {
+          scene: {
+            type: "flow",
+            duration: 18,
+            headline: "为什么模型公司开始造芯",
+            steps: [
+              { label: "推理变成水电费", detail: "训练是阶段性投入，推理发生在每一次真实调用里。" },
+              { label: "GPU 不再总是最优", detail: "固定模型负载可能更适合定制芯片。" },
+              { label: "供应安全压力", detail: "供应、管制和产能波动，都会影响模型公司命运。" },
+              { label: "Token 价格战", detail: "谁能压低推理成本，谁就有更大规模化空间。" },
+            ],
+          },
+          narration:
+            "通用 GPU 什么都能做，但如果一家模型公司长期运行固定模型负载，就可能希望用定制芯片，围绕自己的算子、缓存、内存访问和数据流做优化。",
+        },
+        {
+          scene: {
+            type: "signal_chart",
+            duration: 16,
+            headline: "这场竞争比模型更重",
+            bars: [
+              { label: "推理成本", value: 96, detail: "用户越多，Token 吞吐越大，推理成本越关键。", color: "#18b7a5" },
+              { label: "供应控制", value: 90, detail: "摆脱单一硬件路线依赖，成为模型公司的战略变量。", color: "#7c6cff" },
+              { label: "软件栈", value: 86, detail: "还需要编译器、算子和数据中心系统。", color: "#facc15" },
+              { label: "量产难度", value: 88, detail: "先进 AI 芯片从设计到部署，往往是多年工程。", color: "#ff6b6b" },
+            ],
+          },
+          narration:
+            "这件事还有供应安全的含义。对 OpenAI 来说，是减少对英伟达单一路线的依赖；对国产模型公司来说，则同时涉及成本账、供应安全账和产业链自主权。",
+        },
+        {
+          scene: {
+            type: "outro",
+            duration: 14,
+            headline: "AI 终局不只是模型",
+            bullets: [
+              "模型厂商造芯，本质是争夺 Token 成本和算力控制权。",
+              "真正难点不只是设计芯片，而是软件栈、供应链和规模化部署。",
+              "下一阶段 AI 竞争，可能属于能把模型、芯片、云和应用连成闭环的公司。",
+            ],
+          },
+          narration:
+            "但造芯片不是简单换个硬件，它还需要芯片设计、编译器、软件栈、供应链和多年量产经验。所以这条新闻真正的信号是：AI 竞争的终局，可能属于能把模型、芯片、云和 Token 成本连成闭环的公司。",
+        },
+      ]
+    : [
+        {
+          scene: {
+            type: "title",
+            duration: 7,
+            kicker: "今日科技信号",
+            headline: shortTitle(title, 42),
+            subhead: summary,
+            sources: ["事实", "影响", "边界"],
+          },
+          narration: `这条新闻讲的是：${title}。`,
+        },
+        {
+          scene: {
+            type: "briefing_points",
+            duration: 18,
+            headline: "这条新闻真正说了什么",
+            source: "核心事实",
+            title,
+            summary,
+            metrics: [
+              { label: "热度", value: String(Math.min(100, Math.max(12, item.score))) },
+              { label: "来源", value: item.kind },
+            ],
+            points: [summary, "要看它影响的是短期热度，还是长期成本、效率和产业结构。"],
+          },
+          narration: summary,
+        },
+        {
+          scene: {
+            type: "flow",
+            duration: 18,
+            headline: "影响路径怎么拆",
+            steps: [
+              { label: "事实", detail: summary },
+              { label: "影响", detail: "观察它会改变成本、效率、产品体验还是竞争格局。" },
+              { label: "边界", detail: "单条新闻不能直接等于长期趋势，还要看后续验证。" },
+            ],
+          },
+          narration: "看这类新闻，关键不是只复述标题，而是拆成事实、影响路径和后续验证。",
+        },
+        {
+          scene: {
+            type: "outro",
+            duration: 14,
+            headline: "最后判断",
+            bullets: ["先看事实，再看影响路径，最后看后续验证。"],
+          },
+          narration: "如果它能改变成本、效率、用户体验或产业竞争格局，就值得单独做成视频继续观察。",
+        },
+      ];
+
+  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 96));
+  const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  return {
+    meta: {
+      title,
+      createdAt: new Date().toISOString(),
+      width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080),
+      height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920),
+      fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30),
+      durationSeconds,
+      sourceCount: 1,
+    },
+    narration: sections.map((section) => scrubAttribution(section.narration)).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({
+      sceneIndex,
+      text: scrubAttribution(section.narration),
+    })),
+    scenes,
+    sources: [item],
+    screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
 }
 

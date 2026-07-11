@@ -1,0 +1,8 @@
+{
+  "NEWS_LLM_API_KEY": "xxx",
+  "NEWS_LLM_BASE_URL": "xxx",
+  "NEWS_LLM_MODEL": "xxx",
+  "QUALITY_LLM_API_KEY": "xxx",
+  "QUALITY_LLM_BASE_URL": "xxx",
+  "QUALITY_LLM_MODEL": "xxx"
+}

@@ -7,7 +7,10 @@ node_modules/
 .env.local
 *.local.json
 config/llm.local.json
-glasswing-web-video/presentation/config/llm.local.json
+config/news-llm.local.json
+
+# Runtime feedback memory
+data/feedback/feedback.jsonl
 
 # Generated media and build output
 dist/
