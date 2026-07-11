@@ -1,4 +1,4 @@
-﻿import { spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -305,6 +305,10 @@ export async function evaluateDraft(
 function canonicalSpeechText(text: string) {
   return text
     .toLowerCase()
+    .replace(/omni\s*route|奥姆尼路由|奧姆尼路由/g, "奥姆尼路由")
+    .replace(/澳母尼|奧母尼/g, "奥姆尼")
+    .replace(/边马|邊馬/g, "编码")
+    .replace(/多摩行路/g, "多模型路由")
     .replace(/[欧歐][盆盤][爱愛艾]/g, "openai")
     .replace(/(?:后|後)盆的ai/g, "openai")
     .replace(/open\s*ai/g, "openai")

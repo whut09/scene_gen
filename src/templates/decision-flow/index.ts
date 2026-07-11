@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils";
 
 export const decisionFlowTemplate: HtmlTemplateDefinition = {
   id: "decision-flow",
@@ -39,7 +39,7 @@ export const decisionFlowTemplate: HtmlTemplateDefinition = {
           ? scene.repos.map((repo) => ({ label: repo.repo, detail: repo.summary }))
           : [];
     const nodes = items.slice(0, 5).map((item, index) =>
-      '<article class="df-node df-' + (index % 2 ? 'right' : 'left') + '" style="animation-delay:' + (index * 0.16) + 's">' +
+      '<article class="df-node df-' + (index % 2 ? 'right' : 'left') + '" style="animation-delay:' + pacedDelay(index, items.length, scene.duration) + 's">' +
       '<span class="df-dot">' + (index + 1) + '</span><div><b>' + escapeHtml(item.label) + '</b><p>' + escapeHtml(item.detail) + '</p></div></article>'
     ).join('');
     const body = '<main class="hv-main df-main"><div class="df-kicker">LOGIC / PATH</div><h1>' + escapeHtml(sceneHeadline(scene)) + '</h1>' +
@@ -53,6 +53,6 @@ export const decisionFlowTemplate: HtmlTemplateDefinition = {
       '.df-node b{display:block;font-size:31px;line-height:1.12}.df-node p{font-size:24px;line-height:1.38;margin-top:8px}' +
       '@keyframes df-grow{from{transform:translateX(-50%) scaleY(0)}to{transform:translateX(-50%) scaleY(1)}}' +
       '@keyframes df-in{from{opacity:0;transform:translateY(24px) scale(.96)}to{opacity:1;transform:none}}';
-    return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "blue", extraCss: css });
+    return commonHtml({ title: sceneHeadline(scene), body, width, height, durationSec: scene.duration, theme: "blue", extraCss: css });
   },
 };

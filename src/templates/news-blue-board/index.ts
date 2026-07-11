@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils";
 
 export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
   id: "news-blue-board",
@@ -62,7 +62,7 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
         <section style="display:grid;grid-template-rows:repeat(${Math.max(1, scene.points.length)},1fr);gap:18px;margin-top:24px;flex:1;min-height:640px;">
           ${scene.points
             .map(
-              (point, index) => `<div class="hv-card" style="display:grid;grid-template-columns:72px 1fr;align-items:center;gap:20px;padding:24px;min-height:138px;animation:hv-rise .55s ${index * 0.14}s both;">
+              (point, index) => `<div class="hv-card" style="display:grid;grid-template-columns:72px 1fr;align-items:center;gap:20px;padding:24px;min-height:138px;animation:hv-rise .55s ${pacedDelay(index, scene.points.length, scene.duration)}s both;">
                 <span style="width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#fff36a;color:#0847a6;font-size:28px;font-weight:900;">${index + 1}</span>
                 <p style="font-size:30px;line-height:1.42;">${escapeHtml(point)}</p>
               </div>`,
@@ -75,7 +75,7 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
         <section style="display:grid;gap:22px;margin-top:48px;">
           ${scene.items
             .map(
-              (item, index) => `<article class="hv-card" style="display:grid;grid-template-columns:74px 1fr;gap:24px;padding:30px;animation:hv-rise .55s ${index * 0.14}s both;">
+              (item, index) => `<article class="hv-card" style="display:grid;grid-template-columns:74px 1fr;gap:24px;padding:30px;animation:hv-rise .55s ${pacedDelay(index, scene.items.length, scene.duration)}s both;">
                 <span style="width:58px;height:58px;border-radius:50%;display:grid;place-items:center;background:#fff36a;color:#0847a6;font-size:28px;font-weight:900;">${index + 1}</span>
                 <div><div style="font-size:22px;color:rgba(255,255,255,.7);">${escapeHtml(item.source)}</div>
                 <h2 style="font-size:42px;line-height:1.18;margin:8px 0 12px;">${escapeHtml(item.title)}</h2>
@@ -98,6 +98,6 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
     } else {
       body = `<main class="hv-main"><h1>${escapeHtml(sceneHeadline(scene))}</h1></main>`;
     }
-    return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "blue" });
+    return commonHtml({ title: sceneHeadline(scene), body, width, height, durationSec: scene.duration, theme: "blue" });
   },
 };

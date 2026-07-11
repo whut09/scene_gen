@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils";
 
 export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
   id: "product-style-agent-flow",
@@ -48,7 +48,7 @@ export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
           ? scene.events.map((event) => ({ title: event.title, detail: event.date + " / " + event.source }))
           : [];
     const cards = items.slice(0, 4).map((item, index) =>
-      '<article class="pf-card" style="animation-delay:' + (index * 0.14) + 's"><span>' + String(index + 1).padStart(2, "0") + '</span><div><h2>' + escapeHtml(item.title) + '</h2><p>' + escapeHtml(item.detail) + '</p></div></article>'
+      '<article class="pf-card" style="animation-delay:' + pacedDelay(index, items.length, scene.duration) + 's"><span>' + String(index + 1).padStart(2, "0") + '</span><div><h2>' + escapeHtml(item.title) + '</h2><p>' + escapeHtml(item.detail) + '</p></div></article>'
     ).join('');
     const center = variantId === "agent-lanes" ? '<div class="pf-core"><b>PROMPT</b><span>ORCHESTRATE</span></div>' : '';
     const body = '<main class="hv-main pf-main pf-' + variantId + '"><div class="hv-kicker">SYSTEM / FLOW</div><h1>' + escapeHtml(sceneHeadline(scene)) + '</h1><section class="pf-content">' + cards + center + '</section></main>';
@@ -57,6 +57,6 @@ export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
       '.pf-step-stack .pf-content{display:grid;grid-template-rows:repeat(4,1fr);gap:18px}' +
       '.pf-capability-grid .pf-content{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:18px}.pf-capability-grid .pf-card{display:flex;flex-direction:column;align-items:flex-start;justify-content:center}.pf-capability-grid .pf-card:nth-child(2){background:rgba(255,243,106,.18)}.pf-capability-grid .pf-card:nth-child(3){background:rgba(255,139,215,.16)}' +
       '.pf-agent-lanes .pf-content{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:92px 120px;padding:36px 0}.pf-agent-lanes .pf-card{position:relative}.pf-agent-lanes .pf-card:nth-child(odd)::after{content:"";position:absolute;right:-62px;top:50%;width:60px;height:4px;background:#72f0ff}.pf-agent-lanes .pf-card:nth-child(even)::after{content:"";position:absolute;left:-62px;top:50%;width:60px;height:4px;background:#72f0ff}.pf-core{position:absolute;left:50%;top:50%;width:190px;height:190px;transform:translate(-50%,-50%) rotate(45deg);background:#fff36a;color:#083b78;display:grid;place-items:center;align-content:center;z-index:4;box-shadow:0 0 50px rgba(255,243,106,.3)}.pf-core>*{transform:rotate(-45deg)}.pf-core b{font-size:29px}.pf-core span{font-size:15px;font-weight:900;margin-top:8px}';
-    return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "dark", extraCss: css });
+    return commonHtml({ title: sceneHeadline(scene), body, width, height, durationSec: scene.duration, theme: "dark", extraCss: css });
   },
 };

@@ -9,6 +9,20 @@ export function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
+export function headlineFontSize(text: string, max = 88, min = 58) {
+  const length = text.replace(/\s+/g, "").length;
+  if (length <= 16) return max;
+  if (length <= 24) return Math.max(min, max - 8);
+  if (length <= 34) return Math.max(min, max - 16);
+  return min;
+}
+
+export function pacedDelay(index: number, count: number, durationSec: number, leadSec = 0.7) {
+  const available = Math.max(3, durationSec - leadSec - 3);
+  const gap = Math.max(0.9, Math.min(3.2, available / Math.max(1, count)));
+  return Number((leadSec + index * gap).toFixed(2));
+}
+
 export function sceneHeadline(scene: VideoScene) {
   if ("headline" in scene) return scene.headline;
   return "Scene";
@@ -22,6 +36,7 @@ export function commonHtml({
   theme = "blue",
   extraCss = "",
   chrome = false,
+  durationSec = 12,
 }: {
   title: string;
   body: string;
@@ -30,6 +45,7 @@ export function commonHtml({
   theme?: "blue" | "dark" | "paper";
   extraCss?: string;
   chrome?: boolean;
+  durationSec?: number;
 }) {
   const themeCss =
     theme === "paper"
@@ -56,6 +72,11 @@ export function commonHtml({
       font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
       color: #fff;
       background: ${background};
+      --scene-duration: ${Math.max(4, durationSec)}s;
+      --safe-left: 96px;
+      --safe-right: 156px;
+      --safe-top: 138px;
+      --safe-bottom: 150px;
     }
     .hv-root { position: relative; width: 100%; height: 100%; overflow: hidden; }
     .hv-root::before {
@@ -67,6 +88,20 @@ export function commonHtml({
         linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
       background-size: 96px 96px;
       opacity: .16;
+      animation: hv-grid-drift var(--scene-duration) linear both;
+    }
+    .hv-root::after {
+      content: "";
+      position: absolute;
+      z-index: 3;
+      top: -20%;
+      bottom: -20%;
+      left: -38%;
+      width: 32%;
+      transform: skewX(-12deg);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.11), transparent);
+      animation: hv-scene-sweep calc(var(--scene-duration) * .72) 1.4s cubic-bezier(.2,.65,.25,1) both;
+      pointer-events: none;
     }
     .hv-top {
       position: absolute;
@@ -103,6 +138,14 @@ export function commonHtml({
       line-height: 1.12;
       letter-spacing: .02em;
       text-shadow: 0 4px 0 rgba(0,40,120,.25), 0 0 16px rgba(255,255,255,.16);
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .hv-card { position: relative; overflow: hidden; }
+    .hv-card::after {
+      content: ""; position: absolute; inset: 0 auto 0 -45%; width: 28%; pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.13), transparent);
+      animation: hv-card-scan 7s 2s ease-in-out infinite;
     }
     p { font-size: 34px; line-height: 1.5; color: rgba(255,255,255,.84); }
     @keyframes hv-enter {
@@ -117,8 +160,13 @@ export function commonHtml({
       from { transform: scaleX(0); }
       to { transform: scaleX(1); }
     }
+    @keyframes hv-grid-drift { from { background-position: 0 0, 0 0; } to { background-position: 72px 110px, 110px 72px; } }
+    @keyframes hv-scene-sweep { 0% { transform: translateX(0) skewX(-12deg); opacity: 0; } 12% { opacity: 1; } 100% { transform: translateX(${Math.round(width * 4.8)}px) skewX(-12deg); opacity: 0; } }
+    @keyframes hv-card-scan { 0%, 58% { transform: translateX(0); opacity: 0; } 66% { opacity: 1; } 84%, 100% { transform: translateX(520%); opacity: 0; } }
     ${themeCss}
     ${extraCss}
+    .hv-main { left: var(--safe-left) !important; right: var(--safe-right) !important; }
+    .hv-main, .hv-main * { max-width: 100%; }
   </style>
 </head>
 <body>

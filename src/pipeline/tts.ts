@@ -165,6 +165,7 @@ function prepareF5SynthesisText(text: string) {
   const trimmed = text.trim();
   if (!/^[A-Za-z0-9]/.test(trimmed)) return text;
   const pronounceable = trimmed
+    .replace(/OmniRoute/gi, "奥姆尼路由")
     .replace(/Superpowers/gi, "超级能力")
     .replace(/OpenAI/gi, "欧盆艾，")
     .replace(
