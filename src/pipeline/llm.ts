@@ -139,22 +139,24 @@ export async function improveWithOpenAI(
   const model = process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
   const baseUrl = process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
   const targetSeconds = options?.targetSeconds ?? 90;
-  const targetChars = Math.max(900, Math.round(targetSeconds * 13.6));
+  const targetChars = Math.max(650, Math.min(1100, Math.round(targetSeconds * 8.5)));
   const guidance = [
     "你是 AI 科技竖屏短视频的资深新闻编导。",
     "只返回 JSON，不要 Markdown。",
-    `总旁白约 ${targetChars} 个汉字，目标成片约 ${targetSeconds} 秒。`,
+    `总旁白建议约 ${targetChars} 个汉字；${targetSeconds} 秒只是时长参考，不要为了凑时长增加信息或强行压缩语速。`,
     "必须输出 title 和 sections；sections 恰好 5 个，visual 顺序固定为 title、briefing、chart、flow、outro。",
-    "每个 section 必须有 narration，每段约 250 到 290 个汉字；旁白只讲新闻事实、重要性、边界和可验证结论。",
+    "每个 section 必须有 narration。先确定该 section 的所有画面字段，再写旁白；旁白只能复述、串联或简要解释当前 section 屏幕上实际可见的信息。",
+    "禁止在旁白中加入当前屏幕没有呈现的新数据、新案例、新结论或额外背景；需要讲的信息必须先写进该 section 的可视字段。",
+    "逐屏旁白长度：title 70-130 字，briefing 120-200 字，chart 110-190 字，flow 110-190 字，outro 80-150 字。宁可让视频自然变长或变短，也不要堆字。",
     "不要出现新闻怎么跟进、如何发布、适合做视频、作者、编辑、站点、媒体来源等无关内容。",
     "sourceArticle 是唯一新闻依据。忠实总结文章中的发布状态、开放范围、模型能力、价格和数据，不得主动引入站外信息推翻或改写原文。",
     "如果文章明确写正式发布、正式推出或即日起开放，首段必须直接使用对应表述，并说明开放渠道和用户范围，不得弱化。",
     "不要照抄长原文，不要虚构文章中没有的数据；只有用户明确传入事实校正备注时，才按备注调整。",
-    "title 场景提供 subhead 和 3 个 keywords。",
-    "briefing 场景提供 summary、3 个 metrics、3 到 4 个 points。",
-    "chart 场景提供 4 个 bars，每个含 label、value、detail；value 只表示视觉权重，不冒充官方分数。",
-    "flow 场景提供 4 个 steps，每个含 label、detail。",
-    "outro 场景提供 3 个 bullets，必须包含限制条件或后续验证项。",
+    "title 场景提供 subhead 和 3 个 keywords；title 旁白只复述标题、副标题、关键词表达的发布事实和核心结论。",
+    "briefing 场景提供 summary、3 个 metrics、3 到 4 个 points；旁白逐项概括这些字段，不扩展屏幕外事实。",
+    "chart 场景提供 4 个 bars，每个含 label、value、detail；value 只表示视觉权重，不冒充官方分数；旁白只解释这 4 个 bar。",
+    "flow 场景提供 4 个 steps，每个含 label、detail；旁白严格按这 4 步的顺序讲解。",
+    "outro 场景提供 3 个 bullets，必须包含限制条件或后续验证项；旁白只总结这 3 条，不另起新观点。",
     options?.forbidAttribution
       ? "所有画面和旁白都不得出现作者、编辑、量子位、QbitAI、新浪、腾讯新闻或来源归属字眼。"
       : "",

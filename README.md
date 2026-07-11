@@ -1,6 +1,6 @@
 # Scene Gen
 
-输入一篇新闻 URL，自动抓取正文、生成约 100 秒中文旁白与五段竖屏分镜，使用 F5-TTS 配音，经 Remotion 渲染为 1080x1920 MP4，并由质量 harness 检查脚本、音频、音画同步和最终视频。
+输入一篇新闻 URL，自动抓取正文、生成时长随新闻信息量自然变化的中文旁白与五段竖屏分镜，使用 F5-TTS 配音，经 Remotion 渲染为 1080x1920 MP4，并由质量 harness 检查脚本、音频、音画同步和最终视频。
 
 ## 一键生成
 
@@ -14,10 +14,10 @@ npm.cmd run video -- --url "https://example.com/news"
 默认行为：
 
 - 只处理输入 URL 对应的一篇新闻。
-- 目标时长约 100 秒。
+- 默认以 100 秒作为编导参考，但不会强行压缩；常见成片会根据内容自然落在约 70 到 165 秒。
 - 生成 5 个逐段对应的新闻场景和旁白。
 - 使用 F5-TTS 的本地参考音色，每屏单独合成。
-- 自动将旁白节奏归一化到目标时长，并按处理后的真实音频边界切屏。
+- 仅在自然范围内微调语速，超过范围时允许视频变长或变短，并按处理后的真实音频边界切屏。
 - 输出 1080x1920 MP4。
 - 默认输出到 `F:\发布视频`，质量报告输出到 `dist/quality/<run-id>/`。
 
@@ -27,7 +27,7 @@ npm.cmd run video -- --url "https://example.com/news"
 npm.cmd run video -- --url "新闻地址" --seconds 100 --iterations 2 --screenshots 0 --out-dir "F:\发布视频" --notes "本次额外事实边界"
 ```
 
-- `--seconds`：目标视频时长，默认 100。
+- `--seconds`：建议时长锚点，默认 100；不是硬限制，质量门默认接受约 0.7 到 1.65 倍的自然时长。
 - `--iterations`：脚本生成和质量修订的最大轮数，默认 2，范围 1 到 4。
 - `--screenshots`：最多抓取的网页截图数；默认 0，避免截图与统一背景不匹配。
 - `--out-dir`：MP4 输出目录。
@@ -50,10 +50,10 @@ dist/quality/<run-id>/frame-3.jpg
 ```text
 新闻 URL
   -> Readability 抓正文
-  -> 新闻 LLM 生成 5 屏内容、标题、旁白和可视化数据
+  -> 新闻 LLM 先生成 5 屏可见内容，再为每屏编写只复述或解释当前画面的旁白
   -> Harness 检查事实硬规则、结构、字数和历史反馈
   -> 不合格时把问题回传给下一轮生成
-  -> F5-TTS 每屏独立合成并自动调速到目标时长
+  -> F5-TTS 每屏独立合成，只在自然语速范围内微调节奏
   -> 回写真正的 narrationSegments 音频边界
   -> Remotion 渲染竖屏视频
   -> FFprobe + FFmpeg 检查音视频流、分辨率、时长和抽帧
@@ -66,8 +66,8 @@ dist/quality/<run-id>/frame-3.jpg
 
 `npm run video` 本身就是生产 harness，分为三道质量门：
 
-1. Draft gate：检查原题保留、正式发布状态、5 屏与 5 段旁白、旁白长度、禁词、场景数据完整度；可调用 LLM judge 给出事实忠实度、标题吸引力、信息密度、视觉结构和 TTS 可读性评分。
-2. Audio gate：检查 TTS 是否存在、时长是否接近目标、每段音频起点和场景边界是否逐帧对齐。
+1. Draft gate：检查原题保留、正式发布状态、5 屏与 5 段旁白、逐屏字数、禁词、场景数据完整度、旁白与当前画面字段重合度，以及旁白中是否出现画面未展示的数字；可调用 LLM judge 给出事实忠实度、标题吸引力、信息密度、视觉结构、逐屏一致性和 TTS 可读性评分。
+2. Audio gate：检查 TTS 是否存在、时长是否处于合理弹性范围、旁白字数/秒是否自然，以及每段音频起点和场景边界是否逐帧对齐。
 3. Video gate：使用 FFprobe 检查视频流、音频流、1080x1920、总时长与流偏差，并在开头、中段和结尾抽帧排除空白画面。
 
 硬规则不通过时，harness 会把问题和改进要求传入下一轮。达到最大轮数仍不合格时会停止，不导出伪成片。LLM judge 的审美评分属于软建议，服务异常或评分偏低会记录到报告，但不会覆盖事实、时长和音画同步等硬门槛。
@@ -135,12 +135,16 @@ F5_TTS_REF_AUDIO=F:\path\to\voice-reference.wav
 F5_TTS_REF_TEXT=
 F5_TTS_HF_OFFLINE=1
 TTS_FIT_TARGET=1
+TTS_MIN_TEMPO=0.90
+TTS_MAX_TEMPO=1.22
+QUALITY_MAX_CHARS_PER_SECOND=11.5
 ```
 
 - `F5_TTS_REF_AUDIO` 决定克隆音色，建议使用干净、单人、无背景音乐的中文语音。
 - `F5_TTS_REF_TEXT` 应与参考音频逐字一致；已有转写时必须填写，避免串词。
 - `F5_TTS_HF_OFFLINE=1` 强制使用本机 Hugging Face 缓存，避免生成时临时联网失败。
-- `TTS_FIT_TARGET=1` 自动使用 FFmpeg 将各段语音统一调整到目标时长。
+- `TTS_FIT_TARGET=1` 允许 FFmpeg 做有限节奏调整；`TTS_MIN_TEMPO` 和 `TTS_MAX_TEMPO` 限制调速范围，默认最多加速到 1.22 倍。
+- `QUALITY_MAX_CHARS_PER_SECOND=11.5` 限制旁白密度；超过时停止输出，而不是继续加速。
 - F5 失败时直接停止，不会偷偷换成低质量系统语音。
 
 依赖本机已安装 FFmpeg、FFprobe、Python F5-TTS 环境，并已缓存 `SWivid/F5-TTS` 和 `charactr/vocos-mel-24khz`。

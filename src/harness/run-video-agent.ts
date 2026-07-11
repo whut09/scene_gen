@@ -114,6 +114,7 @@ for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
   iterations.push(iterationReport);
   console.log(`[harness] draft passed: ${draft.passed}`);
   console.log(`[harness] draft metrics: ${JSON.stringify(draft.metrics)}`);
+  for (const issue of draft.issues) console.log(`[harness] draft ${issue.severity}: ${issue.code} - ${issue.message}`);
 
   if (!draft.passed) {
     if (iteration === maxIterations) {
@@ -142,6 +143,7 @@ for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
   iterationReport.audio = audio;
   console.log(`[harness] audio passed: ${audio.passed}`);
   console.log(`[harness] audio metrics: ${JSON.stringify(audio.metrics)}`);
+  for (const issue of audio.issues) console.log(`[harness] audio ${issue.severity}: ${issue.code} - ${issue.message}`);
 
   if (!audio.passed && iteration < maxIterations) {
     loopNotes = combineNotes([

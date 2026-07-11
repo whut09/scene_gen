@@ -256,16 +256,16 @@ async function fitNarrationSegmentsToTarget(
   }
   const speechDuration = durations.reduce((sum, duration) => sum + duration, 0);
   const targetSpeechDuration = targetSeconds - totalGapSeconds;
-  const tempo = speechDuration / targetSpeechDuration;
+  const desiredTempo = speechDuration / targetSpeechDuration;
+  const minimumTempo = Number(process.env.TTS_MIN_TEMPO ?? 0.9);
+  const maximumTempo = Number(process.env.TTS_MAX_TEMPO ?? 1.22);
+  const tempo = Math.max(minimumTempo, Math.min(maximumTempo, desiredTempo));
   if (Math.abs(tempo - 1) < 0.03) return { paths: segmentPaths, durations };
-  if (tempo < 0.5 || tempo > 2.5) {
-    throw new Error(`TTS tempo adjustment ${tempo.toFixed(2)}x is outside the supported quality range.`);
-  }
 
   const fittedPaths: string[] = [];
   const fittedDurations: number[] = [];
   for (const [index, inputPath] of segmentPaths.entries()) {
-    const fittedPath = inputPath.replace(/\.[^.]+$/, `-fitted-${targetSeconds.toFixed(0)}s.wav`);
+    const fittedPath = inputPath.replace(/\.[^.]+$/, `-fitted-${tempo.toFixed(2)}x.wav`);
     await run("ffmpeg", [
       "-y", "-i", inputPath,
       "-filter:a", `atempo=${tempo.toFixed(6)}`,

@@ -24,6 +24,50 @@ function normalizeText(text: string) {
   return text.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "").toLowerCase();
 }
 
+function sceneVisibleText(scene: VideoScene) {
+  switch (scene.type) {
+    case "title":
+      return [scene.kicker, scene.headline, scene.subhead, ...scene.sources].join(" ");
+    case "briefing_points":
+      return [scene.headline, scene.title, scene.summary, ...scene.metrics.flatMap((item) => [item.label, item.value]), ...scene.points].join(" ");
+    case "signal_chart":
+      return [scene.headline, ...scene.bars.flatMap((item) => [item.label, item.detail])].join(" ");
+    case "flow":
+      return [scene.headline, ...scene.steps.flatMap((item) => [item.label, item.detail])].join(" ");
+    case "outro":
+      return [scene.headline, ...scene.bullets].join(" ");
+  }
+  return "";
+}
+
+function narrationLimits(scene: VideoScene) {
+  if (scene.type === "title") return { min: 55, max: 150 };
+  if (scene.type === "briefing_points") return { min: 90, max: 220 };
+  if (scene.type === "outro") return { min: 65, max: 170 };
+  return { min: 85, max: 210 };
+}
+
+function visibleTokenCoverage(visibleText: string, narration: string) {
+  const visible = normalizeText(visibleText);
+  const spoken = normalizeText(narration);
+  const tokens = new Set<string>();
+  for (const match of visible.matchAll(/[a-z][a-z0-9.-]+|\d+(?:\.\d+)?%?|[\u4e00-\u9fff]{2,}/gi)) {
+    const token = match[0].toLowerCase();
+    if (/^[\u4e00-\u9fff]+$/.test(token) && token.length > 3) {
+      for (let index = 0; index < token.length - 1; index += 2) tokens.add(token.slice(index, index + 2));
+    } else {
+      tokens.add(token);
+    }
+  }
+  if (tokens.size === 0) return 1;
+  const matched = [...tokens].filter((token) => spoken.includes(token)).length;
+  return matched / tokens.size;
+}
+
+function extraNarrationNumbers(visibleText: string, narration: string) {
+  const visibleNumbers = new Set(visibleText.match(/\d+(?:\.\d+)?%?/g) ?? []);
+  return [...new Set(narration.match(/\d+(?:\.\d+)?%?/g) ?? [])].filter((value) => !visibleNumbers.has(value));
+}
 function sceneShapeIssues(scene: VideoScene, index: number) {
   const issues: QualityIssue[] = [];
   if (scene.type === "briefing_points" && (scene.points.length < 3 || scene.metrics.length < 2)) {
@@ -67,9 +111,10 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string)
           content: [
             "你是程序化新闻视频质量评审 agent。只返回 JSON。",
             "sourceArticle 是唯一事实依据，不得引入外部信息。",
-            "分别对 sourceFidelity、titleHook、informationDensity、visualStructure、ttsReadability 打 0 到 100 分。",
+            "分别对 sourceFidelity、titleHook、informationDensity、visualStructure、sceneAlignment、ttsReadability 打 0 到 100 分。",
             "返回字段：scores、issues、revisionNotes。issues 和 revisionNotes 都是字符串数组。",
             "标题应优先保留新闻原题核心卖点，免责声明或边界信息放副标题和正文。",
+            "逐屏检查旁白是否只复述或总结当前场景可见字段。当前屏没有展示的数据、案例、结论或背景不得出现在该段旁白。",
             "旁白必须与 5 个场景逐段对应，不得出现发布建议、作者站点或无关动画说明。",
           ].join("\n"),
         },
@@ -113,8 +158,8 @@ export async function evaluateDraft(
   const revisionNotes: string[] = [];
   const source = project.sources[0];
   const narrationChars = project.narration.replace(/\s+/g, "").length;
-  const minimumChars = Math.round(targetSeconds * 10);
-  const maximumChars = Math.round(targetSeconds * 16);
+  const minimumChars = Math.round(targetSeconds * 6);
+  const maximumChars = Math.round(targetSeconds * 11);
 
   if (project.scenes.length !== 5 || project.narrationSegments?.length !== project.scenes.length) {
     issues.push({ severity: "error", code: "scene_segment_mismatch", message: "必须是 5 个场景和 5 段对应旁白。" });
@@ -132,7 +177,7 @@ export async function evaluateDraft(
     revisionNotes.push("主标题直接使用新闻原题；分析结论放副标题或正文。 ");
   }
   const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
-  if (/正式发布|正式推出|即日起.{0,20}开放/.test(sourceText) && !/正式发布|正式推出|即日起.{0,20}开放/.test(project.narration)) {
+  if (/正式发布|正式推出|即日起.{0,80}开放/.test(sourceText) && !/正式发布|正式推出|即日起.{0,80}开放/.test(project.narration)) {
     issues.push({ severity: "error", code: "release_status_weakened", message: "原文的正式发布或开放状态被弱化。" });
     revisionNotes.push("首段直接复述原文的正式发布状态、开放渠道和用户范围。 ");
   }
@@ -140,7 +185,32 @@ export async function evaluateDraft(
   if (forbidden.test(project.narration)) {
     issues.push({ severity: "error", code: "forbidden_content", message: "旁白包含参考音频污染、站点署名或无关制作建议。" });
   }
-  project.scenes.forEach((scene, index) => issues.push(...sceneShapeIssues(scene, index)));
+  const alignmentScores: number[] = [];
+  project.scenes.forEach((scene, index) => {
+    issues.push(...sceneShapeIssues(scene, index));
+    const segment = project.narrationSegments?.[index];
+    if (!segment) return;
+    const narrationLength = segment.text.replace(/\s+/g, "").length;
+    const limits = narrationLimits(scene);
+    if (narrationLength > limits.max) {
+      issues.push({ severity: "error", code: "scene_narration_overloaded", message: `第 ${index + 1} 屏旁白 ${narrationLength} 字，超过当前画面建议上限 ${limits.max} 字。` });
+      revisionNotes.push(`压缩第 ${index + 1} 屏旁白，只复述该屏可见字段，不要扩展屏幕外内容。`);
+    } else if (narrationLength < limits.min) {
+      issues.push({ severity: "warning", code: "scene_narration_thin", message: `第 ${index + 1} 屏旁白仅 ${narrationLength} 字。` });
+    }
+    const visibleText = `${project.meta.title} ${sceneVisibleText(scene)}`;
+    const coverage = visibleTokenCoverage(visibleText, segment.text);
+    alignmentScores.push(coverage);
+    if (coverage < 0.25) {
+      issues.push({ severity: "error", code: "scene_narration_mismatch", message: `第 ${index + 1} 屏旁白与画面字段重合度过低。` });
+      revisionNotes.push(`重写第 ${index + 1} 屏旁白，按画面上的标题、卡片、数据或步骤逐项讲解。`);
+    }
+    const extraNumbers = extraNarrationNumbers(visibleText, segment.text);
+    if (extraNumbers.length > 0) {
+      issues.push({ severity: "error", code: "scene_extra_numbers", message: `第 ${index + 1} 屏旁白出现画面未展示的数字：${extraNumbers.join("、")}。` });
+      revisionNotes.push(`将第 ${index + 1} 屏旁白中的数字同步到画面，或从旁白删除。`);
+    }
+  });
 
   let scores: Record<string, number> | undefined;
   try {
@@ -184,6 +254,12 @@ export async function evaluateDraft(
       scoreAverage: Number(scoreAverage.toFixed(1)),
       scoreMinimum,
       sceneCount: project.scenes.length,
+      sceneAlignmentAverage: alignmentScores.length
+        ? Number((alignmentScores.reduce((sum, value) => sum + value, 0) / alignmentScores.length).toFixed(3))
+        : 0,
+      sceneAlignmentMinimum: alignmentScores.length
+        ? Number(Math.min(...alignmentScores).toFixed(3))
+        : 0,
       feedbackItemsApplied: feedbackGuidance ? feedbackGuidance.split("\n").length : 0,
     },
   };
@@ -193,12 +269,19 @@ export function evaluateAudio(project: VideoProject, targetSeconds: number): Qua
   const issues: QualityIssue[] = [];
   const segments = project.narrationSegments ?? [];
   const duration = project.audio?.durationSeconds ?? 0;
-  const tolerance = Math.max(10, targetSeconds * 0.15);
+  const minimumDuration = targetSeconds * Number(process.env.QUALITY_MIN_DURATION_FACTOR ?? 0.7);
+  const maximumDuration = targetSeconds * Number(process.env.QUALITY_MAX_DURATION_FACTOR ?? 1.65);
+  const narrationChars = project.narration.replace(/\s+/g, "").length;
+  const charsPerSecond = duration > 0 ? narrationChars / duration : 0;
+  const maximumCharsPerSecond = Number(process.env.QUALITY_MAX_CHARS_PER_SECOND ?? 11.5);
   if (!project.audio || project.audio.provider === "silent") {
     issues.push({ severity: "error", code: "audio_missing", message: "没有生成有效旁白音频。" });
   }
-  if (Math.abs(duration - targetSeconds) > tolerance) {
-    issues.push({ severity: "error", code: "duration_out_of_range", message: `音频 ${duration.toFixed(1)} 秒，目标 ${targetSeconds} 秒。` });
+  if (duration < minimumDuration || duration > maximumDuration) {
+    issues.push({ severity: "error", code: "duration_out_of_range", message: `音频 ${duration.toFixed(1)} 秒，建议范围 ${minimumDuration.toFixed(0)} 到 ${maximumDuration.toFixed(0)} 秒。` });
+  }
+  if (charsPerSecond > maximumCharsPerSecond) {
+    issues.push({ severity: "error", code: "speech_too_fast", message: `旁白密度 ${charsPerSecond.toFixed(1)} 字/秒，超过自然播报上限 ${maximumCharsPerSecond} 字/秒。` });
   }
   let cursor = 0;
   for (const [index, scene] of project.scenes.entries()) {
@@ -218,13 +301,16 @@ export function evaluateAudio(project: VideoProject, targetSeconds: number): Qua
     passed: !issues.some((issue) => issue.severity === "error"),
     issues,
     revisionNotes: issues.some((issue) => issue.code === "duration_out_of_range")
-      ? [duration < targetSeconds ? "增加旁白信息密度和字数。" : "压缩旁白字数。"]
+      ? [duration < minimumDuration ? "允许视频自然缩短，不要用无关内容填充；必要时补充当前画面已展示的信息。" : "压缩旁白字数或允许视频自然延长，不要继续加快语速。"]
       : [],
     metrics: {
       targetSeconds,
       audioDuration: duration,
       sceneDuration: cursor,
       alignmentDelta: Math.abs(cursor - duration),
+      charsPerSecond: Number(charsPerSecond.toFixed(2)),
+      minimumDuration,
+      maximumDuration,
     },
   };
 }
