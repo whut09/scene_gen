@@ -17,6 +17,11 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
   dataDensity: ["medium", "high"],
   motionFamily: "editorial",
   visualFamily: "scene-gen-editorial-v2",
+  variants: [
+    { id: "evidence-board", name: "Evidence Board", tags: ["数学", "猜想", "证明", "研究", "论文", "benchmark"], bestFor: ["research evidence"] },
+    { id: "metric-stack", name: "Metric Stack", tags: ["价格", "性能", "速度", "成本", "score"], bestFor: ["metric briefing"] },
+    { id: "concept-map", name: "Concept Map", tags: ["agent", "架构", "prompt", "流程"], bestFor: ["concept explanation"] },
+  ],
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",

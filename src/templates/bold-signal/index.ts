@@ -17,6 +17,11 @@ export const boldSignalTemplate: HtmlTemplateDefinition = {
   dataDensity: ["low", "medium"],
   motionFamily: "kinetic",
   visualFamily: "scene-gen-editorial-v2",
+  variants: [
+    { id: "impact-center", name: "Impact Center", tags: ["发布", "价格", "性能", "release", "price"], bestFor: ["product launch", "headline impact"] },
+    { id: "quote-split", name: "Quote Split", tags: ["结论", "安全", "限制", "判断"], bestFor: ["final takeaway", "contrast statement"] },
+    { id: "minimal-pulse", name: "Minimal Pulse", tags: ["新闻", "模型"], bestFor: ["short clean hook"] },
+  ],
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",

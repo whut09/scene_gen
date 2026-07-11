@@ -167,6 +167,7 @@ export async function evaluateDraft(
   const maximumChars = Math.round(targetSeconds * 11);
   const templateGraph = buildHtmlVideoContentGraph(project);
   const templateIds = templateGraph.nodes.map((node) => node.templateId);
+  const compositionIds = templateGraph.nodes.map((node) => node.templateId + ":" + node.variantId);
   const uniqueTemplateCount = new Set(templateIds).size;
   const adjacentTemplateRepeats = templateIds.filter((id, index) => index > 0 && id === templateIds[index - 1]).length;
   const templateCategoryCount = new Set(templateIds.map((id) => getTemplateById(id)?.category).filter(Boolean)).size;
@@ -296,7 +297,7 @@ export async function evaluateDraft(
       templateCategoryCount,
       adjacentTemplateRepeats,
       averageTemplateScore: Number(averageTemplateScore.toFixed(2)),
-      templatePlan: templateIds.join(" -> "),
+      templatePlan: compositionIds.join(" -> "),
     },
   };
 }
@@ -308,7 +309,21 @@ function canonicalSpeechText(text: string) {
     .replace(/(?:后|後)盆的ai/g, "openai")
     .replace(/open\s*ai/g, "openai")
     .replace(/靠的|扣的/g, "claude")
-    .replace(/g\s*p\s*t\s*(?:五点六|5[.点]6)/g, "gpt56")
+    .replace(/gpt[- ]?5[.点]6|(?:g\s*p\s*t|吉皮提|鸡皮提|居皮提)\s*(?:五点六|5[.点]6)|5[.点]6模型?/g, "五点六模型")
+    .replace(/prompt|提示[此詞词]/g, "提示词")
+    .replace(/agent/g, "智能体")
+    .replace(/700(?:次|詞|词)|七百次/g, "七百词")
+    .replace(/64(?=个)/g, "六十四")
+    .replace(/價於|驾于/g, "驾驭")
+    .replace(/時/g, "时")
+    .replace(/點/g, "点")
+    .replace(/數/g, "数")
+    .replace(/學/g, "学")
+    .replace(/詞/g, "词")
+    .replace(/體/g, "体")
+    .replace(/開/g, "开")
+    .replace(/個/g, "个")
+    .replace(/50(?=年)/g, "五十")
     .replace(/十六分之一/g, "16分之一")
     .replace(/[發发]/g, "发")
     .replace(/佈/g, "布")

@@ -168,8 +168,13 @@ function prepareF5SynthesisText(text: string) {
     .replace(/OpenAI/gi, "欧盆艾，")
     .replace(
       /GPT[- ]?(\d+)\.(\d+)/gi,
-      (_, major: string, minor: string) => ` G P T，${pronounceDigits(major)}点${pronounceDigits(minor)}`,
-    );
+      (_, major: string, minor: string) => `${pronounceDigits(major)}点${pronounceDigits(minor)}模型，`,
+    )
+    .replace(/Prompt/gi, "提示词")
+    .replace(/Agent/gi, "智能体")
+    .replace(/700(?=词)/g, "七百")
+    .replace(/64(?=个)/g, "六十四")
+    .replace(/50(?=年)/g, "五十");
   return `。${pronounceable}`;
 }
 async function f5Tts(text: string, outputPath: string, speedOverride?: string) {

@@ -17,6 +17,11 @@ export const nytDataChartTemplate: HtmlTemplateDefinition = {
   dataDensity: ["high"],
   motionFamily: "measured",
   visualFamily: "scene-gen-editorial-v2",
+  variants: [
+    { id: "horizontal-bars", name: "Horizontal Bars", tags: ["速度", "价格", "性能", "benchmark"], bestFor: ["benchmark comparison"] },
+    { id: "ranked-cards", name: "Ranked Cards", tags: ["数学", "研究", "论文", "得分", "猜想"], bestFor: ["research scorecard"] },
+    { id: "delta-lanes", name: "Delta Lanes", tags: ["提升", "增长", "前后", "变化"], bestFor: ["before after change"] },
+  ],
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",
@@ -34,28 +39,25 @@ export const nytDataChartTemplate: HtmlTemplateDefinition = {
   },
   provenance: { kind: "original", note: "Scene Gen original template." },
   performance: { tier: "light", expectedRenderRatio: 0.35 },
-  renderHtml: ({ scene, width, height }) => {
+  renderHtml: ({ scene, width, height, variantId }) => {
     const bars = scene.type === "signal_chart" ? scene.bars : [];
-    const body = `<main class="hv-main">
-      <div class="hv-kicker">Data Signal</div>
-      <h1>${escapeHtml(sceneHeadline(scene))}</h1>
-      <section style="position:absolute;left:0;right:0;top:250px;bottom:48px;display:flex;flex-direction:column;justify-content:space-evenly;gap:24px;">
-        ${bars
-          .map(
-            (bar, index) => `<div style="min-height:220px;display:flex;flex-direction:column;justify-content:center;animation:hv-rise .55s ${index * 0.12}s both;">
-              <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:10px;">
-                <strong style="font-size:38px;color:#153f59;">${escapeHtml(bar.label)}</strong>
-                <span style="font-size:42px;color:#06416f;font-weight:900;">${escapeHtml(bar.value)}%</span>
-              </div>
-              <div class="hv-card" style="height:42px;overflow:hidden;background:rgba(255,255,255,.36);">
-                <div style="height:100%;width:${bar.value}%;transform-origin:left center;animation:hv-width 1s ${index * 0.18}s both;background:${escapeHtml(bar.color)};"></div>
-              </div>
-              <p style="margin-top:12px;font-size:26px;color:#25516b;">${escapeHtml(bar.detail)}</p>
-            </div>`,
-          )
-          .join("")}
-      </section>
-    </main>`;
-    return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "paper" });
+    const horizontal = bars.map((bar, index) =>
+      '<article class="nyt-bar" style="animation-delay:' + (index * 0.12) + 's"><div class="nyt-bar-head"><strong>' + escapeHtml(bar.label) + '</strong><span>' + escapeHtml(bar.value) + '%</span></div>' +
+      '<div class="nyt-track"><i style="width:' + bar.value + '%;background:' + escapeHtml(bar.color) + '"></i></div><p>' + escapeHtml(bar.detail) + '</p></article>'
+    ).join('');
+    const ranked = bars.map((bar, index) =>
+      '<article class="nyt-rank" style="animation-delay:' + (index * 0.12) + 's"><b>0' + (index + 1) + '</b><div><span>' + escapeHtml(bar.label) + '</span><strong>关键 ' + String(index + 1).padStart(2, "0") + '</strong><p>' + escapeHtml(bar.detail) + '</p></div><i style="background:' + escapeHtml(bar.color) + '"></i></article>'
+    ).join('');
+    const deltas = bars.map((bar, index) =>
+      '<article class="nyt-delta" style="animation-delay:' + (index * 0.12) + 's"><span>' + escapeHtml(bar.label) + '</span><strong>' + escapeHtml(bar.value) + '%</strong><p>' + escapeHtml(bar.detail) + '</p><i style="width:' + bar.value + '%;background:' + escapeHtml(bar.color) + '"></i></article>'
+    ).join('');
+    const content = variantId === "ranked-cards" ? ranked : variantId === "delta-lanes" ? deltas : horizontal;
+    const body = '<main class="hv-main nyt-main nyt-' + variantId + '"><div class="hv-kicker">DATA / EVIDENCE</div><h1>' + escapeHtml(sceneHeadline(scene)) + '</h1><section class="nyt-content">' + content + '</section></main>';
+    const css =
+      '.nyt-main{inset:112px 58px 60px}.nyt-main h1{font-size:72px}.nyt-content{position:absolute;left:0;right:0;top:250px;bottom:20px}' +
+      '.nyt-horizontal-bars .nyt-content{display:flex;flex-direction:column;justify-content:space-evenly;gap:22px}.nyt-bar{animation:hv-rise .55s both}.nyt-bar-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:12px}.nyt-bar-head strong{font-size:38px;color:#153f59}.nyt-bar-head span{font-size:44px;color:#06416f;font-weight:950}.nyt-track{height:42px;background:rgba(255,255,255,.68);overflow:hidden}.nyt-track i{display:block;height:100%;transform-origin:left;animation:hv-width 1s both}.nyt-bar p{font-size:26px;margin-top:12px}' +
+      '.nyt-ranked-cards .nyt-content{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:18px}.nyt-rank{position:relative;padding:30px;background:rgba(255,255,255,.82);display:grid;grid-template-columns:72px 1fr;gap:18px;align-items:start;overflow:hidden;animation:hv-rise .55s both}.nyt-rank>b{font-size:25px;color:#ff5f5f}.nyt-rank span{display:block;font-size:30px;font-weight:900;color:#153f59}.nyt-rank strong{display:block;font-size:72px;color:#062f50;margin:20px 0}.nyt-rank p{font-size:24px;line-height:1.42}.nyt-rank>i{position:absolute;left:0;right:0;bottom:0;height:12px}' +
+      '.nyt-delta-lanes .nyt-content{display:grid;grid-template-rows:repeat(4,1fr);gap:16px}.nyt-delta{position:relative;padding:26px 30px;background:rgba(255,255,255,.76);display:grid;grid-template-columns:1fr auto;align-content:center;overflow:hidden;animation:hv-rise .55s both}.nyt-delta span{font-size:34px;font-weight:900;color:#153f59}.nyt-delta strong{font-size:54px;color:#062f50}.nyt-delta p{grid-column:1/-1;font-size:25px;margin-top:12px}.nyt-delta i{position:absolute;left:0;bottom:0;height:10px}';
+    return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "paper", extraCss: css });
   },
 };

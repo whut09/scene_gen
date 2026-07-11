@@ -17,6 +17,11 @@ export const decisionFlowTemplate: HtmlTemplateDefinition = {
   dataDensity: ["medium", "high"],
   motionFamily: "diagram",
   visualFamily: "scene-gen-editorial-v2",
+  variants: [
+    { id: "causal-spine", name: "Causal Spine", tags: ["影响", "路径", "因果", "流程"], bestFor: ["cause and effect"] },
+    { id: "agent-branch", name: "Agent Branch", tags: ["agent", "智能体", "子agent", "协作", "编排"], bestFor: ["multi-agent branching"] },
+    { id: "timeline-ladder", name: "Timeline Ladder", tags: ["时间", "历史", "发布", "演进"], bestFor: ["chronological story"] },
+  ],
   output: {
     formats: ["mp4", "webm"], defaultFormat: "mp4", supportedAspects: ["9:16", "16:9"], fps: [30],
     duration: { type: "variable", minSec: 7, maxSec: 28, defaultSec: 16 }, audio: false,

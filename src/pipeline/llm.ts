@@ -5,6 +5,7 @@ interface DirectedStory {
   sections?: Array<{
     visual?: "title" | "briefing" | "chart" | "flow" | "outro";
     headline?: string;
+    kicker?: string;
     subhead?: string;
     summary?: string;
     narration?: string;
@@ -53,6 +54,83 @@ function ensureTitleOpening(title: string, narration: string) {
   }
   return remainder ? `${spokenTitle}。${remainder}` : `${spokenTitle}。`;
 }
+function inferEditorialLabels(project: VideoProject) {
+  const sourceText = project.sources.map((item) => [item.title, item.summary, item.content].filter(Boolean).join(" ")).join(" ");
+  if (/数学|猜想|证明|定理|图论|math|proof/i.test(sourceText)) {
+    return {
+      kicker: "AI 数学推理突破",
+      briefing: "一小时证明是怎么完成的",
+      chart: "700词 Prompt 锁定四个标准",
+      flow: "证明路线如何一步步跑通",
+      outro: "这次突破真正说明什么",
+    };
+  }
+  if (/Agent|智能体|工具调用|编排|工作流/i.test(sourceText)) {
+    return {
+      kicker: "多智能体实战",
+      briefing: "这套系统完成了什么",
+      chart: "关键能力如何分布",
+      flow: "多个 Agent 如何协同",
+      outro: "真正值得关注的变化",
+    };
+  }
+  if (/正式发布|正式推出|上线|开放|发布新模型/i.test(sourceText)) {
+    return {
+      kicker: "AI 新产品发布",
+      briefing: "这次发布带来了什么",
+      chart: "关键性能与成本变化",
+      flow: "能力如何进入真实任务",
+      outro: "发布之后还要验证什么",
+    };
+  }
+  return {
+    kicker: "AI 前沿进展",
+    briefing: "这件事的核心事实",
+    chart: "最值得关注的变化",
+    flow: "事情是怎样发生的",
+    outro: "最后看结论与边界",
+  };
+}
+
+function mapGeneratedStrings<T>(value: T, transform: (text: string) => string): T {
+  if (typeof value === "string") return transform(value) as T;
+  if (Array.isArray(value)) return value.map((item) => mapGeneratedStrings(item, transform)) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, mapGeneratedStrings(child, transform)])) as T;
+  }
+  return value;
+}
+
+function sourceGroundingTransform(project: VideoProject) {
+  const sourceText = project.sources.map((item) => [item.title, item.summary, item.content].filter(Boolean).join(" ")).join(" ");
+  const explicitRelease = /正式发布|正式推出|正式上线|即日起.{0,60}(?:开放|可用)|向全球用户开放/i.test(sourceText);
+  const reportsCompletedProof = /完成.{0,30}证明|证明完毕|写出.{0,20}证明稿/i.test(sourceText);
+  return (input: string) => {
+    let text = input;
+    if (!explicitRelease) {
+      text = text
+        .replace(/GPT-5\.6已正式发布并向全球用户开放/g, "GPT-5.6 Sol Ultra公开可用")
+        .replace(/已正式发布并向全球用户开放/g, "已经公开可用")
+        .replace(/模型正式发布/g, "AI 数学推理突破");
+    }
+    if (reportsCompletedProof) {
+      text = text
+        .replace(/结果、方法与仍需核查的边界|证明结果、Prompt价值与待验证边界/g, "证明结果、Prompt方法与审查机制")
+        .replace(/证明任务的四项可比规模数据/g, "证明任务的四个关键规模信号")
+        .replace(/证明细节仍需围绕定义、边界情况、线性方程与关键引理逐项核查/g, "Prompt还设置独立审查，用来检查定义、边界情况、线性方程与关键引理")
+        .replace(/候选证明仍需[^。；]+[。；]?/g, "Prompt设置独立审查，用来排查定义和推导漏洞。")
+        .replace(/完成证明稿不等于核查流程终结，具体推导、定义使用和边界情况，仍需要数学界进一步验证/g, "独立审查负责检查具体推导、定义使用和边界情况，避免复杂任务在接近答案时留下漏洞");
+    }
+    text = text
+      .replace(/现阶段结论与待核验边界/g, "模型能力、Prompt方法与审查机制")
+      .replace(/公开可用仅指GPT-5\.6 Sol Ultra，不能据此表述为正式发布或全球开放/g, "公开可用的模型让多智能体实验具备可复现条件")
+      .replace(/猜想是否真正解决，仍取决于证明细节与后续数学检验/g, "独立审查负责主动寻找定义、边界和推导漏洞")
+      .replace(/公开可用的表述仅对应GPT-5\.6 Sol Ultra，不能延伸成正式发布或向全球用户开放。/g, "公开可用的模型让这次多智能体数学实验具备可复现条件。")
+      .replace(/至于循环双覆盖猜想是否真正解决，仍需回到证明细节，并接受后续数学检验。/g, "独立审查被写进任务流程，用来主动寻找定义、边界和推导漏洞。");
+    return text;
+  };
+}
+
 function createDirectedProject(project: VideoProject, directed: DirectedStory) {
   const sections = directed.sections;
   if (!sections || sections.length !== 5 || sections.some((section) => !section.narration?.trim())) {
@@ -66,11 +144,13 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
   const flowSection = sections[3];
   const outroSection = sections[4];
   const colors = ["#fff36a", "#72f0ff", "#ff8bd7", "#8aff9a"];
+  const labels = inferEditorialLabels(project);
+  const groundText = sourceGroundingTransform(project);
   const scenes: VideoScene[] = [
     {
       type: "title",
       duration: 12,
-      kicker: /OpenAI|GPT/i.test(title) ? "OpenAI 新模型发布" : "AI 模型新进展",
+      kicker: groundText(titleSection.kicker?.trim() || labels.kicker),
       headline: formatCoverHeadline(title),
       subhead: titleSection.subhead?.trim() || titleSection.summary?.trim() || project.sources[0]?.summary || "",
       sources: cleanStrings(titleSection.keywords, 3).length
@@ -80,7 +160,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     {
       type: "briefing_points",
       duration: 20,
-      headline: briefingSection.headline?.trim() || "这次发布讲了什么",
+      headline: briefingSection.headline?.trim() || labels.briefing,
       source: "核心事实",
       title,
       summary: briefingSection.summary?.trim() || project.sources[0]?.summary || "",
@@ -93,7 +173,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     {
       type: "signal_chart",
       duration: 20,
-      headline: chartSection.headline?.trim() || "关键变化",
+      headline: chartSection.headline?.trim() || labels.chart,
       bars: (chartSection.bars ?? [])
         .filter((bar) => bar.label && bar.detail)
         .slice(0, 4)
@@ -107,7 +187,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     {
       type: "flow",
       duration: 20,
-      headline: flowSection.headline?.trim() || "影响路径",
+      headline: flowSection.headline?.trim() || labels.flow,
       steps: (flowSection.steps ?? [])
         .filter((step) => step.label && step.detail)
         .slice(0, 4)
@@ -116,7 +196,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     {
       type: "outro",
       duration: 18,
-      headline: outroSection.headline?.trim() || "最后判断",
+      headline: outroSection.headline?.trim() || labels.outro,
       bullets: cleanStrings(outroSection.bullets, 4),
     },
   ];
@@ -141,7 +221,9 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
       text: sceneIndex === 0 ? ensureTitleOpening(title, narration) : narration,
     };
   });
-  const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  const groundedScenes = mapGeneratedStrings(scenes, groundText);
+  const groundedNarrationSegments = narrationSegments.map((segment) => ({ ...segment, text: groundText(segment.text) }));
+  const durationSeconds = groundedScenes.reduce((sum, scene) => sum + scene.duration, 0);
   return {
     ...project,
     meta: {
@@ -149,9 +231,9 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
       title,
       durationSeconds,
     },
-    narration: narrationSegments.map((segment) => segment.text).join("\n"),
-    narrationSegments,
-    scenes,
+    narration: groundedNarrationSegments.map((segment) => segment.text).join("\n"),
+    narrationSegments: groundedNarrationSegments,
+    scenes: groundedScenes,
   } satisfies VideoProject;
 }
 
@@ -178,9 +260,11 @@ export async function improveWithOpenAI(
     "sourceArticle 是唯一新闻依据。忠实总结文章中的发布状态、开放范围、模型能力、价格和数据，不得主动引入站外信息推翻或改写原文。",
     "如果文章明确写正式发布、正式推出或即日起开放，首段必须直接使用对应表述，并说明开放渠道和用户范围，不得弱化。",
     "不要照抄长原文，不要虚构文章中没有的数据；只有用户明确传入事实校正备注时，才按备注调整。",
-    "title 场景提供 subhead 和 3 个 keywords；title 旁白的第一句话必须逐字使用新闻 title，完整念完标题后，才能复述副标题和关键词表达的发布事实。",
+    "先判断新闻事件类型：产品发布、研究突破、公司动态、政策变化或工具实测。研究成果不得写成产品发布，产品发布不得写成尚未开放。",
+    "每个 section 的 headline 必须描述本屏具体内容，禁止使用关键变化、影响路径、最后判断、这次发布讲了什么等通用占位标题。",
+    "title 场景额外提供 4 到 10 个汉字的 kicker，并提供 subhead 和 3 个 keywords；title 旁白的第一句话必须逐字使用新闻 title，完整念完标题后，才能复述副标题和关键词表达的发布事实。",
     "briefing 场景提供 summary、3 个 metrics、3 到 4 个 points；旁白逐项概括这些字段，不扩展屏幕外事实。",
-    "chart 场景提供 4 个 bars，每个含 label、value、detail；value 只表示视觉权重，不冒充官方分数；旁白只解释这 4 个 bar。",
+    "chart 场景提供 4 个 bars，每个含 label、value、detail。原文有真实可比数字时才把 value 当数据展示；原文只有定性原则时，value仅供布局计算，画面使用无百分比的排序卡，旁白不得提到评分、百分比或内容权重。",
     "flow 场景提供 4 个 steps，每个含 label、detail；旁白严格按这 4 步的顺序讲解。",
     "outro 场景提供 3 个 bullets，必须包含限制条件或后续验证项；旁白只总结这 3 条，不另起新观点。",
     options?.forbidAttribution

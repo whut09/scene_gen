@@ -284,12 +284,13 @@ export async function renderHtmlVideoProject(
         sceneIndex: node.sceneIndex,
         width: project.meta.width,
         height: project.meta.height,
+        variantId: node.variantId,
       }),
     );
     const htmlPath = path.join(workDir, `${node.id}-${template.id}.html`);
     const videoPath = path.join(workDir, `${node.id}-${template.id}.mp4`);
     await writeFile(htmlPath, html, "utf8");
-    console.log(`[html-video] recording ${node.id} with ${template.id}`);
+    console.log(`[html-video] recording ${node.id} with ${template.id}:${node.variantId}`);
     const detectedMotionSec = await recordHtmlFrame({
       htmlPath,
       outputPath: videoPath,

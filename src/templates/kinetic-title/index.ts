@@ -17,6 +17,12 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
   dataDensity: ["low", "medium"],
   motionFamily: "kinetic",
   visualFamily: "scene-gen-editorial-v2",
+  variants: [
+    { id: "research-stack", name: "Research Stack", tags: ["数学", "猜想", "证明", "研究", "论文", "math", "proof"], bestFor: ["research breakthrough"] },
+    { id: "agent-split", name: "Agent Split", tags: ["agent", "智能体", "prompt", "子agent"], bestFor: ["multi-agent system"] },
+    { id: "launch-impact", name: "Launch Impact", tags: ["发布", "模型", "价格", "release"], bestFor: ["model launch"] },
+    { id: "final-signal", name: "Final Signal", tags: ["outro", "summary", "结论", "判断", "限制"], bestFor: ["final conclusion"] },
+  ],
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",
@@ -29,14 +35,14 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
   license: { spdx: "MIT", attributionRequired: false, redistributionAllowed: true, commercialUse: true },
   provenance: { kind: "original", note: "Original Scene Gen implementation inspired by metadata-driven HTML video systems." },
   performance: { tier: "light", expectedRenderRatio: 0.3 },
-  renderHtml: ({ scene, width, height }) => {
+  renderHtml: ({ scene, width, height, variantId }) => {
     const isTitle = scene.type === "title";
     const headline = isTitle ? scene.headline : scene.type === "outro" ? scene.headline : sceneHeadline(scene);
     const supporting = isTitle ? scene.subhead : scene.type === "outro" ? scene.bullets.slice(0, 3).join(" / ") : "";
     const kicker = isTitle ? scene.kicker : "最终结论";
     const body =
-      '<main class="hv-main kt-main">' +
-      '<div class="kt-index">01</div>' +
+      '<main class="hv-main kt-main kt-' + variantId + '">' +
+      '<div class="kt-index">' + (isTitle ? "01" : "05") + '</div>' +
       '<div class="kt-kicker">' + escapeHtml(kicker) + '</div>' +
       '<h1 class="kt-title">' + escapeHtml(headline).replace(/\n/g, "<br />") + '</h1>' +
       '<div class="kt-rule"><i></i><i></i><i></i></div>' +
@@ -53,6 +59,10 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
       '.kt-rule i:nth-child(2){background:#72f0ff;animation-delay:.45s}.kt-rule i:nth-child(3){background:#ff8bd7;animation-delay:.6s}' +
       '.kt-support{font-size:34px;max-width:850px;animation:hv-rise .55s .5s both;}' +
       '.kt-stamp{position:absolute;left:0;bottom:4px;font-size:20px;font-weight:900;letter-spacing:.18em;color:rgba(255,255,255,.58);}' +
+      '.kt-research-stack{justify-content:flex-start;padding-top:220px}.kt-research-stack .kt-title{font-size:82px;max-width:900px}.kt-research-stack .kt-support{margin-top:28px;padding:30px;border-left:10px solid #fff36a;background:rgba(255,255,255,.12)}' +
+      '.kt-agent-split{justify-content:flex-start;padding-top:260px}.kt-agent-split .kt-title{font-size:80px;max-width:790px}.kt-agent-split .kt-index{top:500px;right:-28px;font-size:330px}.kt-agent-split .kt-rule{width:48%}.kt-agent-split .kt-support{margin-left:150px;max-width:760px;padding-left:28px;border-left:8px solid #72f0ff}' +
+      '.kt-launch-impact .kt-title{font-size:98px}.kt-launch-impact .kt-rule{width:84%}' +
+      '.kt-final-signal{justify-content:center;text-align:center;align-items:center}.kt-final-signal .kt-index{left:50%;right:auto;top:110px;transform:translateX(-50%)}.kt-final-signal .kt-title{font-size:88px}.kt-final-signal .kt-support{max-width:900px}.kt-final-signal .kt-stamp{left:50%;transform:translateX(-50%)}' +
       '@keyframes kt-slam{from{opacity:0;transform:translateY(64px) scale(.92)}to{opacity:1;transform:none}}';
     return commonHtml({ title: headline, body, width, height, theme: "blue", extraCss: css });
   },

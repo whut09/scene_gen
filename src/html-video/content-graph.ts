@@ -12,6 +12,7 @@ export interface HtmlVideoGraphNode {
   intent: SceneIntent;
   frameIntent: string;
   templateId: string;
+  variantId: string;
   templateScore: number;
   templateReasons: string[];
   durationSec: number;
@@ -137,6 +138,7 @@ export function buildHtmlVideoContentGraph(project: VideoProject): HtmlVideoCont
       intent: selection.intent,
       frameIntent: frameIntent(scene, selection.intent),
       templateId: selection.template.id,
+      variantId: selection.variantId,
       templateScore: selection.score,
       templateReasons: selection.reasons,
       durationSec: scene.duration,

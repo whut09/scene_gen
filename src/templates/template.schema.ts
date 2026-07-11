@@ -34,6 +34,13 @@ export interface TemplateInputSpec {
   examples: unknown[];
 }
 
+export interface TemplateVariantDefinition {
+  id: string;
+  name: string;
+  tags: string[];
+  bestFor: string[];
+}
+
 export interface TemplateDefinition {
   id: string;
   version: string;
@@ -50,6 +57,7 @@ export interface TemplateDefinition {
   dataDensity: TemplateDataDensity[];
   motionFamily: TemplateMotionFamily;
   visualFamily: string;
+  variants: TemplateVariantDefinition[];
   output: TemplateOutputSpec;
   inputs: TemplateInputSpec;
   license: {
@@ -73,6 +81,7 @@ export interface TemplateSelection {
   template: HtmlTemplateDefinition;
   score: number;
   intent: SceneIntent;
+  variantId: string;
   reasons: string[];
 }
 
@@ -82,6 +91,7 @@ export interface TemplateRenderContext {
   sceneIndex: number;
   width: number;
   height: number;
+  variantId: string;
 }
 
 export interface HtmlTemplateDefinition extends TemplateDefinition {

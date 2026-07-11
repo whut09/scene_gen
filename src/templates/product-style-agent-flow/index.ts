@@ -17,6 +17,11 @@ export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
   dataDensity: ["medium", "high"],
   motionFamily: "diagram",
   visualFamily: "scene-gen-editorial-v2",
+  variants: [
+    { id: "agent-lanes", name: "Agent Lanes", tags: ["agent", "智能体", "子agent", "prompt", "工具"], bestFor: ["multi-agent orchestration"] },
+    { id: "step-stack", name: "Step Stack", tags: ["流程", "步骤", "工作流"], bestFor: ["linear workflow"] },
+    { id: "capability-grid", name: "Capability Grid", tags: ["能力", "功能", "模型"], bestFor: ["product capabilities"] },
+  ],
   output: {
     formats: ["mp4", "webm"],
     defaultFormat: "mp4",
@@ -34,30 +39,24 @@ export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
   },
   provenance: { kind: "original", note: "Scene Gen original template." },
   performance: { tier: "light", expectedRenderRatio: 0.35 },
-  renderHtml: ({ scene, width, height }) => {
-    const items =
-      scene.type === "flow"
-        ? scene.steps.map((step) => ({ title: step.label, detail: step.detail }))
-        : scene.type === "github_pulse"
-          ? scene.repos.map((repo) => ({ title: repo.repo, detail: repo.summary }))
-          : scene.type === "timeline"
-            ? scene.events.map((event) => ({ title: event.title, detail: `${event.date} / ${event.source}` }))
-            : [];
-    const body = `<main class="hv-main">
-      <div class="hv-kicker">Workflow</div>
-      <h1>${escapeHtml(sceneHeadline(scene))}</h1>
-      <section style="position:absolute;left:0;right:0;top:260px;bottom:36px;display:grid;grid-template-rows:repeat(${Math.max(1, items.length)},1fr);align-items:center;gap:18px;">
-        ${items
-          .map(
-            (item, index) => `<article class="hv-card" style="display:grid;grid-template-columns:84px 1fr;gap:24px;align-items:center;padding:30px;min-height:190px;animation:hv-rise .55s ${index * 0.14}s both;">
-              <span style="width:64px;height:64px;border:3px solid rgba(255,255,255,.58);display:grid;place-items:center;font-size:28px;font-weight:900;color:#fff36a;">${String(index + 1).padStart(2, "0")}</span>
-              <div><h2 style="font-size:42px;line-height:1.16;margin-bottom:10px;">${escapeHtml(item.title)}</h2>
-              <p style="font-size:28px;">${escapeHtml(item.detail)}</p></div>
-            </article>`,
-          )
-          .join("")}
-      </section>
-    </main>`;
-    return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "dark" });
+  renderHtml: ({ scene, width, height, variantId }) => {
+    const items = scene.type === "flow"
+      ? scene.steps.map((step) => ({ title: step.label, detail: step.detail }))
+      : scene.type === "github_pulse"
+        ? scene.repos.map((repo) => ({ title: repo.repo, detail: repo.summary }))
+        : scene.type === "timeline"
+          ? scene.events.map((event) => ({ title: event.title, detail: event.date + " / " + event.source }))
+          : [];
+    const cards = items.slice(0, 4).map((item, index) =>
+      '<article class="pf-card" style="animation-delay:' + (index * 0.14) + 's"><span>' + String(index + 1).padStart(2, "0") + '</span><div><h2>' + escapeHtml(item.title) + '</h2><p>' + escapeHtml(item.detail) + '</p></div></article>'
+    ).join('');
+    const center = variantId === "agent-lanes" ? '<div class="pf-core"><b>PROMPT</b><span>ORCHESTRATE</span></div>' : '';
+    const body = '<main class="hv-main pf-main pf-' + variantId + '"><div class="hv-kicker">SYSTEM / FLOW</div><h1>' + escapeHtml(sceneHeadline(scene)) + '</h1><section class="pf-content">' + cards + center + '</section></main>';
+    const css =
+      '.pf-main{inset:108px 54px 60px}.pf-main h1{font-size:72px}.pf-content{position:absolute;left:0;right:0;top:250px;bottom:20px}.pf-card{padding:28px;background:rgba(255,255,255,.14);border:2px solid rgba(255,255,255,.27);display:grid;grid-template-columns:68px 1fr;gap:18px;align-items:center;animation:hv-rise .55s both}.pf-card>span{width:54px;height:54px;display:grid;place-items:center;background:#fff36a;color:#0847a6;font-weight:950}.pf-card h2{font-size:36px;line-height:1.15}.pf-card p{font-size:25px;margin-top:10px}' +
+      '.pf-step-stack .pf-content{display:grid;grid-template-rows:repeat(4,1fr);gap:18px}' +
+      '.pf-capability-grid .pf-content{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:18px}.pf-capability-grid .pf-card{display:flex;flex-direction:column;align-items:flex-start;justify-content:center}.pf-capability-grid .pf-card:nth-child(2){background:rgba(255,243,106,.18)}.pf-capability-grid .pf-card:nth-child(3){background:rgba(255,139,215,.16)}' +
+      '.pf-agent-lanes .pf-content{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:92px 120px;padding:36px 0}.pf-agent-lanes .pf-card{position:relative}.pf-agent-lanes .pf-card:nth-child(odd)::after{content:"";position:absolute;right:-62px;top:50%;width:60px;height:4px;background:#72f0ff}.pf-agent-lanes .pf-card:nth-child(even)::after{content:"";position:absolute;left:-62px;top:50%;width:60px;height:4px;background:#72f0ff}.pf-core{position:absolute;left:50%;top:50%;width:190px;height:190px;transform:translate(-50%,-50%) rotate(45deg);background:#fff36a;color:#083b78;display:grid;place-items:center;align-content:center;z-index:4;box-shadow:0 0 50px rgba(255,243,106,.3)}.pf-core>*{transform:rotate(-45deg)}.pf-core b{font-size:29px}.pf-core span{font-size:15px;font-weight:900;margin-top:8px}';
+    return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "dark", extraCss: css });
   },
 };

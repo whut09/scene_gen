@@ -53,6 +53,14 @@ src/templates/
 
 选择结果写入 ContentGraph，包括 templateScore 和 templateReasons，方便质量报告解释为什么使用该构图。
 
+## 动态布局变体
+
+模板选择分成两层：先选择适合场景的模板，再根据新闻语义选择模板内部的 layoutVariant。当前会识别数学研究、Agent 编排、产品发布、性能数据、时间线和结论等信号。
+
+例如同一个标题场景可以选择 research-stack、agent-split、launch-impact 或 final-signal；同一个数据场景可以选择 horizontal-bars、ranked-cards 或 delta-lanes。variantId 会写入 ContentGraph 和质量报告，模板加变体共同构成最终 composition id。
+
+选择器为语义标签、scene type、信息密度和稳定内容哈希分别计分。哈希只用于候选项接近时产生可复现变化，不会覆盖内容适配分数。相邻模板重复和整片重复仍会受到惩罚。
+
 ## ContentGraph v2
 
 生成 story 时同时写出：

@@ -17,6 +17,11 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
   dataDensity: ["medium", "high"],
   motionFamily: "editorial",
   visualFamily: "scene-gen-editorial-v2",
+  variants: [
+    { id: "stat-grid", name: "Stat Grid", tags: ["价格", "性能", "速度", "成本", "分数"], bestFor: ["dense metrics"] },
+    { id: "research-dossier", name: "Research Dossier", tags: ["数学", "猜想", "证明", "研究", "论文"], bestFor: ["research facts"] },
+    { id: "manifesto", name: "Manifesto", tags: ["结论", "限制", "判断", "意义"], bestFor: ["editorial conclusion"] },
+  ],
   output: {
     formats: ["mp4", "webm"], defaultFormat: "mp4", supportedAspects: ["9:16", "16:9"], fps: [30],
     duration: { type: "variable", minSec: 7, maxSec: 26, defaultSec: 15 }, audio: false,
@@ -25,7 +30,7 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
   license: { spdx: "MIT", attributionRequired: false, redistributionAllowed: true, commercialUse: true },
   provenance: { kind: "original", note: "Original Scene Gen editorial composition." },
   performance: { tier: "light", expectedRenderRatio: 0.35 },
-  renderHtml: ({ scene, width, height }) => {
+  renderHtml: ({ scene, width, height, variantId }) => {
     let body = '';
     if (scene.type === "briefing_points") {
       const metrics = scene.metrics.slice(0, 3).map((metric, index) =>
@@ -34,21 +39,21 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
       const points = scene.points.slice(0, 4).map((point, index) =>
         '<li style="animation-delay:' + (0.28 + index * 0.12) + 's"><b>' + String(index + 1).padStart(2, "0") + '</b><span>' + escapeHtml(point) + '</span></li>'
       ).join('');
-      body = '<main class="hv-main es-main"><div class="es-kicker">核心事实 / BRIEF</div><h1>' + escapeHtml(scene.headline) + '</h1>' +
+      body = '<main class="hv-main es-main es-' + variantId + '"><div class="es-kicker">核心事实 / BRIEF</div><h1>' + escapeHtml(scene.headline) + '</h1>' +
         '<section class="es-lead"><h2>' + escapeHtml(scene.title) + '</h2><p>' + escapeHtml(scene.summary) + '</p></section>' +
         '<section class="es-metrics">' + metrics + '</section><ol class="es-points">' + points + '</ol></main>';
     } else if (scene.type === "news_stack") {
       const cards = scene.items.slice(0, 4).map((item, index) =>
         '<article class="es-news" style="animation-delay:' + (index * 0.12) + 's"><b>' + String(index + 1).padStart(2, "0") + '</b><div><h2>' + escapeHtml(item.title) + '</h2><p>' + escapeHtml(item.summary) + '</p></div></article>'
       ).join('');
-      body = '<main class="hv-main es-main"><div class="es-kicker">NEWS / FACTS</div><h1>' + escapeHtml(scene.headline) + '</h1><section class="es-news-grid">' + cards + '</section></main>';
+      body = '<main class="hv-main es-main es-' + variantId + '"><div class="es-kicker">NEWS / FACTS</div><h1>' + escapeHtml(scene.headline) + '</h1><section class="es-news-grid">' + cards + '</section></main>';
     } else if (scene.type === "outro") {
       const points = scene.bullets.slice(0, 4).map((point, index) =>
         '<li style="animation-delay:' + (index * 0.14) + 's"><b>' + String(index + 1).padStart(2, "0") + '</b><span>' + escapeHtml(point) + '</span></li>'
       ).join('');
-      body = '<main class="hv-main es-main es-outro"><div class="es-kicker">TAKEAWAY</div><h1>' + escapeHtml(scene.headline) + '</h1><ol class="es-points">' + points + '</ol></main>';
+      body = '<main class="hv-main es-main es-' + variantId + ' es-outro"><div class="es-kicker">TAKEAWAY</div><h1>' + escapeHtml(scene.headline) + '</h1><ol class="es-points">' + points + '</ol></main>';
     } else {
-      body = '<main class="hv-main es-main"><h1>' + escapeHtml(sceneHeadline(scene)) + '</h1></main>';
+      body = '<main class="hv-main es-main es-' + variantId + '"><h1>' + escapeHtml(sceneHeadline(scene)) + '</h1></main>';
     }
     const css =
       '.es-main{inset:112px 54px 64px}.es-kicker{font-size:24px;font-weight:950;letter-spacing:.12em;color:#075078;margin-bottom:18px}' +
@@ -63,7 +68,10 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
       '.es-points li{display:grid;grid-template-columns:72px 1fr;gap:18px;align-items:center;padding:20px 24px;background:rgba(255,255,255,.72);color:#153f59;animation:hv-rise .5s both}' +
       '.es-points b{font-size:22px;color:#ff5f5f}.es-points span{font-size:27px;line-height:1.38;font-weight:750}' +
       '.es-news-grid{margin-top:34px;display:grid;gap:14px}.es-news{display:grid;grid-template-columns:72px 1fr;gap:20px;padding:28px;background:rgba(255,255,255,.76);color:#123b56;animation:hv-rise .55s both}' +
-      '.es-news>b{font-size:28px;color:#ff5f5f}.es-news h2{font-size:38px;line-height:1.18}.es-news p{font-size:26px;color:#36586d;margin-top:10px}.es-outro{display:flex;flex-direction:column;justify-content:center}';
+      '.es-news>b{font-size:28px;color:#ff5f5f}.es-news h2{font-size:38px;line-height:1.18}.es-news p{font-size:26px;color:#36586d;margin-top:10px}.es-outro{display:flex;flex-direction:column;justify-content:center}' +
+      '.es-research-dossier .es-lead{margin-left:110px;border-left:0;border-top:12px solid #ff5f5f}.es-research-dossier .es-metrics{grid-template-columns:repeat(3,1fr);grid-template-rows:210px}.es-research-dossier .es-metric-0{grid-row:auto}.es-research-dossier .es-points{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}.es-research-dossier .es-points li{grid-template-columns:54px 1fr;min-height:150px}' +
+      '.es-manifesto{text-align:center;align-items:center}.es-manifesto .es-points{width:92%;margin-top:50px}.es-manifesto .es-points li{min-height:150px;text-align:left}.es-manifesto h1{font-size:88px}' +
+      '.es-stat-grid .es-metrics{transform:rotate(-1deg)}';
     return commonHtml({ title: sceneHeadline(scene), body, width, height, theme: "paper", extraCss: css });
   },
 };
