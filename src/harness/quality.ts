@@ -204,7 +204,7 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。" });
     revisionNotes.push("将新闻标题逐字放在第一段旁白的第一句话，念完标题后再进入正文。 ");
   }
-  if (source && normalizeText(project.meta.title) !== normalizeText(source.title)) {
+  if (source && source.kind !== "github" && normalizeText(project.meta.title) !== normalizeText(source.title)) {
     issues.push({ severity: "error", code: "title_rewritten", message: "主标题没有保留新闻原题。" });
     revisionNotes.push("主标题直接使用新闻原题；分析结论放副标题或正文。 ");
   }
@@ -310,12 +310,28 @@ function canonicalSpeechText(text: string) {
     .replace(/open\s*ai/g, "openai")
     .replace(/靠的|扣的/g, "claude")
     .replace(/gpt[- ]?5[.点]6|(?:g\s*p\s*t|吉皮提|鸡皮提|居皮提)\s*(?:五点六|5[.点]6)|5[.点]6模型?/g, "五点六模型")
+    .replace(/superpowers/g, "超级能力")
     .replace(/prompt|提示[此詞词]/g, "提示词")
     .replace(/agent/g, "智能体")
     .replace(/700(?:次|詞|词)|七百次/g, "七百词")
     .replace(/64(?=个)/g, "六十四")
     .replace(/價於|驾于/g, "驾驭")
+    .replace(/代理案工程/g, "代理按工程")
     .replace(/時/g, "时")
+    .replace(/級/g, "级")
+    .replace(/編/g, "编")
+    .replace(/碼/g, "码")
+    .replace(/讓/g, "让")
+    .replace(/單/g, "单")
+    .replace(/軟/g, "软")
+    .replace(/發/g, "发")
+    .replace(/過/g, "过")
+    .replace(/組/g, "组")
+    .replace(/驗/g, "验")
+    .replace(/證/g, "证")
+    .replace(/劃/g, "划")
+    .replace(/執/g, "执")
+    .replace(/測/g, "测")
     .replace(/點/g, "点")
     .replace(/數/g, "数")
     .replace(/學/g, "学")
@@ -376,6 +392,29 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const charsPerSecond = duration > 0 ? narrationChars / duration : 0;
   const maximumCharsPerSecond = Number(process.env.QUALITY_MAX_CHARS_PER_SECOND ?? 11.5);
+  const segmentRates = segments
+    .map((segment) => {
+      const segmentDuration = segment.durationSeconds ?? 0;
+      const chars = segment.text.replace(/\s+/g, "").length;
+      return segmentDuration > 0 ? chars / segmentDuration : 0;
+    })
+    .filter((value) => value > 0);
+  const sortedRates = [...segmentRates].sort((left, right) => left - right);
+  const medianSegmentRate = sortedRates.length
+    ? sortedRates.length % 2
+      ? sortedRates[Math.floor(sortedRates.length / 2)]
+      : (sortedRates[sortedRates.length / 2 - 1] + sortedRates[sortedRates.length / 2]) / 2
+    : 0;
+  const minimumSegmentRate = sortedRates[0] ?? 0;
+  const maximumSegmentRate = sortedRates[sortedRates.length - 1] ?? 0;
+  const segmentSpeedRatio = minimumSegmentRate > 0 ? maximumSegmentRate / minimumSegmentRate : 0;
+  const meanSegmentRate = segmentRates.length ? segmentRates.reduce((sum, value) => sum + value, 0) / segmentRates.length : 0;
+  const segmentSpeedCv = meanSegmentRate > 0
+    ? Math.sqrt(segmentRates.reduce((sum, value) => sum + (value - meanSegmentRate) ** 2, 0) / segmentRates.length) / meanSegmentRate
+    : 0;
+  const firstToMedianSpeed = medianSegmentRate > 0 && segmentRates.length ? segmentRates[0] / medianSegmentRate : 0;
+  const maximumSegmentSpeedRatio = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_RATIO ?? 1.35);
+  const maximumSegmentSpeedCv = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_CV ?? 0.16);
   if (!project.audio || project.audio.provider === "silent") {
     issues.push({ severity: "error", code: "audio_missing", message: "没有生成有效旁白音频。" });
   }
@@ -384,6 +423,12 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   }
   if (charsPerSecond > maximumCharsPerSecond) {
     issues.push({ severity: "error", code: "speech_too_fast", message: `旁白密度 ${charsPerSecond.toFixed(1)} 字/秒，超过自然播报上限 ${maximumCharsPerSecond} 字/秒。` });
+  }
+  if (segmentRates.length >= 2 && segmentSpeedRatio > maximumSegmentSpeedRatio) {
+    issues.push({ severity: "error", code: "segment_speed_uneven", message: `逐屏语速最大相差 ${segmentSpeedRatio.toFixed(2)} 倍，超过 ${maximumSegmentSpeedRatio.toFixed(2)} 倍。` });
+  }
+  if (segmentRates.length >= 3 && segmentSpeedCv > maximumSegmentSpeedCv) {
+    issues.push({ severity: "error", code: "segment_speed_variance", message: `逐屏语速离散度 ${(segmentSpeedCv * 100).toFixed(1)}%，超过 ${(maximumSegmentSpeedCv * 100).toFixed(0)}%。` });
   }
   let titleTranscript = "";
   let titleAudioCoverage = 0;
@@ -433,6 +478,12 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
       sceneDuration: cursor,
       alignmentDelta: Math.abs(cursor - duration),
       charsPerSecond: Number(charsPerSecond.toFixed(2)),
+      segmentCharsPerSecond: segmentRates.map((value) => Number(value.toFixed(2))).join(", "),
+      segmentSpeedRatio: Number(segmentSpeedRatio.toFixed(3)),
+      segmentSpeedCv: Number(segmentSpeedCv.toFixed(3)),
+      firstToMedianSpeed: Number(firstToMedianSpeed.toFixed(3)),
+      maximumSegmentSpeedRatio,
+      maximumSegmentSpeedCv,
       minimumDuration,
       maximumDuration,
       titleTranscript,

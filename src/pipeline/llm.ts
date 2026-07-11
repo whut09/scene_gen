@@ -137,7 +137,8 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     return project;
   }
 
-  const title = project.meta.title;
+  const isGithubProject = project.sources[0]?.kind === "github";
+  const title = isGithubProject && directed.title?.trim() ? directed.title.trim() : project.meta.title;
   const titleSection = sections[0];
   const briefingSection = sections[1];
   const chartSection = sections[2];
@@ -247,6 +248,7 @@ export async function improveWithOpenAI(
   const model = process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
   const baseUrl = process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
   const targetSeconds = options?.targetSeconds ?? 90;
+  const isGithubProject = project.sources[0]?.kind === "github";
   const targetChars = Math.max(650, Math.min(1100, Math.round(targetSeconds * 8.5)));
   const guidance = [
     "你是 AI 科技竖屏短视频的资深新闻编导。",
@@ -257,12 +259,16 @@ export async function improveWithOpenAI(
     "禁止在旁白中加入当前屏幕没有呈现的新数据、新案例、新结论或额外背景；需要讲的信息必须先写进该 section 的可视字段。",
     "逐屏旁白长度：title 70-130 字，briefing 120-200 字，chart 110-190 字，flow 110-190 字，outro 80-150 字。宁可让视频自然变长或变短，也不要堆字。",
     "不要出现新闻怎么跟进、如何发布、适合做视频、作者、编辑、站点、媒体来源等无关内容。",
-    "sourceArticle 是唯一新闻依据。忠实总结文章中的发布状态、开放范围、模型能力、价格和数据，不得主动引入站外信息推翻或改写原文。",
+    isGithubProject
+      ? "这是GitHub项目拆解，不是热点发布新闻。README和仓库元数据是唯一依据，重点解释项目解决什么问题、核心工作流、技能结构、支持平台和适用边界。outro只能使用README明确写出的安装差异、使用方式、方法论定位或适用对象；README没有限制条件时就总结适用场景，不得虚构隐私、联网、环境变量或性能边界。"
+      : "sourceArticle 是唯一新闻依据。忠实总结文章中的发布状态、开放范围、模型能力、价格和数据，不得主动引入站外信息推翻或改写原文。",
     "如果文章明确写正式发布、正式推出或即日起开放，首段必须直接使用对应表述，并说明开放渠道和用户范围，不得弱化。",
     "不要照抄长原文，不要虚构文章中没有的数据；只有用户明确传入事实校正备注时，才按备注调整。",
     "先判断新闻事件类型：产品发布、研究突破、公司动态、政策变化或工具实测。研究成果不得写成产品发布，产品发布不得写成尚未开放。",
     "每个 section 的 headline 必须描述本屏具体内容，禁止使用关键变化、影响路径、最后判断、这次发布讲了什么等通用占位标题。",
-    "title 场景额外提供 4 到 10 个汉字的 kicker，并提供 subhead 和 3 个 keywords；title 旁白的第一句话必须逐字使用新闻 title，完整念完标题后，才能复述副标题和关键词表达的发布事实。",
+    isGithubProject
+      ? "title 使用简洁中文项目标题，以项目名开头，控制在15到32个汉字；提供4到10个汉字的kicker、subhead和3个keywords。第一句话完整播报生成后的项目标题。"
+      : "title 场景额外提供 4 到 10 个汉字的 kicker，并提供 subhead 和 3 个 keywords；title 旁白的第一句话必须逐字使用新闻 title，完整念完标题后，才能复述副标题和关键词表达的发布事实。",
     "briefing 场景提供 summary、3 个 metrics、3 到 4 个 points；旁白逐项概括这些字段，不扩展屏幕外事实。",
     "chart 场景提供 4 个 bars，每个含 label、value、detail。原文有真实可比数字时才把 value 当数据展示；原文只有定性原则时，value仅供布局计算，画面使用无百分比的排序卡，旁白不得提到评分、百分比或内容权重。",
     "flow 场景提供 4 个 steps，每个含 label、detail；旁白严格按这 4 步的顺序讲解。",
@@ -295,6 +301,9 @@ export async function improveWithOpenAI(
               summary: item.summary,
               content: item.content,
               publishedAt: item.publishedAt,
+              kind: item.kind,
+              repo: item.repo,
+              metrics: item.metrics,
               tags: item.tags,
             })),
           }),

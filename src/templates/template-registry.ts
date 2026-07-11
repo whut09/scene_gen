@@ -70,6 +70,7 @@ function searchableTerms(scene: VideoScene, project: VideoProject) {
     source?.kind ?? "",
     source?.title ?? "",
     source?.summary ?? "",
+    JSON.stringify(scene),
     ...(source?.tags ?? []),
   ].join(" ").toLowerCase();
 }

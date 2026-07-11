@@ -100,6 +100,18 @@ HTML Video 路径现在执行以下协议：
 7. 使用 tpad=stop_mode=clone 补足最后一帧，再按旁白场景时长精确裁剪。
 8. 所有场景拼接后复用项目的同一条 F5-TTS 音轨。
 
+## GitHub 项目输入
+
+输入 github.com/<owner>/<repo> 时，抓取器会优先调用 GitHub Repository API 和 README raw API，而不是对网页导航结构做 Readability 摘要。VideoProject 会保存 repo、Stars、Forks、Issues、主语言、许可证和默认分支，LLM 按项目拆解模式生成标题、技能结构与工作流。
+
+定性技能分类会自动选择 category-cards，不显示虚构百分比；只有来源中存在真实可比较数据时才使用柱状图。
+
+## 匀速语音质量门
+
+F5-TTS 的所有标题和正文统一使用 F5_TTS_UNIFORM_SPEED。每个音频片段都会把合成速度写入缓存 metadata，速度变化后必须重新合成，避免复用旧的快慢混合音频。
+
+Audio gate 计算每屏实际字/秒、最大最小倍率、变异系数和首屏相对中位速度。默认最大倍率 1.35，变异系数 0.16；超过任一阈值会停止视频渲染。
+
 ## 一键使用
 
 质量优先，默认 HTML Video：

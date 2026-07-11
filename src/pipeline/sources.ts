@@ -197,10 +197,77 @@ export async function collectHackerNews(config: SourceConfig): Promise<HotItem[]
   return items;
 }
 
+function githubRepoFromUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.toLowerCase() !== "github.com") return null;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) return null;
+    return { owner: parts[0], repo: parts[1].replace(/\.git$/i, ""), fullName: parts[0] + "/" + parts[1].replace(/\.git$/i, "") };
+  } catch {
+    return null;
+  }
+}
+
+async function collectGithubRepository(url: string, config: SourceConfig): Promise<HotItem | null> {
+  const target = githubRepoFromUrl(url);
+  if (!target) return null;
+  const headers = { "user-agent": "scene-gen/0.1 video research bot", accept: "application/vnd.github+json" };
+  const repoResponse = await fetch("https://api.github.com/repos/" + target.fullName, { headers });
+  if (!repoResponse.ok) throw new Error("GitHub API " + repoResponse.status + " " + repoResponse.statusText);
+  const repo = await repoResponse.json() as {
+    full_name?: string; name?: string; description?: string; stargazers_count?: number; forks_count?: number;
+    open_issues_count?: number; language?: string; license?: { spdx_id?: string }; pushed_at?: string; topics?: string[];
+    default_branch?: string;
+  };
+  const readmeResponse = await fetch("https://api.github.com/repos/" + target.fullName + "/readme", {
+    headers: { ...headers, accept: "application/vnd.github.raw+json" },
+  });
+  const readme = readmeResponse.ok ? await readmeResponse.text() : "";
+  const description = compactText(repo.description || target.fullName, 260);
+  const content = compactText([
+    description,
+    "Repository: " + (repo.full_name || target.fullName),
+    "Stars: " + (repo.stargazers_count ?? 0),
+    "Forks: " + (repo.forks_count ?? 0),
+    "Language: " + (repo.language || "Unknown"),
+    "License: " + (repo.license?.spdx_id || "Unknown"),
+    readme,
+  ].join("\n"), 12000);
+  const joined = [description, ...(repo.topics ?? []), readme].join(" ");
+  return {
+    id: stableId("github", url, repo.full_name || target.fullName),
+    kind: "github",
+    title: (repo.name || target.repo) + "：" + description,
+    url,
+    source: "GitHub",
+    summary: description,
+    content,
+    publishedAt: repo.pushed_at || new Date().toISOString(),
+    score: scoreItem(joined, repo.pushed_at, 1, config.keywords),
+    tags: [...new Set([...(repo.topics ?? []), ...normalizeTags(joined, config.keywords)])].slice(0, 8),
+    domain: "github.com",
+    repo: repo.full_name || target.fullName,
+    metrics: {
+      stars: repo.stargazers_count ?? 0,
+      forks: repo.forks_count ?? 0,
+      issues: repo.open_issues_count ?? 0,
+      language: repo.language || "Unknown",
+      license: repo.license?.spdx_id || "Unknown",
+      branch: repo.default_branch || "main",
+    },
+  };
+}
+
 export async function collectWebpage(urls: string[], config: SourceConfig): Promise<HotItem[]> {
   const items: HotItem[] = [];
   for (const url of urls) {
     try {
+      const githubItem = await collectGithubRepository(url, config);
+      if (githubItem) {
+        items.push(githubItem);
+        continue;
+      }
       const html = await fetchText(url);
       const dom = new JSDOM(html, { url });
       const article = new Readability(dom.window.document).parse();
