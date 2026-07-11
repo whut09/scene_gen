@@ -209,6 +209,15 @@ function githubRepoFromUrl(url: string) {
   }
 }
 
+
+function cleanGithubDescription(value: string, repoName: string) {
+  const firstLanguage = value.split(/[|｜]/, 1)[0] ?? value;
+  const withoutRepo = firstLanguage
+    .replace(new RegExp(`^${repoName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[:：-]?\\s*`, "i"), "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return compactText(withoutRepo || repoName, 96);
+}
 async function collectGithubRepository(url: string, config: SourceConfig): Promise<HotItem | null> {
   const target = githubRepoFromUrl(url);
   if (!target) return null;
@@ -224,7 +233,8 @@ async function collectGithubRepository(url: string, config: SourceConfig): Promi
     headers: { ...headers, accept: "application/vnd.github.raw+json" },
   });
   const readme = readmeResponse.ok ? await readmeResponse.text() : "";
-  const description = compactText(repo.description || target.fullName, 260);
+  const rawDescription = compactText(repo.description || target.fullName, 260);
+  const description = cleanGithubDescription(rawDescription, repo.name || target.repo);
   const content = compactText([
     description,
     "Repository: " + (repo.full_name || target.fullName),

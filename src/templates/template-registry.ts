@@ -3,6 +3,7 @@ import { boldSignalTemplate } from "./bold-signal";
 import { decisionFlowTemplate } from "./decision-flow";
 import { editorialStatGridTemplate } from "./editorial-stat-grid";
 import { kineticTitleTemplate } from "./kinetic-title";
+import { investmentResearchTemplate } from "./investment-research";
 import { newsBlueBoardTemplate } from "./news-blue-board";
 import { nytDataChartTemplate } from "./nyt-data-chart";
 import { productStyleAgentFlowTemplate } from "./product-style-agent-flow";
@@ -17,6 +18,7 @@ export const htmlVideoTemplates: HtmlTemplateDefinition[] = [
   boldSignalTemplate,
   kineticTitleTemplate,
   newsBlueBoardTemplate,
+  investmentResearchTemplate,
   editorialStatGridTemplate,
   nytDataChartTemplate,
   productStyleAgentFlowTemplate,
@@ -142,6 +144,11 @@ export function rankTemplatesForScene(
 
       const matchedTags = template.tags.filter((tag) => terms.includes(tag.toLowerCase())).slice(0, 4);
       score += matchedTags.length * 3;
+      const investmentTerms = /investment|finance|valuation|value investing|投研|投资|估值|巴菲特|芒格/.test(terms);
+      if (template.id === "investment-research" && investmentTerms) {
+        score += 14;
+        reasons.push("investment-domain fit");
+      }
       if (matchedTags.length) reasons.push("tags " + matchedTags.join(", "));
 
       const discouraged = template.notFor.filter((term) => terms.includes(term.toLowerCase()));

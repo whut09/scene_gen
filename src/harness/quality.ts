@@ -305,6 +305,16 @@ export async function evaluateDraft(
 function canonicalSpeechText(text: string) {
   return text
     .toLowerCase()
+    .replace(/a[.\s]*i[.]?/g, "ai")
+    .replace(/ai[ -]?berkshire|ai伯克希尔|ai伯克希爾|艾伯克希尔|艾伯克希爾|艾伯是/g, "ai伯克希尔")
+    .replace(/斯大师/g, "四大师")
+    .replace(/投严/g, "投研")
+    .replace(/論/g, "论")
+    .replace(/驅/g, "驱")
+    .replace(/動/g, "动")
+    .replace(/團/g, "团")
+    .replace(/隊/g, "队")
+    .replace(/区动/g, "驱动")
     .replace(/omni\s*route|奥姆尼路由|奧姆尼路由/g, "奥姆尼路由")
     .replace(/澳母尼|奧母尼/g, "奥姆尼")
     .replace(/边马|邊馬/g, "编码")
