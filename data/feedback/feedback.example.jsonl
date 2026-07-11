@@ -2,3 +2,4 @@
 {"createdAt":"2026-01-01T00:00:00.000Z","category":"source_fidelity","severity":"critical","issue":"总结引入站外信息，改变了新闻原文的发布状态","desired":"新闻正文作为唯一总结依据，除非用户明确提供校正备注"}
 {"createdAt":"2026-01-01T00:00:00.000Z","category":"audio_alignment","severity":"high","issue":"画面切换与旁白段落不一致","desired":"每个场景独立生成音频并按真实音频时长切屏"}{"createdAt":"2026-01-01T00:00:00.000Z","category":"audio","severity":"high","issue":"为了压到固定时长导致语速过快","desired":"限制最大调速，让成片时长随新闻内容自然浮动"}
 {"createdAt":"2026-01-01T00:00:00.000Z","category":"scene-alignment","severity":"critical","issue":"旁白扩展了当前页面没有呈现的信息","desired":"每段旁白只复述、总结或解释当前屏可见内容"}
+{"createdAt":"2026-01-01T00:00:00.000Z","category":"title-hook","severity":"critical","issue":"语音第一句话没有先念新闻标题","desired":"第一段旁白第一句话逐字念完整新闻标题，之后再进入正文"}

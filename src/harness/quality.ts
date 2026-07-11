@@ -114,6 +114,7 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string)
             "分别对 sourceFidelity、titleHook、informationDensity、visualStructure、sceneAlignment、ttsReadability 打 0 到 100 分。",
             "返回字段：scores、issues、revisionNotes。issues 和 revisionNotes 都是字符串数组。",
             "标题应优先保留新闻原题核心卖点，免责声明或边界信息放副标题和正文。",
+            "第一段旁白的第一句话必须逐字念完整新闻标题，标题是开场钩子，之后才能进入正文。",
             "逐屏检查旁白是否只复述或总结当前场景可见字段。当前屏没有展示的数据、案例、结论或背景不得出现在该段旁白。",
             "旁白必须与 5 个场景逐段对应，不得出现发布建议、作者站点或无关动画说明。",
           ].join("\n"),
@@ -171,6 +172,11 @@ export async function evaluateDraft(
   if (narrationChars > maximumChars) {
     issues.push({ severity: "warning", code: "narration_long", message: `旁白 ${narrationChars} 字，可能超过目标时长。` });
     revisionNotes.push(`将总旁白压缩到 ${maximumChars} 字以内。`);
+  }
+  const firstNarration = project.narrationSegments?.[0]?.text ?? "";
+  if (!normalizeText(firstNarration).startsWith(normalizeText(project.meta.title))) {
+    issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。" });
+    revisionNotes.push("将新闻标题逐字放在第一段旁白的第一句话，念完标题后再进入正文。 ");
   }
   if (source && normalizeText(project.meta.title) !== normalizeText(source.title)) {
     issues.push({ severity: "error", code: "title_rewritten", message: "主标题没有保留新闻原题。" });

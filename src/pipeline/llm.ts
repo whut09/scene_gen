@@ -30,6 +30,29 @@ function formatCoverHeadline(title: string) {
     .replace(/：/, "：\n")
     .replace(/，(?=价格|成本|售价)/, "\n");
 }
+function normalizeOpeningText(text: string) {
+  return text.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "").replace(/正式/g, "").toLowerCase();
+}
+
+function ensureTitleOpening(title: string, narration: string) {
+  const spokenTitle = title.replace(/\s+/g, " ").trim().replace(/[。！？!?]+$/, "");
+  const spokenNarration = narration.replace(/\s+/g, " ").trim();
+  if (!spokenTitle) return spokenNarration;
+  if (normalizeOpeningText(spokenNarration).startsWith(normalizeOpeningText(spokenTitle))) return spokenNarration;
+
+  const boundary = spokenNarration.search(/[。！？!?]/);
+  const firstSentence = boundary >= 0 ? spokenNarration.slice(0, boundary) : spokenNarration;
+  const rest = boundary >= 0 ? spokenNarration.slice(boundary + 1).trim() : "";
+  const titlePrefix = normalizeOpeningText(spokenTitle).slice(0, Math.min(12, normalizeOpeningText(spokenTitle).length));
+  const firstLooksLikeTitle = titlePrefix.length >= 4 && normalizeOpeningText(firstSentence).includes(titlePrefix);
+  let remainder = spokenNarration;
+  if (firstLooksLikeTitle) {
+    const commaIndex = firstSentence.search(/[，,]/);
+    const tail = commaIndex >= 0 ? firstSentence.slice(commaIndex + 1).trim() : "";
+    remainder = [tail, rest].filter(Boolean).join("。");
+  }
+  return remainder ? `${spokenTitle}。${remainder}` : `${spokenTitle}。`;
+}
 function createDirectedProject(project: VideoProject, directed: DirectedStory) {
   const sections = directed.sections;
   if (!sections || sections.length !== 5 || sections.some((section) => !section.narration?.trim())) {
@@ -111,10 +134,13 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     return project;
   }
 
-  const narrationSegments = sections.map((section, sceneIndex) => ({
-    sceneIndex,
-    text: section.narration!.replace(/\s+/g, " ").trim(),
-  }));
+  const narrationSegments = sections.map((section, sceneIndex) => {
+    const narration = section.narration!.replace(/\s+/g, " ").trim();
+    return {
+      sceneIndex,
+      text: sceneIndex === 0 ? ensureTitleOpening(title, narration) : narration,
+    };
+  });
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
   return {
     ...project,
@@ -152,7 +178,7 @@ export async function improveWithOpenAI(
     "sourceArticle 是唯一新闻依据。忠实总结文章中的发布状态、开放范围、模型能力、价格和数据，不得主动引入站外信息推翻或改写原文。",
     "如果文章明确写正式发布、正式推出或即日起开放，首段必须直接使用对应表述，并说明开放渠道和用户范围，不得弱化。",
     "不要照抄长原文，不要虚构文章中没有的数据；只有用户明确传入事实校正备注时，才按备注调整。",
-    "title 场景提供 subhead 和 3 个 keywords；title 旁白只复述标题、副标题、关键词表达的发布事实和核心结论。",
+    "title 场景提供 subhead 和 3 个 keywords；title 旁白的第一句话必须逐字使用新闻 title，完整念完标题后，才能复述副标题和关键词表达的发布事实。",
     "briefing 场景提供 summary、3 个 metrics、3 到 4 个 points；旁白逐项概括这些字段，不扩展屏幕外事实。",
     "chart 场景提供 4 个 bars，每个含 label、value、detail；value 只表示视觉权重，不冒充官方分数；旁白只解释这 4 个 bar。",
     "flow 场景提供 4 个 steps，每个含 label、detail；旁白严格按这 4 步的顺序讲解。",
