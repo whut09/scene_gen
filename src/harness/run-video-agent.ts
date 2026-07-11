@@ -139,7 +139,7 @@ for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
     "--seconds", String(targetSeconds),
   ]);
   project = await readJson<VideoProject>(story.projectPath);
-  const audio = evaluateAudio(project, targetSeconds);
+  const audio = await evaluateAudio(project, targetSeconds);
   iterationReport.audio = audio;
   console.log(`[harness] audio passed: ${audio.passed}`);
   console.log(`[harness] audio metrics: ${JSON.stringify(audio.metrics)}`);
@@ -162,7 +162,7 @@ for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
 
 if (!selectedManifest || !selectedProject) throw new Error("Harness did not produce a usable story project.");
 const finalDraft = iterations[iterations.length - 1]?.draft;
-const finalAudio = iterations[iterations.length - 1]?.audio ?? evaluateAudio(selectedProject, targetSeconds);
+const finalAudio = iterations[iterations.length - 1]?.audio ?? await evaluateAudio(selectedProject, targetSeconds);
 if (!finalDraft?.passed || !finalAudio.passed) {
   throw new Error("Quality gate failed after all iterations. Rendering stopped; inspect the draft/audio issues above.");
 }
@@ -178,7 +178,7 @@ await runScript("src/pipeline/render-stories.ts", [
 
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(selectedProject.meta.title, "video")}`;
 const reportDir = fromRoot("dist", "quality", runId);
-const video = await evaluateVideo(selectedManifest.outputPath, reportDir);
+const video = await evaluateVideo(selectedManifest.outputPath, reportDir, selectedProject.audio?.durationSeconds);
 const passed = Boolean(finalDraft?.passed && finalAudio.passed && video.passed);
 const report = {
   createdAt: new Date().toISOString(),

@@ -67,7 +67,7 @@ dist/quality/<run-id>/frame-3.jpg
 `npm run video` 本身就是生产 harness，分为三道质量门：
 
 1. Draft gate：检查原题保留、第一句话是否完整播报标题、正式发布状态、5 屏与 5 段旁白、逐屏字数、禁词、场景数据完整度、旁白与当前画面字段重合度，以及旁白中是否出现画面未展示的数字；可调用 LLM judge 给出事实忠实度、标题吸引力、信息密度、视觉结构、逐屏一致性和 TTS 可读性评分。
-2. Audio gate：检查 TTS 是否存在、时长是否处于合理弹性范围、旁白字数/秒是否自然，以及每段音频起点和场景边界是否逐帧对齐。
+2. Audio gate：检查 TTS 是否存在、时长是否处于合理弹性范围、旁白字数/秒是否自然、每段音频起点和场景边界是否逐帧对齐；随后用本地 Whisper 转写真实首屏音频，确认实际语音从标题开头播报并达到标题覆盖率门槛。
 3. Video gate：使用 FFprobe 检查视频流、音频流、1080x1920、总时长与流偏差，并在开头、中段和结尾抽帧排除空白画面。
 
 硬规则不通过时，harness 会把问题和改进要求传入下一轮。达到最大轮数仍不合格时会停止，不导出伪成片。LLM judge 的审美评分属于软建议，服务异常或评分偏低会记录到报告，但不会覆盖事实、时长和音画同步等硬门槛。
@@ -130,6 +130,7 @@ F5_TTS_VENV=F:\codex\.venvs\scene_gen_f5_py39
 F5_TTS_MODEL=F5TTS_v1_Base
 F5_TTS_DEVICE=cuda
 F5_TTS_SPEED=1.45
+F5_TTS_TITLE_SPEED=1.20
 F5_TTS_NFE_STEP=16
 F5_TTS_REF_AUDIO=F:\path\to\voice-reference.wav
 F5_TTS_REF_TEXT=
@@ -138,16 +139,22 @@ TTS_FIT_TARGET=1
 TTS_MIN_TEMPO=0.90
 TTS_MAX_TEMPO=1.22
 QUALITY_MAX_CHARS_PER_SECOND=11.5
+ASR_PYTHON=F:\codex\.venvs\scene_gen_f5_py39\Scripts\python.exe
+ASR_MODEL=openai/whisper-tiny
+ASR_LANGUAGE=chinese
+ASR_TITLE_COVERAGE_MIN=0.58
 ```
 
 - `F5_TTS_REF_AUDIO` 决定克隆音色，建议使用干净、单人、无背景音乐的中文语音。
+- 首屏标题会与正文分开合成，`F5_TTS_TITLE_SPEED` 默认 1.20，避免英文品牌和模型版本在较快合成时被吞字。
 - `F5_TTS_REF_TEXT` 应与参考音频逐字一致；已有转写时必须填写，避免串词。
 - `F5_TTS_HF_OFFLINE=1` 强制使用本机 Hugging Face 缓存，避免生成时临时联网失败。
 - `TTS_FIT_TARGET=1` 允许 FFmpeg 做有限节奏调整；`TTS_MIN_TEMPO` 和 `TTS_MAX_TEMPO` 限制调速范围，默认最多加速到 1.22 倍。
 - `QUALITY_MAX_CHARS_PER_SECOND=11.5` 限制旁白密度；超过时停止输出，而不是继续加速。
+- `ASR_*` 配置本地 Whisper 复听。实际音频没有识别出标题开头，或标题覆盖率低于阈值时，视频不会通过质量门。
 - F5 失败时直接停止，不会偷偷换成低质量系统语音。
 
-依赖本机已安装 FFmpeg、FFprobe、Python F5-TTS 环境，并已缓存 `SWivid/F5-TTS` 和 `charactr/vocos-mel-24khz`。
+依赖本机已安装 FFmpeg、FFprobe、Python F5-TTS 环境；该 Python 环境还需包含 `torch` 和 `transformers`，并已缓存 `SWivid/F5-TTS`、`charactr/vocos-mel-24khz` 与 `openai/whisper-tiny`。
 
 ## 单独复检视频
 

@@ -153,20 +153,40 @@ function assertCleanTtsText(text: string, refAudio: string, refText: string) {
   }
 }
 
-async function f5Tts(text: string, outputPath: string) {
+function pronounceDigits(value: string) {
+  const digits: Record<string, string> = {
+    "0": "零", "1": "一", "2": "二", "3": "三", "4": "四",
+    "5": "五", "6": "六", "7": "七", "8": "八", "9": "九",
+  };
+  return [...value].map((digit) => digits[digit] ?? digit).join("");
+}
+
+function prepareF5SynthesisText(text: string) {
+  const trimmed = text.trim();
+  if (!/^[A-Za-z0-9]/.test(trimmed)) return text;
+  const pronounceable = trimmed
+    .replace(/OpenAI/gi, "欧盆艾，")
+    .replace(
+      /GPT[- ]?(\d+)\.(\d+)/gi,
+      (_, major: string, minor: string) => ` G P T，${pronounceDigits(major)}点${pronounceDigits(minor)}`,
+    );
+  return `。${pronounceable}`;
+}
+async function f5Tts(text: string, outputPath: string, speedOverride?: string) {
   const python = resolveF5Python();
   const refAudio = resolveF5RefAudio();
   const refText = await resolveF5RefText(refAudio);
   const model = process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base";
-  const speed = process.env.F5_TTS_SPEED ?? "1.12";
+  const speed = speedOverride ?? process.env.F5_TTS_SPEED ?? "1.12";
   const nfeStep = process.env.F5_TTS_NFE_STEP ?? "16";
   const device = process.env.F5_TTS_DEVICE ?? "cuda";
   const outputDir = path.dirname(outputPath);
   const outputFile = path.basename(outputPath);
   const textPath = path.join(outputDir, `${path.basename(outputPath, path.extname(outputPath))}.txt`);
 
-  assertCleanTtsText(text, refAudio, refText);
-  await writeFile(textPath, text, "utf8");
+  const synthesisText = prepareF5SynthesisText(text);
+  assertCleanTtsText(synthesisText, refAudio, refText);
+  await writeFile(textPath, synthesisText, "utf8");
   await writeFile(`${textPath}.ref.txt`, refText, "utf8");
   await run(python, [
     "-m",
@@ -206,11 +226,16 @@ function providerExtension(provider: TtsProvider) {
   return provider === "openai" ? "mp3" : "wav";
 }
 
-async function synthesizeNarration(provider: TtsProvider, text: string, outputPath: string) {
+async function synthesizeNarration(
+  provider: TtsProvider,
+  text: string,
+  outputPath: string,
+  options?: { f5Speed?: string },
+) {
   if (provider === "openai") {
     await openAiTts(text, outputPath);
   } else if (provider === "f5") {
-    await f5Tts(text, outputPath);
+    await f5Tts(text, outputPath, options?.f5Speed);
   } else {
     await windowsTts(text, outputPath);
   }
@@ -291,7 +316,54 @@ async function canReuseNarrationSegment(provider: TtsProvider, text: string, seg
     readFile(textPath, "utf8"),
     readFile(refTextPath, "utf8"),
   ]);
-  return existingText.trim() === text.trim() && existingRefText.trim() === currentRefText.trim();
+  return existingText.trim() === prepareF5SynthesisText(text).trim() && existingRefText.trim() === currentRefText.trim();
+}
+function splitTitleNarration(title: string, narration: string) {
+  const trimmedTitle = title.trim().replace(/[。！？!?]+$/, "");
+  const trimmedNarration = narration.trim();
+  if (trimmedNarration.startsWith(trimmedTitle)) {
+    const body = trimmedNarration.slice(trimmedTitle.length).replace(/^[。！？!?，,：:\s]+/, "").trim();
+    return { titleText: trimmedTitle, bodyText: body };
+  }
+  const boundary = trimmedNarration.search(/[。！？!?]/);
+  if (boundary >= 0) {
+    return {
+      titleText: trimmedNarration.slice(0, boundary).trim(),
+      bodyText: trimmedNarration.slice(boundary + 1).trim(),
+    };
+  }
+  return { titleText: trimmedNarration, bodyText: "" };
+}
+
+async function synthesizeF5TitleScene(
+  project: VideoProject,
+  narration: string,
+  segmentPath: string,
+) {
+  const { titleText, bodyText } = splitTitleNarration(project.meta.title, narration);
+  const extension = path.extname(segmentPath);
+  const stem = segmentPath.slice(0, -extension.length);
+  const partTexts = [titleText, bodyText].filter(Boolean);
+  const partPaths = partTexts.map((_, index) => `${stem}-${index === 0 ? "title" : "body"}${extension}`);
+  const partDurations: number[] = [];
+  for (const [index, partText] of partTexts.entries()) {
+    const partPath = partPaths[index];
+    const isTitlePart = index === 0;
+    const titleSpeed = process.env.F5_TTS_TITLE_SPEED ?? "1.20";
+    const speedMetaPath = `${partPath}.speed.txt`;
+    const speedMatches = !isTitlePart || (
+      existsSync(speedMetaPath) && (await readFile(speedMetaPath, "utf8")).trim() === titleSpeed
+    );
+    if (!(await canReuseNarrationSegment("f5", partText, partPath)) || !speedMatches) {
+      await synthesizeNarration("f5", partText, partPath, { f5Speed: isTitlePart ? titleSpeed : undefined });
+      if (isTitlePart) await writeFile(speedMetaPath, titleSpeed, "utf8");
+    }
+    const duration = await probeDuration(partPath);
+    if (duration <= 0) throw new Error(`Title narration part ${index + 1} is invalid.`);
+    partDurations.push(duration);
+  }
+  const gaps = partTexts.map((_, index) => (index === 0 && partTexts.length > 1 ? 0.32 : 0));
+  await concatNarrationSegments(partPaths, partDurations, gaps, segmentPath);
 }
 async function attachSegmentedNarration(
   project: VideoProject,
@@ -315,7 +387,9 @@ async function attachSegmentedNarration(
       generatedDir,
       `${basename}-scene-${String(index + 1).padStart(2, "0")}.${extension}`,
     );
-    if (!(await canReuseNarrationSegment(provider, segment.text, segmentPath))) {
+    if (provider === "f5" && index === 0) {
+      await synthesizeF5TitleScene(project, segment.text, segmentPath);
+    } else if (!(await canReuseNarrationSegment(provider, segment.text, segmentPath))) {
       await synthesizeNarration(provider, segment.text, segmentPath);
     }
     const duration = await probeDuration(segmentPath);

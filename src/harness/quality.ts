@@ -1,7 +1,9 @@
 ﻿import { spawn } from "node:child_process";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import type { VideoProject, VideoScene } from "../pipeline/types";
+import { fromRoot } from "../pipeline/utils";
 
 export type QualityStage = "draft" | "audio" | "video";
 
@@ -271,7 +273,58 @@ export async function evaluateDraft(
   };
 }
 
-export function evaluateAudio(project: VideoProject, targetSeconds: number): QualityEvaluation {
+function canonicalSpeechText(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[欧歐][盆盤][爱愛艾]/g, "openai")
+    .replace(/(?:后|後)盆的ai/g, "openai")
+    .replace(/open\s*ai/g, "openai")
+    .replace(/靠的|扣的/g, "claude")
+    .replace(/g\s*p\s*t\s*(?:五点六|5[.点]6)/g, "gpt56")
+    .replace(/十六分之一/g, "16分之一")
+    .replace(/[發发]/g, "发")
+    .replace(/佈/g, "布")
+    .replace(/價/g, "价")
+    .replace(/僅/g, "仅")
+    .replace(/為/g, "为")
+    .replace(/\s+|[^a-z0-9\u4e00-\u9fff]/g, "");
+}
+
+function bigramRecall(expected: string, actual: string) {
+  if (expected.length < 2) return actual.includes(expected) ? 1 : 0;
+  const bigrams = Array.from({ length: expected.length - 1 }, (_, index) => expected.slice(index, index + 2));
+  return bigrams.filter((token) => actual.includes(token)).length / bigrams.length;
+}
+
+async function transcribeOpening(project: VideoProject) {
+  if (process.env.ASR_DISABLED === "1" || !project.audio?.src) return null;
+  const audioPath = project.audio.src.startsWith("/generated/")
+    ? fromRoot("public", ...project.audio.src.replace(/^\/+/, "").split("/"))
+    : path.resolve(project.audio.src);
+  const openingSeconds = Math.min(30, (project.narrationSegments?.[0]?.durationSeconds ?? 24) + 0.5);
+  const workDir = await mkdtemp(path.join(tmpdir(), "scene-gen-asr-"));
+  const openingPath = path.join(workDir, "opening.wav");
+  const python = process.env.ASR_PYTHON ?? path.join(
+    process.env.F5_TTS_VENV ?? "F:\\codex\\.venvs\\scene_gen_f5_py39",
+    "Scripts",
+    "python.exe",
+  );
+  try {
+    await runCapture("ffmpeg", ["-y", "-i", audioPath, "-t", openingSeconds.toFixed(3), "-ar", "16000", "-ac", "1", openingPath]);
+    const result = await runCapture(python, [
+      fromRoot("scripts", "transcribe-audio.py"),
+      "--audio", openingPath,
+      "--model", process.env.ASR_MODEL ?? "openai/whisper-tiny",
+      "--language", process.env.ASR_LANGUAGE ?? "chinese",
+    ]);
+    const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
+    const parsed = JSON.parse(lines[lines.length - 1] ?? "{}") as { text?: string };
+    return parsed.text?.trim() ?? "";
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
+export async function evaluateAudio(project: VideoProject, targetSeconds: number): Promise<QualityEvaluation> {
   const issues: QualityIssue[] = [];
   const segments = project.narrationSegments ?? [];
   const duration = project.audio?.durationSeconds ?? 0;
@@ -288,6 +341,28 @@ export function evaluateAudio(project: VideoProject, targetSeconds: number): Qua
   }
   if (charsPerSecond > maximumCharsPerSecond) {
     issues.push({ severity: "error", code: "speech_too_fast", message: `旁白密度 ${charsPerSecond.toFixed(1)} 字/秒，超过自然播报上限 ${maximumCharsPerSecond} 字/秒。` });
+  }
+  let titleTranscript = "";
+  let titleAudioCoverage = 0;
+  try {
+    const transcript = await transcribeOpening(project);
+    if (transcript !== null) {
+      titleTranscript = transcript;
+      const expectedTitle = canonicalSpeechText(project.meta.title);
+      const actualTitle = canonicalSpeechText(transcript);
+      const hookSource = project.meta.title.split(/[：:]/)[0] ?? project.meta.title;
+      const expectedHook = canonicalSpeechText(hookSource).slice(0, 24);
+      titleAudioCoverage = bigramRecall(expectedTitle, actualTitle);
+      if (!actualTitle.startsWith(expectedHook)) {
+        issues.push({ severity: "error", code: "audio_title_opening_missing", message: `实际语音没有从标题开头播报。ASR：${transcript}` });
+      }
+      const minimumCoverage = Number(process.env.ASR_TITLE_COVERAGE_MIN ?? 0.58);
+      if (titleAudioCoverage < minimumCoverage) {
+        issues.push({ severity: "error", code: "audio_title_incomplete", message: `标题语音覆盖率 ${(titleAudioCoverage * 100).toFixed(1)}%，低于 ${(minimumCoverage * 100).toFixed(0)}%。` });
+      }
+    }
+  } catch (error) {
+    issues.push({ severity: "error", code: "asr_verification_failed", message: `无法验证实际语音标题：${(error as Error).message}` });
   }
   let cursor = 0;
   for (const [index, scene] of project.scenes.entries()) {
@@ -317,6 +392,8 @@ export function evaluateAudio(project: VideoProject, targetSeconds: number): Qua
       charsPerSecond: Number(charsPerSecond.toFixed(2)),
       minimumDuration,
       maximumDuration,
+      titleTranscript,
+      titleAudioCoverage: Number(titleAudioCoverage.toFixed(3)),
     },
   };
 }
@@ -333,7 +410,11 @@ function runCapture(command: string, args: string[]) {
   });
 }
 
-export async function evaluateVideo(videoPath: string, reportDir: string): Promise<QualityEvaluation> {
+export async function evaluateVideo(
+  videoPath: string,
+  reportDir: string,
+  expectedDuration?: number,
+): Promise<QualityEvaluation> {
   const issues: QualityIssue[] = [];
   const probe = await runCapture("ffprobe", [
     "-v",
@@ -356,6 +437,13 @@ export async function evaluateVideo(videoPath: string, reportDir: string): Promi
   if (!video || !audio) issues.push({ severity: "error", code: "stream_missing", message: "成片缺少视频流或音频流。" });
   if (video?.width !== 1080 || video?.height !== 1920) {
     issues.push({ severity: "error", code: "wrong_dimensions", message: `成片尺寸不是 1080x1920。` });
+  }
+  if (expectedDuration && Math.abs(duration - expectedDuration) > 0.25) {
+    issues.push({
+      severity: "error",
+      code: "video_project_duration_drift",
+      message: `视频 ${duration.toFixed(3)} 秒，与项目音频 ${expectedDuration.toFixed(3)} 秒不一致。`,
+    });
   }
   const streamDelta = Math.abs(Number(video?.duration ?? duration) - Number(audio?.duration ?? duration));
   if (streamDelta > 0.2) issues.push({ severity: "error", code: "stream_duration_drift", message: `音视频流相差 ${streamDelta.toFixed(3)} 秒。` });
@@ -393,6 +481,8 @@ export async function evaluateVideo(videoPath: string, reportDir: string): Promi
       width: video?.width ?? 0,
       height: video?.height ?? 0,
       streamDelta,
+      expectedDuration: expectedDuration ?? 0,
+      projectDurationDelta: expectedDuration ? Math.abs(duration - expectedDuration) : 0,
       minimumFrameSize: Math.min(...frameSizes),
     },
   };
