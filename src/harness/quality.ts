@@ -7,6 +7,7 @@ import type { VideoProject, VideoScene } from "../pipeline/types";
 import { prepareF5SynthesisText } from "../pipeline/tts";
 import { fromRoot } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
+import { buildProductionDecisions } from "../production/visual-planner";
 
 export type QualityStage = "draft" | "audio" | "video";
 
@@ -183,6 +184,14 @@ export async function evaluateDraft(
   const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.8 : 6));
   const maximumChars = Math.round(targetSeconds * 11);
   const templateGraph = buildHtmlVideoContentGraph(project);
+  const productionDecisions = buildProductionDecisions(project);
+  const visualSourceCount = new Set(productionDecisions.map((decision) => decision.visualPlan.source)).size;
+  if (project.scenes.length >= 5 && visualSourceCount < 2) {
+    issues.push({ severity: "warning", code: "visual_source_low_diversity", message: "整条视频只使用一种视觉来源，建议为适合的场景增加真实 UI、网页证据或视频素材。" });
+  }
+  for (const decision of productionDecisions) {
+    if (decision.syncCues.length < 2) issues.push({ severity: "warning", code: "sync_cues_sparse", message: `第 ${decision.sceneIndex + 1} 屏可同步强调的旁白关键词不足。`, sceneIndex: decision.sceneIndex });
+  }
   const templateIds = templateGraph.nodes.map((node) => node.templateId);
   const compositionIds = templateGraph.nodes.map((node) => node.templateId + ":" + node.variantId);
   const uniqueTemplateCount = new Set(templateIds).size;
@@ -581,6 +590,30 @@ function runCapture(command: string, args: string[]) {
   });
 }
 
+
+async function sampleMotionMetrics(videoPath: string) {
+  const capture = await runCapture("ffmpeg", [
+    "-v", "error", "-i", videoPath, "-map", "0:v:0", "-an",
+    "-vf", "fps=2,scale=64:64,select='gte(scene,0)',metadata=print:file=-", "-f", "null", "-",
+  ]);
+  const scores = [...capture.stdout.matchAll(/lavfi\.scene_score=([0-9.]+)/g)].map((match) => Number(match[1]));
+  if (scores.length < 2) return { sampledFrames: scores.length, activeMotionRatio: 1, meanSceneChange: 0, longestStaticRun: 0 };
+  const threshold = Number(process.env.MOTION_SCENE_THRESHOLD ?? 0.0005);
+  let currentStatic = 0;
+  let longestStatic = 0;
+  let active = 0;
+  for (const score of scores.slice(1)) {
+    if (score >= threshold) { active += 1; currentStatic = 0; }
+    else { currentStatic += 1; longestStatic = Math.max(longestStatic, currentStatic); }
+  }
+  return {
+    sampledFrames: scores.length,
+    activeMotionRatio: Number((active / Math.max(1, scores.length - 1)).toFixed(3)),
+    meanSceneChange: Number((scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(6)),
+    longestStaticRun: Number((longestStatic / 2).toFixed(2)),
+  };
+}
+
 export async function evaluateVideo(
   videoPath: string,
   reportDir: string,
@@ -619,6 +652,11 @@ export async function evaluateVideo(
   const streamDelta = Math.abs(Number(video?.duration ?? duration) - Number(audio?.duration ?? duration));
   if (streamDelta > 0.2) issues.push({ severity: "error", code: "stream_duration_drift", message: `音视频流相差 ${streamDelta.toFixed(3)} 秒。` });
 
+  const motion = await sampleMotionMetrics(videoPath);
+  if (motion.longestStaticRun >= 6 || motion.activeMotionRatio < 0.22) {
+    issues.push({ severity: "warning", code: "video_motion_too_static", message: `画面连续静止约 ${motion.longestStaticRun.toFixed(1)} 秒，建议增加与旁白相关的元素运动或素材镜头。` });
+  }
+
   await mkdir(reportDir, { recursive: true });
   const sampleTimes = [Math.min(4, duration / 4), duration / 2, Math.max(1, duration - 5)];
   const frameSizes: number[] = [];
@@ -655,6 +693,10 @@ export async function evaluateVideo(
       expectedDuration: expectedDuration ?? 0,
       projectDurationDelta: expectedDuration ? Math.abs(duration - expectedDuration) : 0,
       minimumFrameSize: Math.min(...frameSizes),
+      sampledMotionFrames: motion.sampledFrames,
+      activeMotionRatio: motion.activeMotionRatio,
+      meanSceneChange: motion.meanSceneChange,
+      longestStaticRun: motion.longestStaticRun,
     },
   };
 }

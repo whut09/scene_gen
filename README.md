@@ -203,3 +203,26 @@ npm.cmd run lint:types
 - 不提交真实 API key、账号密码、`.env.local` 或 `*.local.json`。
 - 不提交生成的 MP4、WAV、网页截图、质量运行目录或运行时反馈。
 - example 配置只保留 `xxx` 占位符。
+
+
+## Visual Planner 与供应商注册表
+
+生成阶段会为每个场景写入独立的视觉生产计划，不再默认所有内容都只使用同一种网页模板。计划包含：
+
+- `visualPlan.source`：`programmatic`、`web-screenshot`、`stock-video`、`generated-image`、`generated-video`、`github-ui` 或 `mixed`。
+- `providerId` 和确定性的 fallback，用于记录实际供应商与降级路径。
+- `searchQueries`：供素材检索、网页证据或生成式素材使用的查询词。
+- `motionTargets` 和 `expectedMotionRatio`：供运动质量门判断画面是否过于静态。
+- `syncCues`：从当前屏可见文字与对应旁白中提取的同步关键词。配置 Whisper 后报告标记为 forced-alignment，否则使用稳定的估算时间点。
+
+供应商通过环境变量启用。未配置的外部供应商不会被调用，系统会回退到 HTML Video / Remotion：
+
+`PEXELS_API_KEY`、`PIXABAY_API_KEY`、`KLING_API_KEY`、`OPENAI_API_KEY`、`ASR_MODEL`。
+
+查看已有项目的生产计划：
+
+~~~powershell
+npm.cmd run production:inspect -- --project "public/generated/stories/<story>.json"
+~~~
+
+一键生成会在对应 HTML Video 目录和最终质量目录写出 `production-report.json`，其中记录模板、视觉来源、供应商启用状态、回退原因、同步关键词和估算外部成本。最终视频质量门还会以每秒两帧采样，报告 `activeMotionRatio`、`meanSceneChange` 和 `longestStaticRun`；连续静止时间过长时给出明确警告。

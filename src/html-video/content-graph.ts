@@ -1,6 +1,8 @@
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { selectTemplatesForProject } from "../templates/template-registry";
 import type { SceneIntent, TemplateMotionFamily } from "../templates/template.schema";
+import { buildProductionDecisions } from "../production/visual-planner";
+import type { SyncCue, VisualPlan } from "../production/types";
 
 export type HtmlVideoGraphEdgeType = "sequence" | "contrast" | "dependency";
 
@@ -17,6 +19,8 @@ export interface HtmlVideoGraphNode {
   templateReasons: string[];
   durationSec: number;
   data: VideoScene;
+  visualPlan: VisualPlan;
+  syncCues: SyncCue[];
   sourceEvidence: {
     sourceId: string;
     url: string;
@@ -168,6 +172,7 @@ export function topoSortHtmlVideoGraph(graph: HtmlVideoContentGraph) {
 
 export function buildHtmlVideoContentGraph(project: VideoProject): HtmlVideoContentGraph {
   const selections = selectTemplatesForProject(project);
+  const productionDecisions = buildProductionDecisions(project);
   const nodes = project.scenes.map((scene, index) => {
     const selection = selections[index];
     return {
@@ -183,6 +188,8 @@ export function buildHtmlVideoContentGraph(project: VideoProject): HtmlVideoCont
       templateReasons: selection.reasons,
       durationSec: scene.duration,
       data: scene,
+      visualPlan: productionDecisions[index].visualPlan,
+      syncCues: productionDecisions[index].syncCues,
       sourceEvidence: sourceEvidence(scene, project),
     } satisfies HtmlVideoGraphNode;
   });

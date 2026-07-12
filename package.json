@@ -18,7 +18,8 @@
     "feedback:add": "tsx src/harness/add-feedback.ts",
     "synthesize:story": "tsx src/pipeline/synthesize-story.ts",
     "video:remotion": "tsx src/harness/run-video-agent.ts --engine remotion",
-    "video:html": "tsx src/harness/run-video-agent.ts --engine html-video"
+    "video:html": "tsx src/harness/run-video-agent.ts --engine html-video",
+    "production:inspect": "tsx src/production/inspect-production.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",

@@ -6,6 +6,7 @@ import type { VideoProject } from "../pipeline/types";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify } from "../pipeline/utils";
 import { buildFeedbackGuidance, readFeedback } from "./feedback-store";
 import { evaluateAudio, evaluateDraft, evaluateVideo, type QualityEvaluation } from "./quality";
+import { buildProductionReport } from "../production/production-report";
 
 interface StoryManifestItem {
   index: number;
@@ -14,6 +15,7 @@ interface StoryManifestItem {
   score: number;
   projectPath: string;
   htmlVideoGraphPath?: string;
+  productionReportPath?: string;
   outputPath: string;
 }
 
@@ -206,6 +208,8 @@ const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(selec
 const reportDir = fromRoot("dist", "quality", runId);
 const video = await evaluateVideo(selectedManifest.outputPath, reportDir, selectedProject.audio?.durationSeconds);
 const passed = Boolean(finalDraft?.passed && finalAudio.passed && video.passed);
+const production = buildProductionReport(selectedProject, engine);
+await writeFile(path.join(reportDir, "production-report.json"), `${JSON.stringify(production, null, 2)}\n`, "utf8");
 const report = {
   createdAt: new Date().toISOString(),
   url,
@@ -217,6 +221,7 @@ const report = {
   feedbackApplied: relevantFeedback,
   iterations,
   video,
+  production,
   passed,
 };
 await mkdir(reportDir, { recursive: true });
@@ -237,6 +242,11 @@ const markdown = [
     item.audio ? evaluationMarkdown(item.audio) : "",
     "",
   ]),
+  "## Production Decisions",
+  `- Visual source mix: ${JSON.stringify(production.summary.sourceMix)}`,
+  `- Enabled providers: ${production.summary.enabledProviders.join(", ")}`,
+  `- Alignment: ${production.summary.wordAlignment}`,
+  "",
   "## Final Video",
   evaluationMarkdown(video),
   "",

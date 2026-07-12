@@ -1,5 +1,6 @@
 import path from "node:path";
 import { writeHtmlVideoContentGraph } from "../html-video/render-html-video";
+import { buildProductionReport } from "../production/production-report";
 import type { SourceConfig, VideoProject } from "./types";
 import { collectHotItems, collectWebpage } from "./sources";
 import { createStoryProject, scrubAttribution } from "./story";
@@ -15,6 +16,7 @@ interface StoryManifestItem {
   score: number;
   projectPath: string;
   htmlVideoGraphPath?: string;
+  productionReportPath?: string;
   outputPath: string;
 }
 
@@ -123,9 +125,11 @@ for (const [index, item] of items.entries()) {
   const slug = `${String(storyNo).padStart(2, "0")}-${slugify(project.meta.title, item.id)}`;
   const projectPath = fromRoot("public", "generated", "stories", `${slug}.json`);
   const htmlVideoGraphPath = fromRoot("public", "generated", "html-video", slug, "content-graph.json");
+  const productionReportPath = fromRoot("public", "generated", "html-video", slug, "production-report.json");
   const outputPath = path.join(outputDir, `${slug}.mp4`);
   await writeJson(projectPath, project);
   await writeHtmlVideoContentGraph(project, htmlVideoGraphPath);
+  await writeJson(productionReportPath, buildProductionReport(project, "html-video"));
 
   manifest.push({
     index: storyNo,
@@ -134,6 +138,7 @@ for (const [index, item] of items.entries()) {
     score: item.score,
     projectPath,
     htmlVideoGraphPath,
+    productionReportPath,
     outputPath,
   });
 }
