@@ -182,6 +182,7 @@ function prepareF5SynthesisText(text: string) {
     )
     .replace(/Prompt/gi, "提示词")
     .replace(/Agent/gi, "智能体")
+    .replace(/(\d+)[.](\d+)(?=万)/g, (_, whole: string, fraction: string) => `${pronounceDigits(whole)}点${pronounceDigits(fraction)}`)
     .replace(/700(?=词)/g, "七百")
     .replace(/64(?=个)/g, "六十四")
     .replace(/50(?=年)/g, "五十");
@@ -291,7 +292,13 @@ async function fitNarrationSegmentsToTarget(
   targetSeconds: number,
   totalGapSeconds: number,
 ) {
-  if (process.env.TTS_FIT_TARGET === "0" || !Number.isFinite(targetSeconds) || targetSeconds <= totalGapSeconds + 5) {
+  const durationPolicy = (process.env.TTS_DURATION_POLICY ?? "natural").trim().toLowerCase();
+  if (
+    durationPolicy !== "fit" ||
+    process.env.TTS_FIT_TARGET === "0" ||
+    !Number.isFinite(targetSeconds) ||
+    targetSeconds <= totalGapSeconds + 5
+  ) {
     return { paths: segmentPaths, durations };
   }
   const speechDuration = durations.reduce((sum, duration) => sum + duration, 0);
@@ -367,7 +374,7 @@ async function synthesizeF5TitleScene(
   const partDurations: number[] = [];
   for (const [index, partText] of partTexts.entries()) {
     const partPath = partPaths[index];
-    const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.20";
+    const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
     const speedMetaPath = `${partPath}.speed.txt`;
     if (!(await canReuseNarrationSegment("f5", partText, partPath, uniformSpeed))) {
       await synthesizeNarration("f5", partText, partPath, { f5Speed: uniformSpeed });
@@ -387,7 +394,7 @@ async function attachSegmentedNarration(
   generatedDir: string,
 ) {
   const segments = [...(project.narrationSegments ?? [])].sort((a, b) => a.sceneIndex - b.sceneIndex);
-  const uniformF5Speed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.20";
+  const uniformF5Speed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
   if (segments.length !== project.scenes.length) {
     throw new Error(`Narration segment count ${segments.length} does not match scene count ${project.scenes.length}.`);
   }

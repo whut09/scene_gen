@@ -132,14 +132,16 @@ F5_TTS_VENV=F:\codex\.venvs\scene_gen_f5_py39
 F5_TTS_MODEL=F5TTS_v1_Base
 F5_TTS_DEVICE=cuda
 F5_TTS_SPEED=1.45
-F5_TTS_UNIFORM_SPEED=1.20
+F5_TTS_UNIFORM_SPEED=1.25
 F5_TTS_NFE_STEP=16
 F5_TTS_REF_AUDIO=F:\path\to\voice-reference.wav
 F5_TTS_REF_TEXT=
 F5_TTS_HF_OFFLINE=1
-TTS_FIT_TARGET=1
+TTS_DURATION_POLICY=natural
+TTS_FIT_TARGET=0
 TTS_MIN_TEMPO=0.90
 TTS_MAX_TEMPO=1.22
+QUALITY_MIN_CHARS_PER_SECOND=6.3
 QUALITY_MAX_CHARS_PER_SECOND=11.5
 QUALITY_MAX_SEGMENT_SPEED_RATIO=1.35
 QUALITY_MAX_SEGMENT_SPEED_CV=0.16
@@ -150,11 +152,11 @@ ASR_TITLE_COVERAGE_MIN=0.58
 ```
 
 - `F5_TTS_REF_AUDIO` 决定克隆音色，建议使用干净、单人、无背景音乐的中文语音。
-- `F5_TTS_UNIFORM_SPEED` 控制整条视频所有场景，包括首屏标题和正文；默认 1.20，禁止标题慢、正文快。
+- `F5_TTS_UNIFORM_SPEED` 控制整条视频所有场景，包括首屏标题和正文；默认 1.25，禁止标题慢、正文快。
 - `F5_TTS_REF_TEXT` 应与参考音频逐字一致；已有转写时必须填写，避免串词。
 - `F5_TTS_HF_OFFLINE=1` 强制使用本机 Hugging Face 缓存，避免生成时临时联网失败。
-- `TTS_FIT_TARGET=1` 允许 FFmpeg 做有限节奏调整；`TTS_MIN_TEMPO` 和 `TTS_MAX_TEMPO` 限制调速范围，默认最多加速到 1.22 倍。
-- `QUALITY_MAX_CHARS_PER_SECOND=11.5` 限制整片旁白密度；`QUALITY_MAX_SEGMENT_SPEED_RATIO` 和 `QUALITY_MAX_SEGMENT_SPEED_CV` 检查逐屏语速倍率与离散度，出现前慢后快会停止渲染。
+- `TTS_DURATION_POLICY=natural` 让视频时长跟随 F5 原始音频，不再为了凑目标秒数整体变慢；只有显式设为 `fit` 时才启用 FFmpeg 节奏拟合。
+- `QUALITY_MIN_CHARS_PER_SECOND=6.3` 和 `QUALITY_MAX_CHARS_PER_SECOND=11.5` 限制整片旁白的绝对语速；`QUALITY_MAX_SEGMENT_SPEED_RATIO` 和 `QUALITY_MAX_SEGMENT_SPEED_CV` 检查逐屏语速倍率与离散度。
 - `ASR_*` 配置本地 Whisper 复听。实际音频没有识别出标题开头，或标题覆盖率低于阈值时，视频不会通过质量门。
 - F5 失败时直接停止，不会偷偷换成低质量系统语音。
 

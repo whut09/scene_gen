@@ -178,7 +178,8 @@ export async function evaluateDraft(
   const revisionNotes: string[] = [];
   const source = project.sources[0];
   const narrationChars = project.narration.replace(/\s+/g, "").length;
-  const minimumChars = Math.round(targetSeconds * 6);
+  const naturalDuration = (process.env.TTS_DURATION_POLICY ?? "natural").trim().toLowerCase() === "natural";
+  const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.8 : 6));
   const maximumChars = Math.round(targetSeconds * 11);
   const templateGraph = buildHtmlVideoContentGraph(project);
   const templateIds = templateGraph.nodes.map((node) => node.templateId);
@@ -228,7 +229,7 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "release_status_weakened", message: "原文的正式发布或开放状态被弱化。" });
     revisionNotes.push("首段直接复述原文的正式发布状态、开放渠道和用户范围。 ");
   }
-  const forbidden = /太乙真人|万人敬仰|新闻怎么跟进|发布角度|适合做视频|作者\s*[：:]|编辑\s*[：:]|量子位|腾讯新闻|新浪财经/;
+  const forbidden = /太乙真人|万人敬仰|新闻怎么跟进|发布角度|适合做视频|作者\s*[：:]|编辑\s*[：:]|量子位|腾讯新闻|新浪财经|36氪/;
   if (forbidden.test(project.narration)) {
     issues.push({ severity: "error", code: "forbidden_content", message: "旁白包含参考音频污染、站点署名或无关制作建议。" });
   }
@@ -322,6 +323,9 @@ function canonicalSpeechText(text: string) {
   return text
     .toLowerCase()
     .replace(/nmp/g, "月之暗面")
+    .replace(/黄兰|黃蘭/g, "狂揽")
+    .replace(/萬/g, "万")
+    .replace(/標/g, "标")
     .replace(/月之暗面2[.]7(?:带马|code)/g, "月之暗面k2.7code")
     .replace(/kme(?:带马|代码)?/g, "kimicode")
     .replace(/带马/g, "code")
@@ -433,6 +437,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   const maximumDuration = targetSeconds * Number(process.env.QUALITY_MAX_DURATION_FACTOR ?? 1.65);
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const charsPerSecond = duration > 0 ? narrationChars / duration : 0;
+  const minimumCharsPerSecond = Number(process.env.QUALITY_MIN_CHARS_PER_SECOND ?? 6.3);
   const maximumCharsPerSecond = Number(process.env.QUALITY_MAX_CHARS_PER_SECOND ?? 11.5);
   const segmentRates = segments
     .map((segment) => {
@@ -465,6 +470,9 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   }
   if (charsPerSecond > maximumCharsPerSecond) {
     issues.push({ severity: "error", code: "speech_too_fast", message: `旁白密度 ${charsPerSecond.toFixed(1)} 字/秒，超过自然播报上限 ${maximumCharsPerSecond} 字/秒。` });
+  }
+  if (charsPerSecond > 0 && charsPerSecond < minimumCharsPerSecond) {
+    issues.push({ severity: "error", code: "speech_too_slow", message: `旁白密度 ${charsPerSecond.toFixed(1)} 字/秒，低于资讯播报下限 ${minimumCharsPerSecond} 字/秒。` });
   }
   if (segmentRates.length >= 2 && segmentSpeedRatio > maximumSegmentSpeedRatio) {
     issues.push({ severity: "error", code: "segment_speed_uneven", message: `逐屏语速最大相差 ${segmentSpeedRatio.toFixed(2)} 倍，超过 ${maximumSegmentSpeedRatio.toFixed(2)} 倍。` });
