@@ -17,6 +17,12 @@ export interface HtmlVideoGraphNode {
   templateReasons: string[];
   durationSec: number;
   data: VideoScene;
+  sourceEvidence: {
+    sourceId: string;
+    url: string;
+    matchedNumbers: string[];
+    unmatchedNumbers: string[];
+  };
 }
 
 export interface HtmlVideoGraphEdge {
@@ -54,6 +60,40 @@ export interface GraphValidationResult {
   warnings: string[];
 }
 
+function normalizedNumbers(text: string) {
+  return [...new Set((text.match(/\d[\d,.]*(?:%|％)?/g) ?? []).map((value) => value.replace(/,/g, "").replace(/％/g, "%").replace(/[.]$/, "")))];
+}
+
+function sceneEvidenceText(scene: VideoScene) {
+  switch (scene.type) {
+    case "title": return [scene.kicker, scene.headline, scene.subhead, ...scene.sources].join(" ");
+    case "briefing_points": return [scene.headline, scene.title, scene.summary, ...scene.metrics.flatMap((item) => [item.label, item.value]), ...scene.points].join(" ");
+    case "signal_chart": {
+      const bars = Array.isArray(scene.bars) ? scene.bars : [];
+      const qualitative = bars.length > 1 && bars.every((bar) => bar.value === bars[0].value);
+      return [scene.headline, ...bars.flatMap((bar) => [bar.label, bar.detail, qualitative ? "" : String(bar.value)])].join(" ");
+    }
+    case "flow": return [scene.headline, ...scene.steps.flatMap((item) => [item.label, item.detail])].join(" ");
+    case "outro": return [scene.headline, ...scene.bullets].join(" ");
+    case "news_stack": return [scene.headline, ...scene.items.flatMap((item) => [item.title, item.summary])].join(" ");
+    case "web_screenshot_zoom": return [scene.headline, ...scene.shots.map((item) => item.title)].join(" ");
+    case "timeline": return [scene.headline, ...scene.events.flatMap((item) => [item.date, item.title])].join(" ");
+    case "github_pulse": return [scene.headline, ...scene.repos.flatMap((item) => [item.repo, item.title, item.summary, String(item.score)])].join(" ");
+  }
+}
+
+function sourceEvidence(scene: VideoScene, project: VideoProject) {
+  const source = project.sources[0];
+  const sourceText = [source?.title, source?.summary, source?.content, source?.metrics ? JSON.stringify(source.metrics) : ""].filter(Boolean).join(" ").replace(/,/g, "").replace(/％/g, "%");
+  const numbers = normalizedNumbers(sceneEvidenceText(scene));
+  const matchedNumbers = numbers.filter((value) => sourceText.includes(value));
+  return {
+    sourceId: source?.id ?? "unknown",
+    url: source?.url ?? "",
+    matchedNumbers,
+    unmatchedNumbers: numbers.filter((value) => !matchedNumbers.includes(value)),
+  };
+}
 function nodeKind(scene: VideoScene): HtmlVideoGraphNode["kind"] {
   if (scene.type === "signal_chart") return "data";
   if (scene.type === "web_screenshot_zoom" || scene.type === "github_pulse") return "entity";
@@ -143,6 +183,7 @@ export function buildHtmlVideoContentGraph(project: VideoProject): HtmlVideoCont
       templateReasons: selection.reasons,
       durationSec: scene.duration,
       data: scene,
+      sourceEvidence: sourceEvidence(scene, project),
     } satisfies HtmlVideoGraphNode;
   });
 

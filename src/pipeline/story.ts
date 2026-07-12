@@ -19,7 +19,7 @@ function displaySource(item: HotItem) {
 
 export function scrubAttribution(text: string) {
   return text
-    .replace(/QbitAI|qbitai\.com|量子位|腾讯新闻|36氪/g, "")
+    .replace(/QbitAI|qbitai\.com|量子位|腾讯新闻|36氪|钛媒体官方网站|钛媒体/g, "")
     .replace(/作者\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
     .replace(/编辑\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
     .replace(/来源\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_. -]{0,32}/g, "")

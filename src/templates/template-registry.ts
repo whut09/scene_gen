@@ -119,10 +119,14 @@ export function rankTemplatesForScene(
     .filter((template) => template.license.commercialUse)
     .map((template) => {
       let variant = selectVariant(template, terms, project, options.sceneIndex ?? 0, scene.type);
-      const qualitativeEqualBars = scene.type === "signal_chart" && scene.bars.length > 1 && scene.bars.every((bar) => bar.value === scene.bars[0].value);
+      const qualitativeEqualBars = scene.type === "signal_chart" && Array.isArray(scene.bars) && scene.bars.length > 1 && scene.bars.every((bar) => bar.value === scene.bars[0].value);
       if (template.id === "nyt-data-chart" && qualitativeEqualBars) {
         const categoryVariant = template.variants.find((item) => item.id === "category-cards");
         if (categoryVariant) variant = { variant: categoryVariant, score: variant.score + 40, tagMatches: [...variant.tagMatches, "qualitative-equal-bars"] };
+      }
+      if (template.id === "product-style-agent-flow" && scene.type === "flow" && /并列|分流/.test(scene.headline)) {
+        const capabilityVariant = template.variants.find((item) => item.id === "capability-grid");
+        if (capabilityVariant) variant = { variant: capabilityVariant, score: variant.score + 40, tagMatches: [...variant.tagMatches, "parallel-branches"] };
       }
       let score = 35 + Math.min(16, variant.score);
       const reasons = ["supports " + scene.type, "variant " + variant.variant.id];
@@ -150,9 +154,9 @@ export function rankTemplatesForScene(
       const matchedTags = template.tags.filter((tag) => terms.includes(tag.toLowerCase())).slice(0, 4);
       score += matchedTags.length * 3;
       const investmentTerms = /investment|finance|valuation|value investing|投研|投资|估值|巴菲特|芒格/.test(terms);
-      if (template.id === "editorial-stat-grid" && scene.type === "briefing_points" && primarySource(project)?.kind === "github") {
+      if (template.id === "editorial-stat-grid" && scene.type === "briefing_points" && scene.metrics.length > 0 && scene.points.length > 0) {
         score += 36;
-        reasons.push("github metrics and points stay separated");
+        reasons.push("briefing metrics and points stay separated");
       }
       if (template.id === "investment-research" && investmentTerms) {
         score += 14;

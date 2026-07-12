@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const nytDataChartTemplate: HtmlTemplateDefinition = {
   id: "nyt-data-chart",
-  version: "1.4.0",
+  version: "1.5.0",
   name: "NYT Data Chart",
   description: "Editorial chart scene inspired by newspaper data storytelling.",
   engine: "html-video",
@@ -50,9 +50,10 @@ export const nytDataChartTemplate: HtmlTemplateDefinition = {
       '<article class="nyt-bar" style="animation-delay:' + pacedDelay(index, bars.length, scene.duration) + 's"><div class="nyt-bar-head"><strong>' + escapeHtml(bar.label) + '</strong><span>' + escapeHtml(bar.value) + '%</span></div>' +
       '<div class="nyt-track"><i style="width:' + bar.value + '%;background:' + escapeHtml(bar.color) + '"></i></div><p>' + escapeHtml(bar.detail) + '</p></article>'
     ).join('');
+    const categoryNoun = /能力|分类|模块/.test(sceneHeadline(scene)) ? "能力" : "信号";
     const ranked = bars.map((bar, index) => {
       const metric = variantId === "category-cards"
-        ? `<strong>能力 ${String(index + 1).padStart(2, "0")}</strong>`
+        ? `<strong>${categoryNoun} ${String(index + 1).padStart(2, "0")}</strong>`
         : `<strong>关键 ${String(index + 1).padStart(2, "0")}</strong>`;
       return '<article class="nyt-rank" style="animation-delay:' + pacedDelay(index, bars.length, scene.duration) + 's"><b>0' + (index + 1) + '</b><div><span>' + escapeHtml(bar.label) + '</span>' + metric + '<p>' + escapeHtml(bar.detail) + '</p></div><i style="background:' + escapeHtml(bar.color) + '"></i></article>';
     }).join('');

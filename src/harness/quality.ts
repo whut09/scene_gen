@@ -200,11 +200,17 @@ export async function evaluateDraft(
   }
   for (const node of templateGraph.nodes) {
     const selectedScene = project.scenes[node.sceneIndex];
-    if (selectedScene?.type === "signal_chart" && selectedScene.bars.length > 1 && selectedScene.bars.every((bar) => bar.value === selectedScene.bars[0].value) && node.variantId !== "category-cards") {
+    if (node.sourceEvidence.unmatchedNumbers.length > 0) {
+      issues.push({ severity: "error", code: "scene_source_number_unverified", message: `第 ${node.sceneIndex + 1} 屏出现来源正文无法核验的数字：${node.sourceEvidence.unmatchedNumbers.join("、")}。`, sceneIndex: node.sceneIndex });
+    }
+    if (selectedScene?.type === "signal_chart" && Array.isArray(selectedScene.bars) && selectedScene.bars.length > 1 && selectedScene.bars.every((bar) => bar.value === selectedScene.bars[0].value) && node.variantId !== "category-cards") {
       issues.push({ severity: "error", code: "qualitative_chart_fake_percentage", message: `第 ${node.sceneIndex + 1} 屏是定性能力分类，不得使用显示百分比的 ${node.variantId} 模板。`, sceneIndex: node.sceneIndex });
     }
-    if (selectedScene?.type === "briefing_points" && project.sources[0]?.kind === "github" && node.templateId === "investment-research") {
-      issues.push({ severity: "error", code: "github_briefing_template_mismatch", message: `第 ${node.sceneIndex + 1} 屏必须分开展示仓库指标和功能要点，不能把指标标签与要点错误配对。`, sceneIndex: node.sceneIndex });
+    if (selectedScene?.type === "flow" && /并列|分流/.test(selectedScene.headline) && node.variantId === "agent-lanes") {
+      issues.push({ severity: "error", code: "parallel_flow_prompt_mismatch", message: `第 ${node.sceneIndex + 1} 屏是并列分流，不得使用带 PROMPT 中心节点的 Agent 流程模板。`, sceneIndex: node.sceneIndex });
+    }
+    if (selectedScene?.type === "briefing_points" && selectedScene.metrics.length > 0 && selectedScene.points.length > 0 && node.templateId === "investment-research") {
+      issues.push({ severity: "error", code: "github_briefing_template_mismatch", message: `第 ${node.sceneIndex + 1} 屏必须分开展示指标和功能要点，不能把指标标签与要点错误配对。`, sceneIndex: node.sceneIndex });
     }
     const template = getTemplateById(node.templateId);
     if (!template?.supportedScenes.includes(node.sceneType)) {
@@ -237,7 +243,7 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "release_status_weakened", message: "原文的正式发布或开放状态被弱化。" });
     revisionNotes.push("首段直接复述原文的正式发布状态、开放渠道和用户范围。 ");
   }
-  const forbidden = /太乙真人|万人敬仰|新闻怎么跟进|发布角度|适合做视频|作者\s*[：:]|编辑\s*[：:]|量子位|腾讯新闻|新浪财经|36氪/;
+  const forbidden = /太乙真人|万人敬仰|新闻怎么跟进|发布角度|适合做视频|作者\s*[：:]|编辑\s*[：:]|量子位|腾讯新闻|新浪财经|36氪|钛媒体/;
   if (forbidden.test(project.narration)) {
     issues.push({ severity: "error", code: "forbidden_content", message: "旁白包含参考音频污染、站点署名或无关制作建议。" });
   }
@@ -332,6 +338,8 @@ function canonicalSpeechText(text: string) {
     .toLowerCase()
     .replace(/nmp/g, "月之暗面")
     .replace(/黄兰|黃蘭/g, "狂揽")
+    .replace(/千[萬万]/g, "千问")
+    .replace(/分口/g, "风口")
     .replace(/萬/g, "万")
     .replace(/標/g, "标")
     .replace(/月之暗面2[.]7(?:带马|code)/g, "月之暗面k2.7code")

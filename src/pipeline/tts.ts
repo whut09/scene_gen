@@ -211,6 +211,7 @@ export function prepareF5SynthesisText(text: string) {
   const trimmed = text.trim();
   const startsWithLatin = /^[A-Za-z0-9]/.test(trimmed);
   const pronounceable = trimmed
+    .replace(/豆包和千问/g, "豆包，和千问，")
     .replace(/K2[.]7 Code HighSpeed/gi, "K二点七代码高速版")
     .replace(/K2[.]7 Code/gi, "K二点七代码")
     .replace(/Kimi Code CLI/gi, "Kimi代码命令行工具")
