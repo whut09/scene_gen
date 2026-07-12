@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const editorialStatGridTemplate: HtmlTemplateDefinition = {
   id: "editorial-stat-grid",
-  version: "1.0.0",
+  version: "1.2.0",
   name: "Editorial Stat Grid",
   description: "Asymmetric magazine layout that turns facts, metrics and points into a strong vertical composition.",
   engine: "html-video",
@@ -71,7 +71,8 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
       '.es-news>b{font-size:28px;color:#ff5f5f}.es-news h2{font-size:38px;line-height:1.18}.es-news p{font-size:26px;color:#36586d;margin-top:10px}.es-outro{display:flex;flex-direction:column;justify-content:center}' +
       '.es-research-dossier .es-lead{margin-left:110px;border-left:0;border-top:12px solid #ff5f5f}.es-research-dossier .es-metrics{grid-template-columns:repeat(3,1fr);grid-template-rows:210px}.es-research-dossier .es-metric-0{grid-row:auto}.es-research-dossier .es-points{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}.es-research-dossier .es-points li{grid-template-columns:54px 1fr;min-height:150px}' +
       '.es-manifesto{text-align:center;align-items:center}.es-manifesto .es-points{width:92%;margin-top:50px}.es-manifesto .es-points li{min-height:150px;text-align:left}.es-manifesto h1{font-size:88px}' +
-      '.es-stat-grid .es-metrics{transform:rotate(-1deg)}';
+      '.es-stat-grid .es-metrics{transform:rotate(-1deg)}' +
+      '.es-metric,.es-points li{position:relative;overflow:hidden}.es-metric::after,.es-points li::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 0 42%,rgba(255,255,255,.28) 50%,transparent 58%);transform:translateX(-130%);animation:es-focus 6.4s infinite}.es-metric:nth-child(2)::after,.es-points li:nth-child(2)::after{animation-delay:1.4s}.es-metric:nth-child(3)::after,.es-points li:nth-child(3)::after{animation-delay:2.8s}.es-points li:nth-child(4)::after{animation-delay:4.2s}@keyframes es-focus{0%,48%{transform:translateX(-130%)}66%,100%{transform:translateX(130%)}}.es-metric,.es-points li{animation:hv-rise .5s both,es-breathe 3.2s ease-in-out infinite alternate}.es-metric-1,.es-points li:nth-child(2){animation-delay:.16s,-1.1s}.es-metric-2,.es-points li:nth-child(3){animation-delay:.16s,-2.2s}.es-points li:nth-child(4){animation-delay:.16s,-.55s}@keyframes es-breathe{from{filter:brightness(.98);box-shadow:0 0 0 rgba(8,47,117,0)}to{filter:brightness(1.045);box-shadow:0 14px 40px rgba(8,47,117,.12)}}';
     return commonHtml({ title: sceneHeadline(scene), body, width, height, durationSec: scene.duration, theme: "paper", extraCss: css });
   },
 };

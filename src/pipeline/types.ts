@@ -16,6 +16,17 @@ export interface HotItem {
   metrics?: Record<string, number | string>;
 }
 
+export interface ProjectAsset {
+  id: string;
+  kind: "image" | "video";
+  role: "hero" | "evidence" | "demo";
+  title: string;
+  sourceUrl: string;
+  src: string;
+  contentType: string;
+  license: string;
+}
+
 export interface WebScreenshot {
   id: string;
   title: string;
@@ -121,6 +132,7 @@ export interface VideoProject {
   scenes: VideoScene[];
   sources: HotItem[];
   screenshots?: WebScreenshot[];
+  assets?: ProjectAsset[];
   revision?: {
     changedSceneIndexes: number[];
     updatedAt: string;

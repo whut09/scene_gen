@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const decisionFlowTemplate: HtmlTemplateDefinition = {
   id: "decision-flow",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "Decision Flow",
   description: "A vertical cause-and-effect spine with alternating evidence nodes.",
   engine: "html-video",
@@ -51,6 +51,7 @@ export const decisionFlowTemplate: HtmlTemplateDefinition = {
       '.df-node{position:relative;width:48%;min-height:164px;padding:24px 26px;display:grid;grid-template-columns:58px 1fr;gap:18px;align-items:center;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.28);box-shadow:0 20px 54px rgba(0,30,86,.18);animation:df-in .55s both}' +
       '.df-left{justify-self:start}.df-right{justify-self:end}.df-dot{width:50px;height:50px;display:grid;place-items:center;background:#fff36a;color:#0847a6;font-weight:950;font-size:22px}' +
       '.df-node b{display:block;font-size:31px;line-height:1.12}.df-node p{font-size:24px;line-height:1.38;margin-top:8px}' +
+      '.df-node{animation:df-in .55s both,df-signal 6.8s infinite}.df-node:nth-of-type(3){animation-delay:0s,1.7s}.df-node:nth-of-type(4){animation-delay:0s,3.4s}.df-node:nth-of-type(5){animation-delay:0s,5.1s}.df-dot{animation:df-dot-pulse 3.4s infinite alternate}@keyframes df-signal{0%,60%,100%{border-color:rgba(255,255,255,.28);box-shadow:0 20px 54px rgba(0,30,86,.18)}72%,84%{border-color:rgba(255,243,106,.9);box-shadow:0 22px 70px rgba(255,243,106,.2)}}@keyframes df-dot-pulse{from{filter:brightness(1)}to{filter:brightness(1.18);box-shadow:0 0 24px rgba(255,243,106,.38)}}' +
       '@keyframes df-grow{from{transform:translateX(-50%) scaleY(0)}to{transform:translateX(-50%) scaleY(1)}}' +
       '@keyframes df-in{from{opacity:0;transform:translateY(24px) scale(.96)}to{opacity:1;transform:none}}';
     return commonHtml({ title: sceneHeadline(scene), body, width, height, durationSec: scene.duration, theme: "blue", extraCss: css });

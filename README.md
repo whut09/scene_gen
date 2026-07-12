@@ -226,3 +226,10 @@ npm.cmd run production:inspect -- --project "public/generated/stories/<story>.js
 ~~~
 
 一键生成会在对应 HTML Video 目录和最终质量目录写出 `production-report.json`，其中记录模板、视觉来源、供应商启用状态、回退原因、同步关键词和估算外部成本。最终视频质量门还会以每秒两帧采样，报告 `activeMotionRatio`、`meanSceneChange` 和 `longestStaticRun`；连续静止时间过长时给出明确警告。
+
+
+### GitHub 真实素材缓存
+
+GitHub URL 输入会额外解析 README 中的非徽章图片，下载最多 `GITHUB_ASSET_LIMIT` 张到 `public/generated/assets/<owner>-<repo>/`。每个资产记录原始 URL、用途、Content-Type 和许可证提示。标题模板优先使用仓库自带 hero 图，同时保留真实仓库地址和 React/CSS 文字层；素材不可用时自动回退到程序化版式。
+
+运动检查现在按场景持续时间切片，除全片指标外还输出 `sceneMotionRatios` 与 `sceneLongestStaticRuns`。某一屏低运动超过阈值时，问题携带 `sceneIndex`，可只调整该模板或对应段落。

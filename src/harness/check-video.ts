@@ -19,7 +19,7 @@ const guidance = buildFeedbackGuidance(feedback.filter((entry) => !entry.url || 
 const reportDir = fromRoot("dist", "quality", `manual-${slugify(project.meta.title, "video")}`);
 const draft = await evaluateDraft(project, targetSeconds, guidance);
 const audio = await evaluateAudio(project, targetSeconds);
-const video = await evaluateVideo(videoPath, reportDir, project.audio?.durationSeconds);
+const video = await evaluateVideo(videoPath, reportDir, project.audio?.durationSeconds, project.scenes.map((scene) => scene.duration));
 const report = { createdAt: new Date().toISOString(), projectPath, videoPath, draft, audio, video, passed: draft.passed && audio.passed && video.passed };
 await mkdir(reportDir, { recursive: true });
 await writeFile(path.join(reportDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");

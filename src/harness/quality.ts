@@ -345,7 +345,16 @@ export async function evaluateDraft(
 function canonicalSpeechText(text: string) {
   return text
     .toLowerCase()
+    .replace(/輸入/g, "输入")
+    .replace(/個/g, "个")
+    .replace(/主題/g, "主题")
+    .replace(/自動/g, "自动")
+    .replace(/聲稱|声称/g, "生成")
+    .replace(/整條/g, "整条")
+    .replace(/短視頻/g, "短视频")
     .replace(/nmp/g, "月之暗面")
+    .replace(/money\s*printer\s*turbo/g, "moneyprinterturbo")
+    .replace(/money\s*prenz[^一键]{0,6}/g, "moneyprinterturbo")
     .replace(/黄兰|黃蘭/g, "狂揽")
     .replace(/千[萬万]/g, "千问")
     .replace(/分口/g, "风口")
@@ -591,33 +600,44 @@ function runCapture(command: string, args: string[]) {
 }
 
 
-async function sampleMotionMetrics(videoPath: string) {
+async function sampleMotionMetrics(videoPath: string, sceneDurations: number[] = []) {
   const capture = await runCapture("ffmpeg", [
     "-v", "error", "-i", videoPath, "-map", "0:v:0", "-an",
     "-vf", "fps=2,scale=64:64,select='gte(scene,0)',metadata=print:file=-", "-f", "null", "-",
   ]);
   const scores = [...capture.stdout.matchAll(/lavfi\.scene_score=([0-9.]+)/g)].map((match) => Number(match[1]));
-  if (scores.length < 2) return { sampledFrames: scores.length, activeMotionRatio: 1, meanSceneChange: 0, longestStaticRun: 0 };
   const threshold = Number(process.env.MOTION_SCENE_THRESHOLD ?? 0.0005);
-  let currentStatic = 0;
-  let longestStatic = 0;
-  let active = 0;
-  for (const score of scores.slice(1)) {
-    if (score >= threshold) { active += 1; currentStatic = 0; }
-    else { currentStatic += 1; longestStatic = Math.max(longestStatic, currentStatic); }
+  function summarize(values: number[]) {
+    if (values.length < 2) return { activeMotionRatio: 1, meanSceneChange: 0, longestStaticRun: 0 };
+    let currentStatic = 0;
+    let longestStatic = 0;
+    let active = 0;
+    for (const score of values.slice(1)) {
+      if (score >= threshold) { active += 1; currentStatic = 0; }
+      else { currentStatic += 1; longestStatic = Math.max(longestStatic, currentStatic); }
+    }
+    return {
+      activeMotionRatio: Number((active / Math.max(1, values.length - 1)).toFixed(3)),
+      meanSceneChange: Number((values.reduce((sum, score) => sum + score, 0) / values.length).toFixed(6)),
+      longestStaticRun: Number((longestStatic / 2).toFixed(2)),
+    };
   }
-  return {
-    sampledFrames: scores.length,
-    activeMotionRatio: Number((active / Math.max(1, scores.length - 1)).toFixed(3)),
-    meanSceneChange: Number((scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(6)),
-    longestStaticRun: Number((longestStatic / 2).toFixed(2)),
-  };
+  const global = summarize(scores);
+  const boundaries = sceneDurations.reduce<number[]>((items, value) => [...items, (items.at(-1) ?? 0) + value], []);
+  const sceneMotion = sceneDurations.map((_, sceneIndex) => {
+    const start = sceneIndex === 0 ? 0 : boundaries[sceneIndex - 1];
+    const end = boundaries[sceneIndex];
+    const values = scores.filter((__, frameIndex) => frameIndex / 2 >= start && frameIndex / 2 < end);
+    return { sceneIndex, ...summarize(values) };
+  });
+  return { sampledFrames: scores.length, ...global, sceneMotion };
 }
 
 export async function evaluateVideo(
   videoPath: string,
   reportDir: string,
   expectedDuration?: number,
+  sceneDurations: number[] = [],
 ): Promise<QualityEvaluation> {
   const issues: QualityIssue[] = [];
   const probe = await runCapture("ffprobe", [
@@ -652,9 +672,14 @@ export async function evaluateVideo(
   const streamDelta = Math.abs(Number(video?.duration ?? duration) - Number(audio?.duration ?? duration));
   if (streamDelta > 0.2) issues.push({ severity: "error", code: "stream_duration_drift", message: `音视频流相差 ${streamDelta.toFixed(3)} 秒。` });
 
-  const motion = await sampleMotionMetrics(videoPath);
+  const motion = await sampleMotionMetrics(videoPath, sceneDurations);
   if (motion.longestStaticRun >= 6 || motion.activeMotionRatio < 0.22) {
     issues.push({ severity: "warning", code: "video_motion_too_static", message: `画面连续静止约 ${motion.longestStaticRun.toFixed(1)} 秒，建议增加与旁白相关的元素运动或素材镜头。` });
+  }
+  for (const scene of motion.sceneMotion) {
+    if (scene.longestStaticRun >= 6 || scene.activeMotionRatio < 0.18) {
+      issues.push({ severity: "warning", code: "scene_motion_too_static", message: `第 ${scene.sceneIndex + 1} 屏有效运动比例 ${scene.activeMotionRatio}，最长低运动 ${scene.longestStaticRun.toFixed(1)} 秒。`, sceneIndex: scene.sceneIndex });
+    }
   }
 
   await mkdir(reportDir, { recursive: true });
@@ -697,6 +722,8 @@ export async function evaluateVideo(
       activeMotionRatio: motion.activeMotionRatio,
       meanSceneChange: motion.meanSceneChange,
       longestStaticRun: motion.longestStaticRun,
+      sceneMotionRatios: motion.sceneMotion.map((scene) => scene.activeMotionRatio.toFixed(3)).join(", "),
+      sceneLongestStaticRuns: motion.sceneMotion.map((scene) => scene.longestStaticRun.toFixed(1)).join(", "),
     },
   };
 }

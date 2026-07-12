@@ -28,3 +28,12 @@ VideoProject
 - 同步关键词：每屏至少两个可与旁白对应的 cue。
 - 运动采样：FFmpeg 以 2 fps 生成帧摘要，计算唯一帧比例、静态转移比例和最长静止时长。
 - 事实证据：沿用 ContentGraph 的 sourceEvidence，未核验数字仍会阻断渲染。
+
+
+## GitHub asset adapter
+
+`src/production/github-assets.ts` 从 README 提取非 badge 图片，解析相对路径并下载到本地公共资产目录。模板消费本地路径，避免渲染时依赖远程网络。资产报告保留 source URL 和许可证提示，发布前仍应核对上游仓库许可证及图片权利。
+
+## Scene-level motion diagnosis
+
+最终 MP4 以 2 fps 计算场景变化分数，再按 narration 对齐后的场景时长切片。报告同时给出每屏有效运动比例和最长低运动区间，使模板动画可以按屏局部修改并复用其他缓存片段。

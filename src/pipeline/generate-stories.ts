@@ -1,6 +1,7 @@
 import path from "node:path";
 import { writeHtmlVideoContentGraph } from "../html-video/render-html-video";
 import { buildProductionReport } from "../production/production-report";
+import { collectGithubAssets } from "../production/github-assets";
 import type { SourceConfig, VideoProject } from "./types";
 import { collectHotItems, collectWebpage } from "./sources";
 import { createStoryProject, scrubAttribution } from "./story";
@@ -96,7 +97,10 @@ for (const [index, item] of items.entries()) {
   const storyNo = index + 1;
   console.log(`\n[story ${storyNo}/${items.length}] ${item.title}`);
 
-  const screenshots = await captureWebScreenshots([item], screenshotLimit);
+  const [screenshots, assets] = await Promise.all([
+    captureWebScreenshots([item], screenshotLimit),
+    collectGithubAssets(item, Number(process.env.GITHUB_ASSET_LIMIT ?? 3)),
+  ]);
   let project: VideoProject = createStoryProject(item, {
     width,
     height,
@@ -111,6 +115,7 @@ for (const [index, item] of items.entries()) {
     editorialNotes,
   });
   project = scrubProject(project) as VideoProject;
+  project.assets = assets;
   if (!skipTts) {
     project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
     if (

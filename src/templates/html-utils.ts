@@ -10,6 +10,10 @@ export function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
+export function projectHeroAsset(project: VideoProject) {
+  return project.assets?.find((asset) => asset.kind === "image" && asset.role === "hero")?.src ?? "";
+}
+
 export function projectSourceUrl(project: VideoProject) {
   const url = project.sources[0]?.url ?? "";
   if (!/^https?:\/\/github\.com\//i.test(url)) return "";

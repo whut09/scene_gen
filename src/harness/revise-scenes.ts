@@ -4,6 +4,25 @@ import { loadDotEnv, parseArgs, readJson, writeJson } from "../pipeline/utils";
 
 interface SceneRevision { sceneIndex: number; scene: VideoScene; narration: string; }
 
+function narrationMax(scene: VideoScene) {
+  if (scene.type === "title") return 150;
+  if (scene.type === "briefing_points") return 220;
+  if (scene.type === "outro") return 170;
+  return 210;
+}
+
+function fitNarration(text: string, max: number) {
+  const clean = text.trim();
+  if (clean.length <= max) return clean;
+  const sentences = clean.match(/[^。！？!?]+[。！？!?]?/g) ?? [clean];
+  let result = "";
+  for (const sentence of sentences) {
+    if ((result + sentence).length > max) break;
+    result += sentence;
+  }
+  return (result || clean.slice(0, max)).replace(/[，、；：\s]+$/, "") + (/[。！？!?]$/.test(result) ? "" : "。");
+}
+
 loadDotEnv();
 const args = parseArgs(process.argv.slice(2));
 if (typeof args.project !== "string" || typeof args.scenes !== "string") throw new Error("Usage: revise-scenes --project <project.json> --scenes 0,2 [--issues text]");
@@ -17,7 +36,7 @@ const baseUrl = process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL;
 const model = process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
 if (!apiKey || !baseUrl || !model) throw new Error("NEWS_LLM_API_KEY, NEWS_LLM_BASE_URL and NEWS_LLM_MODEL are required.");
 
-const selected = sceneIndexes.map((sceneIndex) => ({ sceneIndex, scene: project.scenes[sceneIndex], narration: project.narrationSegments?.[sceneIndex]?.text ?? "" }));
+const selected = sceneIndexes.map((sceneIndex) => ({ sceneIndex, scene: project.scenes[sceneIndex], narration: project.narrationSegments?.[sceneIndex]?.text ?? "", maxNarrationChars: narrationMax(project.scenes[sceneIndex]) }));
 const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
   method: "POST",
   headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
@@ -26,8 +45,9 @@ const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     messages: [
       { role: "system", content: [
         "你是视频分镜局部修订器。只修改指定 sceneIndex，禁止修改其他屏、项目标题、来源事实和场景数量。",
-        "每个返回项必须包含 sceneIndex、完整 scene 对象和 narration。scene.type 必须与原场景相同。",
-        "旁白只复述该屏可见字段；第一屏第一句话必须逐字念项目标题。不得增加来源中没有的数字。",
+        "每个返回项必须包含 sceneIndex、完整 scene 对象和 narration，scene.type 必须与原场景相同。",
+        "旁白只能复述该屏可见字段；第一屏第一句话必须逐字念项目标题，不得增加来源中没有的数字。",
+        "必须严格遵守每项 maxNarrationChars。问题包含过长、overloaded 或超过上限时，只能压缩，不得扩写。",
         "返回 JSON：{ revisions: [{ sceneIndex, scene, narration }] }。"
       ].join("\n") },
       { role: "user", content: JSON.stringify({ title: project.meta.title, issues: typeof args.issues === "string" ? args.issues : "", source: project.sources, selected }) }
@@ -47,7 +67,8 @@ for (const revision of revisions) {
   if (!revision.scene || revision.scene.type !== project.scenes[revision.sceneIndex].type) throw new Error(`Revision changed scene type at ${revision.sceneIndex}.`);
   if (!revision.narration?.trim()) throw new Error(`Revision returned empty narration at ${revision.sceneIndex}.`);
   scenes[revision.sceneIndex] = revision.scene;
-  narrationSegments[revision.sceneIndex] = { sceneIndex: revision.sceneIndex, text: revision.narration.trim() };
+  const fittedNarration = fitNarration(revision.narration, narrationMax(revision.scene));
+  narrationSegments[revision.sceneIndex] = { sceneIndex: revision.sceneIndex, text: fittedNarration };
 }
 if (new Set(revisions.map((item) => item.sceneIndex)).size !== sceneIndexes.length) throw new Error("Scene revision did not return every requested scene.");
 const updated: VideoProject = {

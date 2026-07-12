@@ -206,7 +206,7 @@ await runScript("src/pipeline/render-stories.ts", [
 
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(selectedProject.meta.title, "video")}`;
 const reportDir = fromRoot("dist", "quality", runId);
-const video = await evaluateVideo(selectedManifest.outputPath, reportDir, selectedProject.audio?.durationSeconds);
+const video = await evaluateVideo(selectedManifest.outputPath, reportDir, selectedProject.audio?.durationSeconds, selectedProject.scenes.map((scene) => scene.duration));
 const passed = Boolean(finalDraft?.passed && finalAudio.passed && video.passed);
 const production = buildProductionReport(selectedProject, engine);
 await writeFile(path.join(reportDir, "production-report.json"), `${JSON.stringify(production, null, 2)}\n`, "utf8");
