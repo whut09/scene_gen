@@ -4,6 +4,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
 import type { VideoProject, VideoScene } from "../pipeline/types";
+import { prepareF5SynthesisText } from "../pipeline/tts";
 import { fromRoot } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
 
@@ -198,6 +199,13 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "template_adjacent_repeat", message: `存在 ${adjacentTemplateRepeats} 处相邻场景重复模板。` });
   }
   for (const node of templateGraph.nodes) {
+    const selectedScene = project.scenes[node.sceneIndex];
+    if (selectedScene?.type === "signal_chart" && selectedScene.bars.length > 1 && selectedScene.bars.every((bar) => bar.value === selectedScene.bars[0].value) && node.variantId !== "category-cards") {
+      issues.push({ severity: "error", code: "qualitative_chart_fake_percentage", message: `第 ${node.sceneIndex + 1} 屏是定性能力分类，不得使用显示百分比的 ${node.variantId} 模板。`, sceneIndex: node.sceneIndex });
+    }
+    if (selectedScene?.type === "briefing_points" && project.sources[0]?.kind === "github" && node.templateId === "investment-research") {
+      issues.push({ severity: "error", code: "github_briefing_template_mismatch", message: `第 ${node.sceneIndex + 1} 屏必须分开展示仓库指标和功能要点，不能把指标标签与要点错误配对。`, sceneIndex: node.sceneIndex });
+    }
     const template = getTemplateById(node.templateId);
     if (!template?.supportedScenes.includes(node.sceneType)) {
       issues.push({ severity: "error", code: "template_scene_mismatch", message: `模板 ${node.templateId} 不支持 ${node.sceneType} 场景。` });
@@ -335,7 +343,10 @@ function canonicalSpeechText(text: string) {
     .replace(/常助/g, "常驻")
     .replace(/登陸/g, "登陆")
     .replace(/边程/g, "编程")
+    .replace(/自然与[言严]/g, "自然语言")
+    .replace(/流程途/g, "流程图")
     .replace(/gitnexus|吉特奈克瑟斯|吉特奈克萨斯|其特奈克色思|其特奈克瑟斯|d(?:i|e)maxs?|dinex/g, "gitnexus")
+    .replace(/next[- ]?ai[- ]?draw[- ]?io|[奈麦耐]克斯特人工智能(?:绘图|会[途徒])工具|奈克斯特aidrawio|奈克斯特ai(?:draw|抓|装)(?:io|幼|药)|idraw(?:i.lluse|io)/g, "nextaidrawio")
     .replace(/贷马库|貸馬庫/g, "代码库")
     .replace(/a[.\s]*i[.]?/g, "ai")
     .replace(/ai[ -]?berkshire|ai伯克希尔|ai伯克希爾|艾伯克希尔|艾伯克希爾|艾伯是/g, "ai伯克希尔")
@@ -462,6 +473,13 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   const firstToMedianSpeed = medianSegmentRate > 0 && segmentRates.length ? segmentRates[0] / medianSegmentRate : 0;
   const maximumSegmentSpeedRatio = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_RATIO ?? 1.35);
   const maximumSegmentSpeedCv = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_CV ?? 0.16);
+  const ttsNumericResidue = segments.reduce((count, segment) => {
+    const prepared = prepareF5SynthesisText(segment.text);
+    return count + (prepared.match(/\d/g)?.length ?? 0);
+  }, 0);
+  if (ttsNumericResidue > 0) {
+    issues.push({ severity: "error", code: "tts_arabic_digits", message: `TTS 合成文本仍包含 ${ttsNumericResidue} 个阿拉伯数字，数字必须转换为中文播报。` });
+  }
   if (!project.audio || project.audio.provider === "silent") {
     issues.push({ severity: "error", code: "audio_missing", message: "没有生成有效旁白音频。" });
   }
@@ -534,6 +552,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
       firstToMedianSpeed: Number(firstToMedianSpeed.toFixed(3)),
       maximumSegmentSpeedRatio,
       maximumSegmentSpeedCv,
+      ttsNumericResidue,
       minimumDuration,
       maximumDuration,
       titleTranscript,

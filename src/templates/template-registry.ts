@@ -118,7 +118,12 @@ export function rankTemplatesForScene(
     .filter((template) => template.supportedScenes.includes(scene.type))
     .filter((template) => template.license.commercialUse)
     .map((template) => {
-      const variant = selectVariant(template, terms, project, options.sceneIndex ?? 0, scene.type);
+      let variant = selectVariant(template, terms, project, options.sceneIndex ?? 0, scene.type);
+      const qualitativeEqualBars = scene.type === "signal_chart" && scene.bars.length > 1 && scene.bars.every((bar) => bar.value === scene.bars[0].value);
+      if (template.id === "nyt-data-chart" && qualitativeEqualBars) {
+        const categoryVariant = template.variants.find((item) => item.id === "category-cards");
+        if (categoryVariant) variant = { variant: categoryVariant, score: variant.score + 40, tagMatches: [...variant.tagMatches, "qualitative-equal-bars"] };
+      }
       let score = 35 + Math.min(16, variant.score);
       const reasons = ["supports " + scene.type, "variant " + variant.variant.id];
       if (variant.tagMatches.length) reasons.push("variant tags " + variant.tagMatches.join(", "));
@@ -145,6 +150,10 @@ export function rankTemplatesForScene(
       const matchedTags = template.tags.filter((tag) => terms.includes(tag.toLowerCase())).slice(0, 4);
       score += matchedTags.length * 3;
       const investmentTerms = /investment|finance|valuation|value investing|投研|投资|估值|巴菲特|芒格/.test(terms);
+      if (template.id === "editorial-stat-grid" && scene.type === "briefing_points" && primarySource(project)?.kind === "github") {
+        score += 36;
+        reasons.push("github metrics and points stay separated");
+      }
       if (template.id === "investment-research" && investmentTerms) {
         score += 14;
         reasons.push("investment-domain fit");

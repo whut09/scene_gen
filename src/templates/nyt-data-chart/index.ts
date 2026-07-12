@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const nytDataChartTemplate: HtmlTemplateDefinition = {
   id: "nyt-data-chart",
-  version: "1.3.0",
+  version: "1.4.0",
   name: "NYT Data Chart",
   description: "Editorial chart scene inspired by newspaper data storytelling.",
   engine: "html-video",
@@ -52,7 +52,7 @@ export const nytDataChartTemplate: HtmlTemplateDefinition = {
     ).join('');
     const ranked = bars.map((bar, index) => {
       const metric = variantId === "category-cards"
-        ? `<strong>${escapeHtml(bar.value)}${/路径/.test(bar.label) ? " 条" : " 个"}</strong>`
+        ? `<strong>能力 ${String(index + 1).padStart(2, "0")}</strong>`
         : `<strong>关键 ${String(index + 1).padStart(2, "0")}</strong>`;
       return '<article class="nyt-rank" style="animation-delay:' + pacedDelay(index, bars.length, scene.duration) + 's"><b>0' + (index + 1) + '</b><div><span>' + escapeHtml(bar.label) + '</span>' + metric + '<p>' + escapeHtml(bar.detail) + '</p></div><i style="background:' + escapeHtml(bar.color) + '"></i></article>';
     }).join('');
