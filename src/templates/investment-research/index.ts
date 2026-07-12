@@ -12,7 +12,7 @@ function sceneItems(scene: Parameters<HtmlTemplateDefinition["renderHtml"]>[0]["
 
 export const investmentResearchTemplate: HtmlTemplateDefinition = {
   id: "investment-research",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "Investment Research Desk",
   description: "Shareholder-letter typography, market tape and animated thesis cards for finance and research projects.",
   engine: "html-video",
@@ -54,7 +54,7 @@ export const investmentResearchTemplate: HtmlTemplateDefinition = {
     const titleScene = scene.type === "title";
     const cover = titleScene ? `<section class="ir-cover"><div class="ir-seal ir-s1">巴菲特</div><div class="ir-seal ir-s2">芒格</div><div class="ir-seal ir-s3">段永平</div><div class="ir-seal ir-s4">李录</div><p>${escapeHtml(scene.subhead)}</p><blockquote>PRICE IS WHAT YOU PAY<br/>VALUE IS WHAT YOU GET</blockquote></section>` : `<section class="ir-board">${cards}</section>`;
     const body = `<main class="hv-main ir-main ${variantClass} ${titleScene ? "ir-title-cover" : ""}">
-      <header class="ir-header"><span>${repoUrl ? escapeHtml(repoUrl) : "RESEARCH / PROJECT MEMO"}</span><time>VALUE × AI</time></header>
+      <header class="ir-header ${repoUrl ? "ir-repo-header" : ""}"><span>${repoUrl ? escapeHtml(repoUrl) : "RESEARCH / PROJECT MEMO"}</span><time>VALUE × AI</time></header>
       <h1 style="font-size:${headlineFontSize(title, 78, 58)}px">${escapeHtml(title)}</h1>
       <div class="ir-rule"><i></i></div>
       ${cover}
@@ -66,7 +66,7 @@ export const investmentResearchTemplate: HtmlTemplateDefinition = {
       .hv-root::after{background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent)}
       .ir-main{position:absolute;top:var(--safe-top);bottom:var(--safe-bottom)}
       .ir-header{display:flex;justify-content:space-between;border-top:5px solid #173b2d;border-bottom:1px solid rgba(23,59,45,.35);padding:17px 0 14px;font:900 21px/1.1 Georgia,"Microsoft YaHei",serif;letter-spacing:.09em;color:#b33b34}
-      .ir-header time{color:#173b2d}.ir-main h1{font-family:Georgia,"Songti SC","SimSun",serif;line-height:1.09;letter-spacing:0;color:#173b2d;margin:38px 0 22px;max-width:820px;text-shadow:none}
+      .ir-header time{color:#173b2d}.ir-repo-header span{font-size:26px;line-height:1.2;letter-spacing:.02em;overflow-wrap:anywhere;max-width:680px}.ir-main h1{font-family:Georgia,"Songti SC","SimSun",serif;line-height:1.09;letter-spacing:0;color:#173b2d;margin:38px 0 22px;max-width:820px;text-shadow:none}
       .ir-rule{height:7px;background:rgba(23,59,45,.13);overflow:hidden}.ir-rule i{display:block;height:100%;width:38%;background:#b33b34;animation:ir-rule calc(var(--scene-duration)*.78) ease-in-out both}
       .ir-board{position:absolute;left:0;right:0;top:300px;bottom:92px;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:18px}
       .ir-title-cover h1{font-size:68px!important;line-height:1.04;max-width:800px;margin-top:72px}.ir-title-cover .ir-rule{margin-top:18px}.ir-cover{position:absolute;inset:430px 0 80px}.ir-cover p{font:900 34px/1.4 "Microsoft YaHei",sans-serif;color:#b33b34;max-width:650px}.ir-cover blockquote{position:absolute;left:0;bottom:170px;margin:0;padding:28px 0 28px 30px;border-left:8px solid #b33b34;font:italic 800 34px/1.35 Georgia,serif;color:#173b2d;letter-spacing:.04em}.ir-seal{position:absolute;width:142px;height:142px;display:grid;place-items:center;border:4px double #b33b34;border-radius:50%;color:#b33b34;font:900 24px/1 "Songti SC",serif;background:rgba(246,240,223,.78);box-shadow:0 16px 40px rgba(84,45,35,.12);opacity:0;animation:ir-seal-in .8s cubic-bezier(.2,.8,.2,1) both}.ir-s1{right:20px;top:20px;animation-delay:1.1s}.ir-s2{right:185px;top:150px;animation-delay:2.7s}.ir-s3{right:20px;top:285px;animation-delay:4.3s}.ir-s4{right:185px;top:420px;animation-delay:5.9s}

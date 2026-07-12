@@ -163,8 +163,14 @@ function pronounceDigits(value: string) {
 
 function prepareF5SynthesisText(text: string) {
   const trimmed = text.trim();
-  if (!/^[A-Za-z0-9]/.test(trimmed)) return text;
+  const startsWithLatin = /^[A-Za-z0-9]/.test(trimmed);
   const pronounceable = trimmed
+    .replace(/K2[.]7 Code HighSpeed/gi, "K二点七代码高速版")
+    .replace(/K2[.]7 Code/gi, "K二点七代码")
+    .replace(/Kimi Code CLI/gi, "Kimi代码命令行工具")
+    .replace(/Kimi Code/gi, "Kimi代码")
+    .replace(/Coding Plan/gi, "编程套餐")
+    .replace(/Allegretto/gi, "阿莱格雷托")
     .replace(/GitNexus/gi, "吉特奈克瑟斯")
     .replace(/AI[ -]?Berkshire/gi, "AI 伯克希尔")
     .replace(/OmniRoute/gi, "奥姆尼路由")
@@ -179,7 +185,7 @@ function prepareF5SynthesisText(text: string) {
     .replace(/700(?=词)/g, "七百")
     .replace(/64(?=个)/g, "六十四")
     .replace(/50(?=年)/g, "五十");
-  return `。${pronounceable}`;
+  return startsWithLatin ? `。${pronounceable}` : pronounceable;
 }
 async function f5Tts(text: string, outputPath: string, speedOverride?: string) {
   const python = resolveF5Python();

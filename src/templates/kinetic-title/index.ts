@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, headlineFontSize, projectSourceUrl, sceneHeadli
 
 export const kineticTitleTemplate: HtmlTemplateDefinition = {
   id: "kinetic-title",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "Kinetic Title",
   description: "Oversized editorial typography with paced signal strips for hooks and conclusions.",
   engine: "html-video",
@@ -60,7 +60,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
       '.kt-rule i{height:12px;background:#fff36a;transform-origin:left;animation:hv-width .8s .3s both;}' +
       '.kt-rule i:nth-child(2){background:#72f0ff;animation-delay:.45s}.kt-rule i:nth-child(3){background:#ff8bd7;animation-delay:.6s}' +
       '.kt-support{font-size:34px;max-width:850px;animation:hv-rise .55s .5s both;}' +
-      '.kt-stamp{position:absolute;left:0;bottom:4px;font-size:20px;font-weight:900;letter-spacing:.18em;color:rgba(255,255,255,.58);}' +
+      '.kt-stamp{position:absolute;left:0;right:0;bottom:4px;font-size:30px;line-height:1.2;font-weight:900;letter-spacing:.04em;color:rgba(255,255,255,.82);overflow-wrap:anywhere;}' +
       '.kt-research-stack{justify-content:flex-start;padding-top:220px}.kt-research-stack .kt-title{font-size:min(var(--kt-title-size),82px);max-width:900px}.kt-research-stack .kt-support{margin-top:28px;padding:30px;border-left:10px solid #fff36a;background:rgba(255,255,255,.12)}' +
       '.kt-agent-split{justify-content:flex-start;padding-top:260px}.kt-agent-split .kt-title{font-size:min(var(--kt-title-size),80px);max-width:790px}.kt-agent-split .kt-index{top:500px;right:-28px;font-size:330px}.kt-agent-split .kt-rule{width:48%}.kt-agent-split .kt-support{margin-left:150px;max-width:760px;padding-left:28px;border-left:8px solid #72f0ff}' +
       '.kt-launch-impact .kt-title{font-size:var(--kt-title-size)}.kt-launch-impact .kt-rule{width:84%}' +

@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, headlineFontSize, projectSourceUrl, sceneHeadli
 
 export const boldSignalTemplate: HtmlTemplateDefinition = {
   id: "bold-signal",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "Bold Signal",
   description: "High-impact title and outro frame for short-form news videos.",
   engine: "html-video",
@@ -50,7 +50,7 @@ export const boldSignalTemplate: HtmlTemplateDefinition = {
       <h1 style="font-size:${titleSize}px;max-width:940px;">${escapeHtml(headline)}</h1>
       <p style="margin-top:34px;max-width:860px;font-size:36px;">${escapeHtml(sub)}</p>
       <div style="margin-top:52px;width:360px;height:10px;background:#fff36a;transform-origin:left center;animation:hv-width 1s .25s both;"></div>
-      ${repoUrl ? `<div style="position:absolute;left:0;bottom:6px;font-size:22px;font-weight:850;letter-spacing:.04em;color:rgba(255,255,255,.72)">${escapeHtml(repoUrl)}</div>` : ""}
+      ${repoUrl ? `<div style="position:absolute;left:0;bottom:6px;font-size:30px;line-height:1.2;font-weight:900;letter-spacing:.02em;color:rgba(255,255,255,.86);right:0;overflow-wrap:anywhere">${escapeHtml(repoUrl)}</div>` : ""}
     </main>`;
     return commonHtml({ title: headline, body, width, height, durationSec: scene.duration, theme: "blue" });
   },

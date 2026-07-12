@@ -321,6 +321,16 @@ export async function evaluateDraft(
 function canonicalSpeechText(text: string) {
   return text
     .toLowerCase()
+    .replace(/nmp/g, "月之暗面")
+    .replace(/月之暗面2[.]7(?:带马|code)/g, "月之暗面k2.7code")
+    .replace(/kme(?:带马|代码)?/g, "kimicode")
+    .replace(/带马/g, "code")
+    .replace(/长住科选/g, "常驻可选")
+    .replace(/k[- ]?(?:2|p)[.\s-]*(?:7|ossanko)(?:\s*(?:代码|code))?|k二点七代码/g, "k2.7code")
+    .replace(/k[- ]?mi(?:code)?|k[- ]?micode|kimi代码/g, "kimicode")
+    .replace(/常助/g, "常驻")
+    .replace(/登陸/g, "登陆")
+    .replace(/边程/g, "编程")
     .replace(/gitnexus|吉特奈克瑟斯|吉特奈克萨斯|其特奈克色思|其特奈克瑟斯|d(?:i|e)maxs?|dinex/g, "gitnexus")
     .replace(/贷马库|貸馬庫/g, "代码库")
     .replace(/a[.\s]*i[.]?/g, "ai")
