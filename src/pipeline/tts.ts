@@ -226,6 +226,8 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/next-ai-draw-io/gi, "奈克斯特，人工智能绘图工具，")
     .replace(/Next[.]js/gi, "Next JS")
     .replace(/draw[.]io/gi, "Draw IO")
+    .replace(/ChatGPT/gi, "聊天 GPT，")
+    .replace(/Codex/gi, "Codex，")
     .replace(/OpenAI/gi, "欧盆艾，")
     .replace(/Prompt/gi, "提示词")
     .replace(/Agent/gi, "智能体")

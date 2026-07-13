@@ -118,8 +118,12 @@ export function rankTemplatesForScene(
     .filter((template) => template.supportedScenes.includes(scene.type))
     .filter((template) => template.license.commercialUse)
     .map((template) => {
+      let scorePenalty = 0;
       let variant = selectVariant(template, terms, project, options.sceneIndex ?? 0, scene.type);
       const qualitativeEqualBars = scene.type === "signal_chart" && Array.isArray(scene.bars) && scene.bars.length > 1 && scene.bars.every((bar) => bar.value === scene.bars[0].value);
+      if (qualitativeEqualBars && template.id === "investment-research") {
+        scorePenalty = -70;
+      }
       if (template.id === "nyt-data-chart" && qualitativeEqualBars) {
         const categoryVariant = template.variants.find((item) => item.id === "category-cards");
         if (categoryVariant) variant = { variant: categoryVariant, score: variant.score + 40, tagMatches: [...variant.tagMatches, "qualitative-equal-bars"] };
@@ -128,7 +132,7 @@ export function rankTemplatesForScene(
         const capabilityVariant = template.variants.find((item) => item.id === "capability-grid");
         if (capabilityVariant) variant = { variant: capabilityVariant, score: variant.score + 40, tagMatches: [...variant.tagMatches, "parallel-branches"] };
       }
-      let score = 35 + Math.min(16, variant.score);
+      let score = 35 + Math.min(16, variant.score) + (scorePenalty ?? 0);
       const reasons = ["supports " + scene.type, "variant " + variant.variant.id];
       if (variant.tagMatches.length) reasons.push("variant tags " + variant.tagMatches.join(", "));
 
