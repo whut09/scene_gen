@@ -10,6 +10,21 @@ export function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
+export type VisualPalette = "ocean" | "violet" | "sunset" | "mint" | "coral";
+
+function paletteFromText(text: string): VisualPalette {
+  let hash = 0;
+  for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return (["ocean", "violet", "sunset", "mint", "coral"] as const)[hash % 5];
+}
+
+export function projectPalette(project: VideoProject): VisualPalette {
+  const key = (project.sources[0]?.url ?? project.meta.title).toLowerCase();
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return paletteFromText(key);
+}
+
 export function projectHeroAsset(project: VideoProject) {
   return project.assets?.find((asset) => asset.kind === "image" && asset.role === "hero")?.src ?? "";
 }
@@ -45,6 +60,7 @@ export function commonHtml({
   width,
   height,
   theme = "blue",
+  palette = paletteFromText(title),
   extraCss = "",
   chrome = false,
   durationSec = 12,
@@ -54,6 +70,7 @@ export function commonHtml({
   width: number;
   height: number;
   theme?: "blue" | "dark" | "paper";
+  palette?: VisualPalette;
   extraCss?: string;
   chrome?: boolean;
   durationSec?: number;
@@ -63,12 +80,20 @@ export function commonHtml({
       ? "body{color:#123b56}.hv-kicker{color:#ff5f5f}h1{color:#062f50;text-shadow:none}p{color:#31546c}"
       : "";
 
+  const paletteCss: Record<VisualPalette, { a: string; b: string; c: string; paper: string }> = {
+    ocean: { a: "#0847d7", b: "#0876ca", c: "#00a6bb", paper: "#eef7ff" },
+    violet: { a: "#4820a8", b: "#6756d9", c: "#a78bfa", paper: "#f3efff" },
+    sunset: { a: "#b63732", b: "#e8753d", c: "#f2c14e", paper: "#fff4e8" },
+    mint: { a: "#075e62", b: "#149b8f", c: "#8ee3c8", paper: "#edf9f4" },
+    coral: { a: "#9b2855", b: "#d95372", c: "#f4a261", paper: "#fff0f2" },
+  };
+  const colors = paletteCss[palette];
   const background =
     theme === "paper"
-      ? "linear-gradient(145deg,#fbf7ed 0%,#eef7ff 45%,#fffdf8 100%)"
+      ? `linear-gradient(145deg,#fbf7ed 0%,${colors.paper} 45%,#fffdf8 100%)`
       : theme === "dark"
         ? "radial-gradient(circle at 25% 18%,rgba(95,230,255,.2),transparent 30%),linear-gradient(150deg,#07111f,#122f52 55%,#121212)"
-        : "radial-gradient(circle at 20% 18%,rgba(80,210,255,.34),transparent 26%),radial-gradient(circle at 82% 14%,rgba(85,130,255,.32),transparent 30%),linear-gradient(180deg,#0847d7 0%,#0876ca 48%,#00a6bb 100%)";
+        : `radial-gradient(circle at 20% 18%,rgba(255,255,255,.22),transparent 26%),radial-gradient(circle at 82% 14%,rgba(255,255,255,.16),transparent 30%),linear-gradient(180deg,${colors.a} 0%,${colors.b} 48%,${colors.c} 100%)`;
 
   return `<!doctype html>
 <html>
@@ -88,6 +113,7 @@ export function commonHtml({
       --safe-right: 156px;
       --safe-top: 138px;
       --safe-bottom: 150px;
+      --hv-accent: ${colors.c};
     }
     .hv-root { position: relative; width: 100%; height: 100%; overflow: hidden; }
     .hv-root::before {

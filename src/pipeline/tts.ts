@@ -211,8 +211,12 @@ export function prepareF5SynthesisText(text: string) {
   const trimmed = text.trim();
   const startsWithLatin = /^[A-Za-z0-9]/.test(trimmed);
   const pronounceable = trimmed
+    .replace(/重置/g, "重新设置")
     .replace(/豆包和千问/g, "豆包，和千问，")
     .replace(/MoneyPrinterTurbo/gi, "Money Printer Turbo")
+    .replace(/awesome-llm-apps/gi, "这个项目")
+    .replace(/\bRAG\b/gi, "检索增强生成")
+    .replace(/\bAI\b/g, "人工智能")
     .replace(/K2[.]7 Code HighSpeed/gi, "K二点七代码高速版")
     .replace(/K2[.]7 Code/gi, "K二点七代码")
     .replace(/Kimi Code CLI/gi, "Kimi代码命令行工具")

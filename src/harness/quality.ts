@@ -350,6 +350,8 @@ function canonicalSpeechText(text: string) {
     .replace(/主題/g, "主题")
     .replace(/自動/g, "自动")
     .replace(/聲稱|声称/g, "生成")
+    .replace(/把于各|把于个/g, "百余个")
+    .replace(/智能体育检所|智能体育检索/g, "智能体与检索")
     .replace(/整條/g, "整条")
     .replace(/短視頻/g, "短视频")
     .replace(/nmp/g, "月之暗面")

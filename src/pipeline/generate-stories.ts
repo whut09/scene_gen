@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readdir } from "node:fs/promises";
 import { writeHtmlVideoContentGraph } from "../html-video/render-html-video";
 import { buildProductionReport } from "../production/production-report";
 import { collectGithubAssets } from "../production/github-assets";
@@ -24,6 +25,33 @@ interface StoryManifestItem {
 loadDotEnv();
 
 const args = parseArgs(process.argv.slice(2));
+function githubKey(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.toLowerCase() !== "github.com") return "";
+    const parts = parsed.pathname.split("/").filter(Boolean).slice(0, 2);
+    return parts.length === 2 ? parts.join("/").toLowerCase() : "";
+  } catch { return ""; }
+}
+
+async function findGithubCache(url: string) {
+  const key = githubKey(url);
+  if (!key) return null;
+  const storiesDir = fromRoot("public", "generated", "stories");
+  const manifestPath = fromRoot("public", "generated", "stories", "manifest.json");
+  const manifest = await readJson<StoryManifestItem[]>(manifestPath).catch(() => []);
+  const fromManifest = manifest.find((item) => githubKey(item.source) === key || githubKey(item.projectPath) === key);
+  const names = await readdir(storiesDir).catch(() => []);
+  for (const name of names.filter((value) => value.endsWith(".json") && value !== "manifest.json")) {
+    const projectPath = path.join(storiesDir, name);
+    const project = await readJson<VideoProject>(projectPath).catch(() => null);
+    if (!project || !Array.isArray(project.sources) || githubKey(project.sources[0]?.url ?? "") !== key) continue;
+    const manifestItem = manifest.find((item) => item.projectPath === projectPath || item.title === project.meta.title);
+    return { projectPath, project, manifestItem, outputPath: manifestItem?.outputPath ?? path.join(process.env.VIDEO_OUTPUT_DIR ?? "F:\\发布视频", name.replace(/\.json$/, ".mp4")) };
+  }
+  return fromManifest ? { projectPath: fromManifest.projectPath, project: null, manifestItem: fromManifest, outputPath: fromManifest.outputPath } : null;
+}
+
 const urls = typeof args.url === "string" ? [args.url] : [];
 const count = Number(args.count ?? process.env.STORY_COUNT ?? 3);
 const screenshotLimit = Number(args.screenshots ?? process.env.SCREENSHOT_LIMIT ?? 1);
@@ -33,6 +61,17 @@ const fps = Number(args.fps ?? process.env.VIDEO_FPS ?? 30);
 const targetSeconds = args.seconds ? Number(args.seconds) : undefined;
 const urlOnly = Boolean(args["url-only"]);
 const editorialNotes = typeof args.notes === "string" ? args.notes : undefined;
+if (urls.length === 1) {
+  const cached = await findGithubCache(urls[0]);
+  if (cached) {
+    console.log("\n[github-cache] 已经生成过，直接退出");
+    console.log("[github-cache] 仓库: " + githubKey(urls[0]));
+    console.log("[github-cache] 项目: " + cached.projectPath);
+    console.log("[github-cache] 视频: " + cached.outputPath);
+    if (cached.project?.meta.createdAt) console.log("[github-cache] 生成时间: " + cached.project.meta.createdAt);
+    process.exit(0);
+  }
+}
 const skipTts = Boolean(args["skip-tts"]);
 const outputDir =
   typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : fromRoot("dist", "stories");
