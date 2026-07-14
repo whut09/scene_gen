@@ -4,6 +4,7 @@ import type { VideoProject } from "./types";
 import { attachNarrationAudio } from "./tts";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson } from "./utils";
 import { videoProjectSchema } from "./schemas";
+import { ensureNewsDateNarration } from "./news-date";
 
 loadDotEnv();
 
@@ -18,6 +19,7 @@ const targetSeconds = typeof args.seconds === "string" ? Number(args.seconds) : 
 if (targetSeconds && Number.isFinite(targetSeconds) && targetSeconds > 0) {
   project = { ...project, meta: { ...project.meta, durationSeconds: targetSeconds } };
 }
+project = ensureNewsDateNarration(project);
 const sourceId = project.sources[0]?.id ?? slugify(project.meta.title, "story");
 const basename =
   typeof args.basename === "string" ? args.basename : `narration-agent-${slugify(sourceId, "story")}`;

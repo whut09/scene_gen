@@ -1,5 +1,6 @@
 import type { VideoProject } from "../pipeline/types";
 import type { VideoScene } from "../pipeline/types";
+import { projectNewsDate } from "../pipeline/news-date";
 
 export function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -27,6 +28,10 @@ export function projectPalette(project: VideoProject): VisualPalette {
 
 export function projectHeroAsset(project: VideoProject) {
   return project.assets?.find((asset) => asset.kind === "image" && asset.role === "hero")?.src ?? "";
+}
+
+export function projectPublicationDate(project: VideoProject) {
+  return projectNewsDate(project);
 }
 
 export function projectSourceUrl(project: VideoProject) {

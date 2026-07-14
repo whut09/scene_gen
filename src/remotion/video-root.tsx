@@ -1,6 +1,7 @@
 import React from "react";
 import { AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import type { VideoScene } from "../pipeline/types";
+import type { VideoProject, VideoScene } from "../pipeline/types";
+import { projectNewsDate } from "../pipeline/news-date";
 import type { ProjectProps } from "./index";
 import "./styles.css";
 
@@ -36,24 +37,38 @@ function SceneFrame({
   );
 }
 
-function TitleScene({ scene, localFrame }: { scene: Extract<VideoScene, { type: "title" }>; localFrame: number }) {
+function TitleScene({ project, scene, localFrame }: { project: VideoProject; scene: Extract<VideoScene, { type: "title" }>; localFrame: number }) {
   const intro = ease(localFrame / 20);
   const pulse = Math.sin(localFrame / 13) * 0.5 + 0.5;
   const headlineParts = scene.headline.split(/(GPT-5\.6|Claude|1\/16|十六分之一)/gi);
+  const githubUrl = scene.sources.find((source) => /^github\.com\//i.test(source));
+  const publicationDate = projectNewsDate(project);
   return (
     <AbsoluteFill className="scene coverScene">
       <div className="gridGlow" />
       <div className="scanline" style={{ transform: `translateY(${(localFrame * 3) % 900}px)` }} />
       <header className="coverTop">
-        <span>AI MODEL RELEASE</span>
-        <span>OPENAI / GPT-5.6</span>
+        <span>{publicationDate ? "新闻日期" : "PROGRAMMATIC VIDEO"}</span>
+        <span>{publicationDate || (githubUrl ? "GITHUB PROJECT" : "NEWS")}</span>
       </header>
       <section
-        className="coverHero"
+        className={`coverHero ${githubUrl ? "coverHeroGithub" : "coverHeroNews"}`}
         style={{ opacity: intro, transform: `translateY(${(1 - intro) * 32}px)` }}
       >
         <div className="coverRail" />
         <div className="coverGhost">5.6</div>
+        {githubUrl ? (
+          <section className="coverGithub">
+            <strong>GitHub 开源项目推荐</strong>
+            <span>{githubUrl}</span>
+          </section>
+        ) : null}
+        {publicationDate ? (
+          <section className="coverDate">
+            <small>新闻日期</small>
+            <strong>{publicationDate}</strong>
+          </section>
+        ) : null}
         <div className="coverKicker">{scene.kicker}</div>
         <h1 className="coverHeadline">
           {headlineParts.map((part, index) =>
@@ -355,12 +370,12 @@ function Outro({ scene, localFrame }: { scene: Extract<VideoScene, { type: "outr
   );
 }
 
-function SceneSwitch({ scene }: { scene: VideoScene }) {
+function SceneSwitch({ project, scene }: { project: VideoProject; scene: VideoScene }) {
   const frame = useCurrentFrame();
   const localFrame = frame;
   switch (scene.type) {
     case "title":
-      return <TitleScene scene={scene} localFrame={localFrame} />;
+      return <TitleScene project={project} scene={scene} localFrame={localFrame} />;
     case "news_stack":
       return <NewsStack scene={scene} localFrame={localFrame} />;
     case "briefing_points":
@@ -394,7 +409,7 @@ export const VideoRoot: React.FC<ProjectProps> = ({ project }) => {
         cursor += duration;
         return (
           <Sequence key={`${scene.type}-${index}`} from={start} durationInFrames={duration}>
-            <SceneSwitch scene={scene} />
+            <SceneSwitch project={project} scene={scene} />
           </Sequence>
         );
       })}

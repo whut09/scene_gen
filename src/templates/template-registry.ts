@@ -3,6 +3,7 @@ import { boldSignalTemplate } from "./bold-signal";
 import { decisionFlowTemplate } from "./decision-flow";
 import { editorialStatGridTemplate } from "./editorial-stat-grid";
 import { kineticTitleTemplate } from "./kinetic-title";
+import { generalEditorialTemplate } from "./general-editorial";
 import { investmentResearchTemplate } from "./investment-research";
 import { newsBlueBoardTemplate } from "./news-blue-board";
 import { nytDataChartTemplate } from "./nyt-data-chart";
@@ -17,6 +18,7 @@ import type {
 export const htmlVideoTemplates: HtmlTemplateDefinition[] = [
   boldSignalTemplate,
   kineticTitleTemplate,
+  generalEditorialTemplate,
   newsBlueBoardTemplate,
   investmentResearchTemplate,
   editorialStatGridTemplate,
@@ -158,6 +160,9 @@ export function rankTemplatesForScene(
       const matchedTags = template.tags.filter((tag) => terms.includes(tag.toLowerCase())).slice(0, 4);
       score += matchedTags.length * 3;
       const investmentTerms = /investment|finance|valuation|value investing|投研|投资|估值|巴菲特|芒格/.test(terms);
+      const aiSpecificTerms = /人工智能|大模型|模型|agent|智能体|prompt|token|benchmark|github|代码|编程|芯片|算力|openai|claude|gemini|deepseek/.test(terms);
+      const generalStoryTerms = /社会|商业|消费|人物|政策|民生|教育|医疗|职场|文化|旅游|汽车|房产|财经|公司|行业|生活|事件|调查/.test(terms);
+      const generalArticle = primarySource(project)?.kind === "webpage" && (!aiSpecificTerms || generalStoryTerms);
       if (template.id === "editorial-stat-grid" && scene.type === "briefing_points" && scene.metrics.length > 0 && scene.points.length > 0) {
         score += 36;
         reasons.push("briefing metrics and points stay separated");
@@ -165,6 +170,14 @@ export function rankTemplatesForScene(
       if (template.id === "investment-research" && investmentTerms) {
         score += 14;
         reasons.push("investment-domain fit");
+      }
+      if (template.id === "general-editorial" && generalArticle) {
+        score += 48;
+        reasons.push("general-interest article fit");
+      }
+      if (template.id === "general-editorial" && aiSpecificTerms && !generalStoryTerms) {
+        score -= 26;
+        reasons.push("AI-specific content penalty");
       }
       if (matchedTags.length) reasons.push("tags " + matchedTags.join(", "));
 

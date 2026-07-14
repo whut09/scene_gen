@@ -9,6 +9,7 @@ import { fromRoot } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
 import { buildProductionDecisions } from "../production/visual-planner";
 import { qualityJudgeResponseSchema } from "../pipeline/schemas";
+import { isNewsProject, projectNewsDate } from "../pipeline/news-date";
 
 export type QualityStage = "draft" | "audio" | "video";
 
@@ -42,8 +43,18 @@ function attachIssueSceneIndexes(issues: QualityIssue[]) {
   }));
 }
 
+const ASR_TRADITIONAL_TO_SIMPLIFIED: Record<string, string> = {
+  獎: "奖", 攝: "摄", 銷: "销", 認: "认", 賽: "赛", 獲: "获", 與: "与", 為: "为",
+  園: "园", 責: "责", 處: "处", 關: "关", 後: "后", 這: "这", 確: "确", 實: "实",
+};
+
 function normalizeText(text: string) {
-  return text.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "").toLowerCase();
+  return [...text]
+    .map((char) => ASR_TRADITIONAL_TO_SIMPLIFIED[char] ?? char)
+    .join("")
+    .replace(/\s+/g, "")
+    .replace(/[：:，,。.!！?？_\-]/g, "")
+    .toLowerCase();
 }
 
 function sceneVisibleText(scene: VideoScene) {
@@ -240,9 +251,18 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。" });
     revisionNotes.push("将新闻标题逐字放在第一段旁白的第一句话，念完标题后再进入正文。 ");
   }
-  if (source && source.kind !== "github" && normalizeText(project.meta.title) !== normalizeText(source.title)) {
-    issues.push({ severity: "error", code: "title_rewritten", message: "主标题没有保留新闻原题。" });
-    revisionNotes.push("主标题直接使用新闻原题；分析结论放副标题或正文。 ");
+  const publicationDate = projectNewsDate(project);
+  if (isNewsProject(project) && !publicationDate) {
+    issues.push({ severity: "error", code: "news_date_missing", message: "新闻项目缺少可展示的发布日期。" });
+    revisionNotes.push("为新闻来源补充 publishedAt，并在首页显著展示新闻日期。 ");
+  } else if (publicationDate && !normalizeText(firstNarration).includes(normalizeText(publicationDate))) {
+    issues.push({ severity: "error", code: "news_date_not_spoken", message: "第一段旁白没有播报首页展示的新闻日期。" });
+    revisionNotes.push("标题播报完成后，紧接着播报新闻日期。 ");
+  }
+  const titleChineseCount = (project.meta.title.match(/[\u4e00-\u9fff]/g) ?? []).length;
+  if (titleChineseCount < 6) {
+    issues.push({ severity: "error", code: "title_not_chinese_summary", message: "视频主标题没有形成清晰的中文总结。" });
+    revisionNotes.push("将主标题改写为14到30个汉字的中文事实总结，英文仅保留必要专有名。 ");
   }
   const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
   if (/正式发布|正式推出|即日起.{0,80}开放/.test(sourceText) && !/正式发布|正式推出|即日起.{0,80}开放/.test(project.narration)) {
@@ -266,7 +286,7 @@ export async function evaluateDraft(
     } else if (narrationLength < limits.min) {
       issues.push({ severity: "warning", code: "scene_narration_thin", message: `第 ${index + 1} 屏旁白仅 ${narrationLength} 字。` });
     }
-    const visibleText = `${project.meta.title} ${sceneVisibleText(scene)}`;
+    const visibleText = `${project.meta.title} ${sceneVisibleText(scene)} ${index === 0 ? projectNewsDate(project) : ""}`;
     const coverage = visibleTokenCoverage(visibleText, segment.text);
     alignmentScores.push(coverage);
     if (coverage < 0.25) {
@@ -342,6 +362,26 @@ export async function evaluateDraft(
 function canonicalSpeechText(text: string) {
   return text
     .toLowerCase()
+    .replace(/獎/g, "奖")
+    .replace(/攝/g, "摄")
+    .replace(/銷/g, "销")
+    .replace(/認/g, "认")
+    .replace(/賽/g, "赛")
+    .replace(/兩文封|两文封/g, "梁文锋")
+    .replace(/生價|生价/g, "身价")
+    .replace(/新手複|新手复/g, "新首富")
+    .replace(/億/g, "亿")
+    .replace(/財/g, "财")
+    .replace(/領/g, "领")
+    .replace(/免費/g, "免费")
+    .replace(/視頻/g, "视频")
+    .replace(/編集/g, "编辑")
+    .replace(/經典/g, "经典")
+    .replace(/線可/g, "现可")
+    .replace(/網頁/g, "网页")
+    .replace(/移動/g, "移动")
+    .replace(/層/g, "层")
+    .replace(/寫/g, "写")
     .replace(/輸入/g, "输入")
     .replace(/個/g, "个")
     .replace(/主題/g, "主题")

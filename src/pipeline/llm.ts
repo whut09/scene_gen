@@ -14,6 +14,13 @@ function formatCoverHeadline(title: string) {
     .replace(/：/, "：\n")
     .replace(/，(?=价格|成本|售价)/, "\n");
 }
+function isChineseSummaryTitle(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const title = value.trim();
+  const chineseCount = (title.match(/[\u4e00-\u9fff]/g) ?? []).length;
+  return chineseCount >= 6 && chineseCount / Math.max(1, title.replace(/\s+/g, "").length) >= 0.35;
+}
+
 function normalizeOpeningText(text: string) {
   return text.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "").replace(/正式/g, "").toLowerCase();
 }
@@ -121,7 +128,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
   }
 
   const isGithubProject = project.sources[0]?.kind === "github";
-  const title = isGithubProject && directed.title?.trim() ? directed.title.trim() : project.meta.title;
+  const title = isChineseSummaryTitle(directed.title) ? directed.title.trim() : project.meta.title;
   const titleSection = sections[0];
   const briefingSection = sections[1];
   const chartSection = sections[2];
@@ -250,8 +257,8 @@ export async function improveWithOpenAI(
     "先判断新闻事件类型：产品发布、研究突破、公司动态、政策变化或工具实测。研究成果不得写成产品发布，产品发布不得写成尚未开放。",
     "每个 section 的 headline 必须描述本屏具体内容，禁止使用关键变化、影响路径、最后判断、这次发布讲了什么等通用占位标题。",
     isGithubProject
-      ? "title 使用简洁中文项目标题，以项目名开头，控制在15到32个汉字；提供4到10个汉字的kicker、subhead和3个keywords。第一句话完整播报生成后的项目标题。"
-      : "title 场景额外提供 4 到 10 个汉字的 kicker，并提供 subhead 和 3 个 keywords；title 旁白的第一句话必须逐字使用新闻 title，完整念完标题后，才能复述副标题和关键词表达的发布事实。",
+      ? "title 必须是简洁的中文项目总结标题，不要直接使用英文 README 标题；可保留必要的项目专有名，但中文必须占主体，控制在15到32个汉字。提供4到10个汉字的kicker、subhead和3个keywords。第一句话完整播报生成后的中文项目标题。"
+      : "title 必须用中文重新概括原文最重要、最有吸引力的事实，控制在14到30个汉字，不要照搬英文标题，不要写媒体名或作者。title 场景额外提供4到10个汉字的kicker，并提供subhead和3个keywords；第一句必须逐字播报生成后的中文标题，再进入正文。",
     "briefing 场景提供 summary、3 个 metrics、3 到 4 个 points；旁白逐项概括这些字段，不扩展屏幕外事实。",
     "chart 场景提供 4 个 bars，每个含 label、value、detail。原文有真实可比数字时才把 value 当数据展示；原文只有定性原则时，value仅供布局计算，画面使用无百分比的排序卡，旁白不得提到评分、百分比或内容权重。",
     "flow 场景提供 4 个 steps，每个含 label、detail；旁白严格按这 4 步的顺序讲解。",

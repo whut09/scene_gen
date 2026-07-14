@@ -243,7 +243,7 @@ export function prepareF5SynthesisText(text: string) {
   if (/\d/.test(pronounceable)) {
     throw new Error(`TTS number normalization left Arabic digits: ${pronounceable.match(/\d+/g)?.join(", ")}`);
   }
-  return startsWithLatin ? `。${pronounceable}` : pronounceable;
+  return /^[。！？!?]/.test(pronounceable) ? pronounceable : `。${pronounceable}`;
 }
 async function f5Tts(text: string, outputPath: string, speedOverride?: string) {
   const python = resolveF5Python();
@@ -432,9 +432,10 @@ async function synthesizeF5TitleScene(
   for (const [index, partText] of partTexts.entries()) {
     const partPath = partPaths[index];
     const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
+    const synthesisText = index === 0 ? `。。。${partText}` : partText;
     const speedMetaPath = `${partPath}.speed.txt`;
-    if (!(await canReuseNarrationSegment("f5", partText, partPath, uniformSpeed))) {
-      await synthesizeNarration("f5", partText, partPath, { f5Speed: uniformSpeed });
+    if (!(await canReuseNarrationSegment("f5", synthesisText, partPath, uniformSpeed))) {
+      await synthesizeNarration("f5", synthesisText, partPath, { f5Speed: uniformSpeed });
       await writeFile(speedMetaPath, uniformSpeed, "utf8");
     }
     const duration = await probeDuration(partPath);
