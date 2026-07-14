@@ -12,6 +12,7 @@
     "make": "npm run generate:stories && npm run render:stories",
     "preview": "remotion preview src/remotion/index.tsx",
     "lint:types": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
     "video": "tsx src/harness/run-video-agent.ts",
     "video:check": "tsx src/harness/check-video.ts",
     "video:revise": "tsx src/harness/revise-scenes.ts",

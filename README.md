@@ -20,7 +20,7 @@ npm.cmd run video -- --url "https://example.com/news"
 - 仅在自然范围内微调语速，超过范围时允许视频变长或变短，并按处理后的真实音频边界切屏。
 - 默认使用 HTML Video 两级动态布局路由：先选场景模板，再按新闻语义选择模板内部变体；五屏至少三种构图，相邻场景不重复。
 - 输出 1080x1920 MP4。
-- 默认输出到 `F:\发布视频`，质量报告输出到 `dist/quality/<run-id>/`。
+- 默认输出到 `F:\发布视频`；本次运行的状态、项目、manifest、逐轮质量结果和最终报告统一输出到 `dist/runs/<run-id>/`。
 
 指定参数：
 
@@ -39,12 +39,13 @@ npm.cmd run video -- --url "新闻地址" --seconds 100 --iterations 2 --screens
 
 ```text
 F:\发布视频\01-新闻标题.mp4
-public/generated/stories/01-新闻标题.json
-dist/quality/<run-id>/report.json
-dist/quality/<run-id>/report.md
-dist/quality/<run-id>/frame-1.jpg
-dist/quality/<run-id>/frame-2.jpg
-dist/quality/<run-id>/frame-3.jpg
+dist/runs/<run-id>/run.json
+dist/runs/<run-id>/generation-result.json
+dist/runs/<run-id>/projects/01-新闻标题.json
+dist/runs/<run-id>/manifest.json
+dist/runs/<run-id>/quality/report.json
+dist/runs/<run-id>/quality/report.md
+dist/runs/<run-id>/quality/frame-1.jpg
 ```
 
 ## 工作原理
@@ -73,6 +74,10 @@ dist/quality/<run-id>/frame-3.jpg
 3. Video gate：使用 FFprobe 检查视频流、音频流、1080x1920、总时长与流偏差，并在开头、中段和结尾抽帧排除空白画面。
 
 硬规则不通过时，harness 会把问题和改进要求传入下一轮。达到最大轮数仍不合格时会停止，不导出伪成片。LLM judge 的审美评分属于软建议，服务异常或评分偏低会记录到报告，但不会覆盖事实、时长和音画同步等硬门槛。
+
+每次执行都会在生成内容前创建 `dist/runs/<run-id>/run.json`。生成、draft gate、局部修订、TTS、audio gate、渲染和 video gate 的开始时间、完成状态、耗时、产物路径及错误都会原子写入该文件。即使 LLM、TTS、ASR 或渲染中途失败，也可以从 run journal 和 `evaluations/` 中查看失败现场。
+
+Harness 不再读取共享 manifest 的第一项。`generate-stories` 会写出本次运行专属的 `generation-result.json` 和 `manifest.json`，GitHub 缓存命中时也会把缓存项目复制到当前 run 目录后再返回，因此并发任务不会拿到其他 URL 的项目或修改原缓存项目。
 
 ## 记录用户反馈
 

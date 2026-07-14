@@ -1,8 +1,7 @@
 import path from "node:path";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { loadDotEnv, parseArgs, readJson, writeJson } from "../pipeline/utils";
-
-interface SceneRevision { sceneIndex: number; scene: VideoScene; narration: string; }
+import { sceneRevisionResponseSchema, videoProjectSchema } from "../pipeline/schemas";
 
 function narrationMax(scene: VideoScene) {
   if (scene.type === "title") return 150;
@@ -27,7 +26,7 @@ loadDotEnv();
 const args = parseArgs(process.argv.slice(2));
 if (typeof args.project !== "string" || typeof args.scenes !== "string") throw new Error("Usage: revise-scenes --project <project.json> --scenes 0,2 [--issues text]");
 const projectPath = path.resolve(args.project);
-const project = await readJson<VideoProject>(projectPath);
+const project = videoProjectSchema.parse(await readJson<unknown>(projectPath)) as VideoProject;
 const sceneIndexes = [...new Set(args.scenes.split(",").map(Number).filter((value) => Number.isInteger(value) && value >= 0 && value < project.scenes.length))];
 if (sceneIndexes.length === 0) throw new Error("No valid scene indexes were provided.");
 
@@ -58,8 +57,7 @@ if (!response.ok) throw new Error(`Scene revision failed: ${response.status} ${a
 const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
 const content = payload.choices?.[0]?.message?.content;
 if (!content) throw new Error("Scene revision returned no content.");
-const parsed = JSON.parse(content) as { revisions?: SceneRevision[] };
-const revisions = parsed.revisions ?? [];
+const revisions = sceneRevisionResponseSchema.parse(JSON.parse(content)).revisions;
 const scenes = [...project.scenes];
 const narrationSegments = [...(project.narrationSegments ?? project.scenes.map((_, sceneIndex) => ({ sceneIndex, text: "" })))];
 for (const revision of revisions) {
@@ -79,5 +77,5 @@ const updated: VideoProject = {
   audio: undefined,
   revision: { changedSceneIndexes: sceneIndexes, updatedAt: new Date().toISOString() },
 };
-await writeJson(projectPath, updated);
+await writeJson(projectPath, videoProjectSchema.parse(updated));
 console.log(`Revised scenes: ${sceneIndexes.map((index) => index + 1).join(", ")}`);

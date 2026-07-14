@@ -1,22 +1,5 @@
 import type { VideoProject, VideoScene } from "./types";
-
-interface DirectedStory {
-  title?: string;
-  sections?: Array<{
-    visual?: "title" | "briefing" | "chart" | "flow" | "outro";
-    headline?: string;
-    kicker?: string;
-    subhead?: string;
-    summary?: string;
-    narration?: string;
-    keywords?: string[];
-    metrics?: Array<{ label?: string; value?: string }>;
-    points?: string[];
-    bars?: Array<{ label?: string; value?: number; detail?: string }>;
-    steps?: Array<{ label?: string; detail?: string }>;
-    bullets?: string[];
-  }>;
-}
+import { directedStorySchema, type DirectedStory } from "./schemas";
 
 function cleanStrings(values: unknown, limit: number) {
   if (!Array.isArray(values)) return [];
@@ -323,7 +306,7 @@ export async function improveWithOpenAI(
   if (!content) return project;
 
   try {
-    return createDirectedProject(project, JSON.parse(content) as DirectedStory);
+    return createDirectedProject(project, directedStorySchema.parse(JSON.parse(content)));
   } catch (error) {
     console.warn(`[llm] invalid directed story: ${(error as Error).message}`);
     return project;

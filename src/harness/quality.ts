@@ -8,6 +8,7 @@ import { prepareF5SynthesisText } from "../pipeline/tts";
 import { fromRoot } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
 import { buildProductionDecisions } from "../production/visual-planner";
+import { qualityJudgeResponseSchema } from "../pipeline/schemas";
 
 export type QualityStage = "draft" | "audio" | "video";
 
@@ -164,11 +165,7 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string)
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content;
   if (!content) return null;
-  return JSON.parse(content) as {
-    scores?: Record<string, number>;
-    issues?: string[];
-    revisionNotes?: string[];
-  };
+  return qualityJudgeResponseSchema.parse(JSON.parse(content));
 }
 
 export async function evaluateDraft(

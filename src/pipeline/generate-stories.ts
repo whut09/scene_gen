@@ -9,18 +9,9 @@ import { createStoryProject, scrubAttribution } from "./story";
 import { improveWithOpenAI } from "./llm";
 import { captureWebScreenshots } from "./screenshots";
 import { attachNarrationAudio } from "./tts";
-import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson } from "./utils";
-
-interface StoryManifestItem {
-  index: number;
-  title: string;
-  source: string;
-  score: number;
-  projectPath: string;
-  htmlVideoGraphPath?: string;
-  productionReportPath?: string;
-  outputPath: string;
-}
+import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson, writeJsonAtomic } from "./utils";
+import { generationResultSchema, readStoryManifest, type StoryManifestItem, writeStoryManifest } from "./story-manifest";
+import { videoProjectSchema } from "./schemas";
 
 loadDotEnv();
 
@@ -39,17 +30,19 @@ async function findGithubCache(url: string) {
   if (!key) return null;
   const storiesDir = fromRoot("public", "generated", "stories");
   const manifestPath = fromRoot("public", "generated", "stories", "manifest.json");
-  const manifest = await readJson<StoryManifestItem[]>(manifestPath).catch(() => []);
-  const fromManifest = manifest.find((item) => githubKey(item.source) === key || githubKey(item.projectPath) === key);
+  const manifest = await readStoryManifest(manifestPath).catch(() => []);
+  const fromManifest = manifest.find((item) => githubKey(item.sourceUrl ?? "") === key);
   const names = await readdir(storiesDir).catch(() => []);
   for (const name of names.filter((value) => value.endsWith(".json") && value !== "manifest.json")) {
     const projectPath = path.join(storiesDir, name);
-    const project = await readJson<VideoProject>(projectPath).catch(() => null);
+    const project = await readJson<unknown>(projectPath).then((value) => videoProjectSchema.parse(value) as VideoProject).catch(() => null);
     if (!project || !Array.isArray(project.sources) || githubKey(project.sources[0]?.url ?? "") !== key) continue;
     const manifestItem = manifest.find((item) => item.projectPath === projectPath || item.title === project.meta.title);
-    return { projectPath, project, manifestItem, outputPath: manifestItem?.outputPath ?? path.join(process.env.VIDEO_OUTPUT_DIR ?? "F:\\发布视频", name.replace(/\.json$/, ".mp4")) };
+    return { projectPath, project, manifestItem };
   }
-  return fromManifest ? { projectPath: fromManifest.projectPath, project: null, manifestItem: fromManifest, outputPath: fromManifest.outputPath } : null;
+  if (!fromManifest) return null;
+  const project = await readJson<unknown>(fromManifest.projectPath).then((value) => videoProjectSchema.parse(value) as VideoProject).catch(() => null);
+  return project ? { projectPath: fromManifest.projectPath, project, manifestItem: fromManifest } : null;
 }
 
 const urls = typeof args.url === "string" ? [args.url] : [];
@@ -61,25 +54,66 @@ const fps = Number(args.fps ?? process.env.VIDEO_FPS ?? 30);
 const targetSeconds = args.seconds ? Number(args.seconds) : undefined;
 const urlOnly = Boolean(args["url-only"]);
 const editorialNotes = typeof args.notes === "string" ? args.notes : undefined;
-if (urls.length === 1) {
-  const cached = await findGithubCache(urls[0]);
-  if (cached) {
-    console.log("\n[github-cache] 已经生成过，直接退出");
-    console.log("[github-cache] 仓库: " + githubKey(urls[0]));
-    console.log("[github-cache] 项目: " + cached.projectPath);
-    console.log("[github-cache] 视频: " + cached.outputPath);
-    if (cached.project?.meta.createdAt) console.log("[github-cache] 生成时间: " + cached.project.meta.createdAt);
-    process.exit(0);
-  }
-}
 const skipTts = Boolean(args["skip-tts"]);
 const outputDir =
   typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : fromRoot("dist", "stories");
+const runDir = typeof args["run-dir"] === "string" ? path.resolve(args["run-dir"]) : undefined;
+const resultFile = typeof args["result-file"] === "string"
+  ? path.resolve(args["result-file"])
+  : runDir
+    ? path.join(runDir, "generation-result.json")
+    : undefined;
+const manifestPath = runDir
+  ? path.join(runDir, "manifest.json")
+  : fromRoot("public", "generated", "stories", "manifest.json");
+const projectsDir = runDir ? path.join(runDir, "projects") : fromRoot("public", "generated", "stories");
+const htmlVideoDir = runDir ? path.join(runDir, "html-video") : fromRoot("public", "generated", "html-video");
+
+if (urls.length === 1 && !args["ignore-cache"]) {
+  const cached = await findGithubCache(urls[0]);
+  if (cached) {
+    const slug = `01-${slugify(cached.project.meta.title, cached.project.sources[0]?.id ?? "story")}`;
+    const projectPath = runDir ? path.join(projectsDir, `${slug}.json`) : cached.projectPath;
+    const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
+    const productionReportPath = path.join(htmlVideoDir, slug, "production-report.json");
+    const outputPath = path.join(outputDir, `${slug}.mp4`);
+    if (runDir) await writeJson(projectPath, videoProjectSchema.parse(cached.project));
+    await writeHtmlVideoContentGraph(cached.project, htmlVideoGraphPath);
+    await writeJson(productionReportPath, buildProductionReport(cached.project, "html-video"));
+    const story: StoryManifestItem = {
+      index: 1,
+      title: cached.project.meta.title,
+      source: cached.project.sources[0]?.source ?? "核心事实",
+      sourceUrl: cached.project.sources[0]?.url,
+      score: cached.project.sources[0]?.score ?? cached.manifestItem?.score ?? 0,
+      projectPath,
+      htmlVideoGraphPath,
+      productionReportPath,
+      outputPath,
+    };
+    await writeStoryManifest(manifestPath, [story]);
+    if (resultFile) {
+      await writeJsonAtomic(resultFile, generationResultSchema.parse({
+        createdAt: new Date().toISOString(),
+        cacheHit: true,
+        manifestPath,
+        stories: [story],
+      }));
+    }
+    console.log("\n[github-cache] 已经生成过，已写入本次运行结果");
+    console.log("[github-cache] 仓库: " + githubKey(urls[0]));
+    console.log("[github-cache] 项目: " + projectPath);
+    console.log("[github-cache] 视频: " + outputPath);
+    console.log("[github-cache] 生成时间: " + cached.project.meta.createdAt);
+    process.exit(0);
+  }
+}
 
 const config = await readJson<SourceConfig>(fromRoot("config", "sources.json"));
 const items = (
   urlOnly && urls.length > 0 ? await collectWebpage(urls, config) : await collectHotItems(config, urls)
 ).slice(0, count);
+if (items.length === 0) throw new Error("No source items were collected for generation.");
 const manifest: StoryManifestItem[] = [];
 
 function fitProjectDuration(project: VideoProject, seconds: number) {
@@ -167,11 +201,11 @@ for (const [index, item] of items.entries()) {
   }
 
   const slug = `${String(storyNo).padStart(2, "0")}-${slugify(project.meta.title, item.id)}`;
-  const projectPath = fromRoot("public", "generated", "stories", `${slug}.json`);
-  const htmlVideoGraphPath = fromRoot("public", "generated", "html-video", slug, "content-graph.json");
-  const productionReportPath = fromRoot("public", "generated", "html-video", slug, "production-report.json");
+  const projectPath = path.join(projectsDir, `${slug}.json`);
+  const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
+  const productionReportPath = path.join(htmlVideoDir, slug, "production-report.json");
   const outputPath = path.join(outputDir, `${slug}.mp4`);
-  await writeJson(projectPath, project);
+  await writeJson(projectPath, videoProjectSchema.parse(project));
   await writeHtmlVideoContentGraph(project, htmlVideoGraphPath);
   await writeJson(productionReportPath, buildProductionReport(project, "html-video"));
 
@@ -179,6 +213,7 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
     title: project.meta.title,
     source: project.sources[0]?.source ?? "核心事实",
+    sourceUrl: project.sources[0]?.url,
     score: item.score,
     projectPath,
     htmlVideoGraphPath,
@@ -187,8 +222,16 @@ for (const [index, item] of items.entries()) {
   });
 }
 
-await writeJson(fromRoot("public", "generated", "stories", "manifest.json"), manifest);
-await writeJson(fromRoot("dist", "stories-manifest.json"), manifest);
+await writeStoryManifest(manifestPath, manifest);
+if (!runDir) await writeStoryManifest(fromRoot("dist", "stories-manifest.json"), manifest);
+if (resultFile) {
+  await writeJsonAtomic(resultFile, generationResultSchema.parse({
+    createdAt: new Date().toISOString(),
+    cacheHit: false,
+    manifestPath,
+    stories: manifest,
+  }));
+}
 
 console.log(`\nGenerated ${manifest.length} independent story projects:`);
 for (const story of manifest) {

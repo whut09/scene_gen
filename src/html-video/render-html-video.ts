@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import type { VideoProject } from "../pipeline/types";
 import { ensureDir, fromRoot, slugify } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
+import { htmlVideoCacheSchema } from "../pipeline/schemas";
 import {
   buildHtmlVideoContentGraph,
   topoSortHtmlVideoGraph,
@@ -259,9 +260,10 @@ export async function writeHtmlVideoContentGraph(project: VideoProject, graphPat
 export async function renderHtmlVideoProject(
   project: VideoProject,
   outputPath: string,
+  options: { workDir?: string } = {},
 ): Promise<HtmlVideoRenderResult> {
   const slug = slugify(project.meta.title, "story");
-  const workDir = fromRoot("public", "generated", "html-video", slug);
+  const workDir = options.workDir ?? fromRoot("public", "generated", "html-video", slug);
   await ensureDir(workDir);
   await ensureDir(path.dirname(outputPath));
 
@@ -296,11 +298,11 @@ export async function renderHtmlVideoProject(
     let detectedMotionSec = 0;
     let cacheHit = false;
     if (existsSync(videoPath) && existsSync(cachePath)) {
-      const cached = JSON.parse(await readFile(cachePath, "utf8")) as { cacheKey?: string; detectedMotionSec?: number; durationSec?: number };
-      if (cached.cacheKey === cacheKey) {
+      const cached = htmlVideoCacheSchema.safeParse(JSON.parse(await readFile(cachePath, "utf8")));
+      if (cached.success && cached.data.cacheKey === cacheKey) {
         cacheHit = true;
-        detectedMotionSec = cached.detectedMotionSec ?? 0;
-        const cachedDuration = cached.durationSec ?? node.durationSec;
+        detectedMotionSec = cached.data.detectedMotionSec ?? 0;
+        const cachedDuration = cached.data.durationSec ?? node.durationSec;
         if (Math.abs(cachedDuration - node.durationSec) > 0.001) {
           const adjustedPath = `${videoPath}.adjusted.mp4`;
           const ratio = node.durationSec / cachedDuration;

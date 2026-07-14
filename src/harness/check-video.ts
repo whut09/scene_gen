@@ -4,6 +4,7 @@ import type { VideoProject } from "../pipeline/types";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify } from "../pipeline/utils";
 import { buildFeedbackGuidance, readFeedback } from "./feedback-store";
 import { evaluateAudio, evaluateDraft, evaluateVideo } from "./quality";
+import { videoProjectSchema } from "../pipeline/schemas";
 
 loadDotEnv();
 const args = parseArgs(process.argv.slice(2));
@@ -13,7 +14,7 @@ if (typeof args.project !== "string" || typeof args.video !== "string") {
 const projectPath = path.resolve(args.project);
 const videoPath = path.resolve(args.video);
 const targetSeconds = Number(args.seconds ?? 100);
-const project = await readJson<VideoProject>(projectPath);
+const project = videoProjectSchema.parse(await readJson<unknown>(projectPath)) as VideoProject;
 const feedback = await readFeedback(30);
 const guidance = buildFeedbackGuidance(feedback.filter((entry) => !entry.url || entry.url === project.sources[0]?.url));
 const reportDir = fromRoot("dist", "quality", `manual-${slugify(project.meta.title, "video")}`);
