@@ -1,0 +1,10 @@
+{
+  "name": "openai-tts",
+  "description": "Hosted LLM and OpenAI-compatible TTS with local rendering.",
+  "env": {
+    "TTS_PROVIDER": "openai",
+    "VIDEO_RENDER_ENGINE": "html-video",
+    "QUALITY_GATE_PROFILE": "balanced"
+  },
+  "doctor": { "requireApi": true, "requireBrowser": true }
+}

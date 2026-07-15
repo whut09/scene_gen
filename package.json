@@ -3,7 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "scene-gen": "bin/scene-gen.mjs"
+  },
   "scripts": {
+    "scene-gen": "tsx src/cli/scene-gen.ts",
+    "doctor": "tsx src/cli/scene-gen.ts doctor",
+    "plan": "tsx src/cli/scene-gen.ts plan",
     "generate": "tsx src/pipeline/generate.ts",
     "generate:stories": "tsx src/pipeline/generate-stories.ts",
     "render": "tsx src/pipeline/render.ts",
@@ -13,13 +19,13 @@
     "preview": "remotion preview src/remotion/index.tsx",
     "lint:types": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts",
-    "video": "tsx src/harness/run-video-agent.ts",
-    "video:check": "tsx src/harness/check-video.ts",
+    "video": "tsx src/cli/scene-gen.ts run",
+    "video:check": "tsx src/cli/scene-gen.ts check",
     "video:revise": "tsx src/harness/revise-scenes.ts",
-    "feedback:add": "tsx src/harness/add-feedback.ts",
+    "feedback:add": "tsx src/cli/scene-gen.ts feedback",
     "synthesize:story": "tsx src/pipeline/synthesize-story.ts",
-    "video:remotion": "tsx src/harness/run-video-agent.ts --engine remotion",
-    "video:html": "tsx src/harness/run-video-agent.ts --engine html-video",
+    "video:remotion": "tsx src/cli/scene-gen.ts run --engine remotion",
+    "video:html": "tsx src/cli/scene-gen.ts run --engine html-video",
     "production:inspect": "tsx src/production/inspect-production.ts"
   },
   "dependencies": {

@@ -10,6 +10,7 @@ import { runStage } from "./stage-runner";
 import { parseStageName, stageIndex, type StageResult, type VideoStageName } from "./stage-types";
 import { createLoopAudit, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
 import { normalizeStoredQualityEvaluation } from "./quality-protocol";
+import { defaultOutputDir } from "../runtime/runtime-paths";
 import {
   combineNotes,
   narrationBasename,
@@ -137,12 +138,12 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     startStage = explicitFromStage ?? forceStage ?? resumeStage(journal);
     await journal.resume();
   } else {
-    if (typeof args.url !== "string") throw new Error('Usage: npm run video -- --url "https://example.com/news" or --resume <run-id>');
+    if (typeof args.url !== "string") throw new Error('Usage: scene-gen run --url "https://example.com/news" or scene-gen resume <run-id>');
     url = args.url;
     targetSeconds = Number(args.seconds ?? 100);
-    maxIterations = Math.max(1, Math.min(4, Number(args.iterations ?? 2)));
-    outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : path.resolve(process.env.VIDEO_OUTPUT_DIR ?? "F:\\发布视频");
-    screenshotLimit = Number(args.screenshots ?? 0);
+    maxIterations = Math.max(1, Math.min(4, Number(args.iterations ?? process.env.HARNESS_MAX_ITERATIONS ?? 2)));
+    outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : path.resolve(process.env.VIDEO_OUTPUT_DIR ?? defaultOutputDir());
+    screenshotLimit = Number(args.screenshots ?? process.env.SCREENSHOT_LIMIT ?? 0);
     engine = (typeof args.engine === "string" ? args.engine : process.env.VIDEO_RENDER_ENGINE ?? "html-video") as typeof engine;
     qualityProfile = (typeof args["quality-profile"] === "string" ? args["quality-profile"] : process.env.QUALITY_GATE_PROFILE ?? "balanced") as typeof qualityProfile;
     runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(url, "video")}`;
@@ -150,7 +151,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     journal = await RunJournalStore.create(runDir, {
       runId,
       url,
-      config: { targetSeconds, maxIterations, engine, qualityProfile, outputDir, screenshotLimit },
+      config: { targetSeconds, maxIterations, engine, qualityProfile, runtimeProfile: process.env.SCENE_GEN_PROFILE ?? "custom", outputDir, screenshotLimit },
     });
     startStage = explicitFromStage ?? "ingest";
   }
@@ -317,7 +318,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     }
 
     if (!audioPassed) throw new Error("Audio quality gate failed after all iterations.");
-    const videoIterations = Math.max(1, Math.min(3, Number(args["video-iterations"] ?? 2)));
+    const videoIterations = Math.max(1, Math.min(3, Number(args["video-iterations"] ?? process.env.HARNESS_VIDEO_ITERATIONS ?? 2)));
     let forceRender = forceStage === "render";
     let forceSceneIndexes: number[] | undefined;
     if (shouldRun("video-gate", startStage, forceStage) || !state.video) {

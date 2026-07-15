@@ -1,0 +1,14 @@
+{
+  "name": "production",
+  "description": "Strict quality gates, HTML rendering and fail-fast production settings.",
+  "env": {
+    "TTS_PROVIDER": "openai",
+    "VIDEO_RENDER_ENGINE": "html-video",
+    "QUALITY_GATE_PROFILE": "strict",
+    "TTS_FAIL_FAST": "1",
+    "SCREENSHOT_LIMIT": "1",
+    "HARNESS_MAX_ITERATIONS": "3",
+    "HARNESS_VIDEO_ITERATIONS": "3"
+  },
+  "doctor": { "requireApi": true, "requireBrowser": true, "requireWhisper": true }
+}

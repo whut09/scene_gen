@@ -12,6 +12,7 @@ import { isNewsProject, projectNewsDate } from "../pipeline/news-date";
 import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput } from "./quality-protocol";
 import { canonicalSpeechText } from "./speech-normalization";
+import { resolvePythonCommand } from "../runtime/runtime-paths";
 
 export type { QualityEvaluation, QualityIssue, QualityStage } from "./quality-protocol";
 
@@ -343,11 +344,7 @@ async function transcribeOpening(project: VideoProject, signal?: AbortSignal) {
   const openingSeconds = Math.min(30, (project.narrationSegments?.[0]?.durationSeconds ?? 24) + 0.5);
   const workDir = await mkdtemp(path.join(tmpdir(), "scene-gen-asr-"));
   const openingPath = path.join(workDir, "opening.wav");
-  const python = process.env.ASR_PYTHON ?? path.join(
-    process.env.F5_TTS_VENV ?? "F:\\codex\\.venvs\\scene_gen_f5_py39",
-    "Scripts",
-    "python.exe",
-  );
+  const python = resolvePythonCommand();
   try {
     await runCapture("ffmpeg", ["-y", "-i", audioPath, "-t", openingSeconds.toFixed(3), "-ar", "16000", "-ac", "1", openingPath], signal);
     const result = await runCapture(python, [

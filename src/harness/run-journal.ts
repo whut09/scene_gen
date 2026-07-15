@@ -49,6 +49,7 @@ export const runJournalSchema = z.object({
     maxIterations: z.number().int().positive(),
     engine: z.enum(["remotion", "html-video"]),
     qualityProfile: z.enum(["balanced", "strict", "lenient"]).default("balanced"),
+    runtimeProfile: z.string().min(1).default("custom"),
     outputDir: z.string().min(1),
     screenshotLimit: z.number().int().nonnegative(),
   }),
@@ -60,7 +61,10 @@ export const runJournalSchema = z.object({
 export type RunJournal = z.infer<typeof runJournalSchema>;
 export type RunStage = z.infer<typeof runStageSchema>;
 type RunJournalCreateInput = Omit<RunJournal, "specVersion" | "status" | "createdAt" | "updatedAt" | "artifacts" | "stages" | "config"> & {
-  config: Omit<RunJournal["config"], "qualityProfile"> & { qualityProfile?: RunJournal["config"]["qualityProfile"] };
+  config: Omit<RunJournal["config"], "qualityProfile" | "runtimeProfile"> & {
+    qualityProfile?: RunJournal["config"]["qualityProfile"];
+    runtimeProfile?: RunJournal["config"]["runtimeProfile"];
+  };
 };
 
 export class RunJournalStore {

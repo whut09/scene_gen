@@ -1,0 +1,12 @@
+{
+  "name": "windows-local-f5",
+  "description": "Optional Windows example. Copy to windows-local-f5.json and adjust paths.",
+  "env": {
+    "TTS_PROVIDER": "f5",
+    "F5_TTS_VENV": "C:\\path\\to\\scene-gen-f5-venv",
+    "F5_TTS_REF_AUDIO": "C:\\path\\to\\voice-reference.wav",
+    "ASR_PYTHON": "C:\\path\\to\\scene-gen-f5-venv\\Scripts\\python.exe",
+    "VIDEO_OUTPUT_DIR": "C:\\path\\to\\output"
+  },
+  "doctor": { "requireF5": true, "requireWhisper": true, "requireCuda": true, "requireBrowser": true }
+}

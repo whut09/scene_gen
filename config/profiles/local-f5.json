@@ -1,0 +1,12 @@
+{
+  "name": "local-f5",
+  "description": "Local F5-TTS, CUDA acceleration and full HTML video rendering.",
+  "env": {
+    "TTS_PROVIDER": "f5",
+    "F5_TTS_DEVICE": "cuda",
+    "VIDEO_RENDER_ENGINE": "html-video",
+    "QUALITY_GATE_PROFILE": "balanced",
+    "ASR_MODEL": "openai/whisper-tiny"
+  },
+  "doctor": { "requireF5": true, "requireWhisper": true, "requireCuda": true, "requireBrowser": true }
+}

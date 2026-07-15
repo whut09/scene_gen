@@ -1,0 +1,13 @@
+{
+  "name": "ci-offline",
+  "description": "Deterministic offline checks without LLM, ASR or hosted TTS.",
+  "env": {
+    "QUALITY_LLM_DISABLED": "1",
+    "ASR_DISABLED": "1",
+    "TTS_PROVIDER": "local",
+    "VIDEO_RENDER_ENGINE": "remotion",
+    "QUALITY_GATE_PROFILE": "lenient",
+    "SCREENSHOT_LIMIT": "0"
+  },
+  "doctor": { "requireBrowser": true }
+}

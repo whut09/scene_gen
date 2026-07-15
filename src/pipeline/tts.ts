@@ -5,6 +5,7 @@ import path from "node:path";
 import type { VideoProject } from "./types";
 import { ensureDir, fromRoot } from "./utils";
 import { fetchWithRetry } from "./external-operation";
+import { resolveF5PythonCommand, resolveF5ReferenceAudio } from "../runtime/runtime-paths";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
@@ -102,25 +103,11 @@ $synth.Dispose()
 }
 
 function resolveF5Python() {
-  const venv = process.env.F5_TTS_VENV ?? "F:\\codex\\.venvs\\scene_gen_f5_py39";
-  const python = path.join(venv, "Scripts", "python.exe");
-  return process.env.F5_TTS_PYTHON ?? python;
+  return resolveF5PythonCommand();
 }
 
 function resolveF5RefAudio() {
-  return (
-    process.env.F5_TTS_REF_AUDIO ??
-    path.join(
-      process.env.F5_TTS_VENV ?? "F:\\codex\\.venvs\\scene_gen_f5_py39",
-      "Lib",
-      "site-packages",
-      "f5_tts",
-      "infer",
-      "examples",
-      "basic",
-      "basic_ref_zh.wav",
-    )
-  );
+  return resolveF5ReferenceAudio();
 }
 
 function normalizeFilePath(filePath: string) {
@@ -249,6 +236,7 @@ export function prepareF5SynthesisText(text: string) {
 async function f5Tts(text: string, outputPath: string, speedOverride?: string) {
   const python = resolveF5Python();
   const refAudio = resolveF5RefAudio();
+  if (!refAudio) throw new Error("F5 reference audio is not configured. Set F5_TTS_REF_AUDIO or use a virtual environment containing the F5-TTS example audio.");
   const refText = await resolveF5RefText(refAudio);
   const model = process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base";
   const speed = speedOverride ?? process.env.F5_TTS_SPEED ?? "1.12";

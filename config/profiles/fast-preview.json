@@ -1,0 +1,13 @@
+{
+  "name": "fast-preview",
+  "description": "Fast local preview with fewer loop and video-gate attempts.",
+  "env": {
+    "TTS_PROVIDER": "openai",
+    "VIDEO_RENDER_ENGINE": "remotion",
+    "QUALITY_GATE_PROFILE": "lenient",
+    "SCREENSHOT_LIMIT": "0",
+    "HARNESS_MAX_ITERATIONS": "1",
+    "HARNESS_VIDEO_ITERATIONS": "1"
+  },
+  "doctor": { "requireApi": true, "requireBrowser": true }
+}
