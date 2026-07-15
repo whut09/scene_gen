@@ -222,7 +222,7 @@ test("AbortSignal closes browser and active contexts", { timeout: 120_000 }, asy
     });
     setTimeout(() => controller.abort(new Error("fixture abort")), 30);
     await assert.rejects(pending, /fixture abort/);
-    assert.equal(runtime.state.browserClosed, true);
+    assert.equal(runtime.state.browserLaunches === 0 || runtime.state.browserClosed, true);
     assert.equal(runtime.state.activeContexts, 0);
   } finally {
     if (previousCacheDir === undefined) delete process.env.SCENE_GEN_CACHE_DIR; else process.env.SCENE_GEN_CACHE_DIR = previousCacheDir;

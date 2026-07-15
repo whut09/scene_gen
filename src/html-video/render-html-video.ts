@@ -634,8 +634,10 @@ export async function renderHtmlVideoProject(
       }, options.signal);
       for (const frame of rendered) renderedByScene.set(frame.sceneIndex, frame);
     } finally {
-      await browser?.close().catch(() => undefined);
+      const launchedBrowser = browser ?? await browserPromise?.catch(() => undefined);
+      await launchedBrowser?.close().catch(() => undefined);
       browser = undefined;
+      browserPromise = undefined;
     }
   }
 
