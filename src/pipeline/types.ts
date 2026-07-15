@@ -61,6 +61,42 @@ export interface FactLedger {
   claims: FactClaim[];
 }
 
+export type StoryPlanVisual = "title" | "briefing" | "chart" | "flow" | "outro";
+
+export interface StoryPlanCandidate {
+  id: string;
+  angle: string;
+  title: string;
+  titleClaimIds: string[];
+  estimatedSeconds: number;
+  scenes: Array<{ visual: StoryPlanVisual; purpose: string; focus: string; claimIds: string[] }>;
+}
+
+export interface StoryPlanRanking {
+  candidate: StoryPlanCandidate;
+  fingerprint: string;
+  rejectedReasons: string[];
+  scores: {
+    factCoverage: number;
+    titleHook: number;
+    informationDiversity: number;
+    visualFeasibility: number;
+    ttsReadability: number;
+    historicalEffect: number;
+    total: number;
+  };
+}
+
+export interface StoryPlanningAudit {
+  profile: string;
+  requestedCandidates: number;
+  selectedCandidateId: string;
+  planningMs: number;
+  planningTokens: number;
+  expansionTokens: number;
+  rankings: StoryPlanRanking[];
+}
+
 export type VideoScene = (
   | {
       type: "title";
@@ -147,6 +183,7 @@ export interface VideoProject {
   narrationSegments?: NarrationSegment[];
   factLedger?: FactLedger;
   titleClaimIds?: string[];
+  storyPlanning?: StoryPlanningAudit;
   audio?: {
     src: string;
     durationSeconds: number;

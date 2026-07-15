@@ -7,6 +7,7 @@ import type { ConfigProfile } from "../config/config-profiles";
 import { runExternalProcess } from "../pipeline/external-operation";
 import { defaultOutputDir, resolveF5PythonCommand, resolvePythonCommand } from "../runtime/runtime-paths";
 import { mediaCacheRoot } from "../cache/media-cache";
+import { resolveStoryPlanCandidateCount } from "../pipeline/story-planner";
 import { loadTtsPronunciationLexicon } from "../pipeline/tts-pronunciation";
 import { resolveHtmlRenderBudget } from "../html-video/render-budget";
 import { fromRoot } from "../pipeline/utils";
@@ -113,6 +114,12 @@ export async function runDoctor(profile: ConfigProfile, outputDir = process.env.
   checks.push({ ...whisperImport, summary: `${whisperImport.summary}; ${whisperModel} cache ${whisperCache ? "found" : "not found"}`, status: whisperImport.status === "pass" && !whisperCache && process.env.HF_HUB_OFFLINE === "1" ? profile.doctor.requireWhisper ? "fail" : "warn" : whisperImport.status });
   const apiReady = configured("NEWS_LLM_API_KEY", "OPENAI_API_KEY") && configured("NEWS_LLM_MODEL", "OPENAI_MODEL");
   checks.push({ id: "api", status: apiReady ? "pass" : profile.doctor.requireApi ? "fail" : "warn", required: profile.doctor.requireApi, summary: apiReady ? "LLM API configuration present" : "LLM API configuration incomplete", details: "Set API key, base URL when required, and model." });
+  try {
+    const candidateCount = resolveStoryPlanCandidateCount(profile.name);
+    checks.push({ id: "story-plans", status: "pass", required: false, summary: `Story planning candidates: ${candidateCount}`, details: "Allowed range is 1 to 4." });
+  } catch (error) {
+    checks.push({ id: "story-plans", status: "fail", required: true, summary: "Invalid story planning configuration", details: (error as Error).message });
+  }
   checks.push(htmlConcurrencyCheck());
   checks.push(await storageCheck("output", path.resolve(outputDir), true));
   checks.push(await storageCheck("cache", mediaCacheRoot(), true));

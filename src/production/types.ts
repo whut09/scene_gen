@@ -1,4 +1,4 @@
-import type { VideoProject, VideoScene } from "../pipeline/types";
+import type { StoryPlanningAudit, VideoProject, VideoScene } from "../pipeline/types";
 
 export type VisualSource =
   | "programmatic"
@@ -58,6 +58,7 @@ export interface ProductionReport {
   renderEngine: string;
   providers: ProviderDescriptor[];
   decisions: ProductionDecision[];
+  storyPlanning?: StoryPlanningAudit;
   summary: {
     sourceMix: Record<string, number>;
     enabledProviders: string[];

@@ -16,6 +16,7 @@ export function buildProductionReport(project: VideoProject, renderEngine = "htm
     renderEngine,
     providers,
     decisions,
+    storyPlanning: project.storyPlanning,
     summary: {
       sourceMix,
       enabledProviders: providers.filter((provider) => provider.enabled).map((provider) => provider.id),

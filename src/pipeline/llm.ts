@@ -2,6 +2,8 @@ import type { VideoProject, VideoScene } from "./types";
 import { directedStorySchema, type DirectedStory } from "./schemas";
 import { fetchWithRetry } from "./external-operation";
 import { attachFactReferences, buildFactLedger } from "./fact-ledger";
+import { planStoryCandidates } from "./story-planner";
+import type { StoryPlanCandidate, StoryPlanningAudit } from "./types";
 
 function cleanStrings(values: unknown, limit: number) {
   if (!Array.isArray(values)) return [];
@@ -123,7 +125,7 @@ function sourceGroundingTransform(project: VideoProject) {
   };
 }
 
-function createDirectedProject(project: VideoProject, directed: DirectedStory) {
+function createDirectedProject(project: VideoProject, directed: DirectedStory, selectedPlan: StoryPlanCandidate, planningAudit: StoryPlanningAudit) {
   const sections = directed.sections;
   if (!sections || sections.length !== 5 || sections.some((section) => !section.narration?.trim())) {
     return project;
@@ -141,6 +143,13 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
   const groundText = sourceGroundingTransform(project);
   const ledger = project.factLedger ?? buildFactLedger(project.sources);
   const titleClaimIds = directed.titleClaimIds ?? [];
+  if (directed.title?.trim() !== selectedPlan.title.trim()) throw new Error("Expanded title deviated from the selected story plan.");
+  if (titleClaimIds.some((claimId) => !selectedPlan.titleClaimIds.includes(claimId))) throw new Error("Expanded title referenced facts outside the selected story plan.");
+  sections.forEach((section, index) => {
+    if ((section.claimIds ?? []).some((claimId) => !selectedPlan.scenes[index].claimIds.includes(claimId))) {
+      throw new Error(`Expanded scene ${index} referenced facts outside the selected story plan.`);
+    }
+  });
   const knownClaimIds = new Set(ledger.claims.map((claim) => claim.id));
   const directedClaimIds = [...titleClaimIds, ...sections.flatMap((section) => section.claimIds ?? [])];
   const unknownClaimIds = directedClaimIds.filter((claimId) => !knownClaimIds.has(claimId));
@@ -233,6 +242,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     ...project,
     factLedger: ledger,
     titleClaimIds,
+    storyPlanning: planningAudit,
     meta: {
       ...project.meta,
       title,
@@ -255,6 +265,13 @@ export async function improveWithOpenAI(
   const model = process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
   const baseUrl = process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
   const targetSeconds = options?.targetSeconds ?? 90;
+  let planning;
+  try {
+    planning = await planStoryCandidates({ project, apiKey, baseUrl, model, targetSeconds, editorialNotes: options?.editorialNotes });
+  } catch (error) {
+    console.warn(`[llm] story planning failed: ${(error as Error).message}`);
+    return project;
+  }
   const isGithubProject = project.sources[0]?.kind === "github";
   const targetChars = Math.max(650, Math.min(1100, Math.round(targetSeconds * 8.5)));
   const guidance = [
@@ -262,6 +279,7 @@ export async function improveWithOpenAI(
     "只返回 JSON，不要 Markdown。",
     `总旁白建议约 ${targetChars} 个汉字；${targetSeconds} 秒只是时长参考，不要为了凑时长增加信息或强行压缩语速。`,
     "必须输出 title 和 sections；sections 恰好 5 个，visual 顺序固定为 title、briefing、chart、flow、outro。",
+    "selectedPlan 已通过确定性检查。必须逐字使用 selectedPlan.title，并严格按 selectedPlan.scenes 的 angle、focus 和 claimIds 展开，不得切换叙事角度或新增事实。",
     "factLedger 是唯一声明级事实账本。title 必须返回 titleClaimIds；每个 section 必须返回 claimIds，且只能引用 factLedger 中存在、能够直接支持当前画面和旁白的 id。",
     "高风险表述（发布、开放、领先、提升、增长、降低等）必须引用 evidenceText 明确包含该动作的 claim；不得把可能、部分用户、实验结果、仅、尚未等限定词省略。",
     "每个 section 必须有 narration。先确定该 section 的所有画面字段，再写旁白；旁白只能复述、串联或简要解释当前 section 屏幕上实际可见的信息。",
@@ -305,6 +323,7 @@ export async function improveWithOpenAI(
           role: "user",
           content: JSON.stringify({
             currentTitle: project.meta.title,
+            selectedPlan: planning.selected,
             factLedger: project.factLedger,
             sourceArticle: project.sources.map((item) => ({
               title: item.title,
@@ -328,12 +347,13 @@ export async function improveWithOpenAI(
     return project;
   }
 
-  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }>; usage?: { total_tokens?: number } };
   const content = data.choices?.[0]?.message?.content;
   if (!content) return project;
 
   try {
-    return createDirectedProject(project, directedStorySchema.parse(JSON.parse(content)));
+    const audit = { ...planning.audit, expansionTokens: data.usage?.total_tokens ?? 0 };
+    return createDirectedProject(project, directedStorySchema.parse(JSON.parse(content)), planning.selected, audit);
   } catch (error) {
     console.warn(`[llm] invalid directed story: ${(error as Error).message}`);
     return project;

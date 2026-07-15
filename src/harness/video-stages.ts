@@ -12,6 +12,7 @@ import { evaluateAudio, evaluateDraft, evaluateVideo, type QualityEvaluation } f
 import { planRepair, withSuggestedActions, type RepairPlan } from "./retry-policy";
 import type { LoopAudit } from "./loop-engineering";
 import { emptyDirtyPlan, mergeDirtyPlans, type DirtyPlan } from "./dirty-plan";
+import { recordStoryPlanOutcome } from "../pipeline/story-planner";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -286,6 +287,10 @@ export async function runPublishStage(input: {
     `- Visual source mix: ${JSON.stringify(production.summary.sourceMix)}`,
     `- Enabled providers: ${production.summary.enabledProviders.join(", ")}`,
     `- Alignment: ${production.summary.wordAlignment}`,
+    ...(production.storyPlanning ? [
+      `- Story plan: ${production.storyPlanning.selectedCandidateId}; candidates=${production.storyPlanning.requestedCandidates}; score=${production.storyPlanning.rankings.find((ranking) => ranking.candidate.id === production.storyPlanning?.selectedCandidateId)?.scores.total ?? 0}`,
+      `- Rejected story plans: ${production.storyPlanning.rankings.filter((ranking) => ranking.rejectedReasons.length > 0).map((ranking) => `${ranking.candidate.id}[${ranking.rejectedReasons.join(",")}]`).join("; ") || "none"}`,
+    ] : []),
     "",
     "## Final Video",
     evaluationMarkdown(input.video),
@@ -293,6 +298,7 @@ export async function runPublishStage(input: {
   ].join("\n");
   await writeFile(markdownPath, markdown, "utf8");
   await recordFeedbackOutcome(input.feedback.map((entry) => entry.fingerprint), passed).catch(() => undefined);
+  await recordStoryPlanOutcome(input.project, passed, Number(finalDraft?.metrics.scoreAverage ?? 0) - 78).catch(() => undefined);
   return { passed, reportPath, markdownPath, productionReportPath };
 }
 

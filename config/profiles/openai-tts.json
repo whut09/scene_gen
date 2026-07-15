@@ -7,7 +7,8 @@
     "TTS_PREPROCESS_CONCURRENCY": "4",
     "TTS_FFMPEG_CONCURRENCY": "2",
     "VIDEO_RENDER_ENGINE": "html-video",
-    "QUALITY_GATE_PROFILE": "balanced"
+    "QUALITY_GATE_PROFILE": "balanced",
+    "STORY_PLAN_CANDIDATES": "2"
   },
   "doctor": { "requireApi": true, "requireBrowser": true }
 }

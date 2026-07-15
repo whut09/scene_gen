@@ -9,7 +9,8 @@
     "QUALITY_GATE_PROFILE": "lenient",
     "SCREENSHOT_LIMIT": "0",
     "HARNESS_MAX_ITERATIONS": "1",
-    "HARNESS_VIDEO_ITERATIONS": "1"
+    "HARNESS_VIDEO_ITERATIONS": "1",
+    "STORY_PLAN_CANDIDATES": "1"
   },
   "doctor": { "requireApi": true, "requireBrowser": true }
 }

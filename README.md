@@ -341,6 +341,8 @@ rm -rf dist/runs dist/plans dist/output
 
 生成阶段还会从全部来源构建声明级 `factLedger`。标题、每个场景和每段旁白通过 `claimIds` 引用来源证据；质量门会检查高风险动作、数字、限定词和多来源冲突，而不是只检查第一个来源中的数字字符串。协议和维护方式见 [`docs/FACT_LEDGER.md`](docs/FACT_LEDGER.md)。
 
+LLM draft 使用“候选规划 → 确定性否决与重排 → 最佳方案展开”的两阶段流程。不同 profile 默认生成 1、2 或 4 个候选，所有评分与否决原因写入项目和生产报告，详见 [`docs/STORY_PLANNING.md`](docs/STORY_PLANNING.md)。
+
 ## 安全约定
 
 - 不提交真实 API key、账号密码、`.env.local` 或 `*.local.json`。

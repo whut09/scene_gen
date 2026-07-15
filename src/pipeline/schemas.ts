@@ -51,6 +51,22 @@ export const factClaimSchema = z.object({
 
 export const factLedgerSchema = z.object({ version: z.literal(1), claims: z.array(factClaimSchema) });
 
+export const storyPlanVisualSchema = z.enum(["title", "briefing", "chart", "flow", "outro"]);
+export const storyPlanCandidateSchema = z.object({
+  id: z.string().min(1), angle: z.string().min(1), title: z.string().min(1), titleClaimIds: z.array(z.string().min(1)).min(1),
+  estimatedSeconds: z.number().positive(),
+  scenes: z.array(z.object({ visual: storyPlanVisualSchema, purpose: z.string().min(1), focus: z.string().min(1), claimIds: z.array(z.string().min(1)).min(1) })).length(5),
+});
+export const storyPlanResponseSchema = z.object({ candidates: z.array(storyPlanCandidateSchema).min(1).max(4) });
+const storyPlanRankingSchema = z.object({
+  candidate: storyPlanCandidateSchema, fingerprint: z.string().length(64), rejectedReasons: z.array(z.string()),
+  scores: z.object({ factCoverage: z.number(), titleHook: z.number(), informationDiversity: z.number(), visualFeasibility: z.number(), ttsReadability: z.number(), historicalEffect: z.number(), total: z.number() }),
+});
+const storyPlanningAuditSchema = z.object({
+  profile: z.string().min(1), requestedCandidates: z.number().int().min(1).max(4), selectedCandidateId: z.string().min(1),
+  planningMs: z.number().nonnegative(), planningTokens: z.number().int().nonnegative(), expansionTokens: z.number().int().nonnegative(), rankings: z.array(storyPlanRankingSchema).min(1),
+});
+
 export const videoSceneSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("title"),
@@ -148,6 +164,7 @@ export const videoProjectSchema = z.object({
   narrationSegments: z.array(narrationSegmentSchema).optional(),
   factLedger: factLedgerSchema.optional(),
   titleClaimIds: claimIdsSchema.optional(),
+  storyPlanning: storyPlanningAuditSchema.optional(),
   audio: z.object({
     src: z.string(),
     durationSeconds: z.number().positive(),

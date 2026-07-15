@@ -367,6 +367,9 @@ export async function evaluateDraft(
         ...(project.narrationSegments?.flatMap((segment) => segment.claimIds ?? []) ?? []),
       ]).size,
       factConflictCount: project.factLedger ? findFactConflicts(project.factLedger).length : 0,
+      storyPlanCandidateCount: project.storyPlanning?.rankings.length ?? 0,
+      storyPlanRejectedCount: project.storyPlanning?.rankings.filter((ranking) => ranking.rejectedReasons.length > 0).length ?? 0,
+      selectedStoryPlanScore: project.storyPlanning?.rankings.find((ranking) => ranking.candidate.id === project.storyPlanning?.selectedCandidateId)?.scores.total ?? 0,
     },
   });
 }

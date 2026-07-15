@@ -11,6 +11,7 @@ config/news-llm.local.json
 
 # Runtime feedback memory
 data/feedback/feedback.jsonl
+data/story-planning/outcomes.jsonl
 
 # Generated media and build output
 dist/

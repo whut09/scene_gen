@@ -17,6 +17,8 @@ npm.cmd run test:pronunciation
 
 项目测试分为核心单元测试、离线集成与媒体 smoke、HTML 模板截图检查三层。
 
+`tests/integration/offline-llm.test.ts` 使用模拟 OpenAI 服务验证故事规划和内容展开是两次独立调用，并确认确定性否决后的候选不会进入展开阶段。`src/pipeline/story-planner.test.ts` 覆盖 profile 候选数量、事实引用、重复屏幕、历史效果和结果持久化。
+
 ```powershell
 # 类型检查与核心单元测试
 npm.cmd run lint:types

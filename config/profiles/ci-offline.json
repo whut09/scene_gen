@@ -9,7 +9,8 @@
     "HTML_RENDER_CONCURRENCY": "1",
     "HTML_RENDER_PRESET": "ultrafast",
     "QUALITY_GATE_PROFILE": "lenient",
-    "SCREENSHOT_LIMIT": "0"
+    "SCREENSHOT_LIMIT": "0",
+    "STORY_PLAN_CANDIDATES": "1"
   },
   "doctor": { "requireBrowser": true }
 }

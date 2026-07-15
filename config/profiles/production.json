@@ -13,7 +13,8 @@
     "TTS_FAIL_FAST": "1",
     "SCREENSHOT_LIMIT": "1",
     "HARNESS_MAX_ITERATIONS": "3",
-    "HARNESS_VIDEO_ITERATIONS": "3"
+    "HARNESS_VIDEO_ITERATIONS": "3",
+    "STORY_PLAN_CANDIDATES": "4"
   },
   "doctor": { "requireApi": true, "requireBrowser": true, "requireWhisper": true }
 }
