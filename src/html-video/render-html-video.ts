@@ -260,7 +260,7 @@ export async function writeHtmlVideoContentGraph(project: VideoProject, graphPat
 export async function renderHtmlVideoProject(
   project: VideoProject,
   outputPath: string,
-  options: { workDir?: string } = {},
+  options: { workDir?: string; forceSceneIndexes?: number[] } = {},
 ): Promise<HtmlVideoRenderResult> {
   const slug = slugify(project.meta.title, "story");
   const workDir = options.workDir ?? fromRoot("public", "generated", "html-video", slug);
@@ -297,7 +297,7 @@ export async function renderHtmlVideoProject(
     await writeFile(htmlPath, html, "utf8");
     let detectedMotionSec = 0;
     let cacheHit = false;
-    if (existsSync(videoPath) && existsSync(cachePath)) {
+    if (!options.forceSceneIndexes?.includes(node.sceneIndex) && existsSync(videoPath) && existsSync(cachePath)) {
       const cached = htmlVideoCacheSchema.safeParse(JSON.parse(await readFile(cachePath, "utf8")));
       if (cached.success && cached.data.cacheKey === cacheKey) {
         cacheHit = true;

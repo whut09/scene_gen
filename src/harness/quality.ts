@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -10,15 +9,12 @@ import { getTemplateById } from "../templates/template-registry";
 import { buildProductionDecisions } from "../production/visual-planner";
 import { qualityJudgeResponseSchema } from "../pipeline/schemas";
 import { isNewsProject, projectNewsDate } from "../pipeline/news-date";
+import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operation";
+import type { StageIssue } from "./stage-types";
 
 export type QualityStage = "draft" | "audio" | "video";
 
-export interface QualityIssue {
-  severity: "warning" | "error";
-  code: string;
-  message: string;
-  sceneIndex?: number;
-}
+export interface QualityIssue extends StageIssue {}
 
 export interface QualityEvaluation {
   stage: QualityStage;
@@ -29,25 +25,10 @@ export interface QualityEvaluation {
   metrics: Record<string, number | string | boolean>;
 }
 
-function issueSceneIndex(message: string) {
-  const match = message.match(/第\s*(\d+)\s*屏/);
-  if (!match) return undefined;
-  const index = Number(match[1]) - 1;
-  return Number.isInteger(index) && index >= 0 ? index : undefined;
-}
-
-function attachIssueSceneIndexes(issues: QualityIssue[]) {
-  return issues.map((issue) => ({
-    ...issue,
-    sceneIndex: issue.sceneIndex ?? issueSceneIndex(issue.message),
-  }));
-}
-
 const ASR_TRADITIONAL_TO_SIMPLIFIED: Record<string, string> = {
   獎: "奖", 攝: "摄", 銷: "销", 認: "认", 賽: "赛", 獲: "获", 與: "与", 為: "为",
   園: "园", 責: "责", 處: "处", 關: "关", 後: "后", 這: "这", 確: "确", 實: "实",
 };
-
 function normalizeText(text: string) {
   return [...text]
     .map((char) => ASR_TRADITIONAL_TO_SIMPLIFIED[char] ?? char)
@@ -104,21 +85,21 @@ function extraNarrationNumbers(visibleText: string, narration: string) {
 function sceneShapeIssues(scene: VideoScene, index: number) {
   const issues: QualityIssue[] = [];
   if (scene.type === "briefing_points" && (scene.points.length < 3 || scene.metrics.length < 2)) {
-    issues.push({ severity: "error", code: "briefing_thin", message: `第 ${index + 1} 屏事实卡信息不足。` });
+    issues.push({ severity: "error", code: "briefing_thin", message: `第 ${index + 1} 屏事实卡信息不足。`, sceneIndex: index });
   }
   if (scene.type === "signal_chart" && scene.bars.length < 3) {
-    issues.push({ severity: "error", code: "chart_thin", message: `第 ${index + 1} 屏图表少于 3 个信号。` });
+    issues.push({ severity: "error", code: "chart_thin", message: `第 ${index + 1} 屏图表少于 3 个信号。`, sceneIndex: index });
   }
   if (scene.type === "flow" && scene.steps.length < 3) {
-    issues.push({ severity: "error", code: "flow_thin", message: `第 ${index + 1} 屏流程少于 3 步。` });
+    issues.push({ severity: "error", code: "flow_thin", message: `第 ${index + 1} 屏流程少于 3 步。`, sceneIndex: index });
   }
   if (scene.type === "outro" && scene.bullets.length < 2) {
-    issues.push({ severity: "error", code: "outro_thin", message: `第 ${index + 1} 屏结论少于 2 条。` });
+    issues.push({ severity: "error", code: "outro_thin", message: `第 ${index + 1} 屏结论少于 2 条。`, sceneIndex: index });
   }
   return issues;
 }
 
-async function callQualityJudge(project: VideoProject, feedbackGuidance: string) {
+async function callQualityJudge(project: VideoProject, feedbackGuidance: string, signal?: AbortSignal) {
   if (process.env.QUALITY_LLM_DISABLED === "1") return null;
   const apiKey =
     process.env.QUALITY_LLM_API_KEY ?? process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
@@ -128,7 +109,7 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string)
   const model = process.env.QUALITY_LLM_MODEL ?? process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
   if (!baseUrl || !model) return null;
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+  const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -171,7 +152,7 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string)
         },
       ],
     }),
-  });
+  }, { signal, label: "quality-judge", timeoutMs: Number(process.env.QUALITY_LLM_TIMEOUT_MS ?? 90_000) });
   if (!response.ok) throw new Error(`Quality judge failed: ${response.status} ${await response.text()}`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content;
@@ -183,6 +164,7 @@ export async function evaluateDraft(
   project: VideoProject,
   targetSeconds: number,
   feedbackGuidance: string,
+  signal?: AbortSignal,
 ): Promise<QualityEvaluation> {
   const issues: QualityIssue[] = [];
   const revisionNotes: string[] = [];
@@ -231,7 +213,7 @@ export async function evaluateDraft(
     }
     const template = getTemplateById(node.templateId);
     if (!template?.supportedScenes.includes(node.sceneType)) {
-      issues.push({ severity: "error", code: "template_scene_mismatch", message: `模板 ${node.templateId} 不支持 ${node.sceneType} 场景。` });
+      issues.push({ severity: "error", code: "template_scene_mismatch", message: `模板 ${node.templateId} 不支持 ${node.sceneType} 场景。`, sceneIndex: node.sceneIndex });
     }
   }
 
@@ -248,7 +230,7 @@ export async function evaluateDraft(
   }
   const firstNarration = project.narrationSegments?.[0]?.text ?? "";
   if (!normalizeText(firstNarration).startsWith(normalizeText(project.meta.title))) {
-    issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。" });
+    issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。", sceneIndex: 0 });
     revisionNotes.push("将新闻标题逐字放在第一段旁白的第一句话，念完标题后再进入正文。 ");
   }
   const publicationDate = projectNewsDate(project);
@@ -256,7 +238,7 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "news_date_missing", message: "新闻项目缺少可展示的发布日期。" });
     revisionNotes.push("为新闻来源补充 publishedAt，并在首页显著展示新闻日期。 ");
   } else if (publicationDate && !normalizeText(firstNarration).includes(normalizeText(publicationDate))) {
-    issues.push({ severity: "error", code: "news_date_not_spoken", message: "第一段旁白没有播报首页展示的新闻日期。" });
+    issues.push({ severity: "error", code: "news_date_not_spoken", message: "第一段旁白没有播报首页展示的新闻日期。", sceneIndex: 0 });
     revisionNotes.push("标题播报完成后，紧接着播报新闻日期。 ");
   }
   const titleChineseCount = (project.meta.title.match(/[\u4e00-\u9fff]/g) ?? []).length;
@@ -281,28 +263,28 @@ export async function evaluateDraft(
     const narrationLength = segment.text.replace(/\s+/g, "").length;
     const limits = narrationLimits(scene);
     if (narrationLength > limits.max) {
-      issues.push({ severity: "error", code: "scene_narration_overloaded", message: `第 ${index + 1} 屏旁白 ${narrationLength} 字，超过当前画面建议上限 ${limits.max} 字。` });
+      issues.push({ severity: "error", code: "scene_narration_overloaded", message: `第 ${index + 1} 屏旁白 ${narrationLength} 字，超过当前画面建议上限 ${limits.max} 字。`, sceneIndex: index });
       revisionNotes.push(`压缩第 ${index + 1} 屏旁白，只复述该屏可见字段，不要扩展屏幕外内容。`);
     } else if (narrationLength < limits.min) {
-      issues.push({ severity: "warning", code: "scene_narration_thin", message: `第 ${index + 1} 屏旁白仅 ${narrationLength} 字。` });
+      issues.push({ severity: "warning", code: "scene_narration_thin", message: `第 ${index + 1} 屏旁白仅 ${narrationLength} 字。`, sceneIndex: index });
     }
     const visibleText = `${project.meta.title} ${sceneVisibleText(scene)} ${index === 0 ? projectNewsDate(project) : ""}`;
     const coverage = visibleTokenCoverage(visibleText, segment.text);
     alignmentScores.push(coverage);
     if (coverage < 0.25) {
-      issues.push({ severity: "error", code: "scene_narration_mismatch", message: `第 ${index + 1} 屏旁白与画面字段重合度过低。` });
+      issues.push({ severity: "error", code: "scene_narration_mismatch", message: `第 ${index + 1} 屏旁白与画面字段重合度过低。`, sceneIndex: index });
       revisionNotes.push(`重写第 ${index + 1} 屏旁白，按画面上的标题、卡片、数据或步骤逐项讲解。`);
     }
     const extraNumbers = extraNarrationNumbers(visibleText, segment.text);
     if (extraNumbers.length > 0) {
-      issues.push({ severity: "error", code: "scene_extra_numbers", message: `第 ${index + 1} 屏旁白出现画面未展示的数字：${extraNumbers.join("、")}。` });
+      issues.push({ severity: "error", code: "scene_extra_numbers", message: `第 ${index + 1} 屏旁白出现画面未展示的数字：${extraNumbers.join("、")}。`, sceneIndex: index });
       revisionNotes.push(`将第 ${index + 1} 屏旁白中的数字同步到画面，或从旁白删除。`);
     }
   });
 
   let scores: Record<string, number> | undefined;
   try {
-    const judged = await callQualityJudge(project, feedbackGuidance);
+    const judged = await callQualityJudge(project, feedbackGuidance, signal);
     if (judged?.scores) {
       scores = Object.fromEntries(
         Object.entries(judged.scores).map(([key, value]) => [key, Math.max(0, Math.min(100, Number(value) || 0))]),
@@ -334,7 +316,7 @@ export async function evaluateDraft(
   return {
     stage: "draft",
     passed,
-    issues: attachIssueSceneIndexes(issues),
+    issues,
     revisionNotes: [...new Set(revisionNotes.filter(Boolean))],
     scores,
     metrics: {
@@ -485,7 +467,7 @@ function bigramRecall(expected: string, actual: string) {
   return bigrams.filter((token) => actual.includes(token)).length / bigrams.length;
 }
 
-async function transcribeOpening(project: VideoProject) {
+async function transcribeOpening(project: VideoProject, signal?: AbortSignal) {
   if (process.env.ASR_DISABLED === "1" || !project.audio?.src) return null;
   const audioPath = project.audio.src.startsWith("/generated/")
     ? fromRoot("public", ...project.audio.src.replace(/^\/+/, "").split("/"))
@@ -499,13 +481,13 @@ async function transcribeOpening(project: VideoProject) {
     "python.exe",
   );
   try {
-    await runCapture("ffmpeg", ["-y", "-i", audioPath, "-t", openingSeconds.toFixed(3), "-ar", "16000", "-ac", "1", openingPath]);
+    await runCapture("ffmpeg", ["-y", "-i", audioPath, "-t", openingSeconds.toFixed(3), "-ar", "16000", "-ac", "1", openingPath], signal);
     const result = await runCapture(python, [
       fromRoot("scripts", "transcribe-audio.py"),
       "--audio", openingPath,
       "--model", process.env.ASR_MODEL ?? "openai/whisper-tiny",
       "--language", process.env.ASR_LANGUAGE ?? "chinese",
-    ]);
+    ], signal);
     const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
     const parsed = JSON.parse(lines[lines.length - 1] ?? "{}") as { text?: string };
     return parsed.text?.trim() ?? "";
@@ -513,7 +495,7 @@ async function transcribeOpening(project: VideoProject) {
     await rm(workDir, { recursive: true, force: true });
   }
 }
-export async function evaluateAudio(project: VideoProject, targetSeconds: number): Promise<QualityEvaluation> {
+export async function evaluateAudio(project: VideoProject, targetSeconds: number, signal?: AbortSignal): Promise<QualityEvaluation> {
   const issues: QualityIssue[] = [];
   const segments = project.narrationSegments ?? [];
   const duration = project.audio?.durationSeconds ?? 0;
@@ -574,7 +556,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   let titleTranscript = "";
   let titleAudioCoverage = 0;
   try {
-    const transcript = await transcribeOpening(project);
+    const transcript = await transcribeOpening(project, signal);
     if (transcript !== null) {
       titleTranscript = transcript;
       const expectedTitle = canonicalSpeechText(project.meta.title);
@@ -583,11 +565,11 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
       const expectedHook = canonicalSpeechText(hookSource).slice(0, 24);
       titleAudioCoverage = bigramRecall(expectedTitle, actualTitle);
       if (!actualTitle.startsWith(expectedHook)) {
-        issues.push({ severity: "error", code: "audio_title_opening_missing", message: `实际语音没有从标题开头播报。ASR：${transcript}` });
+        issues.push({ severity: "error", code: "audio_title_opening_missing", message: `实际语音没有从标题开头播报。ASR：${transcript}`, sceneIndex: 0 });
       }
       const minimumCoverage = Number(process.env.ASR_TITLE_COVERAGE_MIN ?? 0.58);
       if (titleAudioCoverage < minimumCoverage) {
-        issues.push({ severity: "error", code: "audio_title_incomplete", message: `标题语音覆盖率 ${(titleAudioCoverage * 100).toFixed(1)}%，低于 ${(minimumCoverage * 100).toFixed(0)}%。` });
+        issues.push({ severity: "error", code: "audio_title_incomplete", message: `标题语音覆盖率 ${(titleAudioCoverage * 100).toFixed(1)}%，低于 ${(minimumCoverage * 100).toFixed(0)}%。`, sceneIndex: 0 });
       }
     }
   } catch (error) {
@@ -597,12 +579,12 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   for (const [index, scene] of project.scenes.entries()) {
     const segment = segments[index];
     if (!segment || segment.audioStartSeconds === undefined || segment.durationSeconds === undefined) {
-      issues.push({ severity: "error", code: "segment_timing_missing", message: `第 ${index + 1} 屏缺少音频时间信息。` });
+      issues.push({ severity: "error", code: "segment_timing_missing", message: `第 ${index + 1} 屏缺少音频时间信息。`, sceneIndex: index });
       continue;
     }
     const frameTolerance = 1 / project.meta.fps + 0.002;
     if (Math.abs(cursor - segment.audioStartSeconds) > frameTolerance || Math.abs(scene.duration - segment.durationSeconds) > frameTolerance) {
-      issues.push({ severity: "error", code: "audio_scene_drift", message: `第 ${index + 1} 屏音画边界不一致。` });
+      issues.push({ severity: "error", code: "audio_scene_drift", message: `第 ${index + 1} 屏音画边界不一致。`, sceneIndex: index });
     }
     cursor += scene.duration;
   }
@@ -634,24 +616,21 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   };
 }
 
-function runCapture(command: string, args: string[]) {
-  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: true });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk.toString()));
-    child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
-    child.on("error", reject);
-    child.on("close", (code) => (code === 0 ? resolve({ stdout, stderr }) : reject(new Error(stderr))));
+function runCapture(command: string, args: string[], signal?: AbortSignal) {
+  return runExternalProcess(command, args, {
+    signal,
+    retries: 1,
+    retryOnExit: true,
+    timeoutMs: Number(process.env.QUALITY_PROCESS_TIMEOUT_MS ?? 300_000),
   });
 }
 
 
-async function sampleMotionMetrics(videoPath: string, sceneDurations: number[] = []) {
+async function sampleMotionMetrics(videoPath: string, sceneDurations: number[] = [], signal?: AbortSignal) {
   const capture = await runCapture("ffmpeg", [
     "-v", "error", "-i", videoPath, "-map", "0:v:0", "-an",
     "-vf", "fps=2,scale=64:64,select='gte(scene,0)',metadata=print:file=-", "-f", "null", "-",
-  ]);
+  ], signal);
   const scores = [...capture.stdout.matchAll(/lavfi\.scene_score=([0-9.]+)/g)].map((match) => Number(match[1]));
   const threshold = Number(process.env.MOTION_SCENE_THRESHOLD ?? 0.0005);
   function summarize(values: number[]) {
@@ -685,6 +664,7 @@ export async function evaluateVideo(
   reportDir: string,
   expectedDuration?: number,
   sceneDurations: number[] = [],
+  signal?: AbortSignal,
 ): Promise<QualityEvaluation> {
   const issues: QualityIssue[] = [];
   const probe = await runCapture("ffprobe", [
@@ -697,7 +677,7 @@ export async function evaluateVideo(
     "-of",
     "json",
     videoPath,
-  ]);
+  ], signal);
   const data = JSON.parse(probe.stdout) as {
     format?: { duration?: string; size?: string };
     streams?: Array<{ codec_type?: string; duration?: string; width?: number; height?: number }>;
@@ -719,7 +699,7 @@ export async function evaluateVideo(
   const streamDelta = Math.abs(Number(video?.duration ?? duration) - Number(audio?.duration ?? duration));
   if (streamDelta > 0.2) issues.push({ severity: "error", code: "stream_duration_drift", message: `音视频流相差 ${streamDelta.toFixed(3)} 秒。` });
 
-  const motion = await sampleMotionMetrics(videoPath, sceneDurations);
+  const motion = await sampleMotionMetrics(videoPath, sceneDurations, signal);
   if (motion.longestStaticRun >= 6 || motion.activeMotionRatio < 0.22) {
     issues.push({ severity: "warning", code: "video_motion_too_static", message: `画面连续静止约 ${motion.longestStaticRun.toFixed(1)} 秒，建议增加与旁白相关的元素运动或素材镜头。` });
   }
@@ -731,6 +711,7 @@ export async function evaluateVideo(
 
   await mkdir(reportDir, { recursive: true });
   const sampleTimes = [Math.min(4, duration / 4), duration / 2, Math.max(1, duration - 5)];
+  const sceneBoundaries = sceneDurations.reduce<number[]>((items, value) => [...items, (items.at(-1) ?? 0) + value], []);
   const frameSizes: number[] = [];
   for (const [index, sampleTime] of sampleTimes.entries()) {
     const framePath = path.join(reportDir, `frame-${index + 1}.jpg`);
@@ -745,10 +726,13 @@ export async function evaluateVideo(
       "-q:v",
       "2",
       framePath,
-    ]);
+    ], signal);
     const size = await stat(framePath).then((value) => value.size).catch(() => 0);
     frameSizes.push(size);
-    if (size < 20_000) issues.push({ severity: "error", code: "blank_frame", message: `抽帧 ${index + 1} 可能为空白。` });
+    if (size < 20_000) {
+      const sceneIndex = sceneBoundaries.findIndex((boundary) => sampleTime < boundary);
+      issues.push({ severity: "error", code: "blank_frame", message: `抽帧 ${index + 1} 可能为空白。`, ...(sceneIndex >= 0 ? { sceneIndex } : {}) });
+    }
   }
 
   return {

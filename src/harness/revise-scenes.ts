@@ -2,6 +2,7 @@ import path from "node:path";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { loadDotEnv, parseArgs, readJson, writeJson } from "../pipeline/utils";
 import { sceneRevisionResponseSchema, videoProjectSchema } from "../pipeline/schemas";
+import { fetchWithRetry } from "../pipeline/external-operation";
 
 function narrationMax(scene: VideoScene) {
   if (scene.type === "title") return 150;
@@ -36,7 +37,7 @@ const model = process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
 if (!apiKey || !baseUrl || !model) throw new Error("NEWS_LLM_API_KEY, NEWS_LLM_BASE_URL and NEWS_LLM_MODEL are required.");
 
 const selected = sceneIndexes.map((sceneIndex) => ({ sceneIndex, scene: project.scenes[sceneIndex], narration: project.narrationSegments?.[sceneIndex]?.text ?? "", maxNarrationChars: narrationMax(project.scenes[sceneIndex]) }));
-const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
   method: "POST",
   headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
   body: JSON.stringify({
@@ -52,7 +53,7 @@ const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       { role: "user", content: JSON.stringify({ title: project.meta.title, issues: typeof args.issues === "string" ? args.issues : "", source: project.sources, selected }) }
     ]
   })
-});
+}, { label: "scene-revision", timeoutMs: Number(process.env.NEWS_LLM_TIMEOUT_MS ?? 120_000) });
 if (!response.ok) throw new Error(`Scene revision failed: ${response.status} ${await response.text()}`);
 const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
 const content = payload.choices?.[0]?.message?.content;

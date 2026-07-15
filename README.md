@@ -34,6 +34,22 @@ npm.cmd run video -- --url "新闻地址" --seconds 100 --iterations 2 --screens
 - `--engine`：`html-video` 为质量优先路径，`remotion` 为速度优先路径；一键命令默认 `html-video`。
 - `--out-dir`：MP4 输出目录。
 - `--notes`：本次新闻的额外事实校正或表达约束。
+- `--video-iterations`：最终视频检查与修复的最大轮数，默认 2，范围 1 到 3。音视频时长漂移会重新封装，空白帧或错误尺寸会强制重渲染。
+
+中断或失败后可以复用已有项目、音频和场景缓存：
+
+```powershell
+# 从 run.json 中最后失败的阶段继续
+npm.cmd run video -- --resume "<run-id>"
+
+# 跳过抓取和脚本生成，从音频合成继续
+npm.cmd run video -- --resume "<run-id>" --from-stage audio
+
+# 从渲染阶段继续，并强制绕过场景视频缓存
+npm.cmd run video -- --resume "<run-id>" --force-stage render
+```
+
+可用阶段为 `ingest`、`draft`、`draft-gate`、`revise`、`synthesize`、`audio-gate`、`render`、`video-gate` 和 `publish`。`audio` 是 `synthesize` 的简写。每个阶段在 `run.json` 中记录 `status`、`inputHash`、`outputs`、`issues`、`metrics`、`durationMs`、`attempt` 和 `suggestedAction`。
 
 成功后会输出：
 
@@ -77,6 +93,8 @@ dist/runs/<run-id>/quality/frame-1.jpg
 硬规则不通过时，harness 会把问题和改进要求传入下一轮。达到最大轮数仍不合格时会停止，不导出伪成片。LLM judge 的审美评分属于软建议，服务异常或评分偏低会记录到报告，但不会覆盖事实、时长和音画同步等硬门槛。
 
 每次执行都会在生成内容前创建 `dist/runs/<run-id>/run.json`。生成、draft gate、局部修订、TTS、audio gate、渲染和 video gate 的开始时间、完成状态、耗时、产物路径及错误都会原子写入该文件。即使 LLM、TTS、ASR 或渲染中途失败，也可以从 run journal 和 `evaluations/` 中查看失败现场。
+
+外部网络和进程操作使用统一的超时、取消和分类重试：HTTP 429、5xx、网络中断与明确的临时进程错误使用指数退避；Schema、事实和质量门错误不会盲目重试。按需可通过 `EXTERNAL_FETCH_TIMEOUT_MS`、`EXTERNAL_PROCESS_TIMEOUT_MS`、`HARNESS_DRAFT_TIMEOUT_MS`、`HARNESS_SYNTHESIZE_TIMEOUT_MS`、`HARNESS_RENDER_TIMEOUT_MS` 和 `HARNESS_VIDEO_GATE_TIMEOUT_MS` 调整上限。
 
 Harness 不再读取共享 manifest 的第一项。`generate-stories` 会写出本次运行专属的 `generation-result.json` 和 `manifest.json`，GitHub 缓存命中时也会把缓存项目复制到当前 run 目录后再返回，因此并发任务不会拿到其他 URL 的项目或修改原缓存项目。
 

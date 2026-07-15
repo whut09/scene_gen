@@ -1,5 +1,6 @@
 import type { VideoProject, VideoScene } from "./types";
 import { directedStorySchema, type DirectedStory } from "./schemas";
+import { fetchWithRetry } from "./external-operation";
 
 function cleanStrings(values: unknown, limit: number) {
   if (!Array.isArray(values)) return [];
@@ -271,7 +272,7 @@ export async function improveWithOpenAI(
     .filter(Boolean)
     .join("\n");
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+  const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -301,7 +302,7 @@ export async function improveWithOpenAI(
       ],
       response_format: { type: "json_object" },
     }),
-  });
+  }, { label: "story-llm", timeoutMs: Number(process.env.NEWS_LLM_TIMEOUT_MS ?? 120_000) });
 
   if (!response.ok) {
     console.warn(`[llm] OpenAI failed: ${response.status} ${await response.text()}`);

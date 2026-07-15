@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import type { HotItem, SourceConfig } from "./types";
 import { compactText, daysAgo, domainFromUrl, stableId } from "./utils";
+import { fetchWithRetry } from "./external-operation";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -37,21 +38,14 @@ const seedItems: HotItem[] = [
 ];
 
 async function fetchText(url: string, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "user-agent": "scene-gen/0.1 video research bot",
-        accept: "text/html,application/xml,application/rss+xml,application/json",
-      },
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    return await response.text();
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await fetchWithRetry(url, {
+    headers: {
+      "user-agent": "scene-gen/0.1 video research bot",
+      accept: "text/html,application/xml,application/rss+xml,application/json",
+    },
+  }, { label: "source-fetch", timeoutMs });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return await response.text();
 }
 
 function normalizeTags(text: string, keywords: string[]) {
@@ -222,16 +216,16 @@ async function collectGithubRepository(url: string, config: SourceConfig): Promi
   const target = githubRepoFromUrl(url);
   if (!target) return null;
   const headers = { "user-agent": "scene-gen/0.1 video research bot", accept: "application/vnd.github+json" };
-  const repoResponse = await fetch("https://api.github.com/repos/" + target.fullName, { headers });
+  const repoResponse = await fetchWithRetry("https://api.github.com/repos/" + target.fullName, { headers }, { label: "github-repository" });
   if (!repoResponse.ok) throw new Error("GitHub API " + repoResponse.status + " " + repoResponse.statusText);
   const repo = await repoResponse.json() as {
     full_name?: string; name?: string; description?: string; stargazers_count?: number; forks_count?: number;
     open_issues_count?: number; language?: string; license?: { spdx_id?: string }; pushed_at?: string; topics?: string[];
     default_branch?: string;
   };
-  const readmeResponse = await fetch("https://api.github.com/repos/" + target.fullName + "/readme", {
+  const readmeResponse = await fetchWithRetry("https://api.github.com/repos/" + target.fullName + "/readme", {
     headers: { ...headers, accept: "application/vnd.github.raw+json" },
-  });
+  }, { label: "github-readme" });
   const readme = readmeResponse.ok ? await readmeResponse.text() : "";
   const rawDescription = compactText(repo.description || target.fullName, 260);
   const description = cleanGithubDescription(rawDescription, repo.name || target.repo);

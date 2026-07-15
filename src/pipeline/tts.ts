@@ -4,6 +4,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { VideoProject } from "./types";
 import { ensureDir, fromRoot } from "./utils";
+import { fetchWithRetry } from "./external-operation";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
@@ -63,7 +64,7 @@ async function openAiTts(text: string, outputPath: string) {
   const apiKey = process.env.OPENAI_TTS_API_KEY ?? process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_TTS_API_KEY or OPENAI_API_KEY is not set");
   const baseUrl = process.env.OPENAI_TTS_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/audio/speech`, {
+  const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/audio/speech`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${apiKey}`,
@@ -76,7 +77,7 @@ async function openAiTts(text: string, outputPath: string) {
       format: "mp3",
       speed: Number(process.env.OPENAI_TTS_SPEED ?? 1.12),
     }),
-  });
+  }, { label: "openai-tts", timeoutMs: Number(process.env.TTS_FETCH_TIMEOUT_MS ?? 180_000) });
   if (!response.ok) throw new Error(`OpenAI TTS failed: ${response.status} ${await response.text()}`);
   await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
 }
