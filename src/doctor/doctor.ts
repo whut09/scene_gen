@@ -88,6 +88,18 @@ function htmlConcurrencyCheck(): DoctorCheck {
   };
 }
 
+function visualQualityConfigCheck(): DoctorCheck {
+  const values = {
+    lumaRange: Number(process.env.VIDEO_BLANK_LUMA_RANGE_MIN ?? 8),
+    edgeDensity: Number(process.env.VIDEO_BLANK_EDGE_DENSITY_MIN ?? 0.006),
+    ocrCoverage: Number(process.env.VIDEO_OCR_KEY_TEXT_MIN ?? 0.45),
+  };
+  const valid = values.lumaRange > 0 && values.lumaRange <= 255
+    && values.edgeDensity > 0 && values.edgeDensity < 1
+    && values.ocrCoverage > 0 && values.ocrCoverage <= 1;
+  return { id: "visual-quality", status: valid ? "pass" : "fail", required: true, summary: valid ? "Visual quality thresholds valid" : "Visual quality thresholds invalid", details: JSON.stringify(values) };
+}
+
 export async function runDoctor(profile: ConfigProfile, outputDir = process.env.VIDEO_OUTPUT_DIR || defaultOutputDir()): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
@@ -95,6 +107,8 @@ export async function runDoctor(profile: ConfigProfile, outputDir = process.env.
   checks.push(await commandCheck("ffmpeg", "ffmpeg", ["-version"], true));
   checks.push(await commandCheck("ffprobe", "ffprobe", ["-version"], true));
   checks.push(await ffmpegEncoderCheck());
+  checks.push(visualQualityConfigCheck());
+  if (process.env.VIDEO_OCR_ENABLED === "1") checks.push(await commandCheck("video-ocr", process.env.VIDEO_OCR_COMMAND ?? "tesseract", ["--version"], true));
   const browserPath = chromium.executablePath();
   checks.push({ id: "playwright", status: existsSync(browserPath) ? "pass" : profile.doctor.requireBrowser ? "fail" : "warn", required: profile.doctor.requireBrowser, summary: existsSync(browserPath) ? "Playwright Chromium installed" : "Playwright Chromium missing", details: browserPath });
   checks.push(await commandCheck("python", resolvePythonCommand(), ["--version"], profile.doctor.requireF5 || profile.doctor.requireWhisper));

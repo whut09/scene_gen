@@ -182,12 +182,13 @@ export async function runRenderStage(input: {
     retryOnExit: true,
   });
   const result = input.resultPath
-    ? await readJson<{ stories?: Array<{ metrics?: Record<string, unknown> }> }>(input.resultPath)
+    ? await readJson<{ stories?: Array<{ visualAuditPath?: string; metrics?: Record<string, unknown> }> }>(input.resultPath)
     : undefined;
   return {
     remuxedVideo: Boolean(input.remuxRequired && input.engine === "html-video"),
     remuxOnly: Boolean(input.remuxOnly),
     metrics: result?.stories?.[0]?.metrics,
+    visualAuditPath: result?.stories?.[0]?.visualAuditPath,
     resultPath: input.resultPath,
   };
 }
@@ -205,6 +206,10 @@ export async function runVideoGateStage(input: {
     input.project.audio?.durationSeconds,
     input.project.scenes.map((scene) => scene.duration),
     input.signal,
+    {
+      project: input.project,
+      visualAuditPath: input.story.htmlVideoGraphPath ? path.join(path.dirname(input.story.htmlVideoGraphPath), "visual-audit.json") : undefined,
+    },
   );
   evaluation.issues = withSuggestedActions(evaluation.issues, "video");
   return { evaluation, repairPlan: planRepair("video", evaluation.issues, evaluation.profile, input.project.scenes.length, input.repairAttempt ?? 1) };

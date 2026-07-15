@@ -163,7 +163,9 @@ dist/runs/<run-id>/quality/frame-1.jpg
 2. Audio gate：检查 TTS 是否存在、时长是否处于合理弹性范围、旁白字数/秒是否自然、数字是否已转换为中文读法、每段音频起点和场景边界是否逐帧对齐；随后一次加载本地 Whisper，批量转写每个 scene 的独立音频片段，检查标题开场、文本覆盖率、实体召回率、数字与单位、发音词典短语和相邻场景串段。
 
 逐场景 ASR 的确定性结果写入 audio gate metrics。Whisper 使用生成 token 概率的几何平均值作为场景置信度；高置信度错误会生成带 `sceneIndex` 的 `audio_pronunciation_mismatch`、`audio_entity_mismatch`、`audio_number_mismatch`、`audio_semantic_mismatch` 或 `audio_segment_cross_talk`，因此只重建对应场景音频。低于 `ASR_SCENE_CONFIDENCE_MIN` 的结果只生成 `verification_inconclusive` warning，不触发 TTS 重建。
-3. Video gate：使用 FFprobe 检查视频流、音频流、1080x1920、总时长与流偏差，并在开头、中段和结尾抽帧排除空白画面。
+3. Video gate：使用 FFprobe 检查视频流、音频流、1080x1920、总时长与流偏差；每个 scene 分别抽取开头、中间和结尾三帧，结合文件完整性、亮度范围和边缘密度判断空白或低信息画面。同时读取 HTML 录制前生成的 DOM 视觉审计，检查安全区、字号、行长、对比度、越界、裁切、遮挡、关键文本、图片焦点风险、动画结论停留时间和旁白关键词出现时机。
+
+HTML renderer 会在共享 Chromium 中先把动画推进到结束状态完成 DOM audit，再重新加载页面进行正式录制。审计保存到场景工作目录的 `visual-audit.json`，并随视频场景缓存复用。修改视觉审计逻辑会通过 renderer version 自动使旧场景缓存失效。可选设置 `VIDEO_OCR_ENABLED=1` 并安装 Tesseract `chi_sim`/`eng` 数据，对每屏中间帧执行关键标题 OCR；OCR 环境缺失只记录环境 warning，不会被误判为内容质量失败。
 
 硬规则不通过时，harness 会把问题和改进要求传入下一轮。达到最大轮数仍不合格时会停止，不导出伪成片。LLM judge 的审美评分属于软建议，服务异常或评分偏低会记录到报告，但不会覆盖事实、时长和音画同步等硬门槛。
 

@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPubl
 
 export const kineticTitleTemplate: HtmlTemplateDefinition = {
   id: "kinetic-title",
-  version: "1.3.0",
+  version: "1.3.1",
   name: "Kinetic Title",
   description: "Oversized editorial typography with paced signal strips for hooks and conclusions.",
   engine: "html-video",
@@ -47,7 +47,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
     const body =
       '<main class="hv-main kt-main kt-' + variantId + (isTitle && publicationDate ? ' kt-news' : '') + '" style="--kt-title-size:' + titleSize + 'px">' +
       (heroAsset ? '<figure class="kt-asset"><img src="' + escapeHtml(heroAsset) + '" /></figure>' : '') +
-      '<div class="kt-index">' + (isTitle ? "01" : "05") + '</div>' +
+      '<div class="kt-index" aria-hidden="true">' + (isTitle ? "01" : "05") + '</div>' +
       (isTitle && repoUrl ? '<section class="kt-github"><strong>GitHub 开源项目推荐</strong><span>' + escapeHtml(repoUrl) + '</span></section>' : '') +
       (isTitle && publicationDate ? '<section class="kt-date"><small>新闻日期</small><strong>' + escapeHtml(publicationDate) + '</strong></section>' : '') +
       '<div class="kt-kicker">' + escapeHtml(kicker) + '</div>' +

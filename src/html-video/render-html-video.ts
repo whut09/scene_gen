@@ -12,6 +12,7 @@ import { ensureDir, fromRoot, slugify } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
 import { resolveHtmlRenderBudget, type HtmlRenderBudget } from "./render-budget";
 import { getOrCreateMediaCache, hashFileContent, restoreMediaCache } from "../cache/media-cache";
+import { inspectSceneDom, sceneVisualAuditSchema, visualAuditFileSchema, type SceneVisualAudit } from "./visual-audit";
 import {
   buildHtmlVideoContentGraph,
   topoSortHtmlVideoGraph,
@@ -26,6 +27,7 @@ export interface RenderedFrame {
   durationSec: number;
   templateId: string;
   detectedMotionSec: number;
+  visualAudit: SceneVisualAudit;
 }
 
 export interface HtmlRenderMetrics extends HtmlRenderBudget {
@@ -37,11 +39,13 @@ export interface HtmlRenderMetrics extends HtmlRenderBudget {
   concatMs: number;
   muxMs: number;
   totalRenderMs: number;
+  visualAuditIssueCount: number;
 }
 
 export interface HtmlVideoRenderResult {
   outputPath: string;
   graphPath: string;
+  visualAuditPath: string;
   frames: RenderedFrame[];
   remuxedVideo: boolean;
   metrics: HtmlRenderMetrics;
@@ -53,6 +57,7 @@ export interface SceneRecordResult {
   detectedMotionSec: number;
   recordMs: number;
   encodeMs: number;
+  visualAudit?: SceneVisualAudit;
 }
 
 export interface SceneRecordInput {
@@ -66,6 +71,8 @@ export interface SceneRecordInput {
   fps: number;
   ffmpegThreads: number;
   encodingPreset: HtmlRenderBudget["encodingPreset"];
+  headline?: string;
+  syncCues?: HtmlVideoContentGraph["nodes"][number]["syncCues"];
   signal?: AbortSignal;
 }
 
@@ -91,8 +98,15 @@ export interface HtmlVideoCacheFingerprint {
   rendererVersion: string;
 }
 
-const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v2";
+const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v3";
 let browserVersionPromise: Promise<string> | undefined;
+
+function emptyVisualAudit(sceneIndex: number, width: number, height: number, durationSec: number) {
+  return sceneVisualAuditSchema.parse({
+    sceneIndex, width, height, durationSec, checkedAt: new Date().toISOString(),
+    elementCount: 0, keyTextCount: 0, maximumAnimationEndMs: 0, issues: [],
+  });
+}
 
 function stableValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -273,6 +287,7 @@ async function waitForFonts(page: {
 }
 
 async function recordHtmlFrame({
+  sceneIndex,
   browser,
   htmlPath,
   outputPath,
@@ -282,12 +297,15 @@ async function recordHtmlFrame({
   fps,
   ffmpegThreads,
   encodingPreset,
+  headline,
+  syncCues,
   signal,
 }: SceneRecordInput): Promise<SceneRecordResult> {
   const recordDir = await mkdtemp(path.join(tmpdir(), "scene-gen-html-video-"));
   let context: Awaited<ReturnType<HtmlBrowser["newContext"]>> | undefined;
   let leadInMs = 0;
   let detectedMotionSec = 0;
+  let visualAudit: SceneVisualAudit | undefined;
   let captureError: unknown;
   const recordStarted = Date.now();
   const onAbort = () => { void context?.close().catch(() => undefined); };
@@ -318,6 +336,9 @@ async function recordHtmlFrame({
     });
 
     await page.goto(pathToFileURL(htmlPath).href, { waitUntil: "domcontentloaded" });
+    await waitForFonts(page);
+    visualAudit = await inspectSceneDom(page, { sceneIndex, width, height, durationSec, headline: headline ?? "", syncCues });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await waitForFonts(page);
     detectedMotionSec = await page.evaluate(() => {
       const durations = document.getAnimations().map((animation) => {
@@ -387,7 +408,7 @@ async function recordHtmlFrame({
   } finally {
     await rm(recordDir, { recursive: true, force: true }).catch(() => undefined);
   }
-  return { detectedMotionSec, recordMs, encodeMs: Date.now() - encodeStarted };
+  return { detectedMotionSec, recordMs, encodeMs: Date.now() - encodeStarted, visualAudit };
 }
 
 function concatFileLine(filePath: string) {
@@ -459,6 +480,7 @@ export async function renderHtmlVideoProject(
   await ensureDir(path.dirname(outputPath));
 
   const graphPath = path.join(workDir, "content-graph.json");
+  const visualAuditPath = path.join(workDir, "visual-audit.json");
   const graph: HtmlVideoContentGraph = await writeHtmlVideoContentGraph(project, graphPath);
   const frames: RenderedFrame[] = [];
   const silentVideoPath = path.join(workDir, "video-no-audio.mp4");
@@ -474,6 +496,7 @@ export async function renderHtmlVideoProject(
     concatMs: 0,
     muxMs: 0,
     totalRenderMs: 0,
+    visualAuditIssueCount: 0,
   };
   const concatRenderer = options.concatRenderer ?? concatFrames;
   const audioMuxer = options.audioMuxer ?? muxAudio;
@@ -487,7 +510,7 @@ export async function renderHtmlVideoProject(
     await (await import("node:fs/promises")).copyFile(finalTemp, outputPath);
     console.log(`[html-video] remuxed audio into ${outputPath}`);
     metrics.totalRenderMs = Date.now() - totalStarted;
-    return { outputPath, graphPath, frames, remuxedVideo: true, metrics };
+    return { outputPath, graphPath, visualAuditPath, frames, remuxedVideo: true, metrics };
   }
 
   const nodeOrder = topoSortHtmlVideoGraph(graph);
@@ -566,9 +589,12 @@ export async function renderHtmlVideoProject(
         } else {
           console.log(`[html-video] reusing ${node.id} with ${template.id}:${node.variantId}`);
         }
-        await writeFile(cachePath, JSON.stringify({ cacheKey, detectedMotionSec, durationSec: node.durationSec }), "utf8");
-        metrics.cacheHitScenes.push(node.sceneIndex);
-        cachedFrame = { sceneIndex: node.sceneIndex, id: node.id, htmlPath, videoPath, durationSec: node.durationSec, templateId: template.id, detectedMotionSec };
+        const visualAudit = sceneVisualAuditSchema.safeParse(cached.details.visualAudit);
+        if (visualAudit.success) {
+          await writeFile(cachePath, JSON.stringify({ cacheKey, detectedMotionSec, durationSec: node.durationSec, visualAudit: visualAudit.data }), "utf8");
+          metrics.cacheHitScenes.push(node.sceneIndex);
+          cachedFrame = { sceneIndex: node.sceneIndex, id: node.id, htmlPath, videoPath, durationSec: node.durationSec, templateId: template.id, detectedMotionSec, visualAudit: visualAudit.data };
+        }
       }
     }
     prepared.push({ node, htmlPath, videoPath, cachePath, cacheKey, cacheIdentity, templateId: template.id, cachedFrame });
@@ -613,19 +639,23 @@ export async function renderHtmlVideoProject(
                 sceneIndex: item.node.sceneIndex, browser: await ensureBrowser(), htmlPath: item.htmlPath, outputPath: cacheOutputPath,
                 durationSec: item.node.durationSec, width: project.meta.width, height: project.meta.height,
                 fps: project.meta.fps, ffmpegThreads: budget.ffmpegThreadsPerJob,
-                encodingPreset: budget.encodingPreset, signal: sceneSignal,
+                encodingPreset: budget.encodingPreset, headline: item.node.data.headline,
+                syncCues: item.node.syncCues, signal: sceneSignal,
               });
               metrics.perSceneRecordMs[String(item.node.sceneIndex)] = recorded.recordMs;
               metrics.perSceneEncodeMs[String(item.node.sceneIndex)] = recorded.encodeMs;
-              return { detectedMotionSec: recorded.detectedMotionSec, durationSec: item.node.durationSec };
+              const visualAudit = recorded.visualAudit ?? emptyVisualAudit(item.node.sceneIndex, project.meta.width, project.meta.height, item.node.durationSec);
+              return { detectedMotionSec: recorded.detectedMotionSec, durationSec: item.node.durationSec, visualAudit };
             },
           });
           const detectedMotionSec = typeof cacheResult.metadata.details.detectedMotionSec === "number"
             ? cacheResult.metadata.details.detectedMotionSec
             : 0;
-          await writeFile(item.cachePath, JSON.stringify({ cacheKey: item.cacheKey, detectedMotionSec, durationSec: item.node.durationSec }), "utf8");
+          const visualAudit = sceneVisualAuditSchema.safeParse(cacheResult.metadata.details.visualAudit);
+          const resolvedVisualAudit = visualAudit.success ? visualAudit.data : emptyVisualAudit(item.node.sceneIndex, project.meta.width, project.meta.height, item.node.durationSec);
+          await writeFile(item.cachePath, JSON.stringify({ cacheKey: item.cacheKey, detectedMotionSec, durationSec: item.node.durationSec, visualAudit: resolvedVisualAudit }), "utf8");
           (cacheResult.generated ? metrics.renderedScenes : metrics.cacheHitScenes).push(item.node.sceneIndex);
-          return { sceneIndex: item.node.sceneIndex, id: item.node.id, htmlPath: item.htmlPath, videoPath: item.videoPath, durationSec: item.node.durationSec, templateId: item.templateId, detectedMotionSec } satisfies RenderedFrame;
+          return { sceneIndex: item.node.sceneIndex, id: item.node.id, htmlPath: item.htmlPath, videoPath: item.videoPath, durationSec: item.node.durationSec, templateId: item.templateId, detectedMotionSec, visualAudit: resolvedVisualAudit } satisfies RenderedFrame;
         } catch (error) {
           await rm(item.cachePath, { force: true }).catch(() => undefined);
           await rm(item.videoPath, { force: true }).catch(() => undefined);
@@ -643,6 +673,9 @@ export async function renderHtmlVideoProject(
 
   frames.push(...prepared.map((item) => item.cachedFrame ?? renderedByScene.get(item.node.sceneIndex)).filter((frame): frame is RenderedFrame => Boolean(frame)));
   if (frames.length !== prepared.length) throw new Error(`HTML render produced ${frames.length}/${prepared.length} scene videos.`);
+  const visualAuditFile = visualAuditFileSchema.parse({ version: 1, createdAt: new Date().toISOString(), scenes: frames.map((frame) => frame.visualAudit) });
+  await writeFile(visualAuditPath, `${JSON.stringify(visualAuditFile, null, 2)}\n`, "utf8");
+  metrics.visualAuditIssueCount = visualAuditFile.scenes.reduce((sum, scene) => sum + scene.issues.length, 0);
   const concatStarted = Date.now();
   await concatRenderer(frames, silentVideoPath, options.signal);
   metrics.concatMs = Date.now() - concatStarted;
@@ -657,5 +690,5 @@ export async function renderHtmlVideoProject(
   metrics.cacheHitScenes.sort((left, right) => left - right);
   metrics.renderedScenes.sort((left, right) => left - right);
   metrics.totalRenderMs = Date.now() - totalStarted;
-  return { outputPath, graphPath, frames, remuxedVideo: false, metrics };
+  return { outputPath, graphPath, visualAuditPath, frames, remuxedVideo: false, metrics };
 }

@@ -97,9 +97,16 @@ const issueActions: Record<string, SuggestedAction> = {
   stream_duration_drift: "remux", video_project_duration_drift: "remux",
   blank_frame: "rerender-scenes", stream_missing: "rerender-scenes", wrong_dimensions: "rerender-scenes",
   scene_motion_too_static: "switch-template", video_motion_too_static: "switch-template",
+  dom_element_out_of_bounds: "switch-template", text_unsafe_zone: "switch-template",
+  text_contrast_low: "switch-template", text_too_small: "switch-template", text_line_too_long: "switch-template",
+  content_clipped: "switch-template", element_overlap: "switch-template", key_text_not_visible: "switch-template",
+  key_text_ocr_missing: "switch-template", image_subject_crop_risk: "switch-template",
+  conclusion_hold_too_short: "switch-template", sync_cue_visual_late: "switch-template",
+  frame_low_visual_complexity: "switch-template",
+  visual_audit_unavailable: "check-environment", ocr_verification_unavailable: "check-environment",
 };
 
-const environmentCodes = new Set(["asr_verification_failed", "verification_inconclusive", "judge_unavailable", "stage_timeout_or_cancelled"]);
+const environmentCodes = new Set(["asr_verification_failed", "verification_inconclusive", "visual_audit_unavailable", "ocr_verification_unavailable", "judge_unavailable", "stage_timeout_or_cancelled"]);
 
 export function repairActionForIssue(issue: Pick<QualityIssueInput, "code" | "sceneIndex">, stage: QualityStage): SuggestedAction {
   if (issueActions[issue.code]) return issueActions[issue.code];

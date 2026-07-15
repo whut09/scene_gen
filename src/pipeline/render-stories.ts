@@ -26,7 +26,7 @@ const forceSceneIndexes = forceRender
 const manifest = await readStoryManifest(manifestPath);
 const stories = typeof limit === "number" ? manifest.slice(0, limit) : manifest;
 const serveUrl = engine === "html-video" ? null : await bundleRemotion();
-const renderResults: Array<{ outputPath: string; metrics?: unknown }> = [];
+const renderResults: Array<{ outputPath: string; visualAuditPath?: string; metrics?: unknown }> = [];
 const controller = new AbortController();
 const cancel = () => controller.abort(new Error("HTML render process cancelled."));
 process.once("SIGINT", cancel);
@@ -43,7 +43,7 @@ try {
         remuxOnly,
         signal: controller.signal,
       });
-      renderResults.push({ outputPath, metrics: result.metrics });
+      renderResults.push({ outputPath, visualAuditPath: result.visualAuditPath, metrics: result.metrics });
     } else {
       await renderProject(project, story.outputPath, serveUrl as string);
       renderResults.push({ outputPath: story.outputPath });

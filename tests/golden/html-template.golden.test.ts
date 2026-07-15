@@ -5,6 +5,7 @@ import test from "node:test";
 import { chromium } from "playwright";
 import { createFixtureProject } from "../fixtures/project";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
+import { inspectSceneDom } from "../../src/html-video/visual-audit";
 
 test("selected title template screenshot stays visible, bounded, and non-blank", { timeout: 120_000 }, async () => {
   const project = createFixtureProject();
@@ -23,6 +24,7 @@ test("selected title template screenshot stays visible, bounded, and non-blank",
     const page = await browser.newPage({ viewport: { width: project.meta.width, height: project.meta.height }, deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
+    const visualAudit = await inspectSceneDom(page, { sceneIndex: 0, width: project.meta.width, height: project.meta.height, durationSec: scene.duration, headline: scene.headline });
     const outputDir = path.resolve("test-results", "golden");
     await mkdir(outputDir, { recursive: true });
     const screenshot = await page.screenshot({ path: path.join(outputDir, `${selection.template.id}-${selection.variantId}.png`), animations: "disabled" });
@@ -77,6 +79,7 @@ test("selected title template screenshot stays visible, bounded, and non-blank",
     assert.equal(layout.titleBounds.top >= 40 && layout.titleBounds.bottom <= project.meta.height - 40, true, JSON.stringify(layout.titleBounds));
     assert.equal(screenshot.length > 25_000, true, `Screenshot is suspiciously small: ${screenshot.length}`);
     assert.equal(pixels.colorRange > 80 && pixels.uniqueColors > 12, true, JSON.stringify(pixels));
+    assert.deepEqual(visualAudit.issues.filter((issue) => issue.severity === "error"), [], JSON.stringify(visualAudit.issues));
   } finally {
     await browser.close();
   }

@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const editorialStatGridTemplate: HtmlTemplateDefinition = {
   id: "editorial-stat-grid",
-  version: "1.2.0",
+  version: "1.2.1",
   name: "Editorial Stat Grid",
   description: "Asymmetric magazine layout that turns facts, metrics and points into a strong vertical composition.",
   engine: "html-video",
@@ -62,7 +62,7 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
       '.es-lead h2{font-size:40px;line-height:1.18;color:#062f50}.es-lead p{font-size:28px;color:#31546c;margin-top:14px}' +
       '.es-metrics{display:grid;grid-template-columns:1.15fr .85fr;grid-template-rows:repeat(2,150px);gap:14px;margin-top:18px}' +
       '.es-metric{padding:24px;background:#0b5bd3;color:white;display:flex;flex-direction:column;justify-content:space-between;animation:hv-rise .55s .16s both}' +
-      '.es-metric-0{grid-row:span 2;background:#082f75}.es-metric-1{background:#ff6961}.es-metric-2{background:#17a98b}' +
+      '.es-metric-0{grid-row:span 2;background:#082f75}.es-metric-1{background:#c83f3a}.es-metric-2{background:#087a67}' +
       '.es-metric span{font-size:23px;font-weight:800}.es-metric strong{font-size:54px;line-height:1;font-weight:950}' +
       '.es-points{list-style:none;padding:0;margin:20px 0 0;display:grid;gap:12px}' +
       '.es-points li{display:grid;grid-template-columns:72px 1fr;gap:18px;align-items:center;padding:20px 24px;background:rgba(255,255,255,.72);color:#153f59;animation:hv-rise .5s both}' +

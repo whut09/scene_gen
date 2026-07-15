@@ -1,4 +1,5 @@
-import { mkdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
 import type { VideoProject, VideoScene } from "../pipeline/types";
@@ -12,6 +13,8 @@ import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInp
 import { canonicalSpeechText } from "./speech-normalization";
 import { findFactConflicts, highRiskPredicatesInText, sceneFactText } from "../pipeline/fact-ledger";
 import { transcribeNarrationScenes, verifySceneTranscripts } from "./scene-audio-verification";
+import { analyzeFrameVisual } from "./frame-visual-analysis";
+import { readVisualAuditFile } from "../html-video/visual-audit";
 
 export type { QualityEvaluation, QualityIssue, QualityStage } from "./quality-protocol";
 
@@ -555,6 +558,7 @@ export async function evaluateVideo(
   expectedDuration?: number,
   sceneDurations: number[] = [],
   signal?: AbortSignal,
+  options: { visualAuditPath?: string; project?: VideoProject } = {},
 ): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
   const probe = await runCapture("ffprobe", [
@@ -599,12 +603,37 @@ export async function evaluateVideo(
     }
   }
 
+  let domAuditSceneCount = 0;
+  let domAuditIssueCount = 0;
+  if (options.visualAuditPath && existsSync(options.visualAuditPath)) {
+    try {
+      const visualAudit = await readVisualAuditFile(options.visualAuditPath);
+      domAuditSceneCount = visualAudit.scenes.length;
+      for (const scene of visualAudit.scenes) {
+        for (const issue of scene.issues) {
+          domAuditIssueCount += 1;
+          issues.push({ severity: issue.severity, code: issue.code, message: issue.message, sceneIndex: scene.sceneIndex, evidence: issue.evidence });
+        }
+      }
+    } catch (error) {
+      issues.push({ severity: "warning", code: "visual_audit_unavailable", message: `无法读取 DOM 视觉审计：${(error as Error).message}`, issueClass: "environment", repairAction: "check-environment", retryable: false });
+    }
+  }
+
   await mkdir(reportDir, { recursive: true });
-  const sampleTimes = [Math.min(4, duration / 4), duration / 2, Math.max(1, duration - 5)];
-  const sceneBoundaries = sceneDurations.reduce<number[]>((items, value) => [...items, (items.at(-1) ?? 0) + value], []);
-  const frameSizes: number[] = [];
-  for (const [index, sampleTime] of sampleTimes.entries()) {
-    const framePath = path.join(reportDir, `frame-${index + 1}.jpg`);
+  const effectiveSceneDurations = sceneDurations.length ? sceneDurations : [duration];
+  const frameMetrics: Array<{ sceneIndex: number; position: string; sampleTime: number; framePath: string; sizeBytes: number; lumaAverage: number; lumaRange: number; edgeDensity: number; blank: boolean }> = [];
+  let sceneStart = 0;
+  for (const [sceneIndex, sceneDuration] of effectiveSceneDurations.entries()) {
+    const startOffset = Math.min(Math.max(0.6, sceneDuration * 0.15), Math.max(0.05, sceneDuration * 0.3));
+    const samples = [
+      { position: "start", offset: startOffset },
+      { position: "middle", offset: sceneDuration * 0.5 },
+      { position: "end", offset: Math.max(0.05, sceneDuration * 0.88) },
+    ];
+    for (const sample of samples) {
+      const sampleTime = Math.min(Math.max(0, duration - 0.05), sceneStart + sample.offset);
+      const framePath = path.join(reportDir, `scene-${String(sceneIndex + 1).padStart(2, "0")}-${sample.position}.jpg`);
     await runCapture("ffmpeg", [
       "-y",
       "-ss",
@@ -617,11 +646,34 @@ export async function evaluateVideo(
       "2",
       framePath,
     ], signal);
-    const size = await stat(framePath).then((value) => value.size).catch(() => 0);
-    frameSizes.push(size);
-    if (size < 20_000) {
-      const sceneIndex = sceneBoundaries.findIndex((boundary) => sampleTime < boundary);
-      issues.push({ severity: "error", code: "blank_frame", message: `抽帧 ${index + 1} 可能为空白。`, ...(sceneIndex >= 0 ? { sceneIndex } : {}) });
+      const visual = await analyzeFrameVisual(framePath, signal);
+      frameMetrics.push({ sceneIndex, position: sample.position, sampleTime, framePath, ...visual });
+      if (visual.blank) {
+        issues.push({ severity: "error", code: "blank_frame", message: `第 ${sceneIndex + 1} 屏${sample.position}抽帧可能为空白。`, sceneIndex, evidence: { position: sample.position, sampleTime: Number(sampleTime.toFixed(3)), sizeBytes: visual.sizeBytes, lumaRange: visual.lumaRange, edgeDensity: visual.edgeDensity } });
+      } else if (visual.lumaRange < 14 && visual.edgeDensity < 0.012) {
+        issues.push({ severity: "warning", code: "frame_low_visual_complexity", message: `第 ${sceneIndex + 1} 屏${sample.position}画面视觉信息偏少。`, sceneIndex, evidence: { position: sample.position, lumaRange: visual.lumaRange, edgeDensity: visual.edgeDensity } });
+      }
+    }
+    sceneStart += sceneDuration;
+  }
+
+  let ocrVerifiedScenes = 0;
+  if (process.env.VIDEO_OCR_ENABLED === "1" && options.project) {
+    try {
+      const command = process.env.VIDEO_OCR_COMMAND ?? "tesseract";
+      for (const [sceneIndex, scene] of options.project.scenes.entries()) {
+        const frame = frameMetrics.find((item) => item.sceneIndex === sceneIndex && item.position === "middle");
+        if (!frame) continue;
+        const result = await runCapture(command, [frame.framePath, "stdout", "-l", process.env.VIDEO_OCR_LANGUAGE ?? "chi_sim+eng", "--psm", "6"], signal);
+        const expected = canonicalSpeechText(scene.headline);
+        const actual = canonicalSpeechText(result.stdout);
+        const tokens = expected.length < 2 ? [expected] : Array.from({ length: expected.length - 1 }, (_, index) => expected.slice(index, index + 2));
+        const coverage = tokens.filter((token) => actual.includes(token)).length / Math.max(1, tokens.length);
+        ocrVerifiedScenes += 1;
+        if (coverage < Number(process.env.VIDEO_OCR_KEY_TEXT_MIN ?? 0.45)) issues.push({ severity: "error", code: "key_text_ocr_missing", message: `第 ${sceneIndex + 1} 屏 OCR 未稳定识别关键标题。`, sceneIndex, evidence: { expected: scene.headline, transcript: result.stdout.trim(), coverage: Number(coverage.toFixed(3)) } });
+      }
+    } catch (error) {
+      issues.push({ severity: "warning", code: "ocr_verification_unavailable", message: `OCR 视觉验证不可用：${(error as Error).message}`, issueClass: "environment", repairAction: "check-environment", retryable: false });
     }
   }
 
@@ -637,7 +689,14 @@ export async function evaluateVideo(
       streamDelta,
       expectedDuration: expectedDuration ?? 0,
       projectDurationDelta: expectedDuration ? Math.abs(duration - expectedDuration) : 0,
-      minimumFrameSize: Math.min(...frameSizes),
+      minimumFrameSize: Math.min(...frameMetrics.map((frame) => frame.sizeBytes)),
+      minimumFrameLumaRange: Math.min(...frameMetrics.map((frame) => frame.lumaRange)),
+      minimumFrameEdgeDensity: Math.min(...frameMetrics.map((frame) => frame.edgeDensity)),
+      sceneFrameSampleCount: frameMetrics.length,
+      sceneFrameMetrics: JSON.stringify(frameMetrics.map(({ framePath: _framePath, ...frame }) => frame)),
+      domAuditSceneCount,
+      domAuditIssueCount,
+      ocrVerifiedScenes,
       sampledMotionFrames: motion.sampledFrames,
       activeMotionRatio: motion.activeMotionRatio,
       meanSceneChange: motion.meanSceneChange,
