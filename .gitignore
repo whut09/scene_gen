@@ -27,3 +27,4 @@ glasswing-web-video/url-news/
 .vite/
 .vite-temp/
 *.log
+test-results/

@@ -26,7 +26,7 @@ function normalizeOpeningText(text: string) {
   return text.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "").replace(/正式/g, "").toLowerCase();
 }
 
-function ensureTitleOpening(title: string, narration: string) {
+export function ensureTitleOpening(title: string, narration: string) {
   const spokenTitle = title.replace(/\s+/g, " ").trim().replace(/[。！？!?]+$/, "");
   const spokenNarration = narration.replace(/\s+/g, " ").trim();
   if (!spokenTitle) return spokenNarration;

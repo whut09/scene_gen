@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install system test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Type check
+        run: npm run lint:types
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Offline integration and media smoke
+        run: npm run test:offline
+      - name: HTML template screenshot golden
+        run: npm run test:golden
+      - name: Dependency audit
+        run: npm audit --audit-level=low
+      - name: Upload golden screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-template-golden
+          path: test-results/golden
+          if-no-files-found: ignore

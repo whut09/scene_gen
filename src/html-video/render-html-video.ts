@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { VideoProject } from "../pipeline/types";
+import type { VideoProject, VideoScene } from "../pipeline/types";
 import { ensureDir, fromRoot, slugify } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
 import { htmlVideoCacheSchema } from "../pipeline/schemas";
@@ -28,6 +28,27 @@ export interface HtmlVideoRenderResult {
   outputPath: string;
   graphPath: string;
   frames: RenderedFrame[];
+}
+
+export function createHtmlVideoCacheKey(input: {
+  scene: VideoScene;
+  templateId: string;
+  templateVersion: string;
+  variantId: string;
+  width: number;
+  height: number;
+  fps: number;
+}) {
+  const scene = { ...input.scene, duration: undefined };
+  return createHash("sha256").update(JSON.stringify({
+    scene,
+    templateId: input.templateId,
+    templateVersion: input.templateVersion,
+    variantId: input.variantId,
+    width: input.width,
+    height: input.height,
+    fps: input.fps,
+  })).digest("hex");
 }
 
 function run(command: string, args: string[]) {
@@ -292,8 +313,15 @@ export async function renderHtmlVideoProject(
     const htmlPath = path.join(workDir, `${node.id}-${template.id}.html`);
     const videoPath = path.join(workDir, `${node.id}-${template.id}.mp4`);
     const cachePath = `${videoPath}.cache.json`;
-    const sceneCacheData = { ...scene, duration: undefined };
-    const cacheKey = createHash("sha256").update(JSON.stringify({ scene: sceneCacheData, templateId: node.templateId, templateVersion: template.version, variantId: node.variantId, width: project.meta.width, height: project.meta.height, fps: project.meta.fps })).digest("hex");
+    const cacheKey = createHtmlVideoCacheKey({
+      scene,
+      templateId: node.templateId,
+      templateVersion: template.version,
+      variantId: node.variantId,
+      width: project.meta.width,
+      height: project.meta.height,
+      fps: project.meta.fps,
+    });
     await writeFile(htmlPath, html, "utf8");
     let detectedMotionSec = 0;
     let cacheHit = false;

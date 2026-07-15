@@ -1,5 +1,7 @@
 # Scene Gen
 
+测试、离线 smoke 与 CI 命令见 [`TESTING.md`](TESTING.md)。
+
 输入一篇新闻 URL，自动抓取正文、生成时长随新闻信息量自然变化的中文旁白与五段竖屏分镜，使用 F5-TTS 配音，默认经 HTML Video 模板精修并渲染为 1080x1920 MP4，并由质量 harness 检查脚本、音频、音画同步和最终视频。
 
 ## 5 分钟安装
