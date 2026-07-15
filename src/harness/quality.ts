@@ -584,10 +584,23 @@ export async function evaluateVideo(
     issues.push({ severity: "error", code: "wrong_dimensions", message: `成片尺寸不是 1080x1920。` });
   }
   if (expectedDuration && Math.abs(duration - expectedDuration) > 0.25) {
+    const videoDuration = Number(video?.duration ?? duration);
+    const audioDuration = Number(audio?.duration ?? duration);
+    const projectStreamDelta = Math.abs(videoDuration - audioDuration);
     issues.push({
       severity: "error",
       code: "video_project_duration_drift",
       message: `视频 ${duration.toFixed(3)} 秒，与项目音频 ${expectedDuration.toFixed(3)} 秒不一致。`,
+      evidence: {
+        actualDurationSeconds: duration,
+        expectedDurationSeconds: expectedDuration,
+        deltaSeconds: Math.abs(duration - expectedDuration),
+        videoStreamDurationSeconds: videoDuration,
+        audioStreamDurationSeconds: audioDuration,
+        streamDeltaSeconds: projectStreamDelta,
+        likelySource: projectStreamDelta > 0.2 ? "mux" : "unknown",
+        confidence: projectStreamDelta > 0.2 ? 0.92 : 0.72,
+      },
     });
   }
   const streamDelta = Math.abs(Number(video?.duration ?? duration) - Number(audio?.duration ?? duration));

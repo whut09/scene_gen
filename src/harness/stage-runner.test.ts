@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { RunJournalStore } from "./run-journal";
 import { runStage } from "./stage-runner";
+import { planRepair } from "./retry-policy";
 
 test("stage runner records input hashes and cancels timed out work", async () => {
   const runDir = await mkdtemp(path.join(tmpdir(), "scene-gen-stage-"));
@@ -28,6 +29,41 @@ test("stage runner records input hashes and cancels timed out work", async () =>
     assert.equal(stage?.suggestedAction, "retry-stage");
     assert.equal(stage?.issues[0].issueClass, "environment");
     assert.equal(stage?.issues[0].retryable, true);
+  } finally {
+    await rm(runDir, { recursive: true, force: true });
+  }
+});
+
+test("stage runner persists repair candidates and selected decision", async () => {
+  const runDir = await mkdtemp(path.join(tmpdir(), "scene-gen-repair-stage-"));
+  try {
+    const journal = await RunJournalStore.create(runDir, {
+      runId: "repair-stage-test",
+      url: "https://example.com",
+      config: { targetSeconds: 10, maxIterations: 1, engine: "html-video", outputDir: runDir, screenshotLimit: 0 },
+    });
+    const repairPlan = planRepair("video", [{
+      severity: "error", code: "video_project_duration_drift", message: "drift",
+      evidence: { likelySource: "concat", confidence: 0.9 },
+    }], undefined, 5);
+    await runStage({
+      journal,
+      name: "video-gate",
+      attempt: 1,
+      inputs: { outputPath: "video.mp4" },
+      timeoutMs: 1_000,
+      task: async () => repairPlan,
+      describe: (value) => ({
+        suggestedAction: value.action,
+        dirtyPlan: value.dirtyPlan,
+        repairCandidates: value.candidates,
+        repairDecision: value.decision,
+      }),
+    });
+    const stage = journal.snapshot().stages.at(-1);
+    assert.equal(stage?.repairDecision?.selectedAction, "reconcat-video");
+    assert.equal(stage?.repairCandidates?.length, 2);
+    assert.equal(stage?.repairCandidates?.[0].utility >= stage?.repairCandidates?.[1].utility!, true);
   } finally {
     await rm(runDir, { recursive: true, force: true });
   }

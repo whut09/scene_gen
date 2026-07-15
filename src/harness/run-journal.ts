@@ -3,13 +3,14 @@ import { z } from "zod";
 import { readJson, writeJsonAtomic } from "../pipeline/utils";
 import type { StageResult } from "./stage-types";
 import { dirtyPlanSchema } from "./dirty-plan";
+import { repairActionSchema, repairCandidateSchema, repairDecisionSchema } from "./repair-candidate";
 
 const stageStatusSchema = z.enum(["pending", "running", "succeeded", "failed", "skipped"]);
 const stageNameSchema = z.enum([
   "ingest", "draft", "draft-gate", "revise", "synthesize", "audio-gate", "render", "video-gate", "publish",
   "generate", "revise-draft", "synthesize-audio", "revise-audio",
 ]);
-const suggestedActionSchema = z.enum(["none", "regenerate-draft", "revise-scenes", "retry-stage", "check-environment", "resynthesize-audio", "remux", "rerender-scenes", "switch-template", "stop"]);
+const suggestedActionSchema = repairActionSchema;
 
 const stageIssueSchema = z.object({
   severity: z.enum(["warning", "error"]),
@@ -35,6 +36,8 @@ const runStageSchema = z.object({
   issues: z.array(stageIssueSchema).default([]),
   metrics: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
   dirtyPlan: dirtyPlanSchema.optional(),
+  repairCandidates: z.array(repairCandidateSchema).optional(),
+  repairDecision: repairDecisionSchema.optional(),
   suggestedAction: suggestedActionSchema.default("none"),
   error: z.string().optional(),
 });

@@ -1,13 +1,11 @@
 import { z } from "zod";
 import type { SuggestedAction } from "./stage-types";
+import { repairActionSchema } from "./repair-candidate";
 
 export const qualityStageSchema = z.enum(["draft", "audio", "video"]);
 export const issueSeveritySchema = z.enum(["warning", "error"]);
 export const issueClassSchema = z.enum(["soft", "hard", "environment"]);
-export const repairActionSchema = z.enum([
-  "none", "regenerate-draft", "revise-scenes", "retry-stage", "check-environment",
-  "resynthesize-audio", "remux", "rerender-scenes", "switch-template", "stop",
-]);
+export { repairActionSchema } from "./repair-candidate";
 export const issueEvidenceSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]));
 
 export const qualityIssueSchema = z.object({

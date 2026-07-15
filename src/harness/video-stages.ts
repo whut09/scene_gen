@@ -251,6 +251,11 @@ export async function runPublishStage(input: {
     ...input.iterations.flatMap((iteration) => (iteration.audits ?? []).map((audit) => audit.dirtyPlan)),
     planRepair("video", input.video.issues, input.video.profile, input.project.scenes.length).dirtyPlan,
   );
+  const journal = await readJson<{ stages?: Array<{ name?: string; attempt?: number; repairCandidates?: unknown; repairDecision?: unknown }> }>(input.journalPath)
+    .catch(() => ({ stages: [] }));
+  const repairDecisions = (journal.stages ?? [])
+    .filter((stage) => stage.repairDecision)
+    .map((stage) => ({ stage: stage.name, attempt: stage.attempt, decision: stage.repairDecision, candidates: stage.repairCandidates ?? [] }));
   await mkdir(input.reportDir, { recursive: true });
   const productionReportPath = path.join(input.reportDir, "production-report.json");
   const reportPath = path.join(input.reportDir, "report.json");
@@ -322,6 +327,7 @@ export async function runPublishStage(input: {
     iterations: input.iterations,
     video: input.video,
     dirtyPlan,
+    repairDecisions,
     production,
     templateLearning,
     providerHistory,
@@ -338,6 +344,7 @@ export async function runPublishStage(input: {
     `- Passed: ${passed}`,
     `- Feedback applied: ${input.feedback.length}`,
     `- Dirty plan: ${JSON.stringify(dirtyPlan)}`,
+    `- Repair decisions: ${repairDecisions.length}`,
     "",
     ...input.iterations.flatMap((item) => [
       `## Iteration ${item.iteration}`,
@@ -346,6 +353,7 @@ export async function runPublishStage(input: {
       ...(item.audits ?? []).map((audit) => `- Loop audit ${audit.stage}: ${audit.progress}; patch=${audit.patch.length}; resolved=${audit.resolvedIssues.join(",") || "none"}; new=${audit.newIssues.join(",") || "none"}; tokens=${audit.cost.totalTokens}; durationMs=${audit.cost.durationMs}`),
       "",
     ]),
+    ...repairDecisions.map((item) => `- Repair decision ${item.stage}#${item.attempt}: ${JSON.stringify(item.decision)}`),
     "## Production Decisions",
     `- Visual source mix: ${JSON.stringify(production.summary.sourceMix)}`,
     `- Enabled providers: ${production.summary.enabledProviders.join(", ")}`,

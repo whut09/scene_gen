@@ -20,6 +20,7 @@ export type SuggestedAction =
   | "check-environment"
   | "resynthesize-audio"
   | "remux"
+  | "reconcat-video"
   | "rerender-scenes"
   | "switch-template"
   | "stop";
@@ -44,6 +45,8 @@ export interface StageResult {
   issues: StageIssue[];
   metrics: Record<string, string | number | boolean>;
   dirtyPlan?: DirtyPlan;
+  repairCandidates?: RepairCandidate[];
+  repairDecision?: RepairDecision;
   durationMs: number;
   attempt: number;
   suggestedAction: SuggestedAction;
@@ -71,3 +74,4 @@ export function stageIndex(stage: VideoStageName) {
   return videoStageOrder.indexOf(stage);
 }
 import type { DirtyPlan } from "./dirty-plan";
+import type { RepairCandidate, RepairDecision } from "./repair-candidate";

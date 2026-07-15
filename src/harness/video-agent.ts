@@ -217,7 +217,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         journal, name: "draft-gate", attempt: nextAttempt(journal, "draft-gate"),
         inputs: { project: state.project, targetSeconds, feedback: ingest.feedbackGuidance }, timeoutMs: Number(process.env.HARNESS_DRAFT_GATE_TIMEOUT_MS ?? 150_000), signal,
         task: (stageSignal) => runDraftGateStage(state.project as VideoProject, targetSeconds, ingest.feedbackGuidance, stageSignal),
-        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan }),
+        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan, repairCandidates: value.repairPlan.candidates, repairDecision: value.repairPlan.decision }),
       });
       gate.value.evaluation.metrics.projectHash = projectLoopHash(state.project);
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-draft.json`);
@@ -314,7 +314,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       const gate: { value: GateStageOutput; result: StageResult } = await runStage<GateStageOutput>({
         journal, name: "audio-gate", attempt: nextAttempt(journal, "audio-gate"), inputs: { project: state.project, targetSeconds }, timeoutMs: Number(process.env.HARNESS_AUDIO_GATE_TIMEOUT_MS ?? 360_000), signal,
         task: (stageSignal) => runAudioGateStage(state.project as VideoProject, targetSeconds, stageSignal),
-        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan }),
+        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan, repairCandidates: value.repairPlan.candidates, repairDecision: value.repairPlan.decision }),
       });
       gate.value.evaluation.metrics.projectHash = audioLoopHash(state.project, state.project.audio?.metrics?.audioGenerationKey);
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-audio.json`);
@@ -406,7 +406,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         const gate = await runStage({
           journal, name: "video-gate", attempt: nextAttempt(journal, "video-gate"), inputs: { outputPath: state.story.outputPath, project: state.project }, timeoutMs: Number(process.env.HARNESS_VIDEO_GATE_TIMEOUT_MS ?? 480_000), signal,
           task: (stageSignal) => runVideoGateStage({ story: state.story!, project: state.project!, reportDir, signal: stageSignal, repairAttempt: videoAttempt }),
-          describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan }),
+          describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan, repairCandidates: value.repairPlan.candidates, repairDecision: value.repairPlan.decision }),
         });
         gate.value.evaluation.metrics.remuxedVideo = remuxedVideo;
         Object.assign(gate.value.evaluation.metrics, lastRenderMetrics);
@@ -420,6 +420,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         forceRender = gate.value.repairPlan.forceVideoRebuild && !forceSceneIndexes?.length;
         pendingMuxRequired = gate.value.repairPlan.muxRequired;
         remuxOnly = pendingMuxRequired && engine === "html-video" && Boolean(silentVideoPath) && existsSync(silentVideoPath);
+        if (gate.value.repairPlan.action === "reconcat-video") remuxOnly = false;
       }
     }
 
