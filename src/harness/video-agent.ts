@@ -427,7 +427,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     const publish = await runStage({
       journal, name: "publish", attempt: nextAttempt(journal, "publish"), inputs: { iterations: state.iterations, video: state.video }, timeoutMs: 60_000, signal,
       task: () => runPublishStage({ runId, journalPath: journal.filePath, url, story: state.story!, project: state.project!, manifestPath: state.manifestPath!, targetSeconds, maxIterations, engine, feedback: ingest.feedback, iterations: state.iterations, video: state.video!, reportDir }),
-      describe: (value) => ({ outputs: { reportPath: value.reportPath, markdownPath: value.markdownPath, productionReportPath: value.productionReportPath, templateOutcomeFile: value.templateLearning.filePath }, metrics: { passed: value.passed, templateOutcomesRecorded: value.templateLearning.recorded } }),
+      describe: (value) => ({ outputs: { reportPath: value.reportPath, markdownPath: value.markdownPath, productionReportPath: value.productionReportPath, templateOutcomeFile: value.templateLearning.filePath }, metrics: { passed: value.passed, templateOutcomesRecorded: value.templateLearning.recorded, providerOutcomesRecorded: value.providerHistory.recorded } }),
     });
     await journal.setArtifacts({ qualityReport: publish.value.reportPath, qualityReportMarkdown: publish.value.markdownPath, productionReport: publish.value.productionReportPath });
     if (publish.value.passed) await journal.succeed();

@@ -355,6 +355,8 @@ LLM draft 使用“候选规划 → 确定性否决与重排 → 最佳方案展
 
 HTML 模板选择使用“规则候选过滤 → 历史质量重排 → 受控探索”。重排器综合内容领域、场景意图、字数和数据量、素材可用性、历史 blank/overflow/static 风险、质量分、用户反馈、渲染耗时与缓存命中率。运行结果追加到 `data/template-learning/outcomes.jsonl`，生产报告保存规则分、学习修正和最终分；维护与调参说明见 [`docs/TEMPLATE_LEARNING.md`](docs/TEMPLATE_LEARNING.md)。
 
+Provider 选择使用滚动运行历史计算成功率、P50/P95 延迟、timeout/重试率、实际单位成本、上下文质量、发音准确率、健康状态和连续失败次数。`fast-preview` 偏向低延迟，`production` 偏向质量与可靠性；不健康 API 会被主动淘汰，F5 出现显存压力或近期 CUDA OOM 时会降为单 worker 或切换 provider。每次候选分数和淘汰原因写入 production report，详见 [`docs/PROVIDER_SELECTION.md`](docs/PROVIDER_SELECTION.md)。
+
 ## 安全约定
 
 - 不提交真实 API key、账号密码、`.env.local` 或 `*.local.json`。

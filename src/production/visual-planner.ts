@@ -1,5 +1,5 @@
 import type { NarrationSegment, VideoProject, VideoScene } from "../pipeline/types";
-import { selectProvider } from "./provider-registry";
+import { selectProviderWithAudit } from "./provider-registry";
 import type { ProductionDecision, SyncCue, VisualPlan, VisualSource } from "./types";
 import { selectTemplatesForProject } from "../templates/template-registry";
 
@@ -23,16 +23,18 @@ function compactQueries(project: VideoProject, scene: VideoScene) {
   return [...new Set([scene.type === "title" ? project.meta.title : scene.headline, ...entities])].map(String).filter((value) => value.length >= 2).slice(0, 4);
 }
 
-function available(source: VisualSource) {
-  if (source === "stock-video") return selectProvider("stock-video", ["pexels", "pixabay"]);
-  if (source === "generated-image") return selectProvider("image", ["openai-image"]);
-  if (source === "generated-video") return selectProvider("video", ["kling"]);
-  if (source === "web-screenshot" || source === "github-ui") return selectProvider("browser", ["playwright"]);
-  return selectProvider("programmatic", ["html-video", "remotion"]);
+function available(source: VisualSource, domain: string) {
+  const context = { domain };
+  if (source === "stock-video") return selectProviderWithAudit("stock-video", ["pexels", "pixabay"], context);
+  if (source === "generated-image") return selectProviderWithAudit("image", ["openai-image"], context);
+  if (source === "generated-video") return selectProviderWithAudit("video", ["kling"], context);
+  if (source === "web-screenshot" || source === "github-ui") return selectProviderWithAudit("browser", ["playwright"], context);
+  return selectProviderWithAudit("programmatic", ["html-video", "remotion"], context);
 }
 
 export function planVisualSource(project: VideoProject, scene: VideoScene): VisualPlan {
   const source = project.sources[0];
+  const domain = source?.kind === "github" ? "software" : source?.domain ?? source?.tags?.[0] ?? "general";
   const isGithub = source?.kind === "github" || Boolean(source?.repo);
   const text = textForScene(scene);
   let desired: VisualSource = "programmatic";
@@ -44,9 +46,11 @@ export function planVisualSource(project: VideoProject, scene: VideoScene): Visu
   else if (scene.type === "title" && /概念|未来|战略|竞争/.test(text)) { desired = "generated-image"; rationale.push("opening concept can use a generated editorial key visual"); }
   else rationale.push("programmatic layout preserves factual precision and editability");
 
-  const selected = available(desired);
+  const selectedResult = available(desired, domain);
+  const selected = selectedResult.selected;
   const fallbackSource: VisualSource = "programmatic";
-  const fallback = available(fallbackSource);
+  const fallbackResult = available(fallbackSource, domain);
+  const fallback = fallbackResult.selected;
   if (!selected) rationale.push(desired + " provider is unavailable; deterministic fallback selected");
   const actualSource = selected ? desired : fallbackSource;
   const provider = selected ?? fallback;
@@ -59,6 +63,8 @@ export function planVisualSource(project: VideoProject, scene: VideoScene): Visu
     rationale,
     motionTargets: scene.type === "title" ? 3 : scene.type === "signal_chart" || scene.type === "flow" ? 5 : 4,
     expectedMotionRatio: scene.type === "web_screenshot_zoom" ? 0.72 : scene.type === "title" ? 0.58 : 0.46,
+    providerSelection: selectedResult.audit,
+    fallbackSelection: fallbackResult.audit,
   };
 }
 

@@ -7,6 +7,7 @@ import { highRiskPredicatesInText } from "./fact-ledger";
 import { storyPlanResponseSchema } from "./schemas";
 import type { FactLedger, StoryPlanCandidate, StoryPlanRanking, StoryPlanningAudit, VideoProject } from "./types";
 import { fromRoot } from "./utils";
+import { recordProviderOutcome } from "../production/provider-stats";
 
 const expectedVisuals = ["title", "briefing", "chart", "flow", "outro"] as const;
 const historySchema = z.object({ fingerprint: z.string().length(64), succeeded: z.boolean(), scoreDelta: z.number().default(0), createdAt: z.string() });
@@ -124,20 +125,30 @@ export async function planStoryCandidates(input: {
       ],
     }),
   }, { signal: input.signal, label: "story-planning", timeoutMs: Number(process.env.NEWS_LLM_TIMEOUT_MS ?? 120_000) });
-  if (!response.ok) throw new Error(`Story planning failed: ${response.status} ${await response.text()}`);
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { total_tokens?: number } };
-  const content = payload.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Story planning returned no content.");
-  const candidates = storyPlanResponseSchema.parse(JSON.parse(content)).candidates;
-  if (candidates.length !== requestedCandidates) throw new Error(`Story planning returned ${candidates.length}/${requestedCandidates} candidates.`);
-  const rankings = rankStoryPlanCandidates(candidates, input.project.factLedger, input.targetSeconds, await readHistory());
-  const selected = rankings.find((ranking) => ranking.rejectedReasons.length === 0);
-  if (!selected) throw new Error(`Every story plan was deterministically rejected: ${rankings.map((ranking) => `${ranking.candidate.id}[${ranking.rejectedReasons.join(",")}]`).join("; ")}`);
-  const audit: StoryPlanningAudit = {
-    profile, requestedCandidates, selectedCandidateId: selected.candidate.id, planningMs: Date.now() - started,
-    planningTokens: payload.usage?.total_tokens ?? 0, expansionTokens: 0, rankings,
-  };
-  return { selected: selected.candidate, audit };
+  if (!response.ok) {
+    await recordProviderOutcome({ providerId: "news-llm", capability: "llm", operation: "story-planning", success: false, latencyMs: Date.now() - started, timeout: false, retryCount: 0, cost: 0, unitKind: "requests", unitCount: 1, language: "zh-CN", domain: input.project.sources[0]?.domain ?? input.project.sources[0]?.tags?.[0] ?? "general", errorType: `http_${response.status}` }).catch(() => undefined);
+    throw new Error(`Story planning failed: ${response.status} ${await response.text()}`);
+  }
+  try {
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { total_tokens?: number } };
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content) throw new Error("Story planning returned no content.");
+    const candidates = storyPlanResponseSchema.parse(JSON.parse(content)).candidates;
+    if (candidates.length !== requestedCandidates) throw new Error(`Story planning returned ${candidates.length}/${requestedCandidates} candidates.`);
+    const rankings = rankStoryPlanCandidates(candidates, input.project.factLedger, input.targetSeconds, await readHistory());
+    const selected = rankings.find((ranking) => ranking.rejectedReasons.length === 0);
+    if (!selected) throw new Error(`Every story plan was deterministically rejected: ${rankings.map((ranking) => `${ranking.candidate.id}[${ranking.rejectedReasons.join(",")}]`).join("; ")}`);
+    const tokens = payload.usage?.total_tokens ?? 0;
+    const audit: StoryPlanningAudit = {
+      profile, requestedCandidates, selectedCandidateId: selected.candidate.id, planningMs: Date.now() - started,
+      planningTokens: tokens, expansionTokens: 0, rankings,
+    };
+    await recordProviderOutcome({ providerId: "news-llm", capability: "llm", operation: "story-planning", success: true, latencyMs: Date.now() - started, timeout: false, retryCount: 0, cost: tokens / 1000 * Number(process.env.NEWS_LLM_COST_PER_1K_TOKENS ?? 0), unitKind: "requests", unitCount: 1, qualityScore: selected.scores.total / 100, language: "zh-CN", domain: input.project.sources[0]?.domain ?? input.project.sources[0]?.tags?.[0] ?? "general" }).catch(() => undefined);
+    return { selected: selected.candidate, audit };
+  } catch (error) {
+    await recordProviderOutcome({ providerId: "news-llm", capability: "llm", operation: "story-planning", success: false, latencyMs: Date.now() - started, timeout: /timeout/i.test((error as Error).message), retryCount: 0, cost: 0, unitKind: "requests", unitCount: 1, language: "zh-CN", domain: input.project.sources[0]?.domain ?? input.project.sources[0]?.tags?.[0] ?? "general", errorType: "invalid_response" }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function recordStoryPlanOutcome(project: VideoProject, succeeded: boolean, scoreDelta = 0) {

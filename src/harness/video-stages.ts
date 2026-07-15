@@ -16,6 +16,8 @@ import { recordStoryPlanOutcome } from "../pipeline/story-planner";
 import type { HtmlVideoContentGraph } from "../html-video/content-graph";
 import { readVisualAuditFile } from "../html-video/visual-audit";
 import { recordTemplateOutcomes } from "../templates/template-learning";
+import { recordProviderOutcome } from "../production/provider-stats";
+import { findTtsPronunciations } from "../pipeline/tts-pronunciation";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -270,6 +272,40 @@ export async function runPublishStage(input: {
       feedback: input.feedback,
     }).catch(() => ({ recorded: 0, filePath: "" }))
     : { recorded: 0, filePath: "" };
+  const audioProviderId = input.project.audio?.provider === "openai" ? "openai-tts"
+    : input.project.audio?.provider === "f5" ? "f5"
+      : input.project.audio?.provider === "local" ? "local-tts" : undefined;
+  const providerOperations = [
+    audioProviderId && finalAudio ? recordProviderOutcome({
+      runId: input.runId, providerId: audioProviderId, capability: "tts", operation: "narration-quality",
+      success: finalAudio.passed, latencyMs: Number(input.project.audio?.metrics?.synthesisMs ?? 0) + Number(input.project.audio?.metrics?.workerStartupMs ?? 0),
+      timeout: finalAudio.issues.some((issue) => issue.code === "asr_verification_failed" && /timeout/i.test(issue.message)),
+      retryCount: Math.max(0, Number(input.project.audio?.metrics?.workerStartCount ?? 1) - 1), cost: 0,
+      unitKind: "chars", unitCount: [...input.project.narration].length,
+      qualityScore: Math.max(0, Math.min(1, 1 - finalAudio.issues.filter((issue) => issue.severity === "error").length * 0.2 - finalAudio.issues.filter((issue) => issue.severity === "warning").length * 0.05)),
+      pronunciationAccurate: findTtsPronunciations(input.project.narration).length
+        ? !finalAudio.issues.some((issue) => issue.code === "audio_pronunciation_mismatch")
+        : undefined,
+      language: "zh-CN", domain: input.project.sources[0]?.domain ?? input.project.sources[0]?.tags?.[0] ?? "general",
+      device: audioProviderId === "f5" ? process.env.F5_TTS_DEVICE ?? "auto" : undefined,
+    }) : undefined,
+    recordProviderOutcome({
+      runId: input.runId, providerId: input.engine, capability: "programmatic", operation: "video-render",
+      success: input.video.passed, latencyMs: Number(input.video.metrics.totalRenderMs ?? 0), timeout: input.video.issues.some((issue) => /timeout/i.test(issue.code + issue.message)),
+      retryCount: Math.max(0, input.iterations.length - 1), cost: 0, unitKind: "seconds", unitCount: input.project.meta.durationSeconds,
+      qualityScore: Math.max(0, Math.min(1, 1 - input.video.issues.filter((issue) => issue.severity === "error").length * 0.2 - input.video.issues.filter((issue) => issue.severity === "warning").length * 0.05)),
+      language: "zh-CN", domain: input.project.sources[0]?.domain ?? input.project.sources[0]?.tags?.[0] ?? "general",
+    }),
+    input.project.narrationSegments?.some((segment) => segment.speechAlignment) ? recordProviderOutcome({
+      runId: input.runId, providerId: "whisper", capability: "alignment", operation: "speech-alignment",
+      success: input.project.narrationSegments.some((segment) => segment.speechAlignment?.status === "forced"), latencyMs: 0, timeout: false, retryCount: 0, cost: 0,
+      unitKind: "seconds", unitCount: input.project.audio?.durationSeconds ?? input.project.meta.durationSeconds,
+      qualityScore: input.project.narrationSegments.reduce((sum, segment) => sum + (segment.speechAlignment?.confidence ?? 0), 0) / Math.max(1, input.project.narrationSegments.length),
+      language: "zh-CN", domain: input.project.sources[0]?.domain ?? input.project.sources[0]?.tags?.[0] ?? "general",
+    }) : undefined,
+  ].filter((operation) => operation !== undefined);
+  const providerOutcomeResults = await Promise.all(providerOperations).catch(() => []);
+  const providerHistory = { recorded: providerOutcomeResults.length };
   await writeFile(productionReportPath, `${JSON.stringify(production, null, 2)}\n`, "utf8");
   await writeJsonAtomic(reportPath, {
     createdAt: new Date().toISOString(),
@@ -288,6 +324,7 @@ export async function runPublishStage(input: {
     dirtyPlan,
     production,
     templateLearning,
+    providerHistory,
     passed,
   });
   const markdown = [
@@ -312,6 +349,9 @@ export async function runPublishStage(input: {
     "## Production Decisions",
     `- Visual source mix: ${JSON.stringify(production.summary.sourceMix)}`,
     `- Enabled providers: ${production.summary.enabledProviders.join(", ")}`,
+    `- Degraded providers: ${production.summary.degradedProviders.join(", ") || "none"}`,
+    `- Unhealthy providers: ${production.summary.unhealthyProviders.join(", ") || "none"}`,
+    ...production.providerSelections.map((selection) => `- Provider selection ${selection.capability}: selected=${selection.selectedProviderId ?? "none"}; candidates=${selection.candidates.map((candidate) => `${candidate.providerId}[score=${candidate.score}; eliminated=${candidate.eliminated}; ${candidate.reasons.join("|")}]`).join("; ")}`),
     `- Alignment: ${production.summary.wordAlignment}`,
     `- Aligned cues: ${production.summary.alignedCueCount}/${production.summary.alignedCueCount + production.summary.estimatedCueCount}`,
     `- Alignment coverage: ${(production.summary.alignmentCoverage * 100).toFixed(1)}%`,
@@ -320,6 +360,7 @@ export async function runPublishStage(input: {
     `- Template learned adjustment: ${production.summary.averageTemplateLearnedAdjustment.toFixed(3)}`,
     `- Template history samples: ${production.summary.templateHistorySamples}`,
     `- Template outcomes recorded: ${templateLearning.recorded}`,
+    `- Provider outcomes recorded: ${providerHistory.recorded}`,
     ...production.decisions.map((decision) => `- Scene ${decision.sceneIndex + 1} template: ${decision.templateSelection.templateId}:${decision.templateSelection.variantId}; rule=${decision.templateSelection.ruleScore}; learned=${decision.templateSelection.learnedAdjustment}; final=${decision.templateSelection.score}; history=${decision.templateSelection.history.scope}:${decision.templateSelection.history.samples}; explored=${decision.templateSelection.explored}`),
     ...(production.storyPlanning ? [
       `- Story plan: ${production.storyPlanning.selectedCandidateId}; candidates=${production.storyPlanning.requestedCandidates}; score=${production.storyPlanning.rankings.find((ranking) => ranking.candidate.id === production.storyPlanning?.selectedCandidateId)?.scores.total ?? 0}`,
@@ -333,7 +374,7 @@ export async function runPublishStage(input: {
   await writeFile(markdownPath, markdown, "utf8");
   await recordFeedbackOutcome(input.feedback.map((entry) => entry.fingerprint), passed).catch(() => undefined);
   await recordStoryPlanOutcome(input.project, passed, Number(finalDraft?.metrics.scoreAverage ?? 0) - 78).catch(() => undefined);
-  return { passed, reportPath, markdownPath, productionReportPath, templateLearning };
+  return { passed, reportPath, markdownPath, productionReportPath, templateLearning, providerHistory };
 }
 
 export function narrationBasename(runId: string, project: VideoProject) {

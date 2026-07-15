@@ -230,6 +230,7 @@ export interface VideoProject {
       reusedAudioSceneIndexes: string;
       concatenatedAudio: boolean;
       audioGenerationKey: string;
+      providerSelection: string;
     };
     sceneCacheSalts?: Record<string, string>;
   };

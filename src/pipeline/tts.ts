@@ -8,10 +8,13 @@ import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
 import { fetchWithRetry } from "./external-operation";
 import { resolveF5PythonCommand, resolveF5ReferenceAudio } from "../runtime/runtime-paths";
 import { createF5NarrationCacheMetadata } from "./tts-cache";
-import { applyTtsSpokenFallbacks, loadTtsPronunciationLexicon, pronunciationCacheHash } from "./tts-pronunciation";
+import { applyTtsSpokenFallbacks, findTtsPronunciations, loadTtsPronunciationLexicon, pronunciationCacheHash } from "./tts-pronunciation";
 import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
 import { F5WorkerPool, resolveF5WorkerDevices } from "./f5-worker-pool";
 import { getOrCreateMediaCache } from "../cache/media-cache";
+import { selectProviderWithAudit } from "../production/provider-registry";
+import { recordProviderOutcome } from "../production/provider-stats";
+import type { ProviderSelectionAudit } from "../production/types";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
@@ -46,6 +49,7 @@ function emptySynthesisMetrics(): TtsSynthesisMetrics {
     reusedAudioSceneIndexes: "",
     concatenatedAudio: false,
     audioGenerationKey: "",
+    providerSelection: "{}",
   };
 }
 
@@ -321,7 +325,7 @@ async function f5TtsCli(text: string, outputPath: string, speedOverride?: string
   });
 }
 
-async function createF5Runtime() {
+async function createF5Runtime(limitToSingleWorker = false) {
   const refAudio = resolveF5RefAudio();
   if (!refAudio) throw new Error("F5 reference audio is not configured. Set F5_TTS_REF_AUDIO or F5_TTS_VENV.");
   const refText = await resolveF5RefText(refAudio);
@@ -330,7 +334,7 @@ async function createF5Runtime() {
     pythonCommand: resolveF5Python(),
     workerScript: process.env.F5_TTS_WORKER_SCRIPT,
     model: process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base",
-    devices: resolveF5WorkerDevices(),
+    devices: limitToSingleWorker ? resolveF5WorkerDevices().slice(0, 1) : resolveF5WorkerDevices(),
     refAudio,
     refText,
     lexiconPath: pronunciationLexicon.filePath,
@@ -385,9 +389,72 @@ async function f5TtsWorker(
   });
 }
 
-function resolveTtsProvider(): TtsProvider {
-  const provider = process.env.TTS_PROVIDER ?? (process.env.OPENAI_API_KEY ? "openai" : "local");
-  return provider === "openai" || provider === "f5" ? provider : "local";
+function ttsProviderId(provider: TtsProvider) {
+  return provider === "openai" ? "openai-tts" : provider === "f5" ? "f5" : "local-tts";
+}
+
+function providerFromId(providerId?: string): TtsProvider {
+  if (providerId === "f5") return "f5";
+  if (providerId === "openai-tts") return "openai";
+  return "local";
+}
+
+function ttsDomain(project: VideoProject) {
+  const source = project.sources[0];
+  if (source?.kind === "github" || source?.repo) return "software";
+  return source?.domain ?? source?.tags?.[0] ?? "general";
+}
+
+function resolveTtsProvider(project: VideoProject, explicit?: TtsProvider) {
+  const configuredProvider = explicit ?? (process.env.TTS_PROVIDER === "openai" || process.env.TTS_PROVIDER === "f5" || process.env.TTS_PROVIDER === "local"
+    ? process.env.TTS_PROVIDER
+    : undefined);
+  const profilePreference = process.env.SCENE_GEN_PROFILE === "local-f5"
+    ? ["f5", "openai-tts", "local-tts"]
+    : process.env.SCENE_GEN_PROFILE === "production" || process.env.SCENE_GEN_PROFILE === "openai-tts"
+      ? ["openai-tts", "f5", "local-tts"]
+      : ["openai-tts", "f5", "local-tts"];
+  const preferred = configuredProvider
+    ? [ttsProviderId(configuredProvider), ...profilePreference.filter((providerId) => providerId !== ttsProviderId(configuredProvider))]
+    : profilePreference;
+  const result = selectProviderWithAudit("tts", preferred, {
+    language: "zh-CN",
+    domain: ttsDomain(project),
+    device: process.env.F5_TTS_DEVICE ?? "auto",
+    highRiskTerms: findTtsPronunciations(project.narration).length > 0,
+    memoryPressure: process.env.F5_GPU_MEMORY_PRESSURE === "1",
+  });
+  if (explicit) {
+    result.audit.selectedProviderId = ttsProviderId(explicit);
+    result.audit.candidates.find((candidate) => candidate.providerId === ttsProviderId(explicit))?.reasons.unshift("explicit provider option");
+    return { provider: explicit, audit: result.audit };
+  }
+  return { provider: providerFromId(result.selected?.id), audit: result.audit };
+}
+
+function providerErrorType(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/out of memory|cuda oom|cuda.*memory/i.test(message)) return "cuda_oom";
+  if (/timed?\s*out|timeout/i.test(message)) return "timeout";
+  if (/429/.test(message)) return "rate_limit";
+  if (/5\d\d/.test(message)) return "server_error";
+  return "operation_failed";
+}
+
+function providerCost(provider: TtsProvider, characters: number) {
+  if (provider !== "openai") return 0;
+  return characters / 1000 * Math.max(0, Number(process.env.OPENAI_TTS_COST_PER_1K_CHARS ?? 0.015));
+}
+
+async function recordTtsProviderResult(input: { provider: TtsProvider; project: VideoProject; startedAt: number; success: boolean; error?: unknown; retryCount?: number }) {
+  await recordProviderOutcome({
+    providerId: ttsProviderId(input.provider), capability: "tts", operation: "narration-synthesis", success: input.success,
+    latencyMs: Date.now() - input.startedAt, timeout: providerErrorType(input.error) === "timeout", retryCount: input.retryCount ?? 0,
+    cost: input.success ? providerCost(input.provider, [...input.project.narration].length) : 0,
+    unitKind: "chars", unitCount: [...input.project.narration].length,
+    language: "zh-CN", domain: ttsDomain(input.project), device: input.provider === "f5" ? process.env.F5_TTS_DEVICE ?? "auto" : undefined,
+    errorType: input.success ? undefined : providerErrorType(input.error),
+  }).catch(() => undefined);
 }
 
 function providerExtension(provider: TtsProvider) {
@@ -780,9 +847,11 @@ export interface AttachNarrationAudioOptions {
 }
 
 export async function attachNarrationAudio(project: VideoProject, basename = "narration", options: AttachNarrationAudioOptions = {}) {
+  const startedAt = Date.now();
   const generatedDir = options.generatedDir ?? fromRoot("public", "generated");
   await ensureDir(generatedDir);
-  const provider = options.provider ?? resolveTtsProvider();
+  const selection = resolveTtsProvider(project, options.provider);
+  const provider = selection.provider;
   const allSceneIndexes = project.scenes.map((_, index) => index);
   const forceSceneIndexes = options.forceAudioRebuild
     ? options.forceSceneIndexes?.length ? options.forceSceneIndexes : allSceneIndexes
@@ -792,9 +861,21 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
   let f5Runtime: F5Runtime | undefined;
 
   try {
-    if (usePersistentF5) f5Runtime = await createF5Runtime();
+    if (usePersistentF5) {
+      const f5Candidate = selection.audit.candidates.find((candidate) => candidate.providerId === "f5");
+      const limitToSingleWorker = selection.audit.context.memoryPressure === true || f5Candidate?.stats.health === "degraded" || (f5Candidate?.stats.recentCudaOomCount ?? 0) > 0;
+      f5Runtime = await createF5Runtime(limitToSingleWorker);
+    }
     if (project.narrationSegments?.length) {
-      return await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal, forceSceneIndexes, cacheSalt);
+      const attached = await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal, forceSceneIndexes, cacheSalt);
+      const result = {
+        ...attached,
+        audio: attached.audio ? { ...attached.audio, metrics: { ...attached.audio.metrics!, providerSelection: JSON.stringify(selection.audit) } } : attached.audio,
+      } satisfies VideoProject;
+      if ((result.audio?.metrics?.generatedSceneCount ?? 0) > 0) {
+        await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: Math.max(0, (result.audio?.metrics?.workerStartCount ?? 1) - 1) });
+      }
+      return result;
     }
 
     const extension = providerExtension(provider);
@@ -831,8 +912,9 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       reusedAudioSceneIndexes: reused ? "0" : "",
       concatenatedAudio: false,
       audioGenerationKey: audioGenerationKey(effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts ?? {}),
+      providerSelection: JSON.stringify(selection.audit),
     };
-    return {
+    const result = {
       ...project,
       audio: {
         src: `/generated/${basename}.${extension}`,
@@ -842,9 +924,12 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         sceneCacheSalts: effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts,
       },
     } satisfies VideoProject;
+    if (!reused) await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: Math.max(0, (metrics.workerStartCount ?? 1) - 1) });
+    return result;
   } catch (error) {
+    await recordTtsProviderResult({ provider, project, startedAt, success: false, error, retryCount: Math.max(0, (f5Runtime?.pool.metrics().workerStartCount ?? 1) - 1) });
     console.warn(`[tts] primary provider failed: ${(error as Error).message}`);
-    if (provider === "f5" || process.env.TTS_FAIL_FAST === "1") throw error;
+    if (process.env.TTS_FAIL_FAST === "1") throw error;
 
     if (provider !== "local") {
       const fallbackLocalPath = path.join(generatedDir, `${basename}.wav`);
@@ -853,12 +938,21 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         const fileSize = await stat(fallbackLocalPath).then((file) => file.size).catch(() => 0);
         const duration = await probeDuration(fallbackLocalPath);
         if (fileSize > 0 && duration > 0) {
+          const fallbackAudit: ProviderSelectionAudit = {
+            ...selection.audit,
+            selectedProviderId: "local-tts",
+            candidates: selection.audit.candidates.map((candidate) => candidate.providerId === ttsProviderId(provider)
+              ? { ...candidate, reasons: [`runtime failure: ${(error as Error).message}`, ...candidate.reasons] }
+              : candidate),
+          };
+          await recordTtsProviderResult({ provider: "local", project, startedAt: Date.now(), success: true });
           return {
             ...project,
             audio: {
               src: `/generated/${basename}.wav`,
               durationSeconds: duration,
               provider: "local",
+              metrics: { ...emptySynthesisMetrics(), generatedSceneCount: 1, cacheMissCount: 1, generatedAudioSceneIndexes: "0", providerSelection: JSON.stringify(fallbackAudit) },
             },
           } satisfies VideoProject;
         }

@@ -10,7 +10,25 @@ export type VisualSource =
   | "github-ui"
   | "mixed";
 
-export type ProviderCapability = "programmatic" | "browser" | "stock-video" | "image" | "video" | "tts" | "music" | "alignment";
+export type ProviderCapability = "programmatic" | "browser" | "stock-video" | "image" | "video" | "tts" | "music" | "alignment" | "llm";
+
+export interface ProviderCandidateDecision {
+  providerId: string;
+  enabled: boolean;
+  eliminated: boolean;
+  score: number;
+  reasons: string[];
+  stats: import("./provider-stats").ProviderStats;
+}
+
+export interface ProviderSelectionAudit {
+  capability: ProviderCapability;
+  profile: string;
+  selectedProviderId?: string;
+  context: import("./provider-stats").ProviderSelectionContext;
+  candidates: ProviderCandidateDecision[];
+  createdAt: string;
+}
 
 export interface ProviderDescriptor {
   id: string;
@@ -24,6 +42,8 @@ export interface ProviderDescriptor {
   supportsPortrait: boolean;
   commercialUse: boolean;
   reason?: string;
+  health: import("./provider-stats").ProviderHealth;
+  stats: import("./provider-stats").ProviderStats;
 }
 
 export interface VisualPlan {
@@ -35,6 +55,8 @@ export interface VisualPlan {
   rationale: string[];
   motionTargets: number;
   expectedMotionRatio: number;
+  providerSelection: ProviderSelectionAudit;
+  fallbackSelection: ProviderSelectionAudit;
 }
 
 export interface SyncCue {
@@ -76,6 +98,7 @@ export interface ProductionReport {
   sourceUrl: string;
   renderEngine: string;
   providers: ProviderDescriptor[];
+  providerSelections: ProviderSelectionAudit[];
   decisions: ProductionDecision[];
   storyPlanning?: StoryPlanningAudit;
   summary: {
@@ -91,6 +114,8 @@ export interface ProductionReport {
     exploredTemplateCount: number;
     averageTemplateLearnedAdjustment: number;
     templateHistorySamples: number;
+    unhealthyProviders: string[];
+    degradedProviders: string[];
   };
 }
 

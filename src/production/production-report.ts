@@ -6,6 +6,16 @@ import type { ProductionReport } from "./types";
 export function buildProductionReport(project: VideoProject, renderEngine = "html-video"): ProductionReport {
   const providers = listProviders();
   const decisions = buildProductionDecisions(project);
+  let audioSelection: ProductionReport["providerSelections"][number] | undefined;
+  try {
+    audioSelection = project.audio?.metrics?.providerSelection ? JSON.parse(project.audio.metrics.providerSelection) as ProductionReport["providerSelections"][number] : undefined;
+  } catch {
+    audioSelection = undefined;
+  }
+  const providerSelections = [
+    ...(audioSelection ? [audioSelection] : []),
+    ...decisions.flatMap((decision) => [decision.visualPlan.providerSelection, decision.visualPlan.fallbackSelection]),
+  ];
   const cues = decisions.flatMap((decision) => decision.syncCues);
   const alignedCues = cues.filter((cue) => cue.timingSource === "forced-alignment");
   const sourceMix: Record<string, number> = {};
@@ -17,6 +27,7 @@ export function buildProductionReport(project: VideoProject, renderEngine = "htm
     sourceUrl: project.sources[0]?.url ?? "",
     renderEngine,
     providers,
+    providerSelections,
     decisions,
     storyPlanning: project.storyPlanning,
     summary: {
@@ -32,6 +43,8 @@ export function buildProductionReport(project: VideoProject, renderEngine = "htm
       exploredTemplateCount: decisions.filter((decision) => decision.templateSelection.explored).length,
       averageTemplateLearnedAdjustment: Number((decisions.reduce((sum, decision) => sum + decision.templateSelection.learnedAdjustment, 0) / Math.max(1, decisions.length)).toFixed(3)),
       templateHistorySamples: decisions.reduce((sum, decision) => sum + decision.templateSelection.history.samples, 0),
+      unhealthyProviders: providers.filter((provider) => provider.health === "unhealthy").map((provider) => provider.id),
+      degradedProviders: providers.filter((provider) => provider.health === "degraded").map((provider) => provider.id),
     },
   };
 }

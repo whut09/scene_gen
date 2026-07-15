@@ -12,6 +12,8 @@ import { loadTtsPronunciationLexicon } from "../pipeline/tts-pronunciation";
 import { resolveHtmlRenderBudget } from "../html-video/render-budget";
 import { fromRoot } from "../pipeline/utils";
 import { readTemplateOutcomes, templateOutcomeFilePath } from "../templates/template-learning";
+import { listProviders } from "../production/provider-registry";
+import { providerOutcomeFilePath, readProviderOutcomes } from "../production/provider-stats";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 export interface DoctorCheck { id: string; status: DoctorStatus; required: boolean; summary: string; details?: string }
@@ -124,6 +126,30 @@ async function templateLearningCheck(): Promise<DoctorCheck> {
   }
 }
 
+async function providerHistoryCheck(): Promise<DoctorCheck> {
+  const filePath = providerOutcomeFilePath();
+  const directory = path.dirname(filePath);
+  const probe = path.join(directory, `.scene-gen-provider-history-${process.pid}.tmp`);
+  try {
+    await mkdir(directory, { recursive: true });
+    await writeFile(probe, "ok", "utf8");
+    await rm(probe, { force: true });
+    const outcomes = readProviderOutcomes();
+    const providers = listProviders();
+    const unhealthy = providers.filter((provider) => provider.health === "unhealthy").map((provider) => provider.id);
+    const degraded = providers.filter((provider) => provider.health === "degraded").map((provider) => provider.id);
+    return {
+      id: "provider-history",
+      status: unhealthy.length ? "warn" : "pass",
+      required: false,
+      summary: `Provider history ready; ${outcomes.length} outcomes`,
+      details: `${filePath}; degraded=${degraded.join(",") || "none"}; unhealthy=${unhealthy.join(",") || "none"}`,
+    };
+  } catch (error) {
+    return { id: "provider-history", status: "warn", required: false, summary: "Provider history directory is not writable", details: `${filePath}: ${(error as Error).message}` };
+  }
+}
+
 export async function runDoctor(profile: ConfigProfile, outputDir = process.env.VIDEO_OUTPUT_DIR || defaultOutputDir()): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
@@ -133,6 +159,7 @@ export async function runDoctor(profile: ConfigProfile, outputDir = process.env.
   checks.push(await ffmpegEncoderCheck());
   checks.push(visualQualityConfigCheck());
   checks.push(await templateLearningCheck());
+  checks.push(await providerHistoryCheck());
   if (process.env.VIDEO_OCR_ENABLED === "1") checks.push(await commandCheck("video-ocr", process.env.VIDEO_OCR_COMMAND ?? "tesseract", ["--version"], true));
   const browserPath = chromium.executablePath();
   checks.push({ id: "playwright", status: existsSync(browserPath) ? "pass" : profile.doctor.requireBrowser ? "fail" : "warn", required: profile.doctor.requireBrowser, summary: existsSync(browserPath) ? "Playwright Chromium installed" : "Playwright Chromium missing", details: browserPath });

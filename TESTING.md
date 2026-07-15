@@ -48,6 +48,8 @@ npm exec -- playwright install chromium
 
 `tests/unit/template-learning.test.ts` 使用隔离的 JSONL 历史验证模板规则分保持稳定、历史高通过率能够重排候选、blank/overflow/static 失败会显著降权、禁用学习后退回纯规则分、探索率保持在配置上限内，以及发布阶段能记录场景质量、渲染耗时和缓存命中证据。
 
+`tests/unit/provider-stats.test.ts` 使用隔离历史验证 ProviderStats 的成功率、P50/P95、timeout、重试、实际成本和发音准确率；同时验证 fast-preview/production 的不同权重、连续失败主动淘汰、F5 显存压力惩罚，以及 outcome Schema 校验。
+
 视觉质量离线测试使用 FFmpeg 生成纯色帧和测试图，验证亮度范围与边缘密度能够区分空白画面；Playwright fixture 验证 DOM audit 能发现安全区、低对比度、小字号、裁切、动画过晚和结论停留不足。Golden test 还要求正式标题模板不存在 error 级视觉审计问题。OCR 默认关闭，因此 CI 不需要安装 Tesseract。
 
 GitHub Actions 使用 Node.js 20，并执行：
