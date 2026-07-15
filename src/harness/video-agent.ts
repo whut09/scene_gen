@@ -354,14 +354,36 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     let remuxOnly = audioRemuxRequired && !audioRetimeRequired && engine === "html-video" && Boolean(silentVideoPath) && existsSync(silentVideoPath);
     let pendingMuxRequired = audioRemuxRequired;
     let remuxedVideo = false;
+    let lastRenderMetrics: Record<string, string | number | boolean> = {};
     if (shouldRun("video-gate", startStage, forceStage) || !state.video) {
       for (let videoAttempt = 1; videoAttempt <= videoIterations; videoAttempt += 1) {
         const renderNeeded = remuxOnly || videoAttempt > 1 || shouldRun("render", startStage, forceStage) || !existsSync(state.story.outputPath);
         if (renderNeeded) {
+          const renderAttempt = nextAttempt(journal, "render");
+          const renderResultPath = path.join(runDir, "render", `attempt-${renderAttempt}.json`);
           const render = await runStage({
-            journal, name: "render", attempt: nextAttempt(journal, "render"), inputs: { manifestPath: state.manifestPath, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired }, timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_830_000), signal,
-            task: (stageSignal) => runRenderStage({ manifestPath: state.manifestPath!, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired, signal: stageSignal }),
-            describe: (value) => ({ outputs: { outputPath: state.story!.outputPath }, metrics: { forceRender, forcedSceneCount: forceSceneIndexes?.length ?? 0, remuxedVideo: value.remuxedVideo, remuxOnly: value.remuxOnly } }),
+            journal, name: "render", attempt: renderAttempt, inputs: { manifestPath: state.manifestPath, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired }, timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_830_000), signal,
+            task: (stageSignal) => runRenderStage({ manifestPath: state.manifestPath!, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired, resultPath: renderResultPath, signal: stageSignal }),
+            describe: (value) => {
+              const renderMetrics = value.metrics ?? {};
+              const scalarMetrics = {
+                forceRender,
+                forcedSceneCount: forceSceneIndexes?.length ?? 0,
+                remuxedVideo: value.remuxedVideo,
+                remuxOnly: value.remuxOnly,
+                browserStartupMs: Number(renderMetrics.browserStartupMs ?? 0),
+                renderConcurrency: Number(renderMetrics.renderConcurrency ?? 0),
+                cacheHitScenes: JSON.stringify(renderMetrics.cacheHitScenes ?? []),
+                renderedScenes: JSON.stringify(renderMetrics.renderedScenes ?? []),
+                perSceneRecordMs: JSON.stringify(renderMetrics.perSceneRecordMs ?? {}),
+                perSceneEncodeMs: JSON.stringify(renderMetrics.perSceneEncodeMs ?? {}),
+                concatMs: Number(renderMetrics.concatMs ?? 0),
+                muxMs: Number(renderMetrics.muxMs ?? 0),
+                totalRenderMs: Number(renderMetrics.totalRenderMs ?? 0),
+              };
+              lastRenderMetrics = scalarMetrics;
+              return { outputs: { outputPath: state.story!.outputPath, renderResultPath }, metrics: scalarMetrics };
+            },
           });
           remuxedVideo ||= render.value.remuxedVideo;
           remuxOnly = false;
@@ -374,6 +396,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
           describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
         });
         gate.value.evaluation.metrics.remuxedVideo = remuxedVideo;
+        Object.assign(gate.value.evaluation.metrics, lastRenderMetrics);
         state.video = gate.value.evaluation;
         const evaluationPath = path.join(runDir, "evaluations", `video-attempt-${videoAttempt}.json`);
         await writeJsonAtomic(evaluationPath, state.video);

@@ -4,6 +4,8 @@
   "env": {
     "TTS_PROVIDER": "openai",
     "VIDEO_RENDER_ENGINE": "remotion",
+    "HTML_RENDER_CONCURRENCY": "3",
+    "HTML_RENDER_PRESET": "ultrafast",
     "QUALITY_GATE_PROFILE": "lenient",
     "SCREENSHOT_LIMIT": "0",
     "HARNESS_MAX_ITERATIONS": "1",

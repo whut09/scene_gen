@@ -6,6 +6,8 @@
     "ASR_DISABLED": "1",
     "TTS_PROVIDER": "local",
     "VIDEO_RENDER_ENGINE": "remotion",
+    "HTML_RENDER_CONCURRENCY": "1",
+    "HTML_RENDER_PRESET": "ultrafast",
     "QUALITY_GATE_PROFILE": "lenient",
     "SCREENSHOT_LIMIT": "0"
   },

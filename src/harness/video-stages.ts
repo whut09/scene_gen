@@ -165,18 +165,28 @@ export async function runRenderStage(input: {
   forceRender?: boolean;
   remuxOnly?: boolean;
   remuxRequired?: boolean;
+  resultPath?: string;
   signal: AbortSignal;
 }) {
   const args = ["--manifest", input.manifestPath, "--overwrite", "--engine", input.engine];
   if (input.forceRender) args.push("--force-render");
   else if (input.forceSceneIndexes?.length) args.push("--force-scenes", input.forceSceneIndexes.join(","));
   if (input.remuxOnly) args.push("--remux-only");
+  if (input.resultPath) args.push("--result", input.resultPath);
   await runScript("src/pipeline/render-stories.ts", args, input.signal, {
     timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_800_000),
     retries: 1,
     retryOnExit: true,
   });
-  return { remuxedVideo: Boolean(input.remuxRequired && input.engine === "html-video"), remuxOnly: Boolean(input.remuxOnly) };
+  const result = input.resultPath
+    ? await readJson<{ stories?: Array<{ metrics?: Record<string, unknown> }> }>(input.resultPath)
+    : undefined;
+  return {
+    remuxedVideo: Boolean(input.remuxRequired && input.engine === "html-video"),
+    remuxOnly: Boolean(input.remuxOnly),
+    metrics: result?.stories?.[0]?.metrics,
+    resultPath: input.resultPath,
+  };
 }
 
 export async function runVideoGateStage(input: {

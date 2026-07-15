@@ -17,3 +17,17 @@ test("config profiles load and only fill missing environment values", async () =
     }
   }
 });
+
+test("HTML rendering profiles define bounded concurrency and encoding presets", async () => {
+  const expected = {
+    "fast-preview": ["3", "ultrafast"],
+    "local-f5": ["2", "veryfast"],
+    production: ["2", "medium"],
+    "ci-offline": ["1", "ultrafast"],
+  } as const;
+  for (const [name, [concurrency, preset]] of Object.entries(expected)) {
+    const profile = await loadConfigProfile(name);
+    assert.equal(profile.env.HTML_RENDER_CONCURRENCY, concurrency);
+    assert.equal(profile.env.HTML_RENDER_PRESET, preset);
+  }
+});

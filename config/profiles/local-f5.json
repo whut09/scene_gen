@@ -9,6 +9,8 @@
     "TTS_PREPROCESS_CONCURRENCY": "4",
     "TTS_FFMPEG_CONCURRENCY": "2",
     "VIDEO_RENDER_ENGINE": "html-video",
+    "HTML_RENDER_CONCURRENCY": "2",
+    "HTML_RENDER_PRESET": "veryfast",
     "QUALITY_GATE_PROFILE": "balanced",
     "ASR_MODEL": "openai/whisper-tiny"
   },

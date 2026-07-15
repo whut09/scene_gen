@@ -7,6 +7,8 @@
     "TTS_PREPROCESS_CONCURRENCY": "4",
     "TTS_FFMPEG_CONCURRENCY": "2",
     "VIDEO_RENDER_ENGINE": "html-video",
+    "HTML_RENDER_CONCURRENCY": "2",
+    "HTML_RENDER_PRESET": "medium",
     "QUALITY_GATE_PROFILE": "strict",
     "TTS_FAIL_FAST": "1",
     "SCREENSHOT_LIMIT": "1",

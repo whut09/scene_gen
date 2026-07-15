@@ -116,6 +116,14 @@ Audio gate 返回 `audio_pronunciation_mismatch`、`audio_scene_drift` 等可修
 
 每次局部修复使用稳定的 `cacheSalt`，salt 只写入受影响分镜的缓存身份。报告记录 `forcedAudioSceneIndexes`、`generatedAudioSceneIndexes`、`reusedAudioSceneIndexes` 和 `concatenatedAudio`。如果新音频没有改变分镜时长并且已有 `video-no-audio.mp4`，HTML Video 只执行 remux；如果时长变化，则复用并 retime 已缓存的分镜视频，不默认重新录屏。
 
+### HTML Video 并行渲染
+
+一次 `renderHtmlVideoProject()` 只启动一个 Chromium browser。需要录制的分镜各自创建隔离的 BrowserContext/Page，并通过 `HTML_RENDER_CONCURRENCY` 有界并发；缓存命中场景不会创建 context。实际并发还会受到 CPU 核数、可用内存、场景数量和 `HTML_RENDER_MEMORY_PER_JOB_MB` 的共同限制。
+
+每个并发 FFmpeg 编码任务最多使用 `floor(cpuCount / renderConcurrency)` 个线程，避免多个 x264 进程同时占满全部 CPU。编码预设由 `HTML_RENDER_PRESET` 控制：`fast-preview` 和 `ci-offline` 使用 `ultrafast`，`local-f5` 使用 `veryfast`，`production` 使用 `medium`。
+
+渲染报告包含 `browserStartupMs`、`renderConcurrency`、缓存命中/实际录制分镜、逐分镜录制与编码耗时、`concatMs`、`muxMs` 和 `totalRenderMs`。某个分镜失败时，未开始任务会被取消，正在运行的 context 会完成清理，已成功场景缓存会保留，恢复运行只重建失败和未完成分镜。
+
 成功后会输出：
 
 ```text
