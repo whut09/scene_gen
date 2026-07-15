@@ -15,6 +15,12 @@ const asrSceneTranscriptSchema = z.object({
   sceneIndex: z.number().int().nonnegative(),
   text: z.string(),
   confidence: z.number().min(0).max(1).nullable().optional(),
+  words: z.array(z.object({
+    text: z.string(),
+    startSeconds: z.number().nonnegative(),
+    endSeconds: z.number().nonnegative(),
+    confidence: z.number().min(0).max(1).nullable().optional(),
+  })).optional(),
 });
 const asrBatchResponseSchema = z.object({ segments: z.array(asrSceneTranscriptSchema) });
 
@@ -47,6 +53,22 @@ function runCapture(command: string, args: string[], signal?: AbortSignal) {
   });
 }
 
+export function storedNarrationSceneTranscripts(project: VideoProject): AsrSceneTranscript[] | null {
+  const segments = project.narrationSegments ?? [];
+  if (!segments.length || segments.some((segment) => !segment.speechAlignment?.transcript)) return null;
+  return segments.map((segment) => ({
+    sceneIndex: segment.sceneIndex,
+    text: segment.speechAlignment!.transcript,
+    confidence: segment.speechAlignment!.confidence,
+    words: segment.speechAlignment!.words.map((word) => ({
+      text: word.text,
+      startSeconds: word.startMs / 1000,
+      endSeconds: word.endMs / 1000,
+      confidence: word.confidence,
+    })),
+  }));
+}
+
 export async function transcribeNarrationScenes(project: VideoProject, signal?: AbortSignal) {
   if (process.env.ASR_DISABLED === "1" || !project.audio?.src) return null;
   const segments = project.narrationSegments ?? [];
@@ -69,7 +91,7 @@ export async function transcribeNarrationScenes(project: VideoProject, signal?: 
       ], signal);
     });
     const requestFile = path.join(workDir, "request.json");
-    await writeFile(requestFile, JSON.stringify({ segments: requests }), "utf8");
+    await writeFile(requestFile, JSON.stringify({ segments: requests, wordTimestamps: true }), "utf8");
     const result = await runCapture(resolvePythonCommand(), [
       fromRoot("scripts", "transcribe-audio.py"),
       "--request-file", requestFile,

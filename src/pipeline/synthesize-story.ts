@@ -5,6 +5,7 @@ import { attachNarrationAudio } from "./tts";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson } from "./utils";
 import { videoProjectSchema } from "./schemas";
 import { ensureNewsDateNarration } from "./news-date";
+import { alignProjectSpeech } from "./speech-alignment";
 
 loadDotEnv();
 
@@ -32,6 +33,13 @@ const reason = typeof args.reason === "string" ? args.reason : undefined;
 
 if (project.revision?.changedSceneIndexes.length) console.log(`Rebuilding narration scenes: ${project.revision.changedSceneIndexes.map((index) => index + 1).join(", ")}`);
 project = await attachNarrationAudio(project, basename, { forceSceneIndexes, forceAudioRebuild, cacheSalt, reason });
+try {
+  project = await alignProjectSpeech(project);
+  const alignedCueCount = project.narrationSegments?.reduce((sum, segment) => sum + (segment.speechAlignment?.phrases.length ?? 0), 0) ?? 0;
+  console.log(`Speech alignment: ${alignedCueCount} timestamped cues`);
+} catch (error) {
+  console.warn(`Speech alignment unavailable; using estimated sync cues: ${(error as Error).message}`);
+}
 project = { ...project, revision: undefined };
 await writeJson(projectPath, videoProjectSchema.parse(project));
 

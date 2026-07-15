@@ -23,6 +23,27 @@ def confidence_from_result(result):
     return max(0.0, min(1.0, sum(values) / len(values)))
 
 
+def words_from_result(result):
+    words = []
+    for chunk in result.get("chunks", []):
+        timestamp = chunk.get("timestamp")
+        if not isinstance(timestamp, (list, tuple)) or len(timestamp) != 2:
+            continue
+        start, end = timestamp
+        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+            continue
+        confidence = chunk.get("confidence", chunk.get("score"))
+        word = {
+            "text": str(chunk.get("text", "")).strip(),
+            "startSeconds": max(0.0, float(start)),
+            "endSeconds": max(float(start), float(end)),
+        }
+        if isinstance(confidence, (int, float)):
+            word["confidence"] = max(0.0, min(1.0, float(confidence)))
+        words.append(word)
+    return words
+
+
 def transcribe_whisper_with_confidence(recognizer, audio, language):
     with wave.open(audio, "rb") as handle:
         sample_rate = handle.getframerate()
@@ -70,7 +91,17 @@ def main():
         model=args.model,
         device=device,
     )
-    def transcribe(audio):
+    def transcribe(audio, include_words=False):
+        if include_words:
+            try:
+                result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe"})
+                return {
+                    "text": result.get("text", "").strip(),
+                    "confidence": confidence_from_result(result),
+                    "words": words_from_result(result),
+                }
+            except (TypeError, ValueError):
+                pass
         if getattr(recognizer.model.config, "model_type", "") == "whisper":
             try:
                 return transcribe_whisper_with_confidence(recognizer, audio, args.language)
@@ -88,7 +119,8 @@ def main():
     if args.request_file:
         with open(args.request_file, "r", encoding="utf-8") as handle:
             request = json.load(handle)
-        segments = [{"sceneIndex": item["sceneIndex"], **transcribe(item["audio"])} for item in request.get("segments", [])]
+        include_words = bool(request.get("wordTimestamps", False))
+        segments = [{"sceneIndex": item["sceneIndex"], **transcribe(item["audio"], include_words)} for item in request.get("segments", [])]
         print(json.dumps({"segments": segments}, ensure_ascii=True))
     else:
         print(json.dumps(transcribe(args.audio), ensure_ascii=True))

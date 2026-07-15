@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { mapWithConcurrencyUntilError } from "../pipeline/bounded-task-queue";
 import { ensureDir, fromRoot, slugify } from "../pipeline/utils";
@@ -98,7 +98,7 @@ export interface HtmlVideoCacheFingerprint {
   rendererVersion: string;
 }
 
-const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v3";
+const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v4";
 let browserVersionPromise: Promise<string> | undefined;
 
 function emptyVisualAudit(sceneIndex: number, width: number, height: number, durationSec: number) {
@@ -130,6 +130,7 @@ export function createHtmlVideoCacheKey(input: {
   width: number;
   height: number;
   fps: number;
+  syncCues?: HtmlVideoContentGraph["nodes"][number]["syncCues"];
   assetContentHash?: string;
   fontBundleHash?: string;
   globalCssHash?: string;
@@ -138,6 +139,14 @@ export function createHtmlVideoCacheKey(input: {
   rendererVersion?: string;
 }) {
   const scene = { ...input.scene, duration: undefined };
+  const cueTimingBucketMs = Math.max(1, Number(process.env.HTML_SYNC_CUE_CACHE_BUCKET_MS ?? 120));
+  const syncCues = (input.syncCues ?? []).map((cue) => ({
+    text: cue.text,
+    emphasis: cue.emphasis,
+    timingSource: cue.timingSource,
+    startMs: Math.round((cue.startRatio * input.scene.duration * 1000) / cueTimingBucketMs) * cueTimingBucketMs,
+    endMs: Math.round((cue.endRatio * input.scene.duration * 1000) / cueTimingBucketMs) * cueTimingBucketMs,
+  }));
   return createHash("sha256").update(JSON.stringify(stableValue({
     scene,
     templateId: input.templateId,
@@ -146,6 +155,7 @@ export function createHtmlVideoCacheKey(input: {
     width: input.width,
     height: input.height,
     fps: input.fps,
+    syncCues,
     assetContentHash: input.assetContentHash ?? "none",
     fontBundleHash: input.fontBundleHash ?? "none",
     globalCssHash: input.globalCssHash ?? "none",
@@ -153,6 +163,61 @@ export function createHtmlVideoCacheKey(input: {
     encoderProfile: input.encoderProfile ?? "default",
     rendererVersion: input.rendererVersion ?? HTML_RENDERER_VERSION,
   }))).digest("hex");
+}
+
+export function createSyncCueAnimationPlan(syncCues: HtmlVideoContentGraph["nodes"][number]["syncCues"], durationSec: number) {
+  return syncCues.map((cue) => ({
+    text: cue.text,
+    startMs: Math.round(Math.max(0, Math.min(durationSec * 1000, cue.startRatio * durationSec * 1000))),
+    endMs: Math.round(Math.max(0, Math.min(durationSec * 1000, cue.endRatio * durationSec * 1000))),
+    audioStartMs: cue.audioStartMs,
+    audioEndMs: cue.audioEndMs,
+    confidence: cue.confidence,
+    timingSource: cue.timingSource,
+    emphasis: cue.emphasis,
+  }));
+}
+
+export async function installSyncCueAnimations(page: Page, syncCues: HtmlVideoContentGraph["nodes"][number]["syncCues"] = [], durationSec: number) {
+  const plan = createSyncCueAnimationPlan(syncCues, durationSec);
+  await page.evaluate((items) => {
+    const animations: Animation[] = [];
+    for (const item of items) {
+      const normalizedCue = item.text.toLowerCase().replace(/\s+|[^a-z0-9\u4e00-\u9fff]/g, "");
+      if (normalizedCue.length < 2) continue;
+      const target = [...document.querySelectorAll<HTMLElement>("body *")]
+        .filter((element) => (element.innerText || element.textContent || "").toLowerCase().replace(/\s+|[^a-z0-9\u4e00-\u9fff]/g, "").includes(normalizedCue))
+        .sort((left, right) => {
+          const textDifference = (left.innerText || left.textContent || "").length - (right.innerText || right.textContent || "").length;
+          return textDifference || left.querySelectorAll("*").length - right.querySelectorAll("*").length;
+        })[0];
+      if (!target) continue;
+      target.dataset.sgSyncStartMs = String(item.startMs);
+      target.dataset.sgSyncEndMs = String(item.endMs);
+      target.dataset.sgSyncSource = item.timingSource;
+      if (item.audioStartMs !== undefined) target.dataset.sgSyncAudioStartMs = String(item.audioStartMs);
+      if (item.audioEndMs !== undefined) target.dataset.sgSyncAudioEndMs = String(item.audioEndMs);
+      const reveal = target.animate([
+        { opacity: 0.35, transform: "translateY(8px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ], { delay: item.startMs, duration: 260, fill: "both", easing: "ease-out" });
+      const highlight = target.animate([
+        { filter: "brightness(1)", textShadow: "none" },
+        { filter: item.emphasis === "primary" ? "brightness(1.18)" : "brightness(1.08)", textShadow: "0 0 18px rgba(80,210,255,.45)" },
+        { filter: "brightness(1)", textShadow: "none" },
+      ], { delay: item.startMs, duration: Math.max(400, item.endMs - item.startMs + 300), fill: "both", easing: "ease-in-out" });
+      reveal.pause();
+      highlight.pause();
+      animations.push(reveal, highlight);
+    }
+    const state = window as unknown as { __sgUnfreeze?: () => void; __sgSyncAnimations?: Animation[] };
+    const unfreeze = state.__sgUnfreeze;
+    state.__sgSyncAnimations = animations;
+    state.__sgUnfreeze = () => {
+      unfreeze?.();
+      animations.forEach((animation) => animation.play());
+    };
+  }, plan);
 }
 
 function hashValues(values: unknown[]) {
@@ -337,9 +402,11 @@ async function recordHtmlFrame({
 
     await page.goto(pathToFileURL(htmlPath).href, { waitUntil: "domcontentloaded" });
     await waitForFonts(page);
+    await installSyncCueAnimations(page, syncCues, durationSec);
     visualAudit = await inspectSceneDom(page, { sceneIndex, width, height, durationSec, headline: headline ?? "", syncCues });
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForFonts(page);
+    await installSyncCueAnimations(page, syncCues, durationSec);
     detectedMotionSec = await page.evaluate(() => {
       const durations = document.getAnimations().map((animation) => {
         const timing = animation.effect?.getComputedTiming();
@@ -553,6 +620,7 @@ export async function renderHtmlVideoProject(
       width: project.meta.width,
       height: project.meta.height,
       fps: project.meta.fps,
+      syncCues: node.syncCues,
       ...fingerprint,
     };
     const cacheKey = createHtmlVideoCacheKey({
@@ -563,6 +631,7 @@ export async function renderHtmlVideoProject(
       width: project.meta.width,
       height: project.meta.height,
       fps: project.meta.fps,
+      syncCues: node.syncCues,
       ...fingerprint,
     });
     await writeFile(htmlPath, html, "utf8");

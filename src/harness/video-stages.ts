@@ -292,6 +292,9 @@ export async function runPublishStage(input: {
     `- Visual source mix: ${JSON.stringify(production.summary.sourceMix)}`,
     `- Enabled providers: ${production.summary.enabledProviders.join(", ")}`,
     `- Alignment: ${production.summary.wordAlignment}`,
+    `- Aligned cues: ${production.summary.alignedCueCount}/${production.summary.alignedCueCount + production.summary.estimatedCueCount}`,
+    `- Alignment coverage: ${(production.summary.alignmentCoverage * 100).toFixed(1)}%`,
+    `- Alignment confidence: ${production.summary.averageAlignmentConfidence.toFixed(3)}`,
     ...(production.storyPlanning ? [
       `- Story plan: ${production.storyPlanning.selectedCandidateId}; candidates=${production.storyPlanning.requestedCandidates}; score=${production.storyPlanning.rankings.find((ranking) => ranking.candidate.id === production.storyPlanning?.selectedCandidateId)?.scores.total ?? 0}`,
       `- Rejected story plans: ${production.storyPlanning.rankings.filter((ranking) => ranking.rejectedReasons.length > 0).map((ranking) => `${ranking.candidate.id}[${ranking.rejectedReasons.join(",")}]`).join("; ") || "none"}`,

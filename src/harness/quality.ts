@@ -12,7 +12,7 @@ import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operati
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput } from "./quality-protocol";
 import { canonicalSpeechText } from "./speech-normalization";
 import { findFactConflicts, highRiskPredicatesInText, sceneFactText } from "../pipeline/fact-ledger";
-import { transcribeNarrationScenes, verifySceneTranscripts } from "./scene-audio-verification";
+import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts } from "./scene-audio-verification";
 import { analyzeFrameVisual } from "./frame-visual-analysis";
 import { readVisualAuditFile } from "../html-video/visual-audit";
 
@@ -439,7 +439,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   let sceneAsrVerifiedCount = 0;
   let sceneAsrInconclusiveCount = 0;
   try {
-    const transcripts = await transcribeNarrationScenes(project, signal);
+    const transcripts = storedNarrationSceneTranscripts(project) ?? await transcribeNarrationScenes(project, signal);
     if (transcripts !== null) {
       const verification = verifySceneTranscripts(project, transcripts);
       issues.push(...verification.issues);

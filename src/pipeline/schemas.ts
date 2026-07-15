@@ -141,6 +141,32 @@ export const videoSceneSchema = z.discriminatedUnion("type", [
   }),
 ]).and(z.object({ claimIds: claimIdsSchema.optional() }));
 
+export const speechWordTimingSchema = z.object({
+  text: z.string(),
+  startMs: z.number().nonnegative(),
+  endMs: z.number().nonnegative(),
+  confidence: z.number().min(0).max(1).optional(),
+}).refine((value) => value.endMs >= value.startMs, { message: "Speech word endMs must be greater than or equal to startMs." });
+
+export const speechPhraseTimingSchema = z.object({
+  phrase: z.string().min(1),
+  audioStartMs: z.number().nonnegative(),
+  audioEndMs: z.number().nonnegative(),
+  confidence: z.number().min(0).max(1),
+  match: z.enum(["exact", "fuzzy"]),
+}).refine((value) => value.audioEndMs >= value.audioStartMs, { message: "Speech phrase audioEndMs must be greater than or equal to audioStartMs." });
+
+export const narrationSpeechAlignmentSchema = z.object({
+  version: z.literal(1),
+  status: z.enum(["forced", "failed"]),
+  provider: z.literal("whisper"),
+  transcript: z.string(),
+  confidence: z.number().min(0).max(1).optional(),
+  words: z.array(speechWordTimingSchema),
+  phrases: z.array(speechPhraseTimingSchema),
+  createdAt: z.string(),
+});
+
 export const narrationSegmentSchema = z.object({
   sceneIndex: z.number().int().nonnegative(),
   text: z.string(),
@@ -148,6 +174,7 @@ export const narrationSegmentSchema = z.object({
   claimIds: claimIdsSchema.optional(),
   audioStartSeconds: z.number().nonnegative().optional(),
   durationSeconds: z.number().positive().optional(),
+  speechAlignment: narrationSpeechAlignmentSchema.optional(),
 });
 
 export const videoProjectSchema = z.object({

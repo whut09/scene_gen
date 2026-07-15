@@ -44,6 +44,8 @@ npm exec -- playwright install chromium
 
 逐场景语音语义验证的单元测试使用固定 ASR transcript，不加载 Whisper。测试覆盖多音字、实体、数字与版本号、漏字多字、相邻场景串段以及低置信度 `verification_inconclusive`。真实 audio gate 会先用 FFmpeg 按 `narrationSegments` 切分 WAV，再让一个 Whisper 实例批量转写所有场景，避免每屏重复加载模型。
 
+`tests/unit/speech-alignment.test.ts` 使用固定 word timestamp fixture 验证短语跨 Whisper word chunk 的时间映射、场景相对时间到整段旁白绝对时间的换算、低置信度回退、audio gate 转写复用、production report 覆盖率、HTML `data-sg-sync-*` 标记和动画启动状态，以及 cue 时间变化导致对应视频场景 cache key 失效。该测试不加载 Whisper 或 GPU；HTML 绑定测试只启动本地 Playwright Chromium。
+
 视觉质量离线测试使用 FFmpeg 生成纯色帧和测试图，验证亮度范围与边缘密度能够区分空白画面；Playwright fixture 验证 DOM audit 能发现安全区、低对比度、小字号、裁切、动画过晚和结论停留不足。Golden test 还要求正式标题模板不存在 error 级视觉审计问题。OCR 默认关闭，因此 CI 不需要安装 Tesseract。
 
 GitHub Actions 使用 Node.js 20，并执行：

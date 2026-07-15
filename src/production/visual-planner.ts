@@ -65,7 +65,7 @@ function compactCue(value: string) {
   return value.replace(/\s+/g, "").replace(/[，。！？；：、]/g, "").trim().slice(0, 14);
 }
 
-function cueCandidates(scene: VideoScene) {
+export function syncCueCandidates(scene: VideoScene) {
   const values: string[] = [];
   switch (scene.type) {
     case "title": values.push(...scene.headline.split(/[，。！？；：\n]/), ...scene.subhead.split(/[，。！？；：\n]/)); break;
@@ -82,16 +82,36 @@ function cueCandidates(scene: VideoScene) {
 }
 
 export function buildSyncCues(scene: VideoScene, segment?: NarrationSegment): SyncCue[] {
-  const visible = cueCandidates(scene);
+  const visible = syncCueCandidates(scene);
   const narration = segment?.text ?? "";
   const matched = visible.filter((value) => narration.includes(value));
   const selected = (matched.length >= 2 ? matched : visible).slice(0, 5);
-  return selected.map((text, index) => ({
-    text,
-    startRatio: Number(((index + 0.35) / Math.max(1, selected.length)).toFixed(3)),
-    endRatio: Number(((index + 0.8) / Math.max(1, selected.length)).toFixed(3)),
-    emphasis: index < 2 ? "primary" : "secondary",
-  }));
+  const sceneStartMs = (segment?.audioStartSeconds ?? 0) * 1000;
+  const durationMs = Math.max(1, (segment?.durationSeconds ?? scene.duration) * 1000);
+  const aligned = segment?.speechAlignment?.status === "forced" ? segment.speechAlignment.phrases : [];
+  return selected.map((text, index) => {
+    const phrase = aligned.find((item) => item.phrase === text);
+    if (phrase) {
+      return {
+        text,
+        phrase: phrase.phrase,
+        startRatio: Number(Math.max(0, Math.min(1, (phrase.audioStartMs - sceneStartMs) / durationMs)).toFixed(3)),
+        endRatio: Number(Math.max(0, Math.min(1, (phrase.audioEndMs - sceneStartMs) / durationMs)).toFixed(3)),
+        audioStartMs: phrase.audioStartMs,
+        audioEndMs: phrase.audioEndMs,
+        confidence: phrase.confidence,
+        timingSource: "forced-alignment" as const,
+        emphasis: index < 2 ? "primary" as const : "secondary" as const,
+      };
+    }
+    return {
+      text,
+      startRatio: Number(((index + 0.35) / Math.max(1, selected.length)).toFixed(3)),
+      endRatio: Number(((index + 0.8) / Math.max(1, selected.length)).toFixed(3)),
+      timingSource: "estimated-ratio" as const,
+      emphasis: index < 2 ? "primary" as const : "secondary" as const,
+    };
+  });
 }
 
 export function buildProductionDecisions(project: VideoProject): ProductionDecision[] {

@@ -38,8 +38,13 @@ export interface VisualPlan {
 
 export interface SyncCue {
   text: string;
+  phrase?: string;
   startRatio: number;
   endRatio: number;
+  audioStartMs?: number;
+  audioEndMs?: number;
+  confidence?: number;
+  timingSource: "forced-alignment" | "estimated-ratio";
   emphasis: "primary" | "secondary";
 }
 
@@ -65,6 +70,10 @@ export interface ProductionReport {
     disabledProviders: string[];
     estimatedExternalCost: number;
     wordAlignment: "estimated-keyword-cues" | "forced-alignment";
+    alignedCueCount: number;
+    estimatedCueCount: number;
+    alignmentCoverage: number;
+    averageAlignmentConfidence: number;
   };
 }
 

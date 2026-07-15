@@ -167,6 +167,33 @@ export interface NarrationSegment {
   claimIds?: string[];
   audioStartSeconds?: number;
   durationSeconds?: number;
+  speechAlignment?: NarrationSpeechAlignment;
+}
+
+export interface SpeechWordTiming {
+  text: string;
+  startMs: number;
+  endMs: number;
+  confidence?: number;
+}
+
+export interface SpeechPhraseTiming {
+  phrase: string;
+  audioStartMs: number;
+  audioEndMs: number;
+  confidence: number;
+  match: "exact" | "fuzzy";
+}
+
+export interface NarrationSpeechAlignment {
+  version: 1;
+  status: "forced" | "failed";
+  provider: "whisper";
+  transcript: string;
+  confidence?: number;
+  words: SpeechWordTiming[];
+  phrases: SpeechPhraseTiming[];
+  createdAt: string;
 }
 
 export interface VideoProject {

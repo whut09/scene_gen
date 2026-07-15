@@ -122,6 +122,12 @@ Audio gate 返回 `audio_pronunciation_mismatch`、`audio_scene_drift` 等可修
 
 每个并发 FFmpeg 编码任务最多使用 `floor(cpuCount / renderConcurrency)` 个线程，避免多个 x264 进程同时占满全部 CPU。编码预设由 `HTML_RENDER_PRESET` 控制：`fast-preview` 和 `ci-offline` 使用 `ultrafast`，`local-f5` 使用 `veryfast`，`production` 使用 `medium`。
 
+### 旁白时间戳同步
+
+TTS 完成后，合成阶段会复用逐场景 WAV，通过单次 Whisper 批量转写获取词级时间戳，再将画面中的标题、卡片和关键短语对齐为 `audioStartMs`、`audioEndMs` 与置信度。`content-graph.json` 中的 `syncCues` 会优先使用这些真实时间戳；HTML Video 在录制开始时按时间触发元素进入和关键词高亮，而不是按关键词数量平均分配时间。
+
+当 Whisper 不可用、没有返回 word timestamps、短语未匹配或置信度低于 `SPEECH_ALIGNMENT_CONFIDENCE_MIN` 时，只对该 cue 回退到原来的 ratio 估算，不会让 TTS 阶段失败。`SPEECH_ALIGNMENT_FUZZY_MIN` 控制模糊匹配下限，`SPEECH_ALIGNMENT_DISABLED=1` 可完全关闭。成功转写会保存在 `narrationSegments[].speechAlignment`，audio gate 直接复用，不会再次启动 Whisper。真实 cue 也进入视频场景内容寻址 cache key；默认按 `HTML_SYNC_CUE_CACHE_BUCKET_MS=120` 毫秒量化，忽略不可感知的 ASR 抖动，超过阈值的时间变化才使对应场景视频失效。
+
 渲染报告包含 `browserStartupMs`、`renderConcurrency`、缓存命中/实际录制分镜、逐分镜录制与编码耗时、`concatMs`、`muxMs` 和 `totalRenderMs`。某个分镜失败时，未开始任务会被取消，正在运行的 context 会完成清理，已成功场景缓存会保留，恢复运行只重建失败和未完成分镜。
 
 成功后会输出：

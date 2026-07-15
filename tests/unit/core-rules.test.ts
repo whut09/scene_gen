@@ -66,6 +66,10 @@ test("HTML video cache keys ignore duration but include rendering inputs", () =>
   assert.notEqual(createHtmlVideoCacheKey({ ...base, globalCssHash: "css-v2" }), key);
   assert.notEqual(createHtmlVideoCacheKey({ ...base, assetContentHash: "asset-v2" }), key);
   assert.notEqual(createHtmlVideoCacheKey({ ...base, encoderProfile: "medium" }), key);
+  assert.notEqual(createHtmlVideoCacheKey({
+    ...base,
+    syncCues: [{ text: "Worker", startRatio: 0.2, endRatio: 0.4, timingSource: "forced-alignment", emphasis: "primary" }],
+  }), key);
 });
 
 test("HTML video asset fingerprints use file content instead of path or mtime", async () => {

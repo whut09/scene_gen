@@ -291,7 +291,13 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, signal: stageSignal }),
         describe: (value) => ({
           outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "" },
-          metrics: { duration: value.audio?.durationSeconds ?? 0, ...(value.audio?.metrics ?? {}) },
+          metrics: {
+            duration: value.audio?.durationSeconds ?? 0,
+            ...(value.audio?.metrics ?? {}),
+            alignedCueCount: value.narrationSegments?.reduce((sum, segment) => sum + (segment.speechAlignment?.phrases.length ?? 0), 0) ?? 0,
+            alignedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "forced").length ?? 0,
+            alignmentFailedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "failed").length ?? 0,
+          },
         }),
       });
       state.project = synth.value;

@@ -46,7 +46,7 @@ test("DOM audit detects readability, clipping and timing problems", { timeout: 3
       height: 640,
       durationSec: 2.4,
       headline: "关键结论已经出现",
-      syncCues: [{ text: "关键结论", startRatio: 0.1, endRatio: 0.4, emphasis: "primary" }],
+      syncCues: [{ text: "关键结论", startRatio: 0.1, endRatio: 0.4, timingSource: "estimated-ratio", emphasis: "primary" }],
     });
     const codes = new Set(audit.issues.map((issue) => issue.code));
     assert.ok(codes.has("dom_element_out_of_bounds"));
