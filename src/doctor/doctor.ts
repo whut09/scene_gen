@@ -11,6 +11,7 @@ import { resolveStoryPlanCandidateCount } from "../pipeline/story-planner";
 import { loadTtsPronunciationLexicon } from "../pipeline/tts-pronunciation";
 import { resolveHtmlRenderBudget } from "../html-video/render-budget";
 import { fromRoot } from "../pipeline/utils";
+import { readTemplateOutcomes, templateOutcomeFilePath } from "../templates/template-learning";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 export interface DoctorCheck { id: string; status: DoctorStatus; required: boolean; summary: string; details?: string }
@@ -100,6 +101,29 @@ function visualQualityConfigCheck(): DoctorCheck {
   return { id: "visual-quality", status: valid ? "pass" : "fail", required: true, summary: valid ? "Visual quality thresholds valid" : "Visual quality thresholds invalid", details: JSON.stringify(values) };
 }
 
+async function templateLearningCheck(): Promise<DoctorCheck> {
+  const filePath = templateOutcomeFilePath();
+  const directory = path.dirname(filePath);
+  const rate = Number(process.env.TEMPLATE_EXPLORATION_RATE ?? 0.07);
+  const probe = path.join(directory, `.scene-gen-template-learning-${process.pid}.tmp`);
+  try {
+    await mkdir(directory, { recursive: true });
+    await writeFile(probe, "ok", "utf8");
+    await rm(probe, { force: true });
+    const validRate = Number.isFinite(rate) && rate >= 0 && rate <= 0.25;
+    const outcomes = readTemplateOutcomes();
+    return {
+      id: "template-learning",
+      status: validRate ? "pass" : "fail",
+      required: true,
+      summary: validRate ? `Template learning ready; ${outcomes.length} outcomes` : `Invalid template exploration rate ${rate}`,
+      details: `${filePath}; exploration=${rate}; disabled=${process.env.TEMPLATE_LEARNING_DISABLED === "1"}`,
+    };
+  } catch (error) {
+    return { id: "template-learning", status: "fail", required: true, summary: "Template outcome directory is not writable", details: `${filePath}: ${(error as Error).message}` };
+  }
+}
+
 export async function runDoctor(profile: ConfigProfile, outputDir = process.env.VIDEO_OUTPUT_DIR || defaultOutputDir()): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
@@ -108,6 +132,7 @@ export async function runDoctor(profile: ConfigProfile, outputDir = process.env.
   checks.push(await commandCheck("ffprobe", "ffprobe", ["-version"], true));
   checks.push(await ffmpegEncoderCheck());
   checks.push(visualQualityConfigCheck());
+  checks.push(await templateLearningCheck());
   if (process.env.VIDEO_OCR_ENABLED === "1") checks.push(await commandCheck("video-ocr", process.env.VIDEO_OCR_COMMAND ?? "tesseract", ["--version"], true));
   const browserPath = chromium.executablePath();
   checks.push({ id: "playwright", status: existsSync(browserPath) ? "pass" : profile.doctor.requireBrowser ? "fail" : "warn", required: profile.doctor.requireBrowser, summary: existsSync(browserPath) ? "Playwright Chromium installed" : "Playwright Chromium missing", details: browserPath });

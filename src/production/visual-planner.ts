@@ -1,6 +1,7 @@
 import type { NarrationSegment, VideoProject, VideoScene } from "../pipeline/types";
 import { selectProvider } from "./provider-registry";
 import type { ProductionDecision, SyncCue, VisualPlan, VisualSource } from "./types";
+import { selectTemplatesForProject } from "../templates/template-registry";
 
 function textForScene(scene: VideoScene) {
   switch (scene.type) {
@@ -115,10 +116,27 @@ export function buildSyncCues(scene: VideoScene, segment?: NarrationSegment): Sy
 }
 
 export function buildProductionDecisions(project: VideoProject): ProductionDecision[] {
-  return project.scenes.map((scene, sceneIndex) => ({
-    sceneIndex,
-    sceneType: scene.type,
-    visualPlan: planVisualSource(project, scene),
-    syncCues: buildSyncCues(scene, project.narrationSegments?.find((segment) => segment.sceneIndex === sceneIndex)),
-  }));
+  const selections = selectTemplatesForProject(project);
+  return project.scenes.map((scene, sceneIndex) => {
+    const selection = selections[sceneIndex];
+    return {
+      sceneIndex,
+      sceneType: scene.type,
+      visualPlan: planVisualSource(project, scene),
+      syncCues: buildSyncCues(scene, project.narrationSegments?.find((segment) => segment.sceneIndex === sceneIndex)),
+      templateSelection: {
+        templateId: selection.template.id,
+        variantId: selection.variantId,
+        motionFamily: selection.template.motionFamily,
+        score: selection.score,
+        ruleScore: selection.ruleScore,
+        learnedAdjustment: selection.learnedAdjustment,
+        explored: selection.explored,
+        reasons: selection.reasons,
+        features: selection.features,
+        history: selection.history,
+        scoreBreakdown: selection.scoreBreakdown,
+      },
+    };
+  });
 }

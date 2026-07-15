@@ -80,9 +80,15 @@ export interface TemplateDefinition {
 export interface TemplateSelection {
   template: HtmlTemplateDefinition;
   score: number;
+  ruleScore: number;
+  learnedAdjustment: number;
   intent: SceneIntent;
   variantId: string;
   reasons: string[];
+  features: import("./template-learning").TemplateLearningFeatures;
+  history: import("./template-learning").TemplateHistoryStats;
+  scoreBreakdown: import("./template-learning").TemplateScoreBreakdown;
+  explored: boolean;
 }
 
 export interface TemplateRenderContext {

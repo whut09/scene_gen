@@ -13,7 +13,8 @@
     "HTML_RENDER_PRESET": "veryfast",
     "QUALITY_GATE_PROFILE": "balanced",
     "ASR_MODEL": "openai/whisper-tiny",
-    "STORY_PLAN_CANDIDATES": "2"
+    "STORY_PLAN_CANDIDATES": "2",
+    "TEMPLATE_EXPLORATION_RATE": "0.05"
   },
   "doctor": { "requireF5": true, "requireWhisper": true, "requireCuda": true, "requireBrowser": true }
 }

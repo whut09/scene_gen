@@ -1,4 +1,5 @@
 import type { StoryPlanningAudit, VideoProject, VideoScene } from "../pipeline/types";
+import type { TemplateHistoryStats, TemplateLearningFeatures, TemplateScoreBreakdown } from "../templates/template-learning";
 
 export type VisualSource =
   | "programmatic"
@@ -53,6 +54,19 @@ export interface ProductionDecision {
   sceneType: VideoScene["type"];
   visualPlan: VisualPlan;
   syncCues: SyncCue[];
+  templateSelection: {
+    templateId: string;
+    variantId: string;
+    motionFamily: import("../templates/template.schema").TemplateMotionFamily;
+    score: number;
+    ruleScore: number;
+    learnedAdjustment: number;
+    explored: boolean;
+    reasons: string[];
+    features: TemplateLearningFeatures;
+    history: TemplateHistoryStats;
+    scoreBreakdown: TemplateScoreBreakdown;
+  };
 }
 
 export interface ProductionReport {
@@ -74,6 +88,9 @@ export interface ProductionReport {
     estimatedCueCount: number;
     alignmentCoverage: number;
     averageAlignmentConfidence: number;
+    exploredTemplateCount: number;
+    averageTemplateLearnedAdjustment: number;
+    templateHistorySamples: number;
   };
 }
 

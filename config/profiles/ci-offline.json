@@ -10,7 +10,8 @@
     "HTML_RENDER_PRESET": "ultrafast",
     "QUALITY_GATE_PROFILE": "lenient",
     "SCREENSHOT_LIMIT": "0",
-    "STORY_PLAN_CANDIDATES": "1"
+    "STORY_PLAN_CANDIDATES": "1",
+    "TEMPLATE_EXPLORATION_RATE": "0"
   },
   "doctor": { "requireBrowser": true }
 }

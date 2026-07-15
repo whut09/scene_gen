@@ -14,6 +14,7 @@ import type {
   TemplateDataDensity,
   TemplateSelection,
 } from "./template.schema";
+import { buildTemplateLearningFeatures, readTemplateOutcomes, scoreTemplateCandidate, shouldExploreTemplate } from "./template-learning";
 
 export const htmlVideoTemplates: HtmlTemplateDefinition[] = [
   boldSignalTemplate,
@@ -79,16 +80,7 @@ function searchableTerms(scene: VideoScene, project: VideoProject) {
   ].join(" ").toLowerCase();
 }
 
-function stableJitter(value: string, max = 3) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (((hash >>> 0) % 1001) / 1000) * max;
-}
-
-function selectVariant(template: HtmlTemplateDefinition, terms: string, project: VideoProject, sceneIndex: number, sceneType: VideoScene["type"]) {
+function selectVariant(template: HtmlTemplateDefinition, terms: string, sceneType: VideoScene["type"]) {
   const ranked = template.variants.map((variant) => {
     const tagMatches = variant.tags.filter((tag) => terms.includes(tag.toLowerCase()));
     const bestForMatches = variant.bestFor.filter((item) =>
@@ -96,8 +88,7 @@ function selectVariant(template: HtmlTemplateDefinition, terms: string, project:
     );
     const sceneSpecificScore = variant.tags.some((tag) => tag.toLowerCase() === sceneType.toLowerCase()) ? 30 : 0;
     const semanticScore = tagMatches.length * 8 + bestForMatches.length * 3 + sceneSpecificScore;
-    const diversityScore = stableJitter(project.meta.title + ":" + sceneIndex + ":" + template.id + ":" + variant.id, 10);
-    return { variant, score: semanticScore + diversityScore, tagMatches };
+    return { variant, score: semanticScore, tagMatches };
   }).sort((left, right) => right.score - left.score || left.variant.id.localeCompare(right.variant.id));
   return ranked[0] ?? { variant: { id: "default", name: "Default", tags: [], bestFor: [] }, score: 0, tagMatches: [] };
 }
@@ -115,13 +106,16 @@ export function rankTemplatesForScene(
   const density = sceneDensity(scene);
   const aspect = aspectForProject(project);
   const terms = searchableTerms(scene, project);
+  const features = buildTemplateLearningFeatures(scene, project, intent);
+  const outcomes = readTemplateOutcomes();
+  const explore = shouldExploreTemplate(project, options.sceneIndex ?? 0);
 
   return htmlVideoTemplates
     .filter((template) => template.supportedScenes.includes(scene.type))
     .filter((template) => template.license.commercialUse)
     .map((template) => {
       let scorePenalty = 0;
-      let variant = selectVariant(template, terms, project, options.sceneIndex ?? 0, scene.type);
+      let variant = selectVariant(template, terms, scene.type);
       const qualitativeEqualBars = scene.type === "signal_chart" && Array.isArray(scene.bars) && scene.bars.length > 1 && scene.bars.every((bar) => bar.value === scene.bars[0].value);
       if (qualitativeEqualBars && template.id === "investment-research") {
         scorePenalty = -70;
@@ -196,13 +190,23 @@ export function rankTemplatesForScene(
         reasons.push("reuse penalty x" + used);
       }
 
-      score += stableJitter(project.meta.title + ":" + (options.sceneIndex ?? 0) + ":" + template.id, 8);
+      const ruleScore = Number(Math.max(0, score).toFixed(2));
+      const reranked = scoreTemplateCandidate({ ruleScore, template, variantId: variant.variant.id, features, explore, outcomes });
+      reasons.push(`history ${reranked.history.scope}:${reranked.history.samples}`);
+      reasons.push(`learned adjustment ${reranked.breakdown.learnedAdjustment >= 0 ? "+" : ""}${reranked.breakdown.learnedAdjustment.toFixed(2)}`);
+      if (reranked.breakdown.exploration > 0) reasons.push(`controlled exploration +${reranked.breakdown.exploration.toFixed(2)}`);
       return {
         template,
-        score: Number(Math.max(0, score).toFixed(2)),
+        score: reranked.breakdown.finalScore,
+        ruleScore,
+        learnedAdjustment: reranked.breakdown.learnedAdjustment,
         intent,
         variantId: variant.variant.id,
         reasons,
+        features,
+        history: reranked.history,
+        scoreBreakdown: reranked.breakdown,
+        explored: reranked.breakdown.exploration > 0,
       } satisfies TemplateSelection;
     })
     .sort((left, right) => right.score - left.score || left.template.id.localeCompare(right.template.id));

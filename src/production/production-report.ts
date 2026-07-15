@@ -29,6 +29,9 @@ export function buildProductionReport(project: VideoProject, renderEngine = "htm
       estimatedCueCount: cues.length - alignedCues.length,
       alignmentCoverage: Number((alignedCues.length / Math.max(1, cues.length)).toFixed(3)),
       averageAlignmentConfidence: Number((alignedCues.reduce((sum, cue) => sum + (cue.confidence ?? 0), 0) / Math.max(1, alignedCues.length)).toFixed(3)),
+      exploredTemplateCount: decisions.filter((decision) => decision.templateSelection.explored).length,
+      averageTemplateLearnedAdjustment: Number((decisions.reduce((sum, decision) => sum + decision.templateSelection.learnedAdjustment, 0) / Math.max(1, decisions.length)).toFixed(3)),
+      templateHistorySamples: decisions.reduce((sum, decision) => sum + decision.templateSelection.history.samples, 0),
     },
   };
 }

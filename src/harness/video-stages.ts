@@ -13,6 +13,9 @@ import { planRepair, withSuggestedActions, type RepairPlan } from "./retry-polic
 import type { LoopAudit } from "./loop-engineering";
 import { emptyDirtyPlan, mergeDirtyPlans, type DirtyPlan } from "./dirty-plan";
 import { recordStoryPlanOutcome } from "../pipeline/story-planner";
+import type { HtmlVideoContentGraph } from "../html-video/content-graph";
+import { readVisualAuditFile } from "../html-video/visual-audit";
+import { recordTemplateOutcomes } from "../templates/template-learning";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -250,6 +253,23 @@ export async function runPublishStage(input: {
   const productionReportPath = path.join(input.reportDir, "production-report.json");
   const reportPath = path.join(input.reportDir, "report.json");
   const markdownPath = path.join(input.reportDir, "report.md");
+  const graph = input.story.htmlVideoGraphPath
+    ? await readJson<HtmlVideoContentGraph>(input.story.htmlVideoGraphPath).catch(() => undefined)
+    : undefined;
+  const visualAudit = input.story.htmlVideoGraphPath
+    ? await readVisualAuditFile(path.join(path.dirname(input.story.htmlVideoGraphPath), "visual-audit.json")).catch(() => undefined)
+    : undefined;
+  const templateLearning = graph
+    ? await recordTemplateOutcomes({
+      runId: input.runId,
+      project: input.project,
+      nodes: graph.nodes.map((node) => ({ sceneIndex: node.sceneIndex, templateId: node.templateId, variantId: node.variantId, intent: node.intent })),
+      visualAudit,
+      videoIssues: input.video.issues,
+      renderMetrics: input.video.metrics,
+      feedback: input.feedback,
+    }).catch(() => ({ recorded: 0, filePath: "" }))
+    : { recorded: 0, filePath: "" };
   await writeFile(productionReportPath, `${JSON.stringify(production, null, 2)}\n`, "utf8");
   await writeJsonAtomic(reportPath, {
     createdAt: new Date().toISOString(),
@@ -267,6 +287,7 @@ export async function runPublishStage(input: {
     video: input.video,
     dirtyPlan,
     production,
+    templateLearning,
     passed,
   });
   const markdown = [
@@ -295,6 +316,11 @@ export async function runPublishStage(input: {
     `- Aligned cues: ${production.summary.alignedCueCount}/${production.summary.alignedCueCount + production.summary.estimatedCueCount}`,
     `- Alignment coverage: ${(production.summary.alignmentCoverage * 100).toFixed(1)}%`,
     `- Alignment confidence: ${production.summary.averageAlignmentConfidence.toFixed(3)}`,
+    `- Template exploration: ${production.summary.exploredTemplateCount}/${production.decisions.length}`,
+    `- Template learned adjustment: ${production.summary.averageTemplateLearnedAdjustment.toFixed(3)}`,
+    `- Template history samples: ${production.summary.templateHistorySamples}`,
+    `- Template outcomes recorded: ${templateLearning.recorded}`,
+    ...production.decisions.map((decision) => `- Scene ${decision.sceneIndex + 1} template: ${decision.templateSelection.templateId}:${decision.templateSelection.variantId}; rule=${decision.templateSelection.ruleScore}; learned=${decision.templateSelection.learnedAdjustment}; final=${decision.templateSelection.score}; history=${decision.templateSelection.history.scope}:${decision.templateSelection.history.samples}; explored=${decision.templateSelection.explored}`),
     ...(production.storyPlanning ? [
       `- Story plan: ${production.storyPlanning.selectedCandidateId}; candidates=${production.storyPlanning.requestedCandidates}; score=${production.storyPlanning.rankings.find((ranking) => ranking.candidate.id === production.storyPlanning?.selectedCandidateId)?.scores.total ?? 0}`,
       `- Rejected story plans: ${production.storyPlanning.rankings.filter((ranking) => ranking.rejectedReasons.length > 0).map((ranking) => `${ranking.candidate.id}[${ranking.rejectedReasons.join(",")}]`).join("; ") || "none"}`,
@@ -307,7 +333,7 @@ export async function runPublishStage(input: {
   await writeFile(markdownPath, markdown, "utf8");
   await recordFeedbackOutcome(input.feedback.map((entry) => entry.fingerprint), passed).catch(() => undefined);
   await recordStoryPlanOutcome(input.project, passed, Number(finalDraft?.metrics.scoreAverage ?? 0) - 78).catch(() => undefined);
-  return { passed, reportPath, markdownPath, productionReportPath };
+  return { passed, reportPath, markdownPath, productionReportPath, templateLearning };
 }
 
 export function narrationBasename(runId: string, project: VideoProject) {

@@ -1,6 +1,6 @@
 import type { VideoProject, VideoScene } from "../pipeline/types";
-import { selectTemplatesForProject } from "../templates/template-registry";
 import type { SceneIntent, TemplateMotionFamily } from "../templates/template.schema";
+import type { TemplateHistoryStats, TemplateLearningFeatures, TemplateScoreBreakdown } from "../templates/template-learning";
 import { buildProductionDecisions } from "../production/visual-planner";
 import type { SyncCue, VisualPlan } from "../production/types";
 import { highRiskPredicatesInText, qualifiersInText, referencedClaims } from "../pipeline/fact-ledger";
@@ -17,7 +17,13 @@ export interface HtmlVideoGraphNode {
   templateId: string;
   variantId: string;
   templateScore: number;
+  templateRuleScore: number;
+  templateLearnedAdjustment: number;
+  templateExplored: boolean;
   templateReasons: string[];
+  templateFeatures: TemplateLearningFeatures;
+  templateHistory: TemplateHistoryStats;
+  templateScoreBreakdown: TemplateScoreBreakdown;
   durationSec: number;
   data: VideoScene;
   visualPlan: VisualPlan;
@@ -187,21 +193,26 @@ export function topoSortHtmlVideoGraph(graph: HtmlVideoContentGraph) {
 }
 
 export function buildHtmlVideoContentGraph(project: VideoProject): HtmlVideoContentGraph {
-  const selections = selectTemplatesForProject(project);
   const productionDecisions = buildProductionDecisions(project);
   const nodes = project.scenes.map((scene, index) => {
-    const selection = selections[index];
+    const selection = productionDecisions[index].templateSelection;
     return {
       id: "scene-" + String(index + 1).padStart(2, "0"),
       sceneIndex: index,
       sceneType: scene.type,
       kind: nodeKind(scene),
-      intent: selection.intent,
-      frameIntent: frameIntent(scene, selection.intent),
-      templateId: selection.template.id,
+      intent: selection.features.intent,
+      frameIntent: frameIntent(scene, selection.features.intent),
+      templateId: selection.templateId,
       variantId: selection.variantId,
       templateScore: selection.score,
+      templateRuleScore: selection.ruleScore,
+      templateLearnedAdjustment: selection.learnedAdjustment,
+      templateExplored: selection.explored,
       templateReasons: selection.reasons,
+      templateFeatures: selection.features,
+      templateHistory: selection.history,
+      templateScoreBreakdown: selection.scoreBreakdown,
       durationSec: scene.duration,
       data: scene,
       visualPlan: productionDecisions[index].visualPlan,
@@ -233,7 +244,7 @@ export function buildHtmlVideoContentGraph(project: VideoProject): HtmlVideoCont
       family: "scene-gen-editorial-v2",
       palette: "ocean-editorial",
       typography: "cn-sans-editorial",
-      motionFamilies: [...new Set(selections.map((selection) => selection.template.motionFamily))],
+      motionFamilies: [...new Set(productionDecisions.map((decision) => decision.templateSelection.motionFamily))],
     },
     sourceProject: {
       title: project.meta.title,

@@ -46,6 +46,8 @@ npm exec -- playwright install chromium
 
 `tests/unit/speech-alignment.test.ts` 使用固定 word timestamp fixture 验证短语跨 Whisper word chunk 的时间映射、场景相对时间到整段旁白绝对时间的换算、低置信度回退、audio gate 转写复用、production report 覆盖率、HTML `data-sg-sync-*` 标记和动画启动状态，以及 cue 时间变化导致对应视频场景 cache key 失效。该测试不加载 Whisper 或 GPU；HTML 绑定测试只启动本地 Playwright Chromium。
 
+`tests/unit/template-learning.test.ts` 使用隔离的 JSONL 历史验证模板规则分保持稳定、历史高通过率能够重排候选、blank/overflow/static 失败会显著降权、禁用学习后退回纯规则分、探索率保持在配置上限内，以及发布阶段能记录场景质量、渲染耗时和缓存命中证据。
+
 视觉质量离线测试使用 FFmpeg 生成纯色帧和测试图，验证亮度范围与边缘密度能够区分空白画面；Playwright fixture 验证 DOM audit 能发现安全区、低对比度、小字号、裁切、动画过晚和结论停留不足。Golden test 还要求正式标题模板不存在 error 级视觉审计问题。OCR 默认关闭，因此 CI 不需要安装 Tesseract。
 
 GitHub Actions 使用 Node.js 20，并执行：

@@ -14,7 +14,8 @@
     "SCREENSHOT_LIMIT": "1",
     "HARNESS_MAX_ITERATIONS": "3",
     "HARNESS_VIDEO_ITERATIONS": "3",
-    "STORY_PLAN_CANDIDATES": "4"
+    "STORY_PLAN_CANDIDATES": "4",
+    "TEMPLATE_EXPLORATION_RATE": "0.08"
   },
   "doctor": { "requireApi": true, "requireBrowser": true, "requireWhisper": true }
 }

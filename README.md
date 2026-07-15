@@ -353,6 +353,8 @@ rm -rf dist/runs dist/plans dist/output
 
 LLM draft 使用“候选规划 → 确定性否决与重排 → 最佳方案展开”的两阶段流程。不同 profile 默认生成 1、2 或 4 个候选，所有评分与否决原因写入项目和生产报告，详见 [`docs/STORY_PLANNING.md`](docs/STORY_PLANNING.md)。
 
+HTML 模板选择使用“规则候选过滤 → 历史质量重排 → 受控探索”。重排器综合内容领域、场景意图、字数和数据量、素材可用性、历史 blank/overflow/static 风险、质量分、用户反馈、渲染耗时与缓存命中率。运行结果追加到 `data/template-learning/outcomes.jsonl`，生产报告保存规则分、学习修正和最终分；维护与调参说明见 [`docs/TEMPLATE_LEARNING.md`](docs/TEMPLATE_LEARNING.md)。
+
 ## 安全约定
 
 - 不提交真实 API key、账号密码、`.env.local` 或 `*.local.json`。
