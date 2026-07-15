@@ -3,6 +3,9 @@
   "description": "Hosted LLM and OpenAI-compatible TTS with local rendering.",
   "env": {
     "TTS_PROVIDER": "openai",
+    "OPENAI_TTS_CONCURRENCY": "4",
+    "TTS_PREPROCESS_CONCURRENCY": "4",
+    "TTS_FFMPEG_CONCURRENCY": "2",
     "VIDEO_RENDER_ENGINE": "html-video",
     "QUALITY_GATE_PROFILE": "balanced"
   },

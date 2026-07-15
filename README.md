@@ -98,6 +98,18 @@ ASR 词典只规范化 Whisper 转写结果，不会改变实际语音。F5-TTS 
 
 词典内容会参与 F5 分段音频缓存 key。修改词典、模型、参考音频、参考文本、速度、NFE step 或前端版本后，旧 WAV 会自动失效，避免继续复用错误发音。可用 `TTS_PRONUNCIATION_LEXICON` 指向自定义词典，并通过 `npm run test:pronunciation` 在不使用 GPU 的情况下验证 pypinyin 前端。
 
+### F5 持久化 Worker
+
+F5 默认使用 `scripts/f5-worker.py` 的 JSON Lines 持久化 worker。模型、vocoder、参考音频、参考文本和发音词典在 worker 启动时只加载一次，后续每个分镜只发送文本与合成参数。旧的逐段 CLI 模式仍可通过 `F5_TTS_WORKER_MODE=cli` 临时启用，但已标记为 deprecated。
+
+- 单 GPU 默认 `F5_TTS_CONCURRENCY=1`，不会并行启动多个模型进程争抢显存。
+- 多 GPU 使用 `F5_TTS_DEVICES=cuda:0,cuda:1`，每张 GPU 启动一个串行 worker；`F5_TTS_CONCURRENCY` 可限制启用数量。
+- OpenAI TTS 默认并发为 4，Windows 本地 TTS 默认并发为 1；分别通过 `OPENAI_TTS_CONCURRENCY` 和 `LOCAL_TTS_CONCURRENCY` 调整。
+- 缓存检查、文本准备和 FFprobe 使用 `TTS_PREPROCESS_CONCURRENCY` 限流；FFmpeg 后处理使用 `TTS_FFMPEG_CONCURRENCY` 限流。
+- `workerStartupMs`、`modelLoadMs`、`queueWaitMs`、`synthesisMs`、缓存命中/未命中和生成/复用场景数会写入 run journal 与最终报告。
+
+worker 启动超时可调整 `F5_TTS_WORKER_READY_TIMEOUT_MS`，单次请求超时可调整 `F5_TTS_WORKER_REQUEST_TIMEOUT_MS`。worker 崩溃只按 `F5_TTS_WORKER_MAX_RESTARTS` 有限重启；父 Node 进程退出后，Python worker 会自行结束，避免残留 GPU 进程。调试协议或测试替身时可通过 `F5_TTS_WORKER_SCRIPT` 指定其他 worker 脚本。
+
 成功后会输出：
 
 ```text

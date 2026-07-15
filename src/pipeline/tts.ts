@@ -9,6 +9,8 @@ import { fetchWithRetry } from "./external-operation";
 import { resolveF5PythonCommand, resolveF5ReferenceAudio } from "../runtime/runtime-paths";
 import { createF5NarrationCacheMetadata, f5NarrationCacheMetadataSchema } from "./tts-cache";
 import { applyTtsSpokenFallbacks, loadTtsPronunciationLexicon } from "./tts-pronunciation";
+import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
+import { F5WorkerPool, resolveF5WorkerDevices } from "./f5-worker-pool";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
@@ -16,6 +18,30 @@ const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|�
 
 type TtsProvider = "openai" | "f5" | "local";
 const F5_FRONTEND_VERSION = "scene-gen-pypinyin-lexicon-v1";
+let warnedDeprecatedF5Cli = false;
+
+type TtsSynthesisMetrics = NonNullable<NonNullable<VideoProject["audio"]>["metrics"]>;
+
+interface F5Runtime {
+  pool: F5WorkerPool;
+  refAudio: string;
+  refText: string;
+  pronunciationLexiconHash: string;
+}
+
+function emptySynthesisMetrics(): TtsSynthesisMetrics {
+  return {
+    workerStartCount: 0,
+    workerStartupMs: 0,
+    modelLoadMs: 0,
+    queueWaitMs: 0,
+    synthesisMs: 0,
+    cacheHitCount: 0,
+    cacheMissCount: 0,
+    generatedSceneCount: 0,
+    reusedSceneCount: 0,
+  };
+}
 
 function run(command: string, args: string[], options?: { input?: string; env?: NodeJS.ProcessEnv }) {
   return new Promise<void>((resolve, reject) => {
@@ -237,7 +263,11 @@ export function prepareF5SynthesisText(text: string) {
   }
   return /^[。！？!?]/.test(pronounceable) ? pronounceable : `。${pronounceable}`;
 }
-async function f5Tts(text: string, outputPath: string, speedOverride?: string) {
+async function f5TtsCli(text: string, outputPath: string, speedOverride?: string) {
+  if (!warnedDeprecatedF5Cli) {
+    console.warn("[tts] F5_TTS_WORKER_MODE=cli is deprecated; use the persistent worker mode.");
+    warnedDeprecatedF5Cli = true;
+  }
   const python = resolveF5Python();
   const refAudio = resolveF5RefAudio();
   if (!refAudio) throw new Error("F5 reference audio is not configured. Set F5_TTS_REF_AUDIO or use a virtual environment containing the F5-TTS example audio.");
@@ -285,6 +315,70 @@ async function f5Tts(text: string, outputPath: string, speedOverride?: string) {
   });
 }
 
+async function createF5Runtime() {
+  const refAudio = resolveF5RefAudio();
+  if (!refAudio) throw new Error("F5 reference audio is not configured. Set F5_TTS_REF_AUDIO or F5_TTS_VENV.");
+  const refText = await resolveF5RefText(refAudio);
+  const pronunciationLexicon = loadTtsPronunciationLexicon();
+  const pool = new F5WorkerPool({
+    pythonCommand: resolveF5Python(),
+    workerScript: process.env.F5_TTS_WORKER_SCRIPT,
+    model: process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base",
+    devices: resolveF5WorkerDevices(),
+    refAudio,
+    refText,
+    lexiconPath: pronunciationLexicon.filePath,
+    pronunciationLexiconHash: pronunciationLexicon.hash,
+    defaultNfeStep: Number(process.env.F5_TTS_NFE_STEP ?? 16),
+    readyTimeoutMs: Number(process.env.F5_TTS_WORKER_READY_TIMEOUT_MS ?? 120_000),
+    requestTimeoutMs: Number(process.env.F5_TTS_WORKER_REQUEST_TIMEOUT_MS ?? 600_000),
+    maxRestarts: Number(process.env.F5_TTS_WORKER_MAX_RESTARTS ?? 1),
+    env: {
+      HF_HUB_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
+      TRANSFORMERS_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
+    },
+  });
+  return { pool, refAudio, refText, pronunciationLexiconHash: pronunciationLexicon.hash } satisfies F5Runtime;
+}
+
+function positiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function providerConcurrency(provider: TtsProvider, f5Runtime?: F5Runtime) {
+  if (provider === "f5") return f5Runtime?.pool.concurrency ?? 1;
+  if (provider === "openai") return positiveInteger(process.env.OPENAI_TTS_CONCURRENCY, 4);
+  return positiveInteger(process.env.LOCAL_TTS_CONCURRENCY, 1);
+}
+
+async function f5TtsWorker(
+  text: string,
+  outputPath: string,
+  sceneIndex: number,
+  runtime: F5Runtime,
+  speedOverride?: string,
+  signal?: AbortSignal,
+) {
+  const synthesisText = prepareF5SynthesisText(text);
+  assertCleanTtsText(synthesisText, runtime.refAudio, runtime.refText);
+  const textPath = path.join(path.dirname(outputPath), `${path.basename(outputPath, path.extname(outputPath))}.txt`);
+  await Promise.all([
+    writeFile(textPath, synthesisText, "utf8"),
+    writeFile(`${textPath}.ref.txt`, runtime.refText, "utf8"),
+  ]);
+  return runtime.pool.synthesize({
+    sceneIndex,
+    text: synthesisText,
+    outputPath,
+    speed: Number(speedOverride ?? process.env.F5_TTS_SPEED ?? 1.12),
+    nfeStep: Number(process.env.F5_TTS_NFE_STEP ?? 16),
+    seed: Number(process.env.F5_TTS_SEED ?? -1),
+    pronunciationLexiconHash: runtime.pronunciationLexiconHash,
+    signal,
+  });
+}
+
 function resolveTtsProvider(): TtsProvider {
   const provider = process.env.TTS_PROVIDER ?? (process.env.OPENAI_API_KEY ? "openai" : "local");
   return provider === "openai" || provider === "f5" ? provider : "local";
@@ -298,12 +392,17 @@ async function synthesizeNarration(
   provider: TtsProvider,
   text: string,
   outputPath: string,
-  options?: { f5Speed?: string },
+  options?: { f5Speed?: string; sceneIndex?: number; f5Runtime?: F5Runtime; signal?: AbortSignal },
 ) {
   if (provider === "openai") {
     await openAiTts(text, outputPath);
   } else if (provider === "f5") {
-    await f5Tts(text, outputPath, options?.f5Speed);
+    if ((process.env.F5_TTS_WORKER_MODE ?? "worker").trim().toLowerCase() === "cli") {
+      await f5TtsCli(text, outputPath, options?.f5Speed);
+    } else {
+      if (!options?.f5Runtime) throw new Error("Persistent F5 worker runtime is unavailable.");
+      await f5TtsWorker(text, outputPath, options.sceneIndex ?? 0, options.f5Runtime, options.f5Speed, options.signal);
+    }
   } else {
     await windowsTts(text, outputPath);
   }
@@ -361,9 +460,7 @@ async function fitNarrationSegmentsToTarget(
   const tempo = Math.max(minimumTempo, Math.min(maximumTempo, desiredTempo));
   if (Math.abs(tempo - 1) < 0.03) return { paths: segmentPaths, durations };
 
-  const fittedPaths: string[] = [];
-  const fittedDurations: number[] = [];
-  for (const [index, inputPath] of segmentPaths.entries()) {
+  const fitted = await mapWithConcurrency(segmentPaths, Math.max(1, Number(process.env.TTS_FFMPEG_CONCURRENCY ?? 2)), async (inputPath, index) => {
     const fittedPath = inputPath.replace(/\.[^.]+$/, `-fitted-${tempo.toFixed(2)}x.wav`);
     await run("ffmpeg", [
       "-y", "-i", inputPath,
@@ -372,10 +469,9 @@ async function fitNarrationSegmentsToTarget(
     ]);
     const fittedDuration = await probeDuration(fittedPath);
     if (fittedDuration <= 0) throw new Error(`Fitted narration segment ${index + 1} is invalid.`);
-    fittedPaths.push(fittedPath);
-    fittedDurations.push(fittedDuration);
-  }
-  return { paths: fittedPaths, durations: fittedDurations };
+    return { path: fittedPath, duration: fittedDuration };
+  });
+  return { paths: fitted.map((item) => item.path), durations: fitted.map((item) => item.duration) };
 }
 function hashText(text: string) {
   return createHash("sha256").update(text).digest("hex");
@@ -447,33 +543,44 @@ async function synthesizeF5TitleScene(
   project: VideoProject,
   narration: string,
   segmentPath: string,
+  sceneIndex: number,
+  f5Runtime: F5Runtime | undefined,
+  signal?: AbortSignal,
 ) {
   const { titleText, bodyText } = splitTitleNarration(project.meta.title, narration);
   const extension = path.extname(segmentPath);
   const stem = segmentPath.slice(0, -extension.length);
   const partTexts = [titleText, bodyText].filter(Boolean);
   const partPaths = partTexts.map((_, index) => `${stem}-${index === 0 ? "title" : "body"}${extension}`);
-  const partDurations: number[] = [];
-  for (const [index, partText] of partTexts.entries()) {
+  const partResults = await mapWithConcurrency(partTexts, Math.max(1, f5Runtime?.pool.concurrency ?? 1), async (partText, index) => {
     const partPath = partPaths[index];
     const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
     const synthesisText = index === 0 ? `。。。${partText}` : partText;
-    if (!(await canReuseNarrationSegment("f5", synthesisText, partPath, uniformSpeed))) {
-      await synthesizeNarration("f5", synthesisText, partPath, { f5Speed: uniformSpeed });
+    const reused = await canReuseNarrationSegment("f5", synthesisText, partPath, uniformSpeed);
+    if (!reused) {
+      await synthesizeNarration("f5", synthesisText, partPath, { f5Speed: uniformSpeed, sceneIndex, f5Runtime, signal });
       await writeNarrationCacheMetadata(synthesisText, partPath, uniformSpeed);
     }
     const duration = await probeDuration(partPath);
     if (duration <= 0) throw new Error(`Title narration part ${index + 1} is invalid.`);
-    partDurations.push(duration);
-  }
+    return { duration, reused };
+  });
+  const partDurations = partResults.map((result) => result.duration);
   const gaps = partTexts.map((_, index) => (index === 0 && partTexts.length > 1 ? 0.32 : 0));
   await concatNarrationSegments(partPaths, partDurations, gaps, segmentPath);
+  return {
+    cacheHitCount: partResults.filter((result) => result.reused).length,
+    cacheMissCount: partResults.filter((result) => !result.reused).length,
+    generated: partResults.some((result) => !result.reused),
+  };
 }
 async function attachSegmentedNarration(
   project: VideoProject,
   basename: string,
   provider: TtsProvider,
   generatedDir: string,
+  f5Runtime?: F5Runtime,
+  signal?: AbortSignal,
 ) {
   const segments = [...(project.narrationSegments ?? [])].sort((a, b) => a.sceneIndex - b.sceneIndex);
   const uniformF5Speed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
@@ -482,9 +589,9 @@ async function attachSegmentedNarration(
   }
 
   const extension = providerExtension(provider);
-  const segmentPaths: string[] = [];
-  const durations: number[] = [];
-  for (const [index, segment] of segments.entries()) {
+  const taskConcurrency = positiveInteger(process.env.TTS_PREPROCESS_CONCURRENCY, 4);
+  const synthesisQueue = new BoundedTaskQueue(providerConcurrency(provider, f5Runtime));
+  const results = await mapWithConcurrency(segments, taskConcurrency, async (segment, index) => {
     if (segment.sceneIndex !== index || !segment.text.trim()) {
       throw new Error(`Invalid narration segment at scene ${index}.`);
     }
@@ -494,16 +601,33 @@ async function attachSegmentedNarration(
     );
     const synthesisText = narrationSynthesisText(segment);
     if (provider === "f5" && index === 0) {
-      await synthesizeF5TitleScene(project, synthesisText, segmentPath);
-    } else if (!(await canReuseNarrationSegment(provider, synthesisText, segmentPath, provider === "f5" ? uniformF5Speed : undefined))) {
-      await synthesizeNarration(provider, synthesisText, segmentPath, { f5Speed: provider === "f5" ? uniformF5Speed : undefined });
+      const titleResult = await synthesizeF5TitleScene(project, synthesisText, segmentPath, index, f5Runtime, signal);
+      const duration = await probeDuration(segmentPath);
+      if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
+      return { segmentPath, duration, ...titleResult };
+    }
+    const reused = await canReuseNarrationSegment(provider, synthesisText, segmentPath, provider === "f5" ? uniformF5Speed : undefined);
+    if (!reused) {
+      await synthesisQueue.run(() => synthesizeNarration(provider, synthesisText, segmentPath, {
+        f5Speed: provider === "f5" ? uniformF5Speed : undefined,
+        sceneIndex: index,
+        f5Runtime,
+        signal,
+      }));
       if (provider === "f5") await writeNarrationCacheMetadata(synthesisText, segmentPath, uniformF5Speed);
     }
     const duration = await probeDuration(segmentPath);
     if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
-    segmentPaths.push(segmentPath);
-    durations.push(duration);
-  }
+    return {
+      segmentPath,
+      duration,
+      cacheHitCount: reused ? 1 : 0,
+      cacheMissCount: reused ? 0 : 1,
+      generated: !reused,
+    };
+  });
+  const segmentPaths = results.map((result) => result.segmentPath);
+  const durations = results.map((result) => result.duration);
 
   const gaps = durations.map((_, index) => (index === durations.length - 1 ? 0.8 : 0.28));
   const totalGapSeconds = gaps.reduce((sum, gap) => sum + gap, 0);
@@ -535,6 +659,15 @@ async function attachSegmentedNarration(
     ...scene,
     duration: alignedSegments[index].durationSeconds ?? scene.duration,
   }));
+  const workerMetrics = f5Runtime?.pool.metrics() ?? emptySynthesisMetrics();
+  const metrics: TtsSynthesisMetrics = {
+    ...emptySynthesisMetrics(),
+    ...workerMetrics,
+    cacheHitCount: results.reduce((sum, result) => sum + result.cacheHitCount, 0),
+    cacheMissCount: results.reduce((sum, result) => sum + result.cacheMissCount, 0),
+    generatedSceneCount: results.filter((result) => result.generated).length,
+    reusedSceneCount: results.filter((result) => !result.generated).length,
+  };
 
   return {
     ...project,
@@ -549,6 +682,7 @@ async function attachSegmentedNarration(
       src: `/generated/${basename}.wav`,
       durationSeconds: combinedDuration,
       provider,
+      metrics,
     },
   } satisfies VideoProject;
 }
@@ -570,28 +704,50 @@ async function silentAudio(outputPath: string, duration: number) {
   ]);
 }
 
-export async function attachNarrationAudio(project: VideoProject, basename = "narration") {
-  const generatedDir = fromRoot("public", "generated");
+export interface AttachNarrationAudioOptions {
+  generatedDir?: string;
+  provider?: TtsProvider;
+  signal?: AbortSignal;
+}
+
+export async function attachNarrationAudio(project: VideoProject, basename = "narration", options: AttachNarrationAudioOptions = {}) {
+  const generatedDir = options.generatedDir ?? fromRoot("public", "generated");
   await ensureDir(generatedDir);
-  const provider = resolveTtsProvider();
+  const provider = options.provider ?? resolveTtsProvider();
+  const usePersistentF5 = provider === "f5" && (process.env.F5_TTS_WORKER_MODE ?? "worker").trim().toLowerCase() !== "cli";
+  let f5Runtime: F5Runtime | undefined;
 
   try {
+    if (usePersistentF5) f5Runtime = await createF5Runtime();
     if (project.narrationSegments?.length) {
-      return await attachSegmentedNarration(project, basename, provider, generatedDir);
+      return await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal);
     }
 
     const extension = providerExtension(provider);
     const outputPath = path.join(generatedDir, `${basename}.${extension}`);
-    await synthesizeNarration(provider, project.narration, outputPath);
+    const reused = await canReuseNarrationSegment(provider, project.narration, outputPath);
+    if (!reused) {
+      await synthesizeNarration(provider, project.narration, outputPath, { sceneIndex: 0, f5Runtime, signal: options.signal });
+      if (provider === "f5") await writeNarrationCacheMetadata(project.narration, outputPath);
+    }
     const fileSize = await stat(outputPath).then((file) => file.size).catch(() => 0);
     const duration = await probeDuration(outputPath);
     if (fileSize === 0 || duration <= 0) throw new Error("TTS output is empty or invalid");
+    const metrics: TtsSynthesisMetrics = {
+      ...emptySynthesisMetrics(),
+      ...(f5Runtime?.pool.metrics() ?? {}),
+      cacheHitCount: reused ? 1 : 0,
+      cacheMissCount: reused ? 0 : 1,
+      generatedSceneCount: reused ? 0 : 1,
+      reusedSceneCount: reused ? 1 : 0,
+    };
     return {
       ...project,
       audio: {
         src: `/generated/${basename}.${extension}`,
         durationSeconds: duration,
         provider,
+        metrics,
       },
     } satisfies VideoProject;
   } catch (error) {
@@ -631,5 +787,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         provider: "silent",
       },
     } satisfies VideoProject;
+  } finally {
+    await f5Runtime?.pool.dispose();
   }
 }

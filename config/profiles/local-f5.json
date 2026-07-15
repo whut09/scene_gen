@@ -4,6 +4,10 @@
   "env": {
     "TTS_PROVIDER": "f5",
     "F5_TTS_DEVICE": "cuda",
+    "F5_TTS_WORKER_MODE": "worker",
+    "F5_TTS_CONCURRENCY": "1",
+    "TTS_PREPROCESS_CONCURRENCY": "4",
+    "TTS_FFMPEG_CONCURRENCY": "2",
     "VIDEO_RENDER_ENGINE": "html-video",
     "QUALITY_GATE_PROFILE": "balanced",
     "ASR_MODEL": "openai/whisper-tiny"

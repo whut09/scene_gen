@@ -145,6 +145,7 @@ export async function runSynthesizeStage(input: {
 export async function runAudioGateStage(project: VideoProject, targetSeconds: number, signal: AbortSignal): Promise<GateStageOutput> {
   const evaluation = await evaluateAudio(project, targetSeconds, signal);
   evaluation.issues = withSuggestedActions(evaluation.issues, "audio");
+  evaluation.metrics = { ...evaluation.metrics, ...(project.audio?.metrics ?? {}) };
   return { evaluation, repairPlan: planRepair("audio", evaluation.issues, evaluation.profile) };
 }
 

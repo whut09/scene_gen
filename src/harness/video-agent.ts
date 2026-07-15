@@ -276,7 +276,10 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       const synth: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
         journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds }, timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 930_000), signal,
         task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, signal: stageSignal }),
-        describe: (value) => ({ outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "" }, metrics: { duration: value.audio?.durationSeconds ?? 0 } }),
+        describe: (value) => ({
+          outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "" },
+          metrics: { duration: value.audio?.durationSeconds ?? 0, ...(value.audio?.metrics ?? {}) },
+        }),
       });
       state.project = synth.value;
       const gate: { value: GateStageOutput; result: StageResult } = await runStage<GateStageOutput>({

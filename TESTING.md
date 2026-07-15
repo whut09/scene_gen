@@ -9,6 +9,8 @@ npm.cmd run test:pronunciation
 
 该测试不加载 F5 模型，也不需要 GPU。它会让真实 pypinyin 前端加载 `config/tts/zh-CN.json`，验证“重构”为 `chong2 gou4`，同时检查长句上下文、spoken fallback 和 F5 缓存 key。`config/asr/` 只负责 ASR 转写规范化；`config/tts/` 才控制合成前端发音。修改 TTS 词典会改变 `pronunciationLexiconHash`，从而使旧的分段 WAV 缓存失效。
 
+`npm.cmd run test:unit` 还会使用 `tests/fixtures/mock-f5-worker.py` 验证持久化 worker 协议，不加载真实 F5 模型或 GPU。覆盖 ready 超时、崩溃后有限重启、AbortSignal 取消、单 worker 串行请求、单/多 GPU 设备解析、缓存命中不调用 worker，以及发音词典 hash 变化后重新合成。
+
 项目测试分为核心单元测试、离线集成与媒体 smoke、HTML 模板截图检查三层。
 
 ```powershell

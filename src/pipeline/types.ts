@@ -129,6 +129,17 @@ export interface VideoProject {
     src: string;
     durationSeconds: number;
     provider: "openai" | "local" | "f5" | "silent";
+    metrics?: {
+      workerStartCount: number;
+      workerStartupMs: number;
+      modelLoadMs: number;
+      queueWaitMs: number;
+      synthesisMs: number;
+      cacheHitCount: number;
+      cacheMissCount: number;
+      generatedSceneCount: number;
+      reusedSceneCount: number;
+    };
   };
   scenes: VideoScene[];
   sources: HotItem[];
