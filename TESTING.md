@@ -42,6 +42,8 @@ npm exec -- playwright install chromium
 
 媒体 smoke test 只使用 FFmpeg 的合成源，不需要 GPU、F5-TTS、Whisper 或真实 API。截图保存在 `test-results/golden/`，该目录不提交 Git，但 CI 会将其作为 artifact 上传，便于检查空白、溢出、安全区和关键文本问题。
 
+逐场景语音语义验证的单元测试使用固定 ASR transcript，不加载 Whisper。测试覆盖多音字、实体、数字与版本号、漏字多字、相邻场景串段以及低置信度 `verification_inconclusive`。真实 audio gate 会先用 FFmpeg 按 `narrationSegments` 切分 WAV，再让一个 Whisper 实例批量转写所有场景，避免每屏重复加载模型。
+
 GitHub Actions 使用 Node.js 20，并执行：
 
 1. TypeScript 类型检查。

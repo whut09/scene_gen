@@ -90,13 +90,16 @@ const issueActions: Record<string, SuggestedAction> = {
   segment_speed_uneven: "revise-scenes", segment_speed_variance: "revise-scenes", tts_arabic_digits: "revise-scenes",
   audio_missing: "resynthesize-audio", segment_timing_missing: "resynthesize-audio", audio_scene_drift: "resynthesize-audio",
   audio_pronunciation_mismatch: "resynthesize-audio",
+  audio_entity_mismatch: "resynthesize-audio", audio_number_mismatch: "resynthesize-audio",
+  audio_semantic_mismatch: "resynthesize-audio", audio_segment_cross_talk: "resynthesize-audio",
+  verification_inconclusive: "retry-stage",
   asr_verification_failed: "check-environment", judge_unavailable: "check-environment",
   stream_duration_drift: "remux", video_project_duration_drift: "remux",
   blank_frame: "rerender-scenes", stream_missing: "rerender-scenes", wrong_dimensions: "rerender-scenes",
   scene_motion_too_static: "switch-template", video_motion_too_static: "switch-template",
 };
 
-const environmentCodes = new Set(["asr_verification_failed", "judge_unavailable", "stage_timeout_or_cancelled"]);
+const environmentCodes = new Set(["asr_verification_failed", "verification_inconclusive", "judge_unavailable", "stage_timeout_or_cancelled"]);
 
 export function repairActionForIssue(issue: Pick<QualityIssueInput, "code" | "sceneIndex">, stage: QualityStage): SuggestedAction {
   if (issueActions[issue.code]) return issueActions[issue.code];

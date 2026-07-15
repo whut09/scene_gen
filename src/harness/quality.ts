@@ -1,10 +1,8 @@
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { tmpdir } from "node:os";
 import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { prepareF5SynthesisText } from "../pipeline/tts";
-import { fromRoot } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
 import { buildProductionDecisions } from "../production/visual-planner";
 import { qualityJudgeResponseSchema } from "../pipeline/schemas";
@@ -12,8 +10,8 @@ import { isNewsProject, projectNewsDate } from "../pipeline/news-date";
 import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput } from "./quality-protocol";
 import { canonicalSpeechText } from "./speech-normalization";
-import { resolvePythonCommand } from "../runtime/runtime-paths";
 import { findFactConflicts, highRiskPredicatesInText, sceneFactText } from "../pipeline/fact-ledger";
+import { transcribeNarrationScenes, verifySceneTranscripts } from "./scene-audio-verification";
 
 export type { QualityEvaluation, QualityIssue, QualityStage } from "./quality-protocol";
 
@@ -374,36 +372,6 @@ export async function evaluateDraft(
   });
 }
 
-function bigramRecall(expected: string, actual: string) {
-  if (expected.length < 2) return actual.includes(expected) ? 1 : 0;
-  const bigrams = Array.from({ length: expected.length - 1 }, (_, index) => expected.slice(index, index + 2));
-  return bigrams.filter((token) => actual.includes(token)).length / bigrams.length;
-}
-
-async function transcribeOpening(project: VideoProject, signal?: AbortSignal) {
-  if (process.env.ASR_DISABLED === "1" || !project.audio?.src) return null;
-  const audioPath = project.audio.src.startsWith("/generated/")
-    ? fromRoot("public", ...project.audio.src.replace(/^\/+/, "").split("/"))
-    : path.resolve(project.audio.src);
-  const openingSeconds = Math.min(30, (project.narrationSegments?.[0]?.durationSeconds ?? 24) + 0.5);
-  const workDir = await mkdtemp(path.join(tmpdir(), "scene-gen-asr-"));
-  const openingPath = path.join(workDir, "opening.wav");
-  const python = resolvePythonCommand();
-  try {
-    await runCapture("ffmpeg", ["-y", "-i", audioPath, "-t", openingSeconds.toFixed(3), "-ar", "16000", "-ac", "1", openingPath], signal);
-    const result = await runCapture(python, [
-      fromRoot("scripts", "transcribe-audio.py"),
-      "--audio", openingPath,
-      "--model", process.env.ASR_MODEL ?? "openai/whisper-tiny",
-      "--language", process.env.ASR_LANGUAGE ?? "chinese",
-    ], signal);
-    const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
-    const parsed = JSON.parse(lines[lines.length - 1] ?? "{}") as { text?: string };
-    return parsed.text?.trim() ?? "";
-  } finally {
-    await rm(workDir, { recursive: true, force: true });
-  }
-}
 export async function evaluateAudio(project: VideoProject, targetSeconds: number, signal?: AbortSignal): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
   const segments = project.narrationSegments ?? [];
@@ -464,25 +432,36 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   }
   let titleTranscript = "";
   let titleAudioCoverage = 0;
+  let sceneAsrResults = "[]";
+  let sceneAsrVerifiedCount = 0;
+  let sceneAsrInconclusiveCount = 0;
   try {
-    const transcript = await transcribeOpening(project, signal);
-    if (transcript !== null) {
-      titleTranscript = transcript;
+    const transcripts = await transcribeNarrationScenes(project, signal);
+    if (transcripts !== null) {
+      const verification = verifySceneTranscripts(project, transcripts);
+      issues.push(...verification.issues);
+      titleTranscript = verification.titleTranscript;
+      titleAudioCoverage = verification.titleAudioCoverage;
+      sceneAsrResults = JSON.stringify(verification.results);
+      sceneAsrVerifiedCount = verification.results.length;
+      sceneAsrInconclusiveCount = verification.issues.filter((issue) => issue.code === "verification_inconclusive").length;
+      const titleInconclusive = verification.issues.some((issue) => issue.code === "verification_inconclusive" && issue.sceneIndex === 0);
       const expectedTitle = canonicalSpeechText(project.meta.title);
-      const actualTitle = canonicalSpeechText(transcript);
+      const actualTitle = canonicalSpeechText(titleTranscript);
       const hookSource = project.meta.title.split(/[：:]/)[0] ?? project.meta.title;
       const expectedHook = canonicalSpeechText(hookSource).slice(0, 24);
-      titleAudioCoverage = bigramRecall(expectedTitle, actualTitle);
-      if (!actualTitle.startsWith(expectedHook)) {
-        issues.push({ severity: "error", code: "audio_title_opening_missing", message: `实际语音没有从标题开头播报。ASR：${transcript}`, sceneIndex: 0 });
-      }
-      const minimumCoverage = Number(process.env.ASR_TITLE_COVERAGE_MIN ?? 0.58);
-      if (titleAudioCoverage < minimumCoverage) {
-        issues.push({ severity: "error", code: "audio_title_incomplete", message: `标题语音覆盖率 ${(titleAudioCoverage * 100).toFixed(1)}%，低于 ${(minimumCoverage * 100).toFixed(0)}%。`, sceneIndex: 0 });
+      if (!titleInconclusive) {
+        if (!actualTitle.startsWith(expectedHook)) {
+          issues.push({ severity: "error", code: "audio_title_opening_missing", message: `实际语音没有从标题开头播报。ASR：${titleTranscript}`, sceneIndex: 0 });
+        }
+        const minimumCoverage = Number(process.env.ASR_TITLE_COVERAGE_MIN ?? 0.58);
+        if (titleAudioCoverage < minimumCoverage) {
+          issues.push({ severity: "error", code: "audio_title_incomplete", message: `标题语音覆盖率 ${(titleAudioCoverage * 100).toFixed(1)}%，低于 ${(minimumCoverage * 100).toFixed(0)}%。`, sceneIndex: 0 });
+        }
       }
     }
   } catch (error) {
-    issues.push({ severity: "error", code: "asr_verification_failed", message: `无法验证实际语音标题：${(error as Error).message}` });
+    issues.push({ severity: "error", code: "asr_verification_failed", message: `无法执行逐场景语音验证：${(error as Error).message}` });
   }
   let cursor = 0;
   for (const [index, scene] of project.scenes.entries()) {
@@ -520,6 +499,9 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
       maximumDuration,
       titleTranscript,
       titleAudioCoverage: Number(titleAudioCoverage.toFixed(3)),
+      sceneAsrVerifiedCount,
+      sceneAsrInconclusiveCount,
+      sceneAsrResults,
     },
   });
 }

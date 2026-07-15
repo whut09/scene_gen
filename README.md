@@ -160,7 +160,9 @@ dist/runs/<run-id>/quality/frame-1.jpg
 `scene-gen run` 本身就是生产 harness，分为三道质量门：
 
 1. Draft gate：检查中文标题、第一句话是否完整播报标题、新闻日期是否展示并播报、正式发布状态、5 屏与 5 段旁白、逐屏字数、禁词、场景数据完整度、旁白与当前画面字段重合度，以及旁白中是否出现画面未展示的数字；同时阻止 GitHub 指标与功能要点错配、定性能力图伪装成百分比图。可调用 LLM judge 给出事实忠实度、标题吸引力、信息密度、视觉结构、逐屏一致性和 TTS 可读性评分。
-2. Audio gate：检查 TTS 是否存在、时长是否处于合理弹性范围、旁白字数/秒是否自然、数字是否已转换为中文读法、每段音频起点和场景边界是否逐帧对齐；随后用本地 Whisper 转写真实首屏音频，确认实际语音从标题开头播报并达到标题覆盖率门槛。
+2. Audio gate：检查 TTS 是否存在、时长是否处于合理弹性范围、旁白字数/秒是否自然、数字是否已转换为中文读法、每段音频起点和场景边界是否逐帧对齐；随后一次加载本地 Whisper，批量转写每个 scene 的独立音频片段，检查标题开场、文本覆盖率、实体召回率、数字与单位、发音词典短语和相邻场景串段。
+
+逐场景 ASR 的确定性结果写入 audio gate metrics。Whisper 使用生成 token 概率的几何平均值作为场景置信度；高置信度错误会生成带 `sceneIndex` 的 `audio_pronunciation_mismatch`、`audio_entity_mismatch`、`audio_number_mismatch`、`audio_semantic_mismatch` 或 `audio_segment_cross_talk`，因此只重建对应场景音频。低于 `ASR_SCENE_CONFIDENCE_MIN` 的结果只生成 `verification_inconclusive` warning，不触发 TTS 重建。
 3. Video gate：使用 FFprobe 检查视频流、音频流、1080x1920、总时长与流偏差，并在开头、中段和结尾抽帧排除空白画面。
 
 硬规则不通过时，harness 会把问题和改进要求传入下一轮。达到最大轮数仍不合格时会停止，不导出伪成片。LLM judge 的审美评分属于软建议，服务异常或评分偏低会记录到报告，但不会覆盖事实、时长和音画同步等硬门槛。

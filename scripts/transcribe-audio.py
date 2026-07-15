@@ -1,14 +1,63 @@
 import argparse
 import json
+import math
 import os
+import wave
 
+import numpy as np
 import torch
 from transformers import pipeline
 
 
+def confidence_from_result(result):
+    values = []
+    for chunk in result.get("chunks", []):
+        value = chunk.get("confidence", chunk.get("score"))
+        if isinstance(value, (int, float)):
+            values.append(float(value))
+    value = result.get("confidence", result.get("score"))
+    if isinstance(value, (int, float)):
+        values.append(float(value))
+    if not values:
+        return None
+    return max(0.0, min(1.0, sum(values) / len(values)))
+
+
+def transcribe_whisper_with_confidence(recognizer, audio, language):
+    with wave.open(audio, "rb") as handle:
+        sample_rate = handle.getframerate()
+        channels = handle.getnchannels()
+        samples = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16).astype(np.float32)
+    if channels > 1:
+        samples = samples.reshape(-1, channels).mean(axis=1)
+    samples /= 32768.0
+    inputs = recognizer.feature_extractor(samples, sampling_rate=sample_rate, return_tensors="pt")
+    device = next(recognizer.model.parameters()).device
+    input_features = inputs.input_features.to(device)
+    generated = recognizer.model.generate(
+        input_features,
+        language=language,
+        task="transcribe",
+        return_dict_in_generate=True,
+        output_scores=True,
+    )
+    transition_scores = recognizer.model.compute_transition_scores(
+        generated.sequences,
+        generated.scores,
+        beam_indices=getattr(generated, "beam_indices", None),
+        normalize_logits=True,
+    )
+    finite_scores = transition_scores[torch.isfinite(transition_scores)]
+    confidence = math.exp(float(finite_scores.mean().item())) if finite_scores.numel() else None
+    text = recognizer.tokenizer.batch_decode(generated.sequences, skip_special_tokens=True)[0].strip()
+    return {"text": text, "confidence": max(0.0, min(1.0, confidence)) if confidence is not None else None}
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--audio", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--audio")
+    source.add_argument("--request-file")
     parser.add_argument("--model", default=os.getenv("ASR_MODEL", "openai/whisper-tiny"))
     parser.add_argument("--language", default="chinese")
     args = parser.parse_args()
@@ -21,11 +70,28 @@ def main():
         model=args.model,
         device=device,
     )
-    result = recognizer(
-        args.audio,
-        generate_kwargs={"language": args.language, "task": "transcribe"},
-    )
-    print(json.dumps({"text": result.get("text", "").strip()}, ensure_ascii=True))
+    def transcribe(audio):
+        if getattr(recognizer.model.config, "model_type", "") == "whisper":
+            try:
+                return transcribe_whisper_with_confidence(recognizer, audio, args.language)
+            except RuntimeError as error:
+                if "out of memory" in str(error).lower():
+                    raise
+            except (AttributeError, TypeError, ValueError):
+                pass
+        try:
+            result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe"})
+        except (TypeError, ValueError):
+            result = recognizer(audio, generate_kwargs={"language": args.language, "task": "transcribe"})
+        return {"text": result.get("text", "").strip(), "confidence": confidence_from_result(result)}
+
+    if args.request_file:
+        with open(args.request_file, "r", encoding="utf-8") as handle:
+            request = json.load(handle)
+        segments = [{"sceneIndex": item["sceneIndex"], **transcribe(item["audio"])} for item in request.get("segments", [])]
+        print(json.dumps({"segments": segments}, ensure_ascii=True))
+    else:
+        print(json.dumps(transcribe(args.audio), ensure_ascii=True))
 
 
 if __name__ == "__main__":
