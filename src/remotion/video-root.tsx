@@ -41,7 +41,8 @@ function TitleScene({ project, scene, localFrame }: { project: VideoProject; sce
   const intro = ease(localFrame / 20);
   const pulse = Math.sin(localFrame / 13) * 0.5 + 0.5;
   const headlineParts = scene.headline.split(/(GPT-5\.6|Claude|1\/16|十六分之一)/gi);
-  const githubUrl = scene.sources.find((source) => /^github\.com\//i.test(source));
+  const isGithubProject = project.sources.some((source) => source.kind === "github" || Boolean(source.repo));
+  const visibleSources = scene.sources.filter((source) => !/^github\.com\//i.test(source));
   const publicationDate = projectNewsDate(project);
   return (
     <AbsoluteFill className="scene coverScene">
@@ -49,20 +50,14 @@ function TitleScene({ project, scene, localFrame }: { project: VideoProject; sce
       <div className="scanline" style={{ transform: `translateY(${(localFrame * 3) % 900}px)` }} />
       <header className="coverTop">
         <span>{publicationDate ? "新闻日期" : "PROGRAMMATIC VIDEO"}</span>
-        <span>{publicationDate || (githubUrl ? "GITHUB PROJECT" : "NEWS")}</span>
+        <span>{publicationDate || (isGithubProject ? "PROJECT" : "NEWS")}</span>
       </header>
       <section
-        className={`coverHero ${githubUrl ? "coverHeroGithub" : "coverHeroNews"}`}
+        className={`coverHero ${isGithubProject ? "coverHeroGithub" : "coverHeroNews"}`}
         style={{ opacity: intro, transform: `translateY(${(1 - intro) * 32}px)` }}
       >
         <div className="coverRail" />
         <div className="coverGhost">5.6</div>
-        {githubUrl ? (
-          <section className="coverGithub">
-            <strong>GitHub 开源项目推荐</strong>
-            <span>{githubUrl}</span>
-          </section>
-        ) : null}
         {publicationDate ? (
           <section className="coverDate">
             <small>新闻日期</small>
@@ -77,7 +72,7 @@ function TitleScene({ project, scene, localFrame }: { project: VideoProject; sce
         </h1>
         <p className="coverSubhead">{scene.subhead}</p>
         <div className="coverSignals">
-          {scene.sources.map((source, index) => (
+          {visibleSources.map((source, index) => (
             <div className="coverSignal" key={source} style={{ opacity: 0.72 + pulse * 0.28 }}>
               <b>{String(index + 1).padStart(2, "0")}</b>
               <span>{source}</span>

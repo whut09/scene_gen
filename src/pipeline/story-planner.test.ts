@@ -71,3 +71,11 @@ test("selected plan outcome is persisted for future ranking", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+test("accepts a detailed but still drawable Chinese focus", () => {
+  const detailed = candidate("detailed", "evidence-led visual plan");
+  detailed.scenes[3].focus = "媒体消息对应筹备节点与监管审核节点的时间线关系，以及尚未获得公司确认的事实边界说明";
+  const ranking = rankStoryPlanCandidates([detailed], ledger, 90)[0];
+  assert.equal(ranking.rejectedReasons.includes("scene-3-unvisualizable-focus"), false);
+});

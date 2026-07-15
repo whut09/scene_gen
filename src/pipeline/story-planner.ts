@@ -48,7 +48,7 @@ export function rankStoryPlanCandidates(candidates: StoryPlanCandidate[], ledger
     if (unknownClaims.length) rejectedReasons.push(`unknown-claims:${unknownClaims.join(",")}`);
     candidate.scenes.forEach((scene, index) => {
       if (scene.visual !== expectedVisuals[index]) rejectedReasons.push(`scene-${index}-visual-mismatch`);
-      if (compact(scene.focus).length < 4 || compact(scene.focus).length > 60) rejectedReasons.push(`scene-${index}-unvisualizable-focus`);
+      if (compact(scene.focus).length < 4 || compact(scene.focus).length > 120) rejectedReasons.push(`scene-${index}-unvisualizable-focus`);
       const evidence = scene.claimIds.map((claimId) => knownClaims.get(claimId)?.evidenceText ?? "").join(" ");
       const unsupportedPredicates = highRiskPredicatesInText(scene.focus).filter((predicate) => !evidence.includes(predicate));
       if (unsupportedPredicates.length) rejectedReasons.push(`scene-${index}-unsupported-predicates:${unsupportedPredicates.join(",")}`);

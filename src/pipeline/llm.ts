@@ -125,6 +125,38 @@ function sourceGroundingTransform(project: VideoProject) {
   };
 }
 
+export function normalizeDirectedStoryPayload(value: unknown, selectedPlan: StoryPlanCandidate) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const payload = { ...(value as Record<string, unknown>) };
+  if (typeof payload.title !== "string") payload.title = selectedPlan.title;
+  if (!Array.isArray(payload.titleClaimIds) || payload.titleClaimIds.length === 0) {
+    payload.titleClaimIds = selectedPlan.titleClaimIds;
+  }
+  if (Array.isArray(payload.sections)) {
+    payload.sections = payload.sections.map((rawSection, index) => {
+      if (!rawSection || typeof rawSection !== "object" || Array.isArray(rawSection)) return rawSection;
+      const section = { ...(rawSection as Record<string, unknown>) };
+      if (!Array.isArray(section.claimIds) || section.claimIds.length === 0) {
+        section.claimIds = selectedPlan.scenes[index]?.claimIds;
+      }
+      if (Array.isArray(section.bars)) {
+        section.bars = section.bars.map((rawBar) => {
+          if (!rawBar || typeof rawBar !== "object" || Array.isArray(rawBar)) return rawBar;
+          const bar = { ...(rawBar as Record<string, unknown>) };
+          if (typeof bar.value === "string") {
+            const match = bar.value.match(/-?\d+(?:\.\d+)?/);
+            if (match) bar.value = Number(match[0]);
+            else delete bar.value;
+          }
+          return bar;
+        });
+      }
+      return section;
+    });
+  }
+  return payload;
+}
+
 function createDirectedProject(project: VideoProject, directed: DirectedStory, selectedPlan: StoryPlanCandidate, planningAudit: StoryPlanningAudit) {
   const sections = directed.sections;
   if (!sections || sections.length !== 5 || sections.some((section) => !section.narration?.trim())) {
@@ -353,7 +385,7 @@ export async function improveWithOpenAI(
 
   try {
     const audit = { ...planning.audit, expansionTokens: data.usage?.total_tokens ?? 0 };
-    return createDirectedProject(project, directedStorySchema.parse(JSON.parse(content)), planning.selected, audit);
+    return createDirectedProject(project, directedStorySchema.parse(normalizeDirectedStoryPayload(JSON.parse(content), planning.selected)), planning.selected, audit);
   } catch (error) {
     console.warn(`[llm] invalid directed story: ${(error as Error).message}`);
     return project;

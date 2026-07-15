@@ -235,12 +235,32 @@ function numberToChinese(value: string) {
   return fraction ? `${spokenWhole}点${pronounceDigits(fraction)}` : spokenWhole;
 }
 
+export function removeLoneSurrogates(text: string) {
+  let clean = "";
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        clean += text[index] + text[index + 1];
+        index += 1;
+      }
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) continue;
+    clean += text[index];
+  }
+  return clean;
+}
+
 export function prepareF5SynthesisText(text: string) {
-  const trimmed = applyTtsSpokenFallbacks(text).trim();
+  const trimmed = applyTtsSpokenFallbacks(removeLoneSurrogates(text)).trim();
   const startsWithLatin = /^[A-Za-z0-9]/.test(trimmed);
   const pronounceable = trimmed
+    .replace(/^曝/u, "爆料称：")
     .replace(/重置/g, "重新设置")
     .replace(/豆包和千问/g, "豆包，和千问，")
+    .replace(/DeepSeek/gi, "深度求索")
     .replace(/MoneyPrinterTurbo/gi, "Money Printer Turbo")
     .replace(/awesome-llm-apps/gi, "这个项目")
     .replace(/\bRAG\b/gi, "检索增强生成")
@@ -620,7 +640,7 @@ function splitTitleNarration(title: string, narration: string) {
   const trimmedTitle = title.trim().replace(/[。！？!?]+$/, "");
   const trimmedNarration = narration.trim();
   if (trimmedNarration.startsWith(trimmedTitle)) {
-    const body = trimmedNarration.slice(trimmedTitle.length).replace(/^[。！？!?，,：:\s]+/, "").trim();
+    const body = trimmedNarration.slice(trimmedTitle.length).replace(/^[。！？!?，,:：;；\s]+/, "").trim();
     return { titleText: trimmedTitle, bodyText: body };
   }
   const boundary = trimmedNarration.search(/[。！？!?]/);
@@ -651,7 +671,7 @@ async function synthesizeF5TitleScene(
   const partResults = await mapWithConcurrency(partTexts, Math.max(1, f5Runtime?.pool.concurrency ?? 1), async (partText, index) => {
     const partPath = partPaths[index];
     const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
-    const synthesisText = index === 0 ? `。。。${partText}` : partText;
+    const synthesisText = index === 0 ? `。 。 。 ${partText}` : partText;
     const { reused } = await synthesizeF5WithGlobalCache({
       text: synthesisText,
       outputPath: partPath,

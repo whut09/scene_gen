@@ -1,6 +1,7 @@
 {
   "literalMap": {},
   "regexRules": [
+    { "pattern": "deep\\s*seek|深度求索|深度搜索|深度求所|生度求索|身度求所|不求所", "replacement": "deepseek" },
     { "pattern": "兩文封|两文封", "replacement": "梁文锋" },
     { "pattern": "生價|生价", "replacement": "身价" },
     { "pattern": "新手複|新手复", "replacement": "新首富" },

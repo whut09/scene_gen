@@ -48,6 +48,59 @@ async function fetchText(url: string, timeoutMs = 12000) {
   return await response.text();
 }
 
+function normalizePublishedAt(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const date = new Date(value.trim());
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function findJsonLdPublishedAt(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const publishedAt = findJsonLdPublishedAt(item);
+      if (publishedAt) return publishedAt;
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const direct = normalizePublishedAt(record.datePublished ?? record.dateCreated ?? record.uploadDate);
+  if (direct) return direct;
+  for (const child of Object.values(record)) {
+    const publishedAt = findJsonLdPublishedAt(child);
+    if (publishedAt) return publishedAt;
+  }
+  return undefined;
+}
+
+export function extractWebpagePublishedAt(document: Document) {
+  const selectors = [
+    'meta[property="article:published_time"]',
+    'meta[name="article:published_time"]',
+    'meta[name="date"]',
+    'meta[name="pubdate"]',
+    'meta[name="publishdate"]',
+    'meta[itemprop="datePublished"]',
+    'time[datetime]',
+  ];
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    const publishedAt = normalizePublishedAt(
+      element?.getAttribute("content") ?? element?.getAttribute("datetime"),
+    );
+    if (publishedAt) return publishedAt;
+  }
+  for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const publishedAt = findJsonLdPublishedAt(JSON.parse(script.textContent ?? ""));
+      if (publishedAt) return publishedAt;
+    } catch {
+      // Ignore malformed third-party structured data and continue with other blocks.
+    }
+  }
+  return undefined;
+}
+
 function normalizeTags(text: string, keywords: string[]) {
   const lower = text.toLowerCase();
   return keywords.filter((keyword) => lower.includes(keyword.toLowerCase())).slice(0, 5);
