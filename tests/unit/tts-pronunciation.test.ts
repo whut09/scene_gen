@@ -74,6 +74,7 @@ test("F5 narration cache key includes every pronunciation input", () => {
     { speed: "1.20" },
     { nfeStep: "32" },
     { frontendVersion: "frontend-v2" },
+    { cacheSalt: "pronunciation-repair-v2" },
   ];
   for (const change of changes) assert.notEqual(createF5NarrationCacheKey({ ...base, ...change }), baseKey);
 });

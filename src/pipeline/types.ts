@@ -139,7 +139,13 @@ export interface VideoProject {
       cacheMissCount: number;
       generatedSceneCount: number;
       reusedSceneCount: number;
+      forcedAudioSceneIndexes: string;
+      generatedAudioSceneIndexes: string;
+      reusedAudioSceneIndexes: string;
+      concatenatedAudio: boolean;
+      audioGenerationKey: string;
     };
+    sceneCacheSalts?: Record<string, string>;
   };
   scenes: VideoScene[];
   sources: HotItem[];

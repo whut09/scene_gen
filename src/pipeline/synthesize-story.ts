@@ -10,7 +10,7 @@ loadDotEnv();
 
 const args = parseArgs(process.argv.slice(2));
 if (typeof args.project !== "string") {
-  throw new Error("Usage: npm run synthesize:story -- --project <project.json> [--basename <name>]");
+  throw new Error("Usage: npm run synthesize:story -- --project <project.json> [--basename <name>] [--force-scenes 1,2] [--force-audio-rebuild] [--cache-salt <salt>] [--reason <code>]");
 }
 
 const projectPath = path.resolve(args.project);
@@ -23,9 +23,15 @@ project = ensureNewsDateNarration(project);
 const sourceId = project.sources[0]?.id ?? slugify(project.meta.title, "story");
 const basename =
   typeof args.basename === "string" ? args.basename : `narration-agent-${slugify(sourceId, "story")}`;
+const forceSceneIndexes = typeof args["force-scenes"] === "string"
+  ? [...new Set(args["force-scenes"].split(",").map(Number).filter((value) => Number.isInteger(value) && value >= 0))]
+  : undefined;
+const forceAudioRebuild = Boolean(args["force-audio-rebuild"]);
+const cacheSalt = typeof args["cache-salt"] === "string" ? args["cache-salt"] : undefined;
+const reason = typeof args.reason === "string" ? args.reason : undefined;
 
 if (project.revision?.changedSceneIndexes.length) console.log(`Rebuilding narration scenes: ${project.revision.changedSceneIndexes.map((index) => index + 1).join(", ")}`);
-project = await attachNarrationAudio(project, basename);
+project = await attachNarrationAudio(project, basename, { forceSceneIndexes, forceAudioRebuild, cacheSalt, reason });
 project = { ...project, revision: undefined };
 await writeJson(projectPath, videoProjectSchema.parse(project));
 

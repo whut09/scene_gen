@@ -16,3 +16,24 @@ test("quality profiles decide whether warnings block", () => {
   assert.equal(finalizeQualityEvaluation({ ...input, profile: loadQualityProfile("balanced") }).passed, true);
   assert.equal(finalizeQualityEvaluation({ ...input, profile: loadQualityProfile("strict") }).passed, false);
 });
+
+test("pronunciation mismatch uses the stable scene-scoped repair protocol", () => {
+  const evaluation = finalizeQualityEvaluation({
+    stage: "audio",
+    issues: [{
+      severity: "error",
+      code: "audio_pronunciation_mismatch",
+      sceneIndex: 2,
+      evidence: { phrase: "重构", expectedPinyin: "chong2 gou4", actualPinyin: "zhong4 gou4" },
+      repairAction: "resynthesize-audio",
+      retryable: true,
+    }],
+    revisionNotes: [],
+    metrics: {},
+  });
+  assert.equal(evaluation.issues[0].stage, "audio");
+  assert.equal(evaluation.issues[0].sceneIndex, 2);
+  assert.equal(evaluation.issues[0].repairAction, "resynthesize-audio");
+  assert.equal(evaluation.issues[0].retryable, true);
+  assert.deepEqual(evaluation.issues[0].evidence, { phrase: "重构", expectedPinyin: "chong2 gou4", actualPinyin: "zhong4 gou4" });
+});

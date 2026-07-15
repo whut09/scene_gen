@@ -11,6 +11,7 @@ export const f5NarrationCacheIdentitySchema = z.object({
   speed: z.string().min(1),
   nfeStep: z.string().min(1),
   frontendVersion: z.string().min(1),
+  cacheSalt: z.string().min(1).optional(),
 }).strict();
 
 export const f5NarrationCacheMetadataSchema = f5NarrationCacheIdentitySchema.extend({

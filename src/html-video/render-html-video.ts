@@ -28,6 +28,7 @@ export interface HtmlVideoRenderResult {
   outputPath: string;
   graphPath: string;
   frames: RenderedFrame[];
+  remuxedVideo: boolean;
 }
 
 export function createHtmlVideoCacheKey(input: {
@@ -234,7 +235,7 @@ async function concatFrames(frames: RenderedFrame[], outputPath: string) {
 function resolveAudioPath(project: VideoProject) {
   const src = project.audio?.src;
   if (!src) return null;
-  if (/^[A-Za-z]:[\\/]/.test(src)) return src;
+  if (path.isAbsolute(src)) return src;
   return fromRoot("public", src.replace(/^\/+/, ""));
 }
 
@@ -281,7 +282,7 @@ export async function writeHtmlVideoContentGraph(project: VideoProject, graphPat
 export async function renderHtmlVideoProject(
   project: VideoProject,
   outputPath: string,
-  options: { workDir?: string; forceSceneIndexes?: number[] } = {},
+  options: { workDir?: string; forceSceneIndexes?: number[]; remuxOnly?: boolean } = {},
 ): Promise<HtmlVideoRenderResult> {
   const slug = slugify(project.meta.title, "story");
   const workDir = options.workDir ?? fromRoot("public", "generated", "html-video", slug);
@@ -291,6 +292,17 @@ export async function renderHtmlVideoProject(
   const graphPath = path.join(workDir, "content-graph.json");
   const graph: HtmlVideoContentGraph = await writeHtmlVideoContentGraph(project, graphPath);
   const frames: RenderedFrame[] = [];
+  const silentVideoPath = path.join(workDir, "video-no-audio.mp4");
+  const finalTemp = path.join(workDir, "final.mp4");
+
+  if (options.remuxOnly) {
+    if (!existsSync(silentVideoPath)) throw new Error(`Cannot remux audio because the silent video is missing: ${silentVideoPath}`);
+    await muxAudio(project, silentVideoPath, finalTemp);
+    await rm(outputPath, { force: true }).catch(() => undefined);
+    await (await import("node:fs/promises")).copyFile(finalTemp, outputPath);
+    console.log(`[html-video] remuxed audio into ${outputPath}`);
+    return { outputPath, graphPath, frames, remuxedVideo: true };
+  }
 
   const nodeOrder = topoSortHtmlVideoGraph(graph);
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
@@ -366,8 +378,6 @@ export async function renderHtmlVideoProject(
     });
   }
 
-  const silentVideoPath = path.join(workDir, "video-no-audio.mp4");
-  const finalTemp = path.join(workDir, "final.mp4");
   await concatFrames(frames, silentVideoPath);
   await muxAudio(project, silentVideoPath, finalTemp);
   await ensureDir(path.dirname(outputPath));
@@ -375,5 +385,5 @@ export async function renderHtmlVideoProject(
   await (await import("node:fs/promises")).copyFile(finalTemp, outputPath);
   const info = await stat(outputPath);
   console.log(`[html-video] rendered ${outputPath} (${info.size} bytes)`);
-  return { outputPath, graphPath, frames };
+  return { outputPath, graphPath, frames, remuxedVideo: false };
 }

@@ -11,6 +11,8 @@ npm.cmd run test:pronunciation
 
 `npm.cmd run test:unit` 还会使用 `tests/fixtures/mock-f5-worker.py` 验证持久化 worker 协议，不加载真实 F5 模型或 GPU。覆盖 ready 超时、崩溃后有限重启、AbortSignal 取消、单 worker 串行请求、单/多 GPU 设备解析、缓存命中不调用 worker，以及发音词典 hash 变化后重新合成。
 
+`tests/integration/scene-audio-regeneration.test.ts` 使用五分镜 mock F5 项目验证局部音频修复：只强制 scene 2 时仅增加一次 TTS 调用，其余四段命中缓存，总旁白仍会重新 concat；未提供 sceneIndex 时五段全部重建。该测试还用 FFmpeg 创建两秒无声视频，确认 remux-only 路径不会录制任何 HTML scene，只把新音频封装到已有画面。
+
 项目测试分为核心单元测试、离线集成与媒体 smoke、HTML 模板截图检查三层。
 
 ```powershell

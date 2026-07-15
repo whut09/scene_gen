@@ -40,6 +40,11 @@ function emptySynthesisMetrics(): TtsSynthesisMetrics {
     cacheMissCount: 0,
     generatedSceneCount: 0,
     reusedSceneCount: 0,
+    forcedAudioSceneIndexes: "",
+    generatedAudioSceneIndexes: "",
+    reusedAudioSceneIndexes: "",
+    concatenatedAudio: false,
+    audioGenerationKey: "",
   };
 }
 
@@ -481,7 +486,7 @@ async function hashFile(filePath: string) {
   return createHash("sha256").update(await readFile(filePath)).digest("hex");
 }
 
-async function currentF5CacheMetadata(text: string, expectedSpeed?: string) {
+async function currentF5CacheMetadata(text: string, expectedSpeed?: string, cacheSalt?: string) {
   const refAudio = resolveF5RefAudio();
   if (!refAudio) throw new Error("F5 reference audio is not configured.");
   const refText = await resolveF5RefText(refAudio);
@@ -495,6 +500,7 @@ async function currentF5CacheMetadata(text: string, expectedSpeed?: string) {
     speed: expectedSpeed ?? process.env.F5_TTS_SPEED ?? "1.12",
     nfeStep: process.env.F5_TTS_NFE_STEP ?? "16",
     frontendVersion: F5_FRONTEND_VERSION,
+    cacheSalt,
   });
 }
 
@@ -502,17 +508,17 @@ function narrationCacheMetadataPath(segmentPath: string) {
   return `${segmentPath}.cache.json`;
 }
 
-async function writeNarrationCacheMetadata(text: string, segmentPath: string, expectedSpeed?: string) {
-  await writeJsonAtomic(narrationCacheMetadataPath(segmentPath), await currentF5CacheMetadata(text, expectedSpeed));
+async function writeNarrationCacheMetadata(text: string, segmentPath: string, expectedSpeed?: string, cacheSalt?: string) {
+  await writeJsonAtomic(narrationCacheMetadataPath(segmentPath), await currentF5CacheMetadata(text, expectedSpeed, cacheSalt));
 }
 
-async function canReuseNarrationSegment(provider: TtsProvider, text: string, segmentPath: string, expectedSpeed?: string) {
+async function canReuseNarrationSegment(provider: TtsProvider, text: string, segmentPath: string, expectedSpeed?: string, cacheSalt?: string) {
   if (process.env.TTS_FORCE_REBUILD === "1" || provider !== "f5" || !existsSync(segmentPath)) return false;
   const metadataPath = narrationCacheMetadataPath(segmentPath);
   if (!existsSync(metadataPath)) return false;
   try {
     const cached = f5NarrationCacheMetadataSchema.parse(JSON.parse(await readFile(metadataPath, "utf8")));
-    const current = await currentF5CacheMetadata(text, expectedSpeed);
+    const current = await currentF5CacheMetadata(text, expectedSpeed, cacheSalt);
     return cached.cacheKey === current.cacheKey;
   } catch {
     return false;
@@ -521,6 +527,13 @@ async function canReuseNarrationSegment(provider: TtsProvider, text: string, seg
 
 function narrationSynthesisText(segment: NarrationSegment) {
   return segment.ttsText?.trim() || segment.text;
+}
+
+function audioGenerationKey(sceneCacheSalts: Record<string, string>) {
+  return Object.entries(sceneCacheSalts)
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([sceneIndex, salt]) => `${sceneIndex}:${salt}`)
+    .join("|") || "default";
 }
 function splitTitleNarration(title: string, narration: string) {
   const trimmedTitle = title.trim().replace(/[。！？!?]+$/, "");
@@ -545,6 +558,8 @@ async function synthesizeF5TitleScene(
   segmentPath: string,
   sceneIndex: number,
   f5Runtime: F5Runtime | undefined,
+  forceRebuild: boolean,
+  cacheSalt: string | undefined,
   signal?: AbortSignal,
 ) {
   const { titleText, bodyText } = splitTitleNarration(project.meta.title, narration);
@@ -556,10 +571,10 @@ async function synthesizeF5TitleScene(
     const partPath = partPaths[index];
     const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
     const synthesisText = index === 0 ? `。。。${partText}` : partText;
-    const reused = await canReuseNarrationSegment("f5", synthesisText, partPath, uniformSpeed);
+    const reused = !forceRebuild && await canReuseNarrationSegment("f5", synthesisText, partPath, uniformSpeed, cacheSalt);
     if (!reused) {
       await synthesizeNarration("f5", synthesisText, partPath, { f5Speed: uniformSpeed, sceneIndex, f5Runtime, signal });
-      await writeNarrationCacheMetadata(synthesisText, partPath, uniformSpeed);
+      await writeNarrationCacheMetadata(synthesisText, partPath, uniformSpeed, cacheSalt);
     }
     const duration = await probeDuration(partPath);
     if (duration <= 0) throw new Error(`Title narration part ${index + 1} is invalid.`);
@@ -581,6 +596,8 @@ async function attachSegmentedNarration(
   generatedDir: string,
   f5Runtime?: F5Runtime,
   signal?: AbortSignal,
+  forceSceneIndexes: number[] = [],
+  cacheSalt?: string,
 ) {
   const segments = [...(project.narrationSegments ?? [])].sort((a, b) => a.sceneIndex - b.sceneIndex);
   const uniformF5Speed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
@@ -591,6 +608,8 @@ async function attachSegmentedNarration(
   const extension = providerExtension(provider);
   const taskConcurrency = positiveInteger(process.env.TTS_PREPROCESS_CONCURRENCY, 4);
   const synthesisQueue = new BoundedTaskQueue(providerConcurrency(provider, f5Runtime));
+  const forcedScenes = new Set(forceSceneIndexes);
+  const existingSceneCacheSalts = project.audio?.sceneCacheSalts ?? {};
   const results = await mapWithConcurrency(segments, taskConcurrency, async (segment, index) => {
     if (segment.sceneIndex !== index || !segment.text.trim()) {
       throw new Error(`Invalid narration segment at scene ${index}.`);
@@ -600,13 +619,15 @@ async function attachSegmentedNarration(
       `${basename}-scene-${String(index + 1).padStart(2, "0")}.${extension}`,
     );
     const synthesisText = narrationSynthesisText(segment);
+    const forceRebuild = forcedScenes.has(index);
+    const effectiveCacheSalt = forceRebuild ? cacheSalt : existingSceneCacheSalts[String(index)];
     if (provider === "f5" && index === 0) {
-      const titleResult = await synthesizeF5TitleScene(project, synthesisText, segmentPath, index, f5Runtime, signal);
+      const titleResult = await synthesizeF5TitleScene(project, synthesisText, segmentPath, index, f5Runtime, forceRebuild, effectiveCacheSalt, signal);
       const duration = await probeDuration(segmentPath);
       if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
-      return { segmentPath, duration, ...titleResult };
+      return { segmentPath, duration, sceneIndex: index, cacheSalt: effectiveCacheSalt, ...titleResult };
     }
-    const reused = await canReuseNarrationSegment(provider, synthesisText, segmentPath, provider === "f5" ? uniformF5Speed : undefined);
+    const reused = !forceRebuild && await canReuseNarrationSegment(provider, synthesisText, segmentPath, provider === "f5" ? uniformF5Speed : undefined, effectiveCacheSalt);
     if (!reused) {
       await synthesisQueue.run(() => synthesizeNarration(provider, synthesisText, segmentPath, {
         f5Speed: provider === "f5" ? uniformF5Speed : undefined,
@@ -614,7 +635,7 @@ async function attachSegmentedNarration(
         f5Runtime,
         signal,
       }));
-      if (provider === "f5") await writeNarrationCacheMetadata(synthesisText, segmentPath, uniformF5Speed);
+      if (provider === "f5") await writeNarrationCacheMetadata(synthesisText, segmentPath, uniformF5Speed, effectiveCacheSalt);
     }
     const duration = await probeDuration(segmentPath);
     if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
@@ -624,6 +645,8 @@ async function attachSegmentedNarration(
       cacheHitCount: reused ? 1 : 0,
       cacheMissCount: reused ? 0 : 1,
       generated: !reused,
+      sceneIndex: index,
+      cacheSalt: effectiveCacheSalt,
     };
   });
   const segmentPaths = results.map((result) => result.segmentPath);
@@ -660,6 +683,12 @@ async function attachSegmentedNarration(
     duration: alignedSegments[index].durationSeconds ?? scene.duration,
   }));
   const workerMetrics = f5Runtime?.pool.metrics() ?? emptySynthesisMetrics();
+  const generatedAudioSceneIndexes = results.filter((result) => result.generated).map((result) => result.sceneIndex);
+  const reusedAudioSceneIndexes = results.filter((result) => !result.generated).map((result) => result.sceneIndex);
+  const sceneCacheSalts = { ...existingSceneCacheSalts };
+  for (const result of results) {
+    if (result.cacheSalt) sceneCacheSalts[String(result.sceneIndex)] = result.cacheSalt;
+  }
   const metrics: TtsSynthesisMetrics = {
     ...emptySynthesisMetrics(),
     ...workerMetrics,
@@ -667,6 +696,11 @@ async function attachSegmentedNarration(
     cacheMissCount: results.reduce((sum, result) => sum + result.cacheMissCount, 0),
     generatedSceneCount: results.filter((result) => result.generated).length,
     reusedSceneCount: results.filter((result) => !result.generated).length,
+    forcedAudioSceneIndexes: [...forcedScenes].sort((left, right) => left - right).join(","),
+    generatedAudioSceneIndexes: generatedAudioSceneIndexes.join(","),
+    reusedAudioSceneIndexes: reusedAudioSceneIndexes.join(","),
+    concatenatedAudio: true,
+    audioGenerationKey: audioGenerationKey(sceneCacheSalts),
   };
 
   return {
@@ -683,6 +717,7 @@ async function attachSegmentedNarration(
       durationSeconds: combinedDuration,
       provider,
       metrics,
+      sceneCacheSalts,
     },
   } satisfies VideoProject;
 }
@@ -708,27 +743,38 @@ export interface AttachNarrationAudioOptions {
   generatedDir?: string;
   provider?: TtsProvider;
   signal?: AbortSignal;
+  forceSceneIndexes?: number[];
+  forceAudioRebuild?: boolean;
+  cacheSalt?: string;
+  reason?: string;
 }
 
 export async function attachNarrationAudio(project: VideoProject, basename = "narration", options: AttachNarrationAudioOptions = {}) {
   const generatedDir = options.generatedDir ?? fromRoot("public", "generated");
   await ensureDir(generatedDir);
   const provider = options.provider ?? resolveTtsProvider();
+  const allSceneIndexes = project.scenes.map((_, index) => index);
+  const forceSceneIndexes = options.forceAudioRebuild
+    ? options.forceSceneIndexes?.length ? options.forceSceneIndexes : allSceneIndexes
+    : options.forceSceneIndexes ?? [];
+  const cacheSalt = forceSceneIndexes.length ? options.cacheSalt ?? options.reason ?? "forced-audio-rebuild" : undefined;
   const usePersistentF5 = provider === "f5" && (process.env.F5_TTS_WORKER_MODE ?? "worker").trim().toLowerCase() !== "cli";
   let f5Runtime: F5Runtime | undefined;
 
   try {
     if (usePersistentF5) f5Runtime = await createF5Runtime();
     if (project.narrationSegments?.length) {
-      return await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal);
+      return await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal, forceSceneIndexes, cacheSalt);
     }
 
     const extension = providerExtension(provider);
     const outputPath = path.join(generatedDir, `${basename}.${extension}`);
-    const reused = await canReuseNarrationSegment(provider, project.narration, outputPath);
+    const forceRebuild = forceSceneIndexes.includes(0);
+    const effectiveCacheSalt = forceRebuild ? cacheSalt : project.audio?.sceneCacheSalts?.["0"];
+    const reused = !forceRebuild && await canReuseNarrationSegment(provider, project.narration, outputPath, undefined, effectiveCacheSalt);
     if (!reused) {
       await synthesizeNarration(provider, project.narration, outputPath, { sceneIndex: 0, f5Runtime, signal: options.signal });
-      if (provider === "f5") await writeNarrationCacheMetadata(project.narration, outputPath);
+      if (provider === "f5") await writeNarrationCacheMetadata(project.narration, outputPath, undefined, effectiveCacheSalt);
     }
     const fileSize = await stat(outputPath).then((file) => file.size).catch(() => 0);
     const duration = await probeDuration(outputPath);
@@ -740,6 +786,11 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       cacheMissCount: reused ? 0 : 1,
       generatedSceneCount: reused ? 0 : 1,
       reusedSceneCount: reused ? 1 : 0,
+      forcedAudioSceneIndexes: forceRebuild ? "0" : "",
+      generatedAudioSceneIndexes: reused ? "" : "0",
+      reusedAudioSceneIndexes: reused ? "0" : "",
+      concatenatedAudio: false,
+      audioGenerationKey: audioGenerationKey(effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts ?? {}),
     };
     return {
       ...project,
@@ -748,6 +799,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         durationSeconds: duration,
         provider,
         metrics,
+        sceneCacheSalts: effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts,
       },
     } satisfies VideoProject;
   } catch (error) {

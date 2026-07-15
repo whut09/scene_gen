@@ -8,7 +8,7 @@ import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJsonAtomic } f
 import { RunJournalStore } from "./run-journal";
 import { runStage } from "./stage-runner";
 import { parseStageName, stageIndex, type StageResult, type VideoStageName } from "./stage-types";
-import { createLoopAudit, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
+import { audioLoopHash, createLoopAudit, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
 import { normalizeStoredQualityEvaluation } from "./quality-protocol";
 import { defaultOutputDir } from "../runtime/runtime-paths";
 import {
@@ -272,22 +272,41 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     if (!draftPassed || !state.story || !state.project || !state.manifestPath) throw new Error("Draft quality gate failed after all iterations.");
     let audioPassed = state.iterations.at(-1)?.audio?.passed ?? false;
     iteration = Math.max(iteration, state.iterations.at(-1)?.iteration ?? 1);
+    let forceAudioSceneIndexes: number[] | undefined;
+    let forceAudioRebuild = false;
+    let audioCacheSalt: string | undefined;
+    let audioRepairReason: string | undefined;
+    let audioRemuxRequired = false;
+    let audioRetimeRequired = false;
     while ((!audioPassed || shouldRun("synthesize", startStage, forceStage) || shouldRun("audio-gate", startStage, forceStage)) && iteration <= maxIterations) {
+      const forcedIndexes = forceAudioSceneIndexes;
+      const forcedRebuild = forceAudioRebuild;
+      const previousSceneDurations = state.project.scenes.map((scene) => scene.duration);
       const synth: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
-        journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds }, timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 930_000), signal,
-        task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, signal: stageSignal }),
+        journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason }, timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 930_000), signal,
+        task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, signal: stageSignal }),
         describe: (value) => ({
           outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "" },
           metrics: { duration: value.audio?.durationSeconds ?? 0, ...(value.audio?.metrics ?? {}) },
         }),
       });
       state.project = synth.value;
+      if (forcedRebuild) {
+        const generatedIndexes = String(state.project.audio?.metrics?.generatedAudioSceneIndexes ?? "").split(",").filter(Boolean).map(Number);
+        if (generatedIndexes.length === 0) throw new Error("resynthesize-audio did not rebuild any narration segment.");
+        audioRemuxRequired = true;
+        audioRetimeRequired ||= state.project.scenes.some((scene, index) => Math.abs(scene.duration - previousSceneDurations[index]) > 0.001);
+      }
+      forceAudioSceneIndexes = undefined;
+      forceAudioRebuild = false;
+      audioCacheSalt = undefined;
+      audioRepairReason = undefined;
       const gate: { value: GateStageOutput; result: StageResult } = await runStage<GateStageOutput>({
         journal, name: "audio-gate", attempt: nextAttempt(journal, "audio-gate"), inputs: { project: state.project, targetSeconds }, timeoutMs: Number(process.env.HARNESS_AUDIO_GATE_TIMEOUT_MS ?? 360_000), signal,
         task: (stageSignal) => runAudioGateStage(state.project as VideoProject, targetSeconds, stageSignal),
         describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
       });
-      gate.value.evaluation.metrics.projectHash = projectLoopHash(state.project);
+      gate.value.evaluation.metrics.projectHash = audioLoopHash(state.project, state.project.audio?.metrics?.audioGenerationKey);
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-audio.json`);
       await writeJsonAtomic(evaluationPath, gate.value.evaluation);
       await journal.setArtifacts({ [`iteration${iteration}Audio`]: evaluationPath });
@@ -313,7 +332,14 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         const audit = createLoopAudit({ iteration, stage: "audio", before: beforeRevision, after: state.project, evaluation: gate.value.evaluation, durationMs: revision.result.durationMs, usage: revision.value.usage });
         current.audits = [...(current.audits ?? []), audit];
         await persistLoopAudit(journal, runDir, audit);
-      } else if (gate.value.repairPlan.action !== "resynthesize-audio") {
+      } else if (gate.value.repairPlan.action === "resynthesize-audio") {
+        forceAudioRebuild = true;
+        forceAudioSceneIndexes = gate.value.repairPlan.audioSceneIndexes.length
+          ? gate.value.repairPlan.audioSceneIndexes
+          : state.project.scenes.map((_, index) => index);
+        audioRepairReason = gate.value.repairPlan.reason;
+        audioCacheSalt = `audio:${gate.value.repairPlan.reason}:${forceAudioSceneIndexes.join(",") || "all"}`;
+      } else {
         throw new Error(`Audio gate requires ${gate.value.repairPlan.action}: ${gate.value.repairPlan.reason}`);
       }
       iteration += 1;
@@ -324,29 +350,40 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     const videoIterations = Math.max(1, Math.min(3, Number(args["video-iterations"] ?? process.env.HARNESS_VIDEO_ITERATIONS ?? 2)));
     let forceRender = forceStage === "render";
     let forceSceneIndexes: number[] | undefined;
+    const silentVideoPath = state.story.htmlVideoGraphPath ? path.join(path.dirname(state.story.htmlVideoGraphPath), "video-no-audio.mp4") : "";
+    let remuxOnly = audioRemuxRequired && !audioRetimeRequired && engine === "html-video" && Boolean(silentVideoPath) && existsSync(silentVideoPath);
+    let pendingMuxRequired = audioRemuxRequired;
+    let remuxedVideo = false;
     if (shouldRun("video-gate", startStage, forceStage) || !state.video) {
       for (let videoAttempt = 1; videoAttempt <= videoIterations; videoAttempt += 1) {
-        const renderNeeded = videoAttempt > 1 || shouldRun("render", startStage, forceStage) || !existsSync(state.story.outputPath);
+        const renderNeeded = remuxOnly || videoAttempt > 1 || shouldRun("render", startStage, forceStage) || !existsSync(state.story.outputPath);
         if (renderNeeded) {
-          await runStage({
-            journal, name: "render", attempt: nextAttempt(journal, "render"), inputs: { manifestPath: state.manifestPath, engine, forceRender, forceSceneIndexes }, timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_830_000), signal,
-            task: (stageSignal) => runRenderStage({ manifestPath: state.manifestPath!, engine, forceRender, forceSceneIndexes, signal: stageSignal }),
-            describe: () => ({ outputs: { outputPath: state.story!.outputPath }, metrics: { forceRender, forcedSceneCount: forceSceneIndexes?.length ?? 0 } }),
+          const render = await runStage({
+            journal, name: "render", attempt: nextAttempt(journal, "render"), inputs: { manifestPath: state.manifestPath, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired }, timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_830_000), signal,
+            task: (stageSignal) => runRenderStage({ manifestPath: state.manifestPath!, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired, signal: stageSignal }),
+            describe: (value) => ({ outputs: { outputPath: state.story!.outputPath }, metrics: { forceRender, forcedSceneCount: forceSceneIndexes?.length ?? 0, remuxedVideo: value.remuxedVideo, remuxOnly: value.remuxOnly } }),
           });
+          remuxedVideo ||= render.value.remuxedVideo;
+          remuxOnly = false;
+          audioRemuxRequired = false;
+          pendingMuxRequired = false;
         }
         const gate = await runStage({
           journal, name: "video-gate", attempt: nextAttempt(journal, "video-gate"), inputs: { outputPath: state.story.outputPath, project: state.project }, timeoutMs: Number(process.env.HARNESS_VIDEO_GATE_TIMEOUT_MS ?? 480_000), signal,
           task: (stageSignal) => runVideoGateStage({ story: state.story!, project: state.project!, reportDir, signal: stageSignal }),
           describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
         });
+        gate.value.evaluation.metrics.remuxedVideo = remuxedVideo;
         state.video = gate.value.evaluation;
         const evaluationPath = path.join(runDir, "evaluations", `video-attempt-${videoAttempt}.json`);
         await writeJsonAtomic(evaluationPath, state.video);
         await journal.setArtifacts({ videoEvaluation: evaluationPath });
         if (state.video.passed) break;
         if (!gate.value.repairPlan.retryable || videoAttempt === videoIterations) break;
-        forceRender = gate.value.repairPlan.action === "rerender-scenes";
-        forceSceneIndexes = gate.value.repairPlan.sceneIndexes.length ? gate.value.repairPlan.sceneIndexes : undefined;
+        forceSceneIndexes = gate.value.repairPlan.videoSceneIndexes.length ? gate.value.repairPlan.videoSceneIndexes : undefined;
+        forceRender = gate.value.repairPlan.forceVideoRebuild && !forceSceneIndexes?.length;
+        pendingMuxRequired = gate.value.repairPlan.muxRequired;
+        remuxOnly = pendingMuxRequired && engine === "html-video" && Boolean(silentVideoPath) && existsSync(silentVideoPath);
       }
     }
 

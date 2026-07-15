@@ -89,6 +89,7 @@ const issueActions: Record<string, SuggestedAction> = {
   duration_out_of_range: "revise-scenes", speech_too_fast: "revise-scenes", speech_too_slow: "revise-scenes",
   segment_speed_uneven: "revise-scenes", segment_speed_variance: "revise-scenes", tts_arabic_digits: "revise-scenes",
   audio_missing: "resynthesize-audio", segment_timing_missing: "resynthesize-audio", audio_scene_drift: "resynthesize-audio",
+  audio_pronunciation_mismatch: "resynthesize-audio",
   asr_verification_failed: "check-environment", judge_unavailable: "check-environment",
   stream_duration_drift: "remux", video_project_duration_drift: "remux",
   blank_frame: "rerender-scenes", stream_missing: "rerender-scenes", wrong_dimensions: "rerender-scenes",

@@ -17,6 +17,7 @@ const limit = args.limit ? Number(args.limit) : undefined;
 const engine = typeof args.engine === "string" ? args.engine : "remotion";
 const overwrite = Boolean(args.overwrite);
 const forceRender = Boolean(args["force-render"]);
+const remuxOnly = Boolean(args["remux-only"]);
 const forceSceneIndexes = forceRender
   ? undefined
   : typeof args["force-scenes"] === "string"
@@ -33,6 +34,7 @@ for (const story of stories) {
     await renderHtmlVideoProject(project, outputPath, {
       workDir: story.htmlVideoGraphPath ? path.dirname(story.htmlVideoGraphPath) : undefined,
       forceSceneIndexes: forceRender ? project.scenes.map((_, index) => index) : forceSceneIndexes,
+      remuxOnly,
     });
   } else {
     await renderProject(project, story.outputPath, serveUrl as string);

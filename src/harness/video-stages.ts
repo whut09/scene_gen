@@ -128,13 +128,22 @@ export async function runSynthesizeStage(input: {
   projectPath: string;
   basename: string;
   targetSeconds: number;
+  forceSceneIndexes?: number[];
+  cacheSalt?: string;
+  reason?: string;
+  forceAudioRebuild?: boolean;
   signal: AbortSignal;
 }) {
-  await runScript("src/pipeline/synthesize-story.ts", [
+  const args = [
     "--project", input.projectPath,
     "--basename", input.basename,
     "--seconds", String(input.targetSeconds),
-  ], input.signal, {
+  ];
+  if (input.forceAudioRebuild) args.push("--force-audio-rebuild");
+  if (input.forceSceneIndexes?.length) args.push("--force-scenes", input.forceSceneIndexes.join(","));
+  if (input.cacheSalt) args.push("--cache-salt", input.cacheSalt);
+  if (input.reason) args.push("--reason", input.reason);
+  await runScript("src/pipeline/synthesize-story.ts", args, input.signal, {
     timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 900_000),
     retries: 1,
     retryOnExit: true,
@@ -154,16 +163,20 @@ export async function runRenderStage(input: {
   engine: string;
   forceSceneIndexes?: number[];
   forceRender?: boolean;
+  remuxOnly?: boolean;
+  remuxRequired?: boolean;
   signal: AbortSignal;
 }) {
   const args = ["--manifest", input.manifestPath, "--overwrite", "--engine", input.engine];
   if (input.forceRender) args.push("--force-render");
   else if (input.forceSceneIndexes?.length) args.push("--force-scenes", input.forceSceneIndexes.join(","));
+  if (input.remuxOnly) args.push("--remux-only");
   await runScript("src/pipeline/render-stories.ts", args, input.signal, {
     timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_800_000),
     retries: 1,
     retryOnExit: true,
   });
+  return { remuxedVideo: Boolean(input.remuxRequired && input.engine === "html-video"), remuxOnly: Boolean(input.remuxOnly) };
 }
 
 export async function runVideoGateStage(input: {
