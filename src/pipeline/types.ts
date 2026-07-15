@@ -43,7 +43,25 @@ export interface WebScreenshot {
   };
 }
 
-export type VideoScene =
+export interface FactClaim {
+  id: string;
+  subject: string;
+  predicate: string;
+  value: string;
+  qualifiers: string[];
+  sourceId: string;
+  evidenceText: string;
+  evidenceStart?: number;
+  evidenceEnd?: number;
+  confidence: number;
+}
+
+export interface FactLedger {
+  version: 1;
+  claims: FactClaim[];
+}
+
+export type VideoScene = (
   | {
       type: "title";
       duration: number;
@@ -103,12 +121,14 @@ export type VideoScene =
       duration: number;
       headline: string;
       bullets: string[];
-    };
+    }
+) & { claimIds?: string[] };
 
 export interface NarrationSegment {
   sceneIndex: number;
   text: string;
   ttsText?: string;
+  claimIds?: string[];
   audioStartSeconds?: number;
   durationSeconds?: number;
 }
@@ -125,6 +145,8 @@ export interface VideoProject {
   };
   narration: string;
   narrationSegments?: NarrationSegment[];
+  factLedger?: FactLedger;
+  titleClaimIds?: string[];
   audio?: {
     src: string;
     durationSeconds: number;

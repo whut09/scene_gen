@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { generationResultSchema } from "./story-manifest";
 import { qualityJudgeResponseSchema, videoProjectSchema } from "./schemas";
+import { attachFactReferences } from "./fact-ledger";
 
 function projectFixture() {
   return {
@@ -45,6 +46,16 @@ test("video project schema rejects narration indexes that do not align with scen
   const project = projectFixture();
   project.narrationSegments[0].sceneIndex = 2;
   assert.throws(() => videoProjectSchema.parse(project), /Expected sceneIndex 0/);
+});
+
+test("video project schema rejects unknown fact references and source ids", () => {
+  const grounded = attachFactReferences(projectFixture());
+  assert.doesNotThrow(() => videoProjectSchema.parse(grounded));
+  assert.throws(() => videoProjectSchema.parse({ ...grounded, titleClaimIds: ["fact-missing"] }), /Unknown fact claim reference/);
+  assert.throws(() => videoProjectSchema.parse({
+    ...grounded,
+    factLedger: { ...grounded.factLedger!, claims: [{ ...grounded.factLedger!.claims[0], sourceId: "missing-source" }] },
+  }), /Unknown sourceId/);
 });
 
 test("generation result requires explicit manifest and project paths", () => {

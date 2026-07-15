@@ -3,6 +3,7 @@ import type { VideoProject, VideoScene } from "../pipeline/types";
 import { loadDotEnv, parseArgs, readJson, writeJson, writeJsonAtomic } from "../pipeline/utils";
 import { sceneRevisionResponseSchema, videoProjectSchema } from "../pipeline/schemas";
 import { fetchWithRetry } from "../pipeline/external-operation";
+import { attachFactReferences } from "../pipeline/fact-ledger";
 
 function narrationMax(scene: VideoScene) {
   if (scene.type === "title") return 150;
@@ -47,10 +48,11 @@ const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/comple
         "你是视频分镜局部修订器。只修改指定 sceneIndex，禁止修改其他屏、项目标题、来源事实和场景数量。",
         "每个返回项必须包含 sceneIndex、完整 scene 对象和 narration，scene.type 必须与原场景相同。",
         "旁白只能复述该屏可见字段；第一屏第一句话必须逐字念项目标题，不得增加来源中没有的数字。",
+        "scene 必须返回 claimIds，只能引用 factLedger 中直接支持修订后画面与旁白的声明。不得省略声明中的范围、时间或可能性限定词。",
         "必须严格遵守每项 maxNarrationChars。问题包含过长、overloaded 或超过上限时，只能压缩，不得扩写。",
         "返回 JSON：{ revisions: [{ sceneIndex, scene, narration }] }。"
       ].join("\n") },
-      { role: "user", content: JSON.stringify({ title: project.meta.title, issues: typeof args.issues === "string" ? args.issues : "", source: project.sources, selected }) }
+      { role: "user", content: JSON.stringify({ title: project.meta.title, issues: typeof args.issues === "string" ? args.issues : "", factLedger: project.factLedger, source: project.sources, selected }) }
     ]
   })
 }, { label: "scene-revision", timeoutMs: Number(process.env.NEWS_LLM_TIMEOUT_MS ?? 120_000) });
@@ -73,14 +75,14 @@ for (const revision of revisions) {
   narrationSegments[revision.sceneIndex] = { sceneIndex: revision.sceneIndex, text: fittedNarration };
 }
 if (new Set(revisions.map((item) => item.sceneIndex)).size !== sceneIndexes.length) throw new Error("Scene revision did not return every requested scene.");
-const updated: VideoProject = {
+const updated = attachFactReferences({
   ...project,
   scenes,
   narrationSegments,
   narration: narrationSegments.map((segment) => segment.text).join("\n"),
   audio: undefined,
   revision: { changedSceneIndexes: sceneIndexes, updatedAt: new Date().toISOString() },
-};
+} satisfies VideoProject);
 await writeJson(projectPath, videoProjectSchema.parse(updated));
 if (typeof args["result-file"] === "string") {
   await writeJsonAtomic(path.resolve(args["result-file"]), {

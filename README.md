@@ -339,6 +339,8 @@ rm -rf dist/runs dist/plans dist/output
 
 项目保留 Remotion 和 HTML Video 双渲染器。同一份 `VideoProject` 会导出 ContentGraph v2，由可解释模板选择器按场景意图、信息密度、画幅、时长和历史使用情况选择构图。详细设计见 `docs/html-video-integration.md`。
 
+生成阶段还会从全部来源构建声明级 `factLedger`。标题、每个场景和每段旁白通过 `claimIds` 引用来源证据；质量门会检查高风险动作、数字、限定词和多来源冲突，而不是只检查第一个来源中的数字字符串。协议和维护方式见 [`docs/FACT_LEDGER.md`](docs/FACT_LEDGER.md)。
+
 ## 安全约定
 
 - 不提交真实 API key、账号密码、`.env.local` 或 `*.local.json`。

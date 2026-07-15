@@ -1,6 +1,7 @@
 import type { VideoProject, VideoScene } from "./types";
 import { directedStorySchema, type DirectedStory } from "./schemas";
 import { fetchWithRetry } from "./external-operation";
+import { attachFactReferences, buildFactLedger } from "./fact-ledger";
 
 function cleanStrings(values: unknown, limit: number) {
   if (!Array.isArray(values)) return [];
@@ -138,6 +139,12 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
   const colors = ["#fff36a", "#72f0ff", "#ff8bd7", "#8aff9a"];
   const labels = inferEditorialLabels(project);
   const groundText = sourceGroundingTransform(project);
+  const ledger = project.factLedger ?? buildFactLedger(project.sources);
+  const titleClaimIds = directed.titleClaimIds ?? [];
+  const knownClaimIds = new Set(ledger.claims.map((claim) => claim.id));
+  const directedClaimIds = [...titleClaimIds, ...sections.flatMap((section) => section.claimIds ?? [])];
+  const unknownClaimIds = directedClaimIds.filter((claimId) => !knownClaimIds.has(claimId));
+  if (unknownClaimIds.length > 0) throw new Error(`Directed story referenced unknown fact claims: ${[...new Set(unknownClaimIds)].join(", ")}`);
   const scenes: VideoScene[] = [
     {
       type: "title",
@@ -148,6 +155,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
       sources: cleanStrings(titleSection.keywords, 3).length
         ? cleanStrings(titleSection.keywords, 3)
         : ["模型能力", "科学推理", "开放边界"],
+      claimIds: titleSection.claimIds,
     },
     {
       type: "briefing_points",
@@ -161,6 +169,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
         .slice(0, 3)
         .map((metric) => ({ label: metric.label!.trim(), value: metric.value!.trim() })),
       points: cleanStrings(briefingSection.points, 4),
+      claimIds: briefingSection.claimIds,
     },
     {
       type: "signal_chart",
@@ -175,6 +184,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
           detail: bar.detail!.trim(),
           color: colors[index % colors.length],
         })),
+      claimIds: chartSection.claimIds,
     },
     {
       type: "flow",
@@ -184,12 +194,14 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
         .filter((step) => step.label && step.detail)
         .slice(0, 4)
         .map((step) => ({ label: step.label!.trim(), detail: step.detail!.trim() })),
+      claimIds: flowSection.claimIds,
     },
     {
       type: "outro",
       duration: 18,
       headline: outroSection.headline?.trim() || labels.outro,
       bullets: cleanStrings(outroSection.bullets, 4),
+      claimIds: outroSection.claimIds,
     },
   ];
   if (
@@ -211,13 +223,16 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     return {
       sceneIndex,
       text: sceneIndex === 0 ? ensureTitleOpening(title, narration) : narration,
+      claimIds: section.claimIds,
     };
   });
   const groundedScenes = mapGeneratedStrings(scenes, groundText);
   const groundedNarrationSegments = narrationSegments.map((segment) => ({ ...segment, text: groundText(segment.text) }));
   const durationSeconds = groundedScenes.reduce((sum, scene) => sum + scene.duration, 0);
-  return {
+  return attachFactReferences({
     ...project,
+    factLedger: ledger,
+    titleClaimIds,
     meta: {
       ...project.meta,
       title,
@@ -226,13 +241,14 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory) {
     narration: groundedNarrationSegments.map((segment) => segment.text).join("\n"),
     narrationSegments: groundedNarrationSegments,
     scenes: groundedScenes,
-  } satisfies VideoProject;
+  } satisfies VideoProject, ledger);
 }
 
 export async function improveWithOpenAI(
   project: VideoProject,
   options?: { targetSeconds?: number; forbidAttribution?: boolean; editorialNotes?: string },
 ) {
+  project = attachFactReferences(project);
   const apiKey = process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
   if (!apiKey) return project;
 
@@ -246,6 +262,8 @@ export async function improveWithOpenAI(
     "只返回 JSON，不要 Markdown。",
     `总旁白建议约 ${targetChars} 个汉字；${targetSeconds} 秒只是时长参考，不要为了凑时长增加信息或强行压缩语速。`,
     "必须输出 title 和 sections；sections 恰好 5 个，visual 顺序固定为 title、briefing、chart、flow、outro。",
+    "factLedger 是唯一声明级事实账本。title 必须返回 titleClaimIds；每个 section 必须返回 claimIds，且只能引用 factLedger 中存在、能够直接支持当前画面和旁白的 id。",
+    "高风险表述（发布、开放、领先、提升、增长、降低等）必须引用 evidenceText 明确包含该动作的 claim；不得把可能、部分用户、实验结果、仅、尚未等限定词省略。",
     "每个 section 必须有 narration。先确定该 section 的所有画面字段，再写旁白；旁白只能复述、串联或简要解释当前 section 屏幕上实际可见的信息。",
     "禁止在旁白中加入当前屏幕没有呈现的新数据、新案例、新结论或额外背景；需要讲的信息必须先写进该 section 的可视字段。",
     "逐屏旁白长度：title 70-130 字，briefing 120-200 字，chart 110-190 字，flow 110-190 字，outro 80-150 字。宁可让视频自然变长或变短，也不要堆字。",
@@ -287,6 +305,7 @@ export async function improveWithOpenAI(
           role: "user",
           content: JSON.stringify({
             currentTitle: project.meta.title,
+            factLedger: project.factLedger,
             sourceArticle: project.sources.map((item) => ({
               title: item.title,
               summary: item.summary,

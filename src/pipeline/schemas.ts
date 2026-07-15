@@ -36,6 +36,20 @@ export const webScreenshotSchema = z.object({
 
 const durationSchema = z.number().positive();
 const headlineSchema = z.string().min(1);
+const claimIdsSchema = z.array(z.string().min(1));
+
+export const factClaimSchema = z.object({
+  id: z.string().min(1), subject: z.string().min(1), predicate: z.string().min(1), value: z.string().min(1),
+  qualifiers: z.array(z.string().min(1)), sourceId: z.string().min(1), evidenceText: z.string().min(1),
+  evidenceStart: z.number().int().nonnegative().optional(), evidenceEnd: z.number().int().positive().optional(),
+  confidence: z.number().min(0).max(1),
+}).superRefine((claim, context) => {
+  if (claim.evidenceStart !== undefined && claim.evidenceEnd !== undefined && claim.evidenceEnd < claim.evidenceStart) {
+    context.addIssue({ code: "custom", path: ["evidenceEnd"], message: "evidenceEnd must not precede evidenceStart." });
+  }
+});
+
+export const factLedgerSchema = z.object({ version: z.literal(1), claims: z.array(factClaimSchema) });
 
 export const videoSceneSchema = z.discriminatedUnion("type", [
   z.object({
@@ -109,12 +123,13 @@ export const videoSceneSchema = z.discriminatedUnion("type", [
     headline: headlineSchema,
     bullets: z.array(z.string()),
   }),
-]);
+]).and(z.object({ claimIds: claimIdsSchema.optional() }));
 
 export const narrationSegmentSchema = z.object({
   sceneIndex: z.number().int().nonnegative(),
   text: z.string(),
   ttsText: z.string().min(1).optional(),
+  claimIds: claimIdsSchema.optional(),
   audioStartSeconds: z.number().nonnegative().optional(),
   durationSeconds: z.number().positive().optional(),
 });
@@ -131,6 +146,8 @@ export const videoProjectSchema = z.object({
   }),
   narration: z.string(),
   narrationSegments: z.array(narrationSegmentSchema).optional(),
+  factLedger: factLedgerSchema.optional(),
+  titleClaimIds: claimIdsSchema.optional(),
   audio: z.object({
     src: z.string(),
     durationSeconds: z.number().positive(),
@@ -171,6 +188,24 @@ export const videoProjectSchema = z.object({
     updatedAt: z.string(),
   }).optional(),
 }).superRefine((project, context) => {
+  const sourceIds = new Set(project.sources.map((source) => source.id));
+  const factIds = new Set(project.factLedger?.claims.map((claim) => claim.id) ?? []);
+  if (project.factLedger) {
+    if (factIds.size !== project.factLedger.claims.length) {
+      context.addIssue({ code: "custom", path: ["factLedger", "claims"], message: "Fact claim ids must be unique." });
+    }
+    project.factLedger.claims.forEach((claim, index) => {
+      if (!sourceIds.has(claim.sourceId)) context.addIssue({ code: "custom", path: ["factLedger", "claims", index, "sourceId"], message: `Unknown sourceId ${claim.sourceId}.` });
+    });
+    const references = [
+      ...(project.titleClaimIds ?? []),
+      ...project.scenes.flatMap((scene) => scene.claimIds ?? []),
+      ...(project.narrationSegments?.flatMap((segment) => segment.claimIds ?? []) ?? []),
+    ];
+    for (const factId of references) {
+      if (!factIds.has(factId)) context.addIssue({ code: "custom", path: ["factLedger"], message: `Unknown fact claim reference ${factId}.` });
+    }
+  }
   if (project.narrationSegments && project.narrationSegments.length !== project.scenes.length) {
     context.addIssue({
       code: "custom",
@@ -191,6 +226,7 @@ export const videoProjectSchema = z.object({
 
 export const directedStorySchema = z.object({
   title: z.string().optional(),
+  titleClaimIds: z.array(z.string().min(1)).min(1),
   sections: z.array(z.object({
     visual: z.enum(["title", "briefing", "chart", "flow", "outro"]).optional(),
     headline: z.string().optional(),
@@ -198,6 +234,7 @@ export const directedStorySchema = z.object({
     subhead: z.string().optional(),
     summary: z.string().optional(),
     narration: z.string().optional(),
+    claimIds: z.array(z.string().min(1)).min(1),
     keywords: z.array(z.string()).optional(),
     metrics: z.array(z.object({ label: z.string().optional(), value: z.string().optional() })).optional(),
     points: z.array(z.string()).optional(),

@@ -162,7 +162,7 @@ function scrubProject(value: unknown, key = ""): unknown {
   }
   if (Array.isArray(value)) return value.map((child) => scrubProject(child, key));
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, scrubProject(child, childKey)]));
+    return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, childKey === "factLedger" ? child : scrubProject(child, childKey)]));
   }
   return value;
 }

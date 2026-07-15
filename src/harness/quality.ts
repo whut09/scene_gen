@@ -13,6 +13,7 @@ import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operati
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput } from "./quality-protocol";
 import { canonicalSpeechText } from "./speech-normalization";
 import { resolvePythonCommand } from "../runtime/runtime-paths";
+import { findFactConflicts, highRiskPredicatesInText, sceneFactText } from "../pipeline/fact-ledger";
 
 export type { QualityEvaluation, QualityIssue, QualityStage } from "./quality-protocol";
 
@@ -183,6 +184,18 @@ export async function evaluateDraft(
   const averageTemplateScore = templateGraph.nodes.length
     ? templateGraph.nodes.reduce((sum, node) => sum + node.templateScore, 0) / templateGraph.nodes.length
     : 0;
+  if (project.factLedger) {
+    if (!project.titleClaimIds?.length) {
+      issues.push({ severity: "error", code: "title_fact_claims_missing", message: "项目标题没有引用声明级事实。" });
+    }
+    for (const conflict of findFactConflicts(project.factLedger)) {
+      issues.push({
+        severity: "warning", code: "source_fact_conflict",
+        message: `多个来源对 ${conflict[0].predicate} 给出冲突值，发布前需要明确取值范围。`,
+        evidence: { claimIds: conflict.map((claim) => claim.id), sourceIds: conflict.map((claim) => claim.sourceId), values: conflict.map((claim) => claim.value) },
+      });
+    }
+  }
 
   if (project.scenes.length >= 5 && uniqueTemplateCount < 3) {
     issues.push({ severity: "error", code: "template_diversity_low", message: `五屏视频只使用了 ${uniqueTemplateCount} 种模板，至少需要 3 种构图。` });
@@ -192,8 +205,29 @@ export async function evaluateDraft(
   }
   for (const node of templateGraph.nodes) {
     const selectedScene = project.scenes[node.sceneIndex];
+    const segment = project.narrationSegments?.[node.sceneIndex];
+    if (project.factLedger && node.sourceEvidence.claimIds.length === 0) {
+      issues.push({ severity: "error", code: "scene_fact_claims_missing", message: `第 ${node.sceneIndex + 1} 屏没有可核验的事实引用。`, sceneIndex: node.sceneIndex });
+    }
+    if (project.factLedger && !segment?.claimIds?.length) {
+      issues.push({ severity: "error", code: "narration_fact_claims_missing", message: `第 ${node.sceneIndex + 1} 屏旁白没有事实引用。`, sceneIndex: node.sceneIndex });
+    }
     if (node.sourceEvidence.unmatchedNumbers.length > 0) {
       issues.push({ severity: "error", code: "scene_source_number_unverified", message: `第 ${node.sceneIndex + 1} 屏出现来源正文无法核验的数字：${node.sourceEvidence.unmatchedNumbers.join("、")}。`, sceneIndex: node.sceneIndex });
+    }
+    if (node.sourceEvidence.unsupportedPredicates.length > 0) {
+      issues.push({
+        severity: "error", code: "scene_high_risk_predicate_unverified",
+        message: `第 ${node.sceneIndex + 1} 屏的高风险表述缺少直接来源证据：${node.sourceEvidence.unsupportedPredicates.join("、")}。`, sceneIndex: node.sceneIndex,
+        evidence: { predicates: node.sourceEvidence.unsupportedPredicates, claimIds: node.sourceEvidence.claimIds },
+      });
+    }
+    if (selectedScene && highRiskPredicatesInText(sceneFactText(selectedScene)).length > 0 && node.sourceEvidence.missingQualifiers.length > 0) {
+      issues.push({
+        severity: "error", code: "scene_fact_qualifier_dropped",
+        message: `第 ${node.sceneIndex + 1} 屏省略了来源限定词：${node.sourceEvidence.missingQualifiers.join("、")}。`, sceneIndex: node.sceneIndex,
+        evidence: { qualifiers: node.sourceEvidence.missingQualifiers, claimIds: node.sourceEvidence.claimIds },
+      });
     }
     if (selectedScene?.type === "signal_chart" && Array.isArray(selectedScene.bars) && selectedScene.bars.length > 1 && selectedScene.bars.every((bar) => bar.value === selectedScene.bars[0].value) && node.variantId !== "category-cards") {
       issues.push({ severity: "error", code: "qualitative_chart_fake_percentage", message: `第 ${node.sceneIndex + 1} 屏是定性能力分类，不得使用显示百分比的 ${node.variantId} 模板。`, sceneIndex: node.sceneIndex });
@@ -326,6 +360,13 @@ export async function evaluateDraft(
       adjacentTemplateRepeats,
       averageTemplateScore: Number(averageTemplateScore.toFixed(2)),
       templatePlan: compositionIds.join(" -> "),
+      factClaimCount: project.factLedger?.claims.length ?? 0,
+      referencedFactClaimCount: new Set([
+        ...(project.titleClaimIds ?? []),
+        ...project.scenes.flatMap((scene) => scene.claimIds ?? []),
+        ...(project.narrationSegments?.flatMap((segment) => segment.claimIds ?? []) ?? []),
+      ]).size,
+      factConflictCount: project.factLedger ? findFactConflicts(project.factLedger).length : 0,
     },
   });
 }

@@ -3,6 +3,7 @@ import { selectTemplatesForProject } from "../templates/template-registry";
 import type { SceneIntent, TemplateMotionFamily } from "../templates/template.schema";
 import { buildProductionDecisions } from "../production/visual-planner";
 import type { SyncCue, VisualPlan } from "../production/types";
+import { highRiskPredicatesInText, qualifiersInText, referencedClaims } from "../pipeline/fact-ledger";
 
 export type HtmlVideoGraphEdgeType = "sequence" | "contrast" | "dependency";
 
@@ -24,8 +25,12 @@ export interface HtmlVideoGraphNode {
   sourceEvidence: {
     sourceId: string;
     url: string;
+    claimIds: string[];
+    sourceIds: string[];
     matchedNumbers: string[];
     unmatchedNumbers: string[];
+    unsupportedPredicates: string[];
+    missingQualifiers: string[];
   };
 }
 
@@ -87,15 +92,26 @@ function sceneEvidenceText(scene: VideoScene) {
 }
 
 function sourceEvidence(scene: VideoScene, project: VideoProject) {
-  const source = project.sources[0];
-  const sourceText = [source?.title, source?.summary, source?.content, source?.metrics ? JSON.stringify(source.metrics) : ""].filter(Boolean).join(" ").replace(/,/g, "").replace(/％/g, "%");
-  const numbers = normalizedNumbers(sceneEvidenceText(scene));
+  const claims = referencedClaims(project, scene.claimIds);
+  const sources = claims.length
+    ? project.sources.filter((source) => claims.some((claim) => claim.sourceId === source.id))
+    : project.sources;
+  const sourceText = (claims.length ? claims.map((claim) => claim.evidenceText) : sources.flatMap((source) => [source.title, source.summary, source.content, source.metrics ? JSON.stringify(source.metrics) : ""]))
+    .filter(Boolean).join(" ").replace(/,/g, "").replace(/％/g, "%");
+  const sceneText = sceneEvidenceText(scene);
+  const numbers = normalizedNumbers(sceneText);
   const matchedNumbers = numbers.filter((value) => sourceText.includes(value));
+  const source = sources[0];
+  const sceneQualifiers = new Set(qualifiersInText(sceneText));
   return {
     sourceId: source?.id ?? "unknown",
     url: source?.url ?? "",
+    claimIds: claims.map((claim) => claim.id),
+    sourceIds: sources.map((item) => item.id),
     matchedNumbers,
     unmatchedNumbers: numbers.filter((value) => !matchedNumbers.includes(value)),
+    unsupportedPredicates: highRiskPredicatesInText(sceneText).filter((predicate) => !sourceText.includes(predicate)),
+    missingQualifiers: [...new Set(claims.flatMap((claim) => claim.qualifiers).filter((qualifier) => !sceneQualifiers.has(qualifier)))],
   };
 }
 function nodeKind(scene: VideoScene): HtmlVideoGraphNode["kind"] {
