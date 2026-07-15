@@ -28,8 +28,12 @@ export interface StageIssue {
   severity: "warning" | "error";
   code: string;
   message: string;
+  stage: "draft" | "audio" | "video";
+  issueClass: "soft" | "hard" | "environment";
   sceneIndex?: number;
-  suggestedAction?: SuggestedAction;
+  evidence: Record<string, string | number | boolean | string[]>;
+  repairAction: SuggestedAction;
+  retryable: boolean;
 }
 
 export interface StageResult {

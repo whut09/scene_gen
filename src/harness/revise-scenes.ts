@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { VideoProject, VideoScene } from "../pipeline/types";
-import { loadDotEnv, parseArgs, readJson, writeJson } from "../pipeline/utils";
+import { loadDotEnv, parseArgs, readJson, writeJson, writeJsonAtomic } from "../pipeline/utils";
 import { sceneRevisionResponseSchema, videoProjectSchema } from "../pipeline/schemas";
 import { fetchWithRetry } from "../pipeline/external-operation";
 
@@ -55,7 +55,10 @@ const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/comple
   })
 }, { label: "scene-revision", timeoutMs: Number(process.env.NEWS_LLM_TIMEOUT_MS ?? 120_000) });
 if (!response.ok) throw new Error(`Scene revision failed: ${response.status} ${await response.text()}`);
-const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+const payload = await response.json() as {
+  choices?: Array<{ message?: { content?: string } }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+};
 const content = payload.choices?.[0]?.message?.content;
 if (!content) throw new Error("Scene revision returned no content.");
 const revisions = sceneRevisionResponseSchema.parse(JSON.parse(content)).revisions;
@@ -79,4 +82,14 @@ const updated: VideoProject = {
   revision: { changedSceneIndexes: sceneIndexes, updatedAt: new Date().toISOString() },
 };
 await writeJson(projectPath, videoProjectSchema.parse(updated));
+if (typeof args["result-file"] === "string") {
+  await writeJsonAtomic(path.resolve(args["result-file"]), {
+    changedSceneIndexes: sceneIndexes,
+    usage: {
+      promptTokens: payload.usage?.prompt_tokens ?? 0,
+      completionTokens: payload.usage?.completion_tokens ?? 0,
+      totalTokens: payload.usage?.total_tokens ?? 0,
+    },
+  });
+}
 console.log(`Revised scenes: ${sceneIndexes.map((index) => index + 1).join(", ")}`);

@@ -8,6 +8,8 @@ import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJsonAtomic } f
 import { RunJournalStore } from "./run-journal";
 import { runStage } from "./stage-runner";
 import { parseStageName, stageIndex, type StageResult, type VideoStageName } from "./stage-types";
+import { createLoopAudit, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
+import { normalizeStoredQualityEvaluation } from "./quality-protocol";
 import {
   combineNotes,
   narrationBasename,
@@ -51,13 +53,40 @@ async function loadIterations(artifacts: Record<string, string>) {
     const match = key.match(/^iteration(\d+)(Draft|Audio)$/);
     if (!match || !existsSync(filePath)) continue;
     const iteration = Number(match[1]);
-    const evaluation = await readJson<QualityEvaluation>(filePath);
+    const evaluation = normalizeStoredQualityEvaluation(await readJson<unknown>(filePath));
     const current = reports.get(iteration) ?? { iteration, draft: evaluation };
-    if (match[2] === "Draft") current.draft = evaluation;
-    else current.audio = evaluation;
+    if (match[2] === "Draft") {
+      current.draft = evaluation;
+      current.draftProjectHash = typeof evaluation.metrics.projectHash === "string" ? evaluation.metrics.projectHash : undefined;
+    } else {
+      current.audio = evaluation;
+      current.audioProjectHash = typeof evaluation.metrics.projectHash === "string" ? evaluation.metrics.projectHash : undefined;
+    }
     reports.set(iteration, current);
   }
+  for (const [key, filePath] of Object.entries(artifacts)) {
+    const match = key.match(/^iteration(\d+)(Draft|Audio)Audit$/);
+    if (!match || !existsSync(filePath)) continue;
+    const current = reports.get(Number(match[1]));
+    if (!current) continue;
+    current.audits = [...(current.audits ?? []), await readJson<LoopAudit>(filePath)];
+  }
   return [...reports.values()].filter((item) => item.draft?.stage === "draft").sort((left, right) => left.iteration - right.iteration);
+}
+
+async function persistLoopAudit(journal: RunJournalStore, runDir: string, audit: LoopAudit) {
+  const auditPath = path.join(runDir, "loop", `iteration-${audit.iteration}-${audit.stage}.json`);
+  await writeJsonAtomic(auditPath, audit);
+  await journal.setArtifacts({ [`iteration${audit.iteration}${audit.stage === "draft" ? "Draft" : "Audio"}Audit`]: auditPath });
+}
+
+async function finalizePendingAudit(journal: RunJournalStore, runDir: string, reports: IterationReport[], stage: "draft" | "audio", evaluation: QualityEvaluation) {
+  const previous = [...reports].reverse().find((item) => item.audits?.some((audit) => audit.stage === stage && audit.progress === "pending"));
+  const index = previous?.audits?.findIndex((audit) => audit.stage === stage && audit.progress === "pending") ?? -1;
+  if (!previous?.audits || index < 0) return;
+  const audit = finalizeLoopAudit(previous.audits[index], evaluation);
+  previous.audits[index] = audit;
+  await persistLoopAudit(journal, runDir, audit);
 }
 
 function resumeStage(journal: RunJournalStore): VideoStageName {
@@ -90,6 +119,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
   let outputDir: string;
   let screenshotLimit: number;
   let engine: "remotion" | "html-video";
+  let qualityProfile: "balanced" | "strict" | "lenient";
   let startStage: VideoStageName;
 
   if (resumeValue) {
@@ -103,6 +133,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : snapshot.config.outputDir;
     screenshotLimit = typeof args.screenshots === "string" ? Number(args.screenshots) : snapshot.config.screenshotLimit;
     engine = typeof args.engine === "string" ? args.engine as typeof engine : snapshot.config.engine;
+    qualityProfile = typeof args["quality-profile"] === "string" ? args["quality-profile"] as typeof qualityProfile : snapshot.config.qualityProfile;
     startStage = explicitFromStage ?? forceStage ?? resumeStage(journal);
     await journal.resume();
   } else {
@@ -113,18 +144,21 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : path.resolve(process.env.VIDEO_OUTPUT_DIR ?? "F:\\发布视频");
     screenshotLimit = Number(args.screenshots ?? 0);
     engine = (typeof args.engine === "string" ? args.engine : process.env.VIDEO_RENDER_ENGINE ?? "html-video") as typeof engine;
+    qualityProfile = (typeof args["quality-profile"] === "string" ? args["quality-profile"] : process.env.QUALITY_GATE_PROFILE ?? "balanced") as typeof qualityProfile;
     runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(url, "video")}`;
     runDir = fromRoot("dist", "runs", runId);
     journal = await RunJournalStore.create(runDir, {
       runId,
       url,
-      config: { targetSeconds, maxIterations, engine, outputDir, screenshotLimit },
+      config: { targetSeconds, maxIterations, engine, qualityProfile, outputDir, screenshotLimit },
     });
     startStage = explicitFromStage ?? "ingest";
   }
 
   try {
     if (!new Set(["remotion", "html-video"]).has(engine)) throw new Error(`Unsupported render engine: ${engine}`);
+    if (!new Set(["balanced", "strict", "lenient"]).has(qualityProfile)) throw new Error(`Unsupported quality profile: ${qualityProfile}`);
+    process.env.QUALITY_GATE_PROFILE = qualityProfile;
     if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) throw new Error("--seconds must be a positive number.");
     if (!Number.isInteger(screenshotLimit) || screenshotLimit < 0) throw new Error("--screenshots must be a non-negative integer.");
     if (!resumeValue && stageIndex(startStage) > stageIndex("draft")) throw new Error("--from-stage after draft requires --resume <run-id>.");
@@ -140,7 +174,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       if (state.story) state.project = await readProject(state.story.projectPath);
     }
     const videoEvaluationPath = journal.snapshot().artifacts.videoEvaluation;
-    if (videoEvaluationPath && existsSync(videoEvaluationPath)) state.video = await readJson<QualityEvaluation>(videoEvaluationPath);
+    if (videoEvaluationPath && existsSync(videoEvaluationPath)) state.video = normalizeStoredQualityEvaluation(await readJson<unknown>(videoEvaluationPath));
 
     console.log(`\n[harness] run: ${runId}`);
     console.log(`[harness] journal: ${journal.filePath}`);
@@ -159,6 +193,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     const explicitNotes = typeof args.notes === "string" ? args.notes : "";
     let loopNotes = combineNotes([explicitNotes, ingest.feedbackGuidance ? `历史用户反馈，必须避免重复：\n${ingest.feedbackGuidance}` : ""]);
     let ignoreCache = Boolean(args["ignore-cache"]);
+    let globalRewriteEscalated = Boolean(journal.snapshot().artifacts.noProgressEscalation);
     let draftPassed = state.iterations.at(-1)?.draft?.passed ?? false;
     let iteration = Math.max(1, (state.iterations.at(-1)?.iteration ?? 0) + (draftPassed ? 0 : 1));
 
@@ -182,22 +217,47 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         task: (stageSignal) => runDraftGateStage(state.project as VideoProject, targetSeconds, ingest.feedbackGuidance, stageSignal),
         describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
       });
+      gate.value.evaluation.metrics.projectHash = projectLoopHash(state.project);
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-draft.json`);
       await writeJsonAtomic(evaluationPath, gate.value.evaluation);
       await journal.setArtifacts({ [`iteration${iteration}Draft`]: evaluationPath });
       const current = state.iterations.find((item) => item.iteration === iteration) ?? { iteration, draft: gate.value.evaluation };
       current.draft = gate.value.evaluation;
+      current.draftProjectHash = String(gate.value.evaluation.metrics.projectHash);
       if (!state.iterations.includes(current)) state.iterations.push(current);
+      await finalizePendingAudit(journal, runDir, state.iterations.filter((item) => item.iteration < iteration), "draft", gate.value.evaluation);
       draftPassed = gate.value.evaluation.passed;
       if (draftPassed) break;
+      const draftHistory = state.iterations.filter((item) => item.draftProjectHash).map((item) => ({ projectHash: item.draftProjectHash, evaluation: item.draft }));
+      if (hasRepeatedNoProgress(draftHistory)) {
+        if (!globalRewriteEscalated && iteration < maxIterations) {
+          const escalationPath = path.join(runDir, "loop", `iteration-${iteration}-no-progress.json`);
+          await writeJsonAtomic(escalationPath, { stage: "draft", iteration, action: "regenerate-draft", reason: "project hash, issue set and score were unchanged for two rounds" });
+          await journal.setArtifacts({ noProgressEscalation: escalationPath });
+          globalRewriteEscalated = true;
+          state.story = undefined;
+          state.project = undefined;
+          ignoreCache = true;
+          loopNotes = combineNotes([loopNotes, "连续两轮项目、问题集合和评分无变化，停止局部修订并执行全局重写。"]);
+          iteration += 1;
+          startStage = "draft";
+          continue;
+        }
+        throw new Error("Draft loop stopped because two consecutive rounds made no progress.");
+      }
       if (iteration >= maxIterations) break;
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
+        const beforeRevision = structuredClone(state.project);
+        const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-draft-revision-result.json`);
         const revision = await runStage({
           journal, name: "revise", attempt: nextAttempt(journal, "revise"), inputs: gate.value.repairPlan, timeoutMs: 210_000, signal,
-          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: gate.value.repairPlan.sceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue) => issue.message), ...gate.value.evaluation.revisionNotes]), signal: stageSignal }),
+          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: gate.value.repairPlan.sceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue) => issue.message), ...gate.value.evaluation.revisionNotes]), resultPath: revisionResultPath, signal: stageSignal }),
           describe: () => ({ outputs: { projectPath: state.story!.projectPath }, suggestedAction: "revise-scenes" }),
         });
-        state.project = revision.value;
+        state.project = revision.value.project;
+        const audit = createLoopAudit({ iteration, stage: "draft", before: beforeRevision, after: state.project, evaluation: gate.value.evaluation, durationMs: revision.result.durationMs, usage: revision.value.usage });
+        current.audits = [...(current.audits ?? []), audit];
+        await persistLoopAudit(journal, runDir, audit);
       } else if (gate.value.repairPlan.action === "regenerate-draft") {
         state.story = undefined;
         state.project = undefined;
@@ -223,22 +283,32 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         task: (stageSignal) => runAudioGateStage(state.project as VideoProject, targetSeconds, stageSignal),
         describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
       });
+      gate.value.evaluation.metrics.projectHash = projectLoopHash(state.project);
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-audio.json`);
       await writeJsonAtomic(evaluationPath, gate.value.evaluation);
       await journal.setArtifacts({ [`iteration${iteration}Audio`]: evaluationPath });
       const current = state.iterations.find((item) => item.iteration === iteration) ?? { iteration, draft: state.iterations.at(-1)!.draft };
       current.audio = gate.value.evaluation;
+      current.audioProjectHash = String(gate.value.evaluation.metrics.projectHash);
       if (!state.iterations.includes(current)) state.iterations.push(current);
+      await finalizePendingAudit(journal, runDir, state.iterations.filter((item) => item.iteration < iteration), "audio", gate.value.evaluation);
       audioPassed = gate.value.evaluation.passed;
       if (audioPassed) break;
+      const audioHistory = state.iterations.filter((item) => item.audio && item.audioProjectHash).map((item) => ({ projectHash: item.audioProjectHash, evaluation: item.audio! }));
+      if (hasRepeatedNoProgress(audioHistory)) throw new Error("Audio loop stopped because two consecutive rounds made no progress.");
       if (iteration >= maxIterations) break;
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
-        const revision: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
+        const beforeRevision = structuredClone(state.project);
+        const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-audio-revision-result.json`);
+        const revision = await runStage({
           journal, name: "revise", attempt: nextAttempt(journal, "revise"), inputs: gate.value.repairPlan, timeoutMs: 210_000, signal,
-          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: gate.value.repairPlan.sceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue: QualityIssue) => issue.message), ...gate.value.evaluation.revisionNotes]), signal: stageSignal }),
+          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: gate.value.repairPlan.sceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue: QualityIssue) => issue.message), ...gate.value.evaluation.revisionNotes]), resultPath: revisionResultPath, signal: stageSignal }),
           describe: () => ({ outputs: { projectPath: state.story!.projectPath }, suggestedAction: "revise-scenes" }),
         });
-        state.project = revision.value;
+        state.project = revision.value.project;
+        const audit = createLoopAudit({ iteration, stage: "audio", before: beforeRevision, after: state.project, evaluation: gate.value.evaluation, durationMs: revision.result.durationMs, usage: revision.value.usage });
+        current.audits = [...(current.audits ?? []), audit];
+        await persistLoopAudit(journal, runDir, audit);
       } else if (gate.value.repairPlan.action !== "resynthesize-audio") {
         throw new Error(`Audio gate requires ${gate.value.repairPlan.action}: ${gate.value.repairPlan.reason}`);
       }

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ExternalOperationError } from "../pipeline/external-operation";
 import type { RunJournalStore } from "./run-journal";
 import type { StageIssue, StageResult, SuggestedAction, VideoStageName } from "./stage-types";
 
@@ -26,6 +27,12 @@ function canonicalize(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, canonicalize(child)]));
   }
   return value;
+}
+
+function qualityStageFor(name: VideoStageName): StageIssue["stage"] {
+  if (name === "synthesize" || name === "audio-gate") return "audio";
+  if (name === "render" || name === "video-gate" || name === "publish") return "video";
+  return "draft";
 }
 
 export function inputHash(value: unknown) {
@@ -71,16 +78,29 @@ export async function runStage<T>(options: RunStageOptions<T>) {
     return { value, result };
   } catch (error) {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    const externalEnvironmentFailure = error instanceof ExternalOperationError && !["process-exit", "permanent"].includes(error.kind);
+    const environmentFailure = controller.signal.aborted || externalEnvironmentFailure;
+    const repairAction: SuggestedAction = environmentFailure && error instanceof ExternalOperationError && !error.retryable ? "check-environment" : "retry-stage";
+    const retryable = error instanceof ExternalOperationError ? error.retryable : controller.signal.aborted;
     const result: StageResult = {
       name: options.name,
       status: "failed",
       inputHash: hash,
       outputs: {},
-      issues: [{ severity: "error", code: controller.signal.aborted ? "stage_timeout_or_cancelled" : "stage_execution_failed", message, suggestedAction: "retry-stage" }],
+      issues: [{
+        severity: "error",
+        code: controller.signal.aborted ? "stage_timeout_or_cancelled" : "stage_execution_failed",
+        message,
+        stage: qualityStageFor(options.name),
+        issueClass: environmentFailure ? "environment" : "hard",
+        evidence: { summary: message },
+        repairAction,
+        retryable,
+      }],
       metrics: {},
       durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
       attempt: options.attempt,
-      suggestedAction: "retry-stage",
+      suggestedAction: repairAction,
       startedAt,
       completedAt: new Date().toISOString(),
       error: message,

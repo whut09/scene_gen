@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { planRepair } from "./retry-policy";
+import { loadQualityProfile } from "./quality-protocol";
 
 test("repair policy routes content, environment and render failures separately", () => {
   assert.deepEqual(planRepair("draft", [{ severity: "error", code: "scene_narration_mismatch", message: "mismatch", sceneIndex: 2 }]), {
@@ -25,4 +26,6 @@ test("repair policy routes content, environment and render failures separately",
   });
   assert.equal(planRepair("draft", [{ severity: "error", code: "news_date_missing", message: "missing date" }]).action, "regenerate-draft");
   assert.equal(planRepair("draft", [{ severity: "error", code: "title_not_chinese_summary", message: "title" }]).action, "regenerate-draft");
+  assert.equal(planRepair("video", [{ severity: "warning", code: "scene_motion_too_static", message: "static", sceneIndex: 1 }], loadQualityProfile("balanced")).action, "none");
+  assert.equal(planRepair("video", [{ severity: "warning", code: "scene_motion_too_static", message: "static", sceneIndex: 1 }], loadQualityProfile("strict")).action, "switch-template");
 });

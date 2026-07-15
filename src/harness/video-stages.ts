@@ -7,9 +7,10 @@ import { videoProjectSchema } from "../pipeline/schemas";
 import { runExternalProcess } from "../pipeline/external-operation";
 import { fromRoot, readJson, slugify, writeJsonAtomic } from "../pipeline/utils";
 import { buildProductionReport } from "../production/production-report";
-import { buildFeedbackGuidance, readFeedback, type FeedbackEntry } from "./feedback-store";
+import { buildFeedbackGuidance, readFeedback, recordFeedbackOutcome, selectFeedback, type FeedbackEntry } from "./feedback-store";
 import { evaluateAudio, evaluateDraft, evaluateVideo, type QualityEvaluation } from "./quality";
 import { planRepair, withSuggestedActions, type RepairPlan } from "./retry-policy";
+import type { LoopAudit } from "./loop-engineering";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -28,6 +29,9 @@ export interface IterationReport {
   iteration: number;
   draft: QualityEvaluation;
   audio?: QualityEvaluation;
+  draftProjectHash?: string;
+  audioProjectHash?: string;
+  audits?: LoopAudit[];
 }
 
 export function combineNotes(parts: string[]) {
@@ -40,7 +44,7 @@ export async function readProject(projectPath: string) {
 
 export async function runIngestStage(url: string) {
   const feedback = await readFeedback(30);
-  const relevantFeedback = feedback.filter((entry) => !entry.url || entry.url === url);
+  const relevantFeedback = selectFeedback(feedback, { url, stage: "draft" });
   return { feedback: relevantFeedback, feedbackGuidance: buildFeedbackGuidance(relevantFeedback) } satisfies IngestStageOutput;
 }
 
@@ -95,13 +99,14 @@ export async function runDraftStage(input: {
 export async function runDraftGateStage(project: VideoProject, targetSeconds: number, feedbackGuidance: string, signal: AbortSignal): Promise<GateStageOutput> {
   const evaluation = await evaluateDraft(project, targetSeconds, feedbackGuidance, signal);
   evaluation.issues = withSuggestedActions(evaluation.issues, "draft");
-  return { evaluation, repairPlan: planRepair("draft", evaluation.issues) };
+  return { evaluation, repairPlan: planRepair("draft", evaluation.issues, evaluation.profile) };
 }
 
 export async function runRevisionStage(input: {
   projectPath: string;
   sceneIndexes: number[];
   issues: string;
+  resultPath: string;
   signal: AbortSignal;
 }) {
   if (input.sceneIndexes.length === 0) throw new Error("Revision requires at least one scene index.");
@@ -109,12 +114,14 @@ export async function runRevisionStage(input: {
     "--project", input.projectPath,
     "--scenes", input.sceneIndexes.join(","),
     "--issues", input.issues,
+    "--result-file", input.resultPath,
   ], input.signal, {
     timeoutMs: Number(process.env.HARNESS_REVISION_TIMEOUT_MS ?? 180_000),
     retries: 1,
     retryOnExit: true,
   });
-  return readProject(input.projectPath);
+  const result = await readJson<{ usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } }>(input.resultPath);
+  return { project: await readProject(input.projectPath), usage: result.usage ?? {} };
 }
 
 export async function runSynthesizeStage(input: {
@@ -138,7 +145,7 @@ export async function runSynthesizeStage(input: {
 export async function runAudioGateStage(project: VideoProject, targetSeconds: number, signal: AbortSignal): Promise<GateStageOutput> {
   const evaluation = await evaluateAudio(project, targetSeconds, signal);
   evaluation.issues = withSuggestedActions(evaluation.issues, "audio");
-  return { evaluation, repairPlan: planRepair("audio", evaluation.issues) };
+  return { evaluation, repairPlan: planRepair("audio", evaluation.issues, evaluation.profile) };
 }
 
 export async function runRenderStage(input: {
@@ -172,13 +179,13 @@ export async function runVideoGateStage(input: {
     input.signal,
   );
   evaluation.issues = withSuggestedActions(evaluation.issues, "video");
-  return { evaluation, repairPlan: planRepair("video", evaluation.issues) };
+  return { evaluation, repairPlan: planRepair("video", evaluation.issues, evaluation.profile) };
 }
 
 function evaluationMarkdown(evaluation: QualityEvaluation) {
-  const lines = [`### ${evaluation.stage}`, `- Passed: ${evaluation.passed}`, `- Metrics: ${JSON.stringify(evaluation.metrics)}`];
+  const lines = [`### ${evaluation.stage}`, `- Outcome: ${evaluation.outcome}`, `- Profile: ${evaluation.profile.name}`, `- Passed: ${evaluation.passed}`, `- Metrics: ${JSON.stringify(evaluation.metrics)}`];
   if (evaluation.scores) lines.push(`- Scores: ${JSON.stringify(evaluation.scores)}`);
-  for (const issue of evaluation.issues) lines.push(`- ${issue.severity.toUpperCase()} ${issue.code}: ${issue.message}`);
+  for (const issue of evaluation.issues) lines.push(`- ${issue.severity.toUpperCase()} ${issue.code} [${issue.issueClass}] -> ${issue.repairAction} (retryable=${issue.retryable}): ${JSON.stringify(issue.evidence)}`);
   return lines.join("\n");
 }
 
@@ -238,6 +245,7 @@ export async function runPublishStage(input: {
       `## Iteration ${item.iteration}`,
       evaluationMarkdown(item.draft),
       item.audio ? evaluationMarkdown(item.audio) : "",
+      ...(item.audits ?? []).map((audit) => `- Loop audit ${audit.stage}: ${audit.progress}; patch=${audit.patch.length}; resolved=${audit.resolvedIssues.join(",") || "none"}; new=${audit.newIssues.join(",") || "none"}; tokens=${audit.cost.totalTokens}; durationMs=${audit.cost.durationMs}`),
       "",
     ]),
     "## Production Decisions",
@@ -250,6 +258,7 @@ export async function runPublishStage(input: {
     "",
   ].join("\n");
   await writeFile(markdownPath, markdown, "utf8");
+  await recordFeedbackOutcome(input.feedback.map((entry) => entry.fingerprint), passed).catch(() => undefined);
   return { passed, reportPath, markdownPath, productionReportPath };
 }
 

@@ -14,7 +14,7 @@ if (!(["low", "medium", "high", "critical"] as const).includes(severity)) {
   throw new Error(`Invalid severity: ${severity}`);
 }
 
-const filePath = await appendFeedback({
+const result = await appendFeedback({
   createdAt: new Date().toISOString(),
   category: typeof args.category === "string" ? args.category : "general",
   severity,
@@ -22,6 +22,9 @@ const filePath = await appendFeedback({
   desired: typeof args.desired === "string" ? args.desired : undefined,
   url: typeof args.url === "string" ? args.url : undefined,
   videoPath: typeof args.video === "string" ? args.video : undefined,
+  appliesTo: typeof args["applies-to"] === "string" ? args["applies-to"].split(",").map((item) => item.trim()).filter(Boolean) : undefined,
+  enabled: !args.disabled,
+  resolvedAt: args.resolved ? new Date().toISOString() : undefined,
 });
 
-console.log(`Feedback saved: ${filePath}`);
+console.log(`Feedback ${result.deduplicated ? "deduplicated" : "saved"}: ${result.filePath} (${result.entry.fingerprint})`);

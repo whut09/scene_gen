@@ -201,7 +201,15 @@ export const sceneRevisionResponseSchema = z.object({
 
 export const qualityJudgeResponseSchema = z.object({
   scores: z.record(z.string(), z.number()).optional(),
-  issues: z.array(z.string()).optional(),
+  issues: z.array(z.object({
+    code: z.string().min(1),
+    stage: z.literal("draft"),
+    severity: z.enum(["warning", "error"]),
+    sceneIndex: z.number().int().nonnegative().optional(),
+    evidence: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])),
+    repairAction: z.enum(["none", "regenerate-draft", "revise-scenes", "retry-stage", "check-environment", "resynthesize-audio", "remux", "rerender-scenes", "switch-template", "stop"]),
+    retryable: z.boolean(),
+  })).optional(),
   revisionNotes: z.array(z.string()).optional(),
 });
 

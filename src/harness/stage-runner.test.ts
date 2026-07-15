@@ -26,6 +26,8 @@ test("stage runner records input hashes and cancels timed out work", async () =>
     assert.equal(stage?.status, "failed");
     assert.equal(stage?.inputHash.length, 64);
     assert.equal(stage?.suggestedAction, "retry-stage");
+    assert.equal(stage?.issues[0].issueClass, "environment");
+    assert.equal(stage?.issues[0].retryable, true);
   } finally {
     await rm(runDir, { recursive: true, force: true });
   }

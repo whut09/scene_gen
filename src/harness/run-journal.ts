@@ -14,8 +14,12 @@ const stageIssueSchema = z.object({
   severity: z.enum(["warning", "error"]),
   code: z.string(),
   message: z.string(),
+  stage: z.enum(["draft", "audio", "video"]).default("draft"),
+  issueClass: z.enum(["soft", "hard", "environment"]).default("hard"),
   sceneIndex: z.number().int().nonnegative().optional(),
-  suggestedAction: suggestedActionSchema.optional(),
+  evidence: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).default({}),
+  repairAction: suggestedActionSchema.default("retry-stage"),
+  retryable: z.boolean().default(false),
 });
 
 const runStageSchema = z.object({
@@ -44,6 +48,7 @@ export const runJournalSchema = z.object({
     targetSeconds: z.number().positive(),
     maxIterations: z.number().int().positive(),
     engine: z.enum(["remotion", "html-video"]),
+    qualityProfile: z.enum(["balanced", "strict", "lenient"]).default("balanced"),
     outputDir: z.string().min(1),
     screenshotLimit: z.number().int().nonnegative(),
   }),
@@ -54,6 +59,9 @@ export const runJournalSchema = z.object({
 
 export type RunJournal = z.infer<typeof runJournalSchema>;
 export type RunStage = z.infer<typeof runStageSchema>;
+type RunJournalCreateInput = Omit<RunJournal, "specVersion" | "status" | "createdAt" | "updatedAt" | "artifacts" | "stages" | "config"> & {
+  config: Omit<RunJournal["config"], "qualityProfile"> & { qualityProfile?: RunJournal["config"]["qualityProfile"] };
+};
 
 export class RunJournalStore {
   readonly filePath: string;
@@ -64,7 +72,7 @@ export class RunJournalStore {
     this.journal = journal;
   }
 
-  static async create(runDir: string, input: Omit<RunJournal, "specVersion" | "status" | "createdAt" | "updatedAt" | "artifacts" | "stages">) {
+  static async create(runDir: string, input: RunJournalCreateInput) {
     const timestamp = new Date().toISOString();
     const journal = runJournalSchema.parse({
       specVersion: 1,

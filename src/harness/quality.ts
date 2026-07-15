@@ -10,20 +10,10 @@ import { buildProductionDecisions } from "../production/visual-planner";
 import { qualityJudgeResponseSchema } from "../pipeline/schemas";
 import { isNewsProject, projectNewsDate } from "../pipeline/news-date";
 import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operation";
-import type { StageIssue } from "./stage-types";
+import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput } from "./quality-protocol";
+import { canonicalSpeechText } from "./speech-normalization";
 
-export type QualityStage = "draft" | "audio" | "video";
-
-export interface QualityIssue extends StageIssue {}
-
-export interface QualityEvaluation {
-  stage: QualityStage;
-  passed: boolean;
-  issues: QualityIssue[];
-  revisionNotes: string[];
-  scores?: Record<string, number>;
-  metrics: Record<string, number | string | boolean>;
-}
+export type { QualityEvaluation, QualityIssue, QualityStage } from "./quality-protocol";
 
 const ASR_TRADITIONAL_TO_SIMPLIFIED: Record<string, string> = {
   獎: "奖", 攝: "摄", 銷: "销", 認: "认", 賽: "赛", 獲: "获", 與: "与", 為: "为",
@@ -83,7 +73,7 @@ function extraNarrationNumbers(visibleText: string, narration: string) {
   return [...new Set(narration.match(/\d+(?:\.\d+)?%?/g) ?? [])].filter((value) => !visibleNumbers.has(value));
 }
 function sceneShapeIssues(scene: VideoScene, index: number) {
-  const issues: QualityIssue[] = [];
+  const issues: QualityIssueInput[] = [];
   if (scene.type === "briefing_points" && (scene.points.length < 3 || scene.metrics.length < 2)) {
     issues.push({ severity: "error", code: "briefing_thin", message: `第 ${index + 1} 屏事实卡信息不足。`, sceneIndex: index });
   }
@@ -126,7 +116,9 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string,
             "你是程序化新闻视频质量评审 agent。只返回 JSON。",
             "sourceArticle 是唯一事实依据，不得引入外部信息。",
             "分别对 sourceFidelity、titleHook、informationDensity、visualStructure、sceneAlignment、ttsReadability 打 0 到 100 分。",
-            "返回字段：scores、issues、revisionNotes。issues 和 revisionNotes 都是字符串数组。",
+            "返回字段：scores、issues、revisionNotes。revisionNotes 是字符串数组。",
+            "issues 必须是稳定协议对象数组，每项包含 code、stage=draft、severity、可选 sceneIndex、evidence、repairAction、retryable。",
+            "evidence 是对象，至少包含 summary；repairAction 只能是 none、regenerate-draft、revise-scenes、retry-stage、check-environment、resynthesize-audio、remux、rerender-scenes、switch-template、stop。",
             "标题应优先保留新闻原题核心卖点，免责声明或边界信息放副标题和正文。",
             "第一段旁白的第一句话必须逐字念完整新闻标题，标题是开场钩子，之后才能进入正文。",
             "逐屏检查旁白是否只复述或总结当前场景可见字段。当前屏没有展示的数据、案例、结论或背景不得出现在该段旁白。",
@@ -166,7 +158,7 @@ export async function evaluateDraft(
   feedbackGuidance: string,
   signal?: AbortSignal,
 ): Promise<QualityEvaluation> {
-  const issues: QualityIssue[] = [];
+  const issues: QualityIssueInput[] = [];
   const revisionNotes: string[] = [];
   const source = project.sources[0];
   const narrationChars = project.narration.replace(/\s+/g, "").length;
@@ -289,10 +281,7 @@ export async function evaluateDraft(
       scores = Object.fromEntries(
         Object.entries(judged.scores).map(([key, value]) => [key, Math.max(0, Math.min(100, Number(value) || 0))]),
       );
-      for (const issue of judged.issues ?? []) {
-        const factualConflict = /数据错误|数值错误|音画冲突|明显错误|事实错误/.test(issue);
-        issues.push({ severity: factualConflict ? "error" : "warning", code: "llm_judge", message: issue });
-      }
+      issues.push(...(judged.issues ?? []));
       revisionNotes.push(...(judged.revisionNotes ?? []));
     }
   } catch (error) {
@@ -313,9 +302,8 @@ export async function evaluateDraft(
     });
   }
 
-  return {
+  return finalizeQualityEvaluation({
     stage: "draft",
-    passed,
     issues,
     revisionNotes: [...new Set(revisionNotes.filter(Boolean))],
     scores,
@@ -338,127 +326,7 @@ export async function evaluateDraft(
       averageTemplateScore: Number(averageTemplateScore.toFixed(2)),
       templatePlan: compositionIds.join(" -> "),
     },
-  };
-}
-
-function canonicalSpeechText(text: string) {
-  return text
-    .toLowerCase()
-    .replace(/獎/g, "奖")
-    .replace(/攝/g, "摄")
-    .replace(/銷/g, "销")
-    .replace(/認/g, "认")
-    .replace(/賽/g, "赛")
-    .replace(/兩文封|两文封/g, "梁文锋")
-    .replace(/生價|生价/g, "身价")
-    .replace(/新手複|新手复/g, "新首富")
-    .replace(/億/g, "亿")
-    .replace(/財/g, "财")
-    .replace(/領/g, "领")
-    .replace(/免費/g, "免费")
-    .replace(/視頻/g, "视频")
-    .replace(/編集/g, "编辑")
-    .replace(/經典/g, "经典")
-    .replace(/線可/g, "现可")
-    .replace(/網頁/g, "网页")
-    .replace(/移動/g, "移动")
-    .replace(/層/g, "层")
-    .replace(/寫/g, "写")
-    .replace(/輸入/g, "输入")
-    .replace(/個/g, "个")
-    .replace(/主題/g, "主题")
-    .replace(/自動/g, "自动")
-    .replace(/聲稱|声称/g, "生成")
-    .replace(/把于各|把于个/g, "百余个")
-    .replace(/智能体育检所|智能体育检索/g, "智能体与检索")
-    .replace(/整條/g, "整条")
-    .replace(/短視頻/g, "短视频")
-    .replace(/nmp/g, "月之暗面")
-    .replace(/money\s*printer\s*turbo/g, "moneyprinterturbo")
-    .replace(/money\s*prenz[^一键]{0,6}/g, "moneyprinterturbo")
-    .replace(/黄兰|黃蘭/g, "狂揽")
-    .replace(/千[萬万]/g, "千问")
-    .replace(/分口/g, "风口")
-    .replace(/萬/g, "万")
-    .replace(/標/g, "标")
-    .replace(/月之暗面2[.]7(?:带马|code)/g, "月之暗面k2.7code")
-    .replace(/kme(?:带马|代码)?/g, "kimicode")
-    .replace(/带马/g, "code")
-    .replace(/长住科选/g, "常驻可选")
-    .replace(/k[- ]?(?:2|p)[.\s-]*(?:7|ossanko)(?:\s*(?:代码|code))?|k二点七代码/g, "k2.7code")
-    .replace(/k[- ]?mi(?:code)?|k[- ]?micode|kimi代码/g, "kimicode")
-    .replace(/常助/g, "常驻")
-    .replace(/登陸/g, "登陆")
-    .replace(/边程/g, "编程")
-    .replace(/自然与[言严]/g, "自然语言")
-    .replace(/流程途/g, "流程图")
-    .replace(/gitnexus|吉特奈克瑟斯|吉特奈克萨斯|其特奈克色思|其特奈克瑟斯|d(?:i|e)maxs?|dinex/g, "gitnexus")
-    .replace(/next[- ]?ai[- ]?draw[- ]?io|[奈麦耐]克斯特人工智能(?:绘图|会[途徒])工具|奈克斯特aidrawio|奈克斯特ai(?:draw|抓|装)(?:io|幼|药)|idraw(?:i.lluse|io)/g, "nextaidrawio")
-    .replace(/贷马库|貸馬庫/g, "代码库")
-    .replace(/a[.\s]*i[.]?/g, "ai")
-    .replace(/ai[ -]?berkshire|ai伯克希尔|ai伯克希爾|艾伯克希尔|艾伯克希爾|艾伯是/g, "ai伯克希尔")
-    .replace(/斯大师/g, "四大师")
-    .replace(/投严/g, "投研")
-    .replace(/論/g, "论")
-    .replace(/驅/g, "驱")
-    .replace(/動/g, "动")
-    .replace(/團/g, "团")
-    .replace(/隊/g, "队")
-    .replace(/区动/g, "驱动")
-    .replace(/omni\s*route|奥姆尼路由|奧姆尼路由/g, "奥姆尼路由")
-    .replace(/澳母尼|奧母尼/g, "奥姆尼")
-    .replace(/边马|邊馬/g, "编码")
-    .replace(/多摩行路/g, "多模型路由")
-    .replace(/[欧歐][盆盤][爱愛艾]/g, "openai")
-    .replace(/(?:后|後)盆的ai/g, "openai")
-    .replace(/open\s*ai/g, "openai")
-    .replace(/欧盘|欧盆艾/g, "openai")
-    .replace(/聊天\s*gpt|3pt|插机pt/g, "chatgpt")
-    .replace(/codec/g, "codex")
-    .replace(/g[- ]?work/g, "chatgptwork")
-    .replace(/暫時/g, "暂时")
-    .replace(/定月/g, "订阅")
-    .replace(/無小食|无小食/g, "五小时")
-    .replace(/无小时/g, "五小时")
-    .replace(/靠的|扣的/g, "claude")
-    .replace(/gpt[- ]?5[.点]6|(?:g\s*p\s*t|吉皮提|鸡皮提|居皮提)\s*(?:五点六|5[.点]6)|5[.点]6模型?/g, "五点六模型")
-    .replace(/superpowers/g, "超级能力")
-    .replace(/prompt|提示[此詞词]/g, "提示词")
-    .replace(/agent/g, "智能体")
-    .replace(/700(?:次|詞|词)|七百次/g, "七百词")
-    .replace(/64(?=个)/g, "六十四")
-    .replace(/價於|驾于/g, "驾驭")
-    .replace(/代理案工程/g, "代理按工程")
-    .replace(/時/g, "时")
-    .replace(/級/g, "级")
-    .replace(/編/g, "编")
-    .replace(/碼/g, "码")
-    .replace(/讓/g, "让")
-    .replace(/單/g, "单")
-    .replace(/軟/g, "软")
-    .replace(/發/g, "发")
-    .replace(/過/g, "过")
-    .replace(/組/g, "组")
-    .replace(/驗/g, "验")
-    .replace(/證/g, "证")
-    .replace(/劃/g, "划")
-    .replace(/執/g, "执")
-    .replace(/測/g, "测")
-    .replace(/點/g, "点")
-    .replace(/數/g, "数")
-    .replace(/學/g, "学")
-    .replace(/詞/g, "词")
-    .replace(/體/g, "体")
-    .replace(/開/g, "开")
-    .replace(/個/g, "个")
-    .replace(/50(?=年)/g, "五十")
-    .replace(/十六分之一/g, "16分之一")
-    .replace(/[發发]/g, "发")
-    .replace(/佈/g, "布")
-    .replace(/價/g, "价")
-    .replace(/僅/g, "仅")
-    .replace(/為/g, "为")
-    .replace(/\s+|[^a-z0-9\u4e00-\u9fff]/g, "");
+  });
 }
 
 function bigramRecall(expected: string, actual: string) {
@@ -496,7 +364,7 @@ async function transcribeOpening(project: VideoProject, signal?: AbortSignal) {
   }
 }
 export async function evaluateAudio(project: VideoProject, targetSeconds: number, signal?: AbortSignal): Promise<QualityEvaluation> {
-  const issues: QualityIssue[] = [];
+  const issues: QualityIssueInput[] = [];
   const segments = project.narrationSegments ?? [];
   const duration = project.audio?.durationSeconds ?? 0;
   const minimumDuration = targetSeconds * Number(process.env.QUALITY_MIN_DURATION_FACTOR ?? 0.7);
@@ -588,9 +456,8 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
     }
     cursor += scene.duration;
   }
-  return {
+  return finalizeQualityEvaluation({
     stage: "audio",
-    passed: !issues.some((issue) => issue.severity === "error"),
     issues,
     revisionNotes: issues.some((issue) => issue.code === "duration_out_of_range")
       ? [duration < minimumDuration ? "允许视频自然缩短，不要用无关内容填充；必要时补充当前画面已展示的信息。" : "压缩旁白字数或允许视频自然延长，不要继续加快语速。"]
@@ -613,7 +480,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
       titleTranscript,
       titleAudioCoverage: Number(titleAudioCoverage.toFixed(3)),
     },
-  };
+  });
 }
 
 function runCapture(command: string, args: string[], signal?: AbortSignal) {
@@ -666,7 +533,7 @@ export async function evaluateVideo(
   sceneDurations: number[] = [],
   signal?: AbortSignal,
 ): Promise<QualityEvaluation> {
-  const issues: QualityIssue[] = [];
+  const issues: QualityIssueInput[] = [];
   const probe = await runCapture("ffprobe", [
     "-v",
     "error",
@@ -735,9 +602,8 @@ export async function evaluateVideo(
     }
   }
 
-  return {
+  return finalizeQualityEvaluation({
     stage: "video",
-    passed: !issues.some((issue) => issue.severity === "error"),
     issues,
     revisionNotes: [],
     metrics: {
@@ -756,5 +622,5 @@ export async function evaluateVideo(
       sceneMotionRatios: motion.sceneMotion.map((scene) => scene.activeMotionRatio.toFixed(3)).join(", "),
       sceneLongestStaticRuns: motion.sceneMotion.map((scene) => scene.longestStaticRun.toFixed(1)).join(", "),
     },
-  };
+  });
 }

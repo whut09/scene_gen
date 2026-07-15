@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generationResultSchema } from "./story-manifest";
-import { videoProjectSchema } from "./schemas";
+import { qualityJudgeResponseSchema, videoProjectSchema } from "./schemas";
 
 function projectFixture() {
   return {
@@ -54,4 +54,17 @@ test("generation result requires explicit manifest and project paths", () => {
     manifestPath: "",
     stories: [],
   }));
+});
+
+test("quality judge requires structured issue protocol", () => {
+  assert.throws(() => qualityJudgeResponseSchema.parse({ issues: ["vague title"] }));
+  const parsed = qualityJudgeResponseSchema.parse({ issues: [{
+    code: "title_vague",
+    stage: "draft",
+    severity: "warning",
+    evidence: { summary: "title lacks a concrete subject" },
+    repairAction: "regenerate-draft",
+    retryable: true,
+  }] });
+  assert.equal(parsed.issues?.[0].code, "title_vague");
 });
