@@ -394,7 +394,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   const maximumSegmentSpeedRatio = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_RATIO ?? 1.35);
   const maximumSegmentSpeedCv = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_CV ?? 0.16);
   const ttsNumericResidue = segments.reduce((count, segment) => {
-    const prepared = prepareF5SynthesisText(segment.text);
+    const prepared = prepareF5SynthesisText(segment.ttsText ?? segment.text);
     return count + (prepared.match(/\d/g)?.length ?? 0);
   }, 0);
   if (ttsNumericResidue > 0) {

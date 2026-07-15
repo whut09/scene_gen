@@ -114,6 +114,7 @@ export const videoSceneSchema = z.discriminatedUnion("type", [
 export const narrationSegmentSchema = z.object({
   sceneIndex: z.number().int().nonnegative(),
   text: z.string(),
+  ttsText: z.string().min(1).optional(),
   audioStartSeconds: z.number().nonnegative().optional(),
   durationSeconds: z.number().positive().optional(),
 });

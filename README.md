@@ -90,6 +90,14 @@ npm.cmd run scene-gen -- resume "<run-id>" --force-stage render
 
 ASR 规范化词典位于 `config/asr/base.json`，项目或领域专用规则位于 `config/asr/<package>.json`。通过 `ASR_DOMAIN_PACKAGES=scene-gen,custom-domain` 组合加载，避免在质量检查函数中继续堆叠项目名规则。
 
+### TTS 多音字词典
+
+ASR 词典只规范化 Whisper 转写结果，不会改变实际语音。F5-TTS 的短语发音词典位于 `config/tts/zh-CN.json`，在 Python 前端启动时通过 pypinyin 加载。例如“重构”固定为 `chong2 gou4`，而“重要”和“重量”保留 `zhong4`。
+
+新增多音字时，为 `entries` 添加 `phrase`、tone3 格式的 `pinyin`、`spokenFallback` 和 `enabled`。`spokenFallback` 只用于语音文本；设置 `TTS_USE_SPOKEN_FALLBACKS=1` 后，“重构”可回退播报为“重新构建”，项目 JSON、字幕和新闻原文仍保留“重构”。也可以直接在单个 `narrationSegment.ttsText` 中提供播报文本。
+
+词典内容会参与 F5 分段音频缓存 key。修改词典、模型、参考音频、参考文本、速度、NFE step 或前端版本后，旧 WAV 会自动失效，避免继续复用错误发音。可用 `TTS_PRONUNCIATION_LEXICON` 指向自定义词典，并通过 `npm run test:pronunciation` 在不使用 GPU 的情况下验证 pypinyin 前端。
+
 成功后会输出：
 
 ```text

@@ -108,6 +108,7 @@ export type VideoScene =
 export interface NarrationSegment {
   sceneIndex: number;
   text: string;
+  ttsText?: string;
   audioStartSeconds?: number;
   durationSeconds?: number;
 }

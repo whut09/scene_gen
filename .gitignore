@@ -28,3 +28,5 @@ glasswing-web-video/url-news/
 .vite-temp/
 *.log
 test-results/
+__pycache__/
+*.pyc

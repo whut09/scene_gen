@@ -1,5 +1,14 @@
 # Testing and CI
 
+## Pronunciation
+
+```powershell
+python -m pip install -r requirements-test.txt
+npm.cmd run test:pronunciation
+```
+
+该测试不加载 F5 模型，也不需要 GPU。它会让真实 pypinyin 前端加载 `config/tts/zh-CN.json`，验证“重构”为 `chong2 gou4`，同时检查长句上下文、spoken fallback 和 F5 缓存 key。`config/asr/` 只负责 ASR 转写规范化；`config/tts/` 才控制合成前端发音。修改 TTS 词典会改变 `pronunciationLexiconHash`，从而使旧的分段 WAV 缓存失效。
+
 项目测试分为核心单元测试、离线集成与媒体 smoke、HTML 模板截图检查三层。
 
 ```powershell

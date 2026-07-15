@@ -1,17 +1,21 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { VideoProject } from "./types";
-import { ensureDir, fromRoot } from "./utils";
+import type { NarrationSegment, VideoProject } from "./types";
+import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
 import { fetchWithRetry } from "./external-operation";
 import { resolveF5PythonCommand, resolveF5ReferenceAudio } from "../runtime/runtime-paths";
+import { createF5NarrationCacheMetadata, f5NarrationCacheMetadataSchema } from "./tts-cache";
+import { applyTtsSpokenFallbacks, loadTtsPronunciationLexicon } from "./tts-pronunciation";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
 const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|浼|棰|勭/g;
 
 type TtsProvider = "openai" | "f5" | "local";
+const F5_FRONTEND_VERSION = "scene-gen-pypinyin-lexicon-v1";
 
 function run(command: string, args: string[], options?: { input?: string; env?: NodeJS.ProcessEnv }) {
   return new Promise<void>((resolve, reject) => {
@@ -196,7 +200,7 @@ function numberToChinese(value: string) {
 }
 
 export function prepareF5SynthesisText(text: string) {
-  const trimmed = text.trim();
+  const trimmed = applyTtsSpokenFallbacks(text).trim();
   const startsWithLatin = /^[A-Za-z0-9]/.test(trimmed);
   const pronounceable = trimmed
     .replace(/重置/g, "重新设置")
@@ -245,14 +249,16 @@ async function f5Tts(text: string, outputPath: string, speedOverride?: string) {
   const outputDir = path.dirname(outputPath);
   const outputFile = path.basename(outputPath);
   const textPath = path.join(outputDir, `${path.basename(outputPath, path.extname(outputPath))}.txt`);
+  const pronunciationLexicon = loadTtsPronunciationLexicon();
 
   const synthesisText = prepareF5SynthesisText(text);
   assertCleanTtsText(synthesisText, refAudio, refText);
   await writeFile(textPath, synthesisText, "utf8");
   await writeFile(`${textPath}.ref.txt`, refText, "utf8");
   await run(python, [
-    "-m",
-    "f5_tts.infer.infer_cli",
+    fromRoot("scripts", "f5-infer-with-lexicon.py"),
+    "--lexicon",
+    pronunciationLexicon.filePath,
     "--model",
     model,
     "--ref_audio",
@@ -371,24 +377,54 @@ async function fitNarrationSegmentsToTarget(
   }
   return { paths: fittedPaths, durations: fittedDurations };
 }
+function hashText(text: string) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+async function hashFile(filePath: string) {
+  return createHash("sha256").update(await readFile(filePath)).digest("hex");
+}
+
+async function currentF5CacheMetadata(text: string, expectedSpeed?: string) {
+  const refAudio = resolveF5RefAudio();
+  if (!refAudio) throw new Error("F5 reference audio is not configured.");
+  const refText = await resolveF5RefText(refAudio);
+  return createF5NarrationCacheMetadata({
+    provider: "f5",
+    model: process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base",
+    normalizedTtsText: prepareF5SynthesisText(text).trim(),
+    pronunciationLexiconHash: loadTtsPronunciationLexicon().hash,
+    refAudioHash: await hashFile(refAudio),
+    refTextHash: hashText(refText.trim()),
+    speed: expectedSpeed ?? process.env.F5_TTS_SPEED ?? "1.12",
+    nfeStep: process.env.F5_TTS_NFE_STEP ?? "16",
+    frontendVersion: F5_FRONTEND_VERSION,
+  });
+}
+
+function narrationCacheMetadataPath(segmentPath: string) {
+  return `${segmentPath}.cache.json`;
+}
+
+async function writeNarrationCacheMetadata(text: string, segmentPath: string, expectedSpeed?: string) {
+  await writeJsonAtomic(narrationCacheMetadataPath(segmentPath), await currentF5CacheMetadata(text, expectedSpeed));
+}
+
 async function canReuseNarrationSegment(provider: TtsProvider, text: string, segmentPath: string, expectedSpeed?: string) {
   if (process.env.TTS_FORCE_REBUILD === "1" || provider !== "f5" || !existsSync(segmentPath)) return false;
-  const textPath = path.join(
-    path.dirname(segmentPath),
-    `${path.basename(segmentPath, path.extname(segmentPath))}.txt`,
-  );
-  const refTextPath = `${textPath}.ref.txt`;
-  if (!existsSync(textPath) || !existsSync(refTextPath)) return false;
-  if (expectedSpeed) {
-    const speedPath = `${segmentPath}.speed.txt`;
-    if (!existsSync(speedPath) || (await readFile(speedPath, "utf8")).trim() !== expectedSpeed) return false;
+  const metadataPath = narrationCacheMetadataPath(segmentPath);
+  if (!existsSync(metadataPath)) return false;
+  try {
+    const cached = f5NarrationCacheMetadataSchema.parse(JSON.parse(await readFile(metadataPath, "utf8")));
+    const current = await currentF5CacheMetadata(text, expectedSpeed);
+    return cached.cacheKey === current.cacheKey;
+  } catch {
+    return false;
   }
-  const currentRefText = await resolveF5RefText(resolveF5RefAudio());
-  const [existingText, existingRefText] = await Promise.all([
-    readFile(textPath, "utf8"),
-    readFile(refTextPath, "utf8"),
-  ]);
-  return existingText.trim() === prepareF5SynthesisText(text).trim() && existingRefText.trim() === currentRefText.trim();
+}
+
+function narrationSynthesisText(segment: NarrationSegment) {
+  return segment.ttsText?.trim() || segment.text;
 }
 function splitTitleNarration(title: string, narration: string) {
   const trimmedTitle = title.trim().replace(/[。！？!?]+$/, "");
@@ -422,10 +458,9 @@ async function synthesizeF5TitleScene(
     const partPath = partPaths[index];
     const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
     const synthesisText = index === 0 ? `。。。${partText}` : partText;
-    const speedMetaPath = `${partPath}.speed.txt`;
     if (!(await canReuseNarrationSegment("f5", synthesisText, partPath, uniformSpeed))) {
       await synthesizeNarration("f5", synthesisText, partPath, { f5Speed: uniformSpeed });
-      await writeFile(speedMetaPath, uniformSpeed, "utf8");
+      await writeNarrationCacheMetadata(synthesisText, partPath, uniformSpeed);
     }
     const duration = await probeDuration(partPath);
     if (duration <= 0) throw new Error(`Title narration part ${index + 1} is invalid.`);
@@ -457,11 +492,12 @@ async function attachSegmentedNarration(
       generatedDir,
       `${basename}-scene-${String(index + 1).padStart(2, "0")}.${extension}`,
     );
+    const synthesisText = narrationSynthesisText(segment);
     if (provider === "f5" && index === 0) {
-      await synthesizeF5TitleScene(project, segment.text, segmentPath);
-    } else if (!(await canReuseNarrationSegment(provider, segment.text, segmentPath, provider === "f5" ? uniformF5Speed : undefined))) {
-      await synthesizeNarration(provider, segment.text, segmentPath, { f5Speed: provider === "f5" ? uniformF5Speed : undefined });
-      if (provider === "f5") await writeFile(`${segmentPath}.speed.txt`, uniformF5Speed, "utf8");
+      await synthesizeF5TitleScene(project, synthesisText, segmentPath);
+    } else if (!(await canReuseNarrationSegment(provider, synthesisText, segmentPath, provider === "f5" ? uniformF5Speed : undefined))) {
+      await synthesizeNarration(provider, synthesisText, segmentPath, { f5Speed: provider === "f5" ? uniformF5Speed : undefined });
+      if (provider === "f5") await writeNarrationCacheMetadata(synthesisText, segmentPath, uniformF5Speed);
     }
     const duration = await probeDuration(segmentPath);
     if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);

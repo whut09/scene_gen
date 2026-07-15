@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "entries": [
+    {
+      "phrase": "重构",
+      "pinyin": ["chong2", "gou4"],
+      "spokenFallback": "重新构建",
+      "enabled": true
+    },
+    {
+      "phrase": "重复",
+      "pinyin": ["chong2", "fu4"],
+      "spokenFallback": "重复",
+      "enabled": true
+    },
+    {
+      "phrase": "重要",
+      "pinyin": ["zhong4", "yao4"],
+      "spokenFallback": "重要",
+      "enabled": true
+    },
+    {
+      "phrase": "重量",
+      "pinyin": ["zhong4", "liang4"],
+      "spokenFallback": "重量",
+      "enabled": true
+    },
+    {
+      "phrase": "重启",
+      "pinyin": ["chong2", "qi3"],
+      "spokenFallback": "重新启动",
+      "enabled": true
+    },
+    {
+      "phrase": "重试",
+      "pinyin": ["chong2", "shi4"],
+      "spokenFallback": "再次尝试",
+      "enabled": true
+    },
+    {
+      "phrase": "函数重载",
+      "pinyin": ["han2", "shu4", "chong2", "zai4"],
+      "spokenFallback": "函数重新加载",
+      "enabled": true
+    },
+    {
+      "phrase": "重载模型",
+      "pinyin": ["chong2", "zai4", "mo2", "xing2"],
+      "spokenFallback": "重新加载模型",
+      "enabled": true
+    },
+    {
+      "phrase": "重载运输",
+      "pinyin": ["zhong4", "zai4", "yun4", "shu1"],
+      "spokenFallback": "重载运输",
+      "enabled": true
+    }
+  ]
+}
