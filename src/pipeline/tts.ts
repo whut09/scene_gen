@@ -8,7 +8,7 @@ import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
 import { fetchWithRetry } from "./external-operation";
 import { resolveF5PythonCommand, resolveF5ReferenceAudio } from "../runtime/runtime-paths";
 import { createF5NarrationCacheMetadata } from "./tts-cache";
-import { applyTtsSpokenFallbacks, loadTtsPronunciationLexicon } from "./tts-pronunciation";
+import { applyTtsSpokenFallbacks, loadTtsPronunciationLexicon, pronunciationCacheHash } from "./tts-pronunciation";
 import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
 import { F5WorkerPool, resolveF5WorkerDevices } from "./f5-worker-pool";
 import { getOrCreateMediaCache } from "../cache/media-cache";
@@ -495,7 +495,7 @@ async function currentF5CacheMetadata(text: string, expectedSpeed?: string, cach
     provider: "f5",
     model: process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base",
     normalizedTtsText: prepareF5SynthesisText(text).trim(),
-    pronunciationLexiconHash: loadTtsPronunciationLexicon().hash,
+    pronunciationLexiconHash: pronunciationCacheHash(prepareF5SynthesisText(text).trim()),
     refAudioHash: await hashFile(refAudio),
     refTextHash: hashText(refText.trim()),
     speed: expectedSpeed ?? process.env.F5_TTS_SPEED ?? "1.12",

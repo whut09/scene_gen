@@ -16,6 +16,22 @@ def append_counter(name: str, value: str) -> None:
         handle.write(value + "\n")
 
 
+def update_metrics(mutator) -> None:
+    file_path = os.environ.get("MOCK_F5_METRICS_FILE")
+    if not file_path:
+        return
+    target = Path(file_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        metrics = json.loads(target.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        metrics = {"workerStarts": 0, "modelLoads": 0, "activeRequests": 0, "maxConcurrency": 0, "sceneRequests": {}}
+    mutator(metrics)
+    temporary = target.with_suffix(target.suffix + f".{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(metrics, separators=(",", ":")), encoding="utf-8")
+    temporary.replace(target)
+
+
 def emit(payload: dict) -> None:
     sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
     sys.stdout.flush()
@@ -46,6 +62,10 @@ def main() -> None:
     args = parser.parse_args()
 
     append_counter("MOCK_F5_START_COUNT_FILE", args.device)
+    update_metrics(lambda metrics: metrics.update({
+        "workerStarts": metrics.get("workerStarts", 0) + 1,
+        "modelLoads": metrics.get("modelLoads", 0) + 1,
+    }))
     mode = os.environ.get("MOCK_F5_MODE", "normal")
     if mode == "no-ready":
         time.sleep(60)
@@ -71,6 +91,13 @@ def main() -> None:
         if request.get("type") == "shutdown":
             return
         append_counter("MOCK_F5_REQUEST_COUNT_FILE", str(request["sceneIndex"]))
+        def request_started(metrics: dict) -> None:
+            scene_key = str(request["sceneIndex"])
+            metrics["activeRequests"] = metrics.get("activeRequests", 0) + 1
+            metrics["maxConcurrency"] = max(metrics.get("maxConcurrency", 0), metrics["activeRequests"])
+            requests = metrics.setdefault("sceneRequests", {})
+            requests[scene_key] = requests.get(scene_key, 0) + 1
+        update_metrics(request_started)
         if mode == "crash-first":
             state_path = Path(os.environ["MOCK_F5_CRASH_STATE_FILE"])
             if not state_path.exists():
@@ -81,6 +108,7 @@ def main() -> None:
             time.sleep(delay_ms / 1000)
         started = time.perf_counter()
         duration = write_wav(request["outputPath"])
+        update_metrics(lambda metrics: metrics.update({"activeRequests": max(0, metrics.get("activeRequests", 1) - 1)}))
         emit({
             "type": "result",
             "requestId": request["requestId"],

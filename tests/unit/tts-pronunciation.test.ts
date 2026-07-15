@@ -6,6 +6,7 @@ import {
   findTtsPronunciations,
   loadTtsPronunciationLexicon,
   parseTtsPronunciationLexicon,
+  pronunciationCacheHash,
 } from "../../src/pipeline/tts-pronunciation";
 import { videoProjectSchema } from "../../src/pipeline/schemas";
 import { createFixtureProject } from "../fixtures/project";
@@ -33,6 +34,30 @@ test("pronunciation matching covers phrases inside longer narration", () => {
   assert.deepEqual(findTtsPronunciations("重构系统").map((entry) => entry.phrase), ["重构"]);
   assert.deepEqual(findTtsPronunciations("对代码进行重构").map((entry) => entry.phrase), ["重构"]);
   assert.deepEqual(findTtsPronunciations("重新构建").map((entry) => entry.phrase), []);
+});
+
+test("pronunciation cache hashes only entries relevant to the current text", () => {
+  const loaded = loadTtsPronunciationLexicon();
+  const target = loaded.lexicon.entries[0];
+  const unrelated = loaded.lexicon.entries[1];
+  const targetText = `系统完成${target.phrase}`;
+  const baseHash = pronunciationCacheHash(targetText, loaded);
+  const unrelatedChanged = parseTtsPronunciationLexicon(JSON.stringify({
+    ...loaded.lexicon,
+    version: loaded.lexicon.version + 1,
+    entries: loaded.lexicon.entries.map((entry) => entry.phrase === unrelated.phrase
+      ? { ...entry, spokenFallback: `${entry.spokenFallback}更新` }
+      : entry),
+  }));
+  assert.equal(pronunciationCacheHash(targetText, unrelatedChanged), baseHash);
+  const targetChanged = parseTtsPronunciationLexicon(JSON.stringify({
+    ...loaded.lexicon,
+    version: loaded.lexicon.version + 1,
+    entries: loaded.lexicon.entries.map((entry) => entry.phrase === target.phrase
+      ? { ...entry, spokenFallback: `${entry.spokenFallback}更新` }
+      : entry),
+  }));
+  assert.notEqual(pronunciationCacheHash(targetText, targetChanged), baseHash);
 });
 
 test("spoken fallback changes only synthesis text when explicitly enabled", () => {

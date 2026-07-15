@@ -96,7 +96,7 @@ ASR 词典只规范化 Whisper 转写结果，不会改变实际语音。F5-TTS 
 
 新增多音字时，为 `entries` 添加 `phrase`、tone3 格式的 `pinyin`、`spokenFallback` 和 `enabled`。`spokenFallback` 只用于语音文本；设置 `TTS_USE_SPOKEN_FALLBACKS=1` 后，“重构”可回退播报为“重新构建”，项目 JSON、字幕和新闻原文仍保留“重构”。也可以直接在单个 `narrationSegment.ttsText` 中提供播报文本。
 
-词典内容会参与 F5 分段音频缓存 key。修改词典、模型、参考音频、参考文本、速度、NFE step 或前端版本后，旧 WAV 会自动失效，避免继续复用错误发音。可用 `TTS_PRONUNCIATION_LEXICON` 指向自定义词典，并通过 `npm run test:pronunciation` 在不使用 GPU 的情况下验证 pypinyin 前端。
+当前文本实际命中的词典条目会参与 F5 分段音频缓存 key。修改“重构”只使包含该短语的 WAV 失效，不影响仅包含“重要”或普通文本的场景；模型、参考音频、参考文本、速度、NFE step 或前端版本变化仍会使对应 WAV 自动失效。可用 `TTS_PRONUNCIATION_LEXICON` 指向自定义词典，并通过 `npm run test:pronunciation` 在不使用 GPU 的情况下验证 pypinyin 前端。
 
 ### F5 持久化 Worker
 
@@ -385,3 +385,16 @@ npm.cmd run scene-gen -- cache clear
 ```
 
 Active runs register references in `dist/runs/<run-id>/cache-refs.json`; prune never removes entries referenced by a running journal. Quality gates emit a structured `DirtyPlan`, so pronunciation failures rebuild only the affected audio scene plus audio concat/remux, blank or static frames rebuild only the affected video scene plus video concat/remux, and stream drift starts with remux only.
+
+## 增量性能验证与排障
+
+正式的多音字、`text`/`ttsText`、持久化 F5 worker、单 GPU 并发、HTML scene 并发、局部音视频修复、内容寻址缓存、Windows/Linux 差异和故障排查文档见 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)。
+
+```powershell
+npm.cmd run doctor
+npm.cmd run test:worker
+npm.cmd run test:incremental
+npm.cmd run benchmark:media
+```
+
+`test:incremental` 使用固定五屏、mock F5 和 mock HTML recorder 验证 cold run、warm run、scene 2 音频修复、scene 3 空白帧修复、仅 remux，以及发音词典定向失效。`benchmark:media` 才输出本机真实耗时；CI 不使用不稳定的严格耗时断言。

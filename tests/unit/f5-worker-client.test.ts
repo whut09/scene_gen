@@ -138,13 +138,19 @@ test("F5 narration cache skips the worker until the lexicon hash changes", async
   await Promise.all([
     writeFile(refAudio, "fixture"),
     writeFile(firstLexicon, JSON.stringify(originalLexicon), "utf8"),
-    writeFile(secondLexicon, JSON.stringify({ ...originalLexicon, version: originalLexicon.version + 1 }), "utf8"),
+    writeFile(secondLexicon, JSON.stringify({
+      ...originalLexicon,
+      version: originalLexicon.version + 1,
+      entries: originalLexicon.entries.map((entry: { spokenFallback: string }, index: number) => index === 0
+        ? { ...entry, spokenFallback: `${entry.spokenFallback}更新` }
+        : entry),
+    }), "utf8"),
   ]);
   const project = createFixtureProject({
-    meta: { ...createFixtureProject().meta, title: "Cache test" },
-    narration: "Cache test",
-    narrationSegments: [{ sceneIndex: 0, text: "Cache test", audioStartSeconds: 0, durationSeconds: 1 }],
-    scenes: [{ ...createFixtureProject().scenes[0], headline: "Cache test", duration: 1 }],
+    meta: { ...createFixtureProject().meta, title: originalLexicon.entries[0].phrase },
+    narration: originalLexicon.entries[0].phrase,
+    narrationSegments: [{ sceneIndex: 0, text: originalLexicon.entries[0].phrase, audioStartSeconds: 0, durationSeconds: 1 }],
+    scenes: [{ ...createFixtureProject().scenes[0], headline: originalLexicon.entries[0].phrase, duration: 1 }],
   });
   const names = [
     "F5_TTS_PYTHON", "F5_TTS_WORKER_SCRIPT", "F5_TTS_REF_AUDIO", "F5_TTS_REF_TEXT",

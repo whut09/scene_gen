@@ -7,7 +7,7 @@ python -m pip install -r requirements-test.txt
 npm.cmd run test:pronunciation
 ```
 
-该测试不加载 F5 模型，也不需要 GPU。它会让真实 pypinyin 前端加载 `config/tts/zh-CN.json`，验证“重构”为 `chong2 gou4`，同时检查长句上下文、spoken fallback 和 F5 缓存 key。`config/asr/` 只负责 ASR 转写规范化；`config/tts/` 才控制合成前端发音。修改 TTS 词典会改变 `pronunciationLexiconHash`，从而使旧的分段 WAV 缓存失效。
+该测试不加载 F5 模型，也不需要 GPU。它会让真实 pypinyin 前端加载 `config/tts/zh-CN.json`，验证“重构”为 `chong2 gou4`，同时检查长句上下文、spoken fallback 和 F5 缓存 key。`config/asr/` 只负责 ASR 转写规范化；`config/tts/` 才控制合成前端发音。缓存使用当前文本命中的词典条目 hash，因此修改目标短语只使相关分段 WAV 失效。
 
 `npm.cmd run test:unit` 还会使用 `tests/fixtures/mock-f5-worker.py` 验证持久化 worker 协议，不加载真实 F5 模型或 GPU。覆盖 ready 超时、崩溃后有限重启、AbortSignal 取消、单 worker 串行请求、单/多 GPU 设备解析、缓存命中不调用 worker，以及发音词典 hash 变化后重新合成。
 
@@ -52,3 +52,22 @@ GitHub Actions 使用 Node.js 20，并执行：
 ## Content-addressed cache
 
 `tests/integration/content-addressed-cache.test.ts` verifies that two concurrent run targets generate one cache key once, later runs restore it without regeneration, incomplete entries are ignored, and prune protects references owned by an active run. The scene audio integration test also confirms that an identical second run makes zero additional mock F5 requests.
+
+## Incremental media performance
+
+```powershell
+npm.cmd run test:worker
+npm.cmd run test:incremental
+npm.cmd run benchmark:media
+```
+
+`tests/integration/incremental-media-performance.test.ts` 使用固定五屏旁白，包含“重要、重复、重构、重量、重新构建”，不加载真实 GPU 模型。它验证：
+
+1. cold run 合成并录制全部五个场景，只启动一次 worker/模型；
+2. warm run 的 TTS 和 scene recorder 调用均为零；
+3. scene 2 发音错误仅调用一次 TTS，并只 concat audio + remux；
+4. scene 3 `blank_frame` 不调用 TTS，只录制一个 scene 后 concat video + remux；
+5. `stream_duration_drift` 只 remux；
+6. 修改“重构”词典条目只使包含该短语的音频失效，其他音频和全部视频继续命中缓存。
+
+稳定测试只断言调用次数、worker 最大并发、dirty set、输出完整性和 warm run 任务数更少。`benchmark:media` 将本机耗时写入 `test-results/benchmark/media/media-report.json`，字段包括 cold/warm、模型加载、音频生成、视频生成、concat、mux、缓存命中率和局部重生成场景。

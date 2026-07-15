@@ -71,6 +71,15 @@ export function findTtsPronunciations(text: string, loaded: LoadedTtsPronunciati
     .sort((left, right) => right.phrase.length - left.phrase.length);
 }
 
+export function pronunciationCacheHash(text: string, loaded: LoadedTtsPronunciationLexicon = loadTtsPronunciationLexicon()) {
+  const relevantEntries = findTtsPronunciations(text, loaded);
+  return createHash("sha256").update(JSON.stringify({
+    schemaVersion: 1,
+    locale: loaded.lexicon.locale,
+    entries: relevantEntries,
+  })).digest("hex");
+}
+
 export function applyTtsSpokenFallbacks(
   text: string,
   options: { enabled?: boolean; loaded?: LoadedTtsPronunciationLexicon } = {},

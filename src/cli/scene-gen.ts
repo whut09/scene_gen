@@ -171,7 +171,7 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  let profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? "local-f5");
+  let profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? (command === "doctor" ? "ci-offline" : "local-f5"));
   if (command === "resume" && !parsed.options.profile) {
     const direct = path.resolve(parsed.positionals[0]);
     const runDir = existsSync(path.join(direct, "run.json")) ? direct : fromRoot("dist", "runs", parsed.positionals[0]);
