@@ -11,6 +11,7 @@ import { buildFeedbackGuidance, readFeedback, recordFeedbackOutcome, selectFeedb
 import { evaluateAudio, evaluateDraft, evaluateVideo, type QualityEvaluation } from "./quality";
 import { planRepair, withSuggestedActions, type RepairPlan } from "./retry-policy";
 import type { LoopAudit } from "./loop-engineering";
+import { emptyDirtyPlan, mergeDirtyPlans, type DirtyPlan } from "./dirty-plan";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -32,6 +33,7 @@ export interface IterationReport {
   draftProjectHash?: string;
   audioProjectHash?: string;
   audits?: LoopAudit[];
+  dirtyPlan?: DirtyPlan;
 }
 
 export function combineNotes(parts: string[]) {
@@ -99,7 +101,7 @@ export async function runDraftStage(input: {
 export async function runDraftGateStage(project: VideoProject, targetSeconds: number, feedbackGuidance: string, signal: AbortSignal): Promise<GateStageOutput> {
   const evaluation = await evaluateDraft(project, targetSeconds, feedbackGuidance, signal);
   evaluation.issues = withSuggestedActions(evaluation.issues, "draft");
-  return { evaluation, repairPlan: planRepair("draft", evaluation.issues, evaluation.profile) };
+  return { evaluation, repairPlan: planRepair("draft", evaluation.issues, evaluation.profile, project.scenes.length) };
 }
 
 export async function runRevisionStage(input: {
@@ -155,7 +157,7 @@ export async function runAudioGateStage(project: VideoProject, targetSeconds: nu
   const evaluation = await evaluateAudio(project, targetSeconds, signal);
   evaluation.issues = withSuggestedActions(evaluation.issues, "audio");
   evaluation.metrics = { ...evaluation.metrics, ...(project.audio?.metrics ?? {}) };
-  return { evaluation, repairPlan: planRepair("audio", evaluation.issues, evaluation.profile) };
+  return { evaluation, repairPlan: planRepair("audio", evaluation.issues, evaluation.profile, project.scenes.length) };
 }
 
 export async function runRenderStage(input: {
@@ -194,6 +196,7 @@ export async function runVideoGateStage(input: {
   project: VideoProject;
   reportDir: string;
   signal: AbortSignal;
+  repairAttempt?: number;
 }): Promise<GateStageOutput> {
   const evaluation = await evaluateVideo(
     input.story.outputPath,
@@ -203,7 +206,7 @@ export async function runVideoGateStage(input: {
     input.signal,
   );
   evaluation.issues = withSuggestedActions(evaluation.issues, "video");
-  return { evaluation, repairPlan: planRepair("video", evaluation.issues, evaluation.profile) };
+  return { evaluation, repairPlan: planRepair("video", evaluation.issues, evaluation.profile, input.project.scenes.length, input.repairAttempt ?? 1) };
 }
 
 function evaluationMarkdown(evaluation: QualityEvaluation) {
@@ -232,6 +235,11 @@ export async function runPublishStage(input: {
   const finalAudio = input.iterations.at(-1)?.audio;
   const passed = Boolean(finalDraft?.passed && finalAudio?.passed && input.video.passed);
   const production = buildProductionReport(input.project, input.engine);
+  const dirtyPlan = mergeDirtyPlans(
+    ...input.iterations.map((iteration) => iteration.dirtyPlan ?? emptyDirtyPlan()),
+    ...input.iterations.flatMap((iteration) => (iteration.audits ?? []).map((audit) => audit.dirtyPlan)),
+    planRepair("video", input.video.issues, input.video.profile, input.project.scenes.length).dirtyPlan,
+  );
   await mkdir(input.reportDir, { recursive: true });
   const productionReportPath = path.join(input.reportDir, "production-report.json");
   const reportPath = path.join(input.reportDir, "report.json");
@@ -251,6 +259,7 @@ export async function runPublishStage(input: {
     feedbackApplied: input.feedback,
     iterations: input.iterations,
     video: input.video,
+    dirtyPlan,
     production,
     passed,
   });
@@ -264,6 +273,7 @@ export async function runPublishStage(input: {
     `- Engine: ${input.engine}`,
     `- Passed: ${passed}`,
     `- Feedback applied: ${input.feedback.length}`,
+    `- Dirty plan: ${JSON.stringify(dirtyPlan)}`,
     "",
     ...input.iterations.flatMap((item) => [
       `## Iteration ${item.iteration}`,

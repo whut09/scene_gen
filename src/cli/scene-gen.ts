@@ -9,6 +9,7 @@ import { fromRoot, loadDotEnv, readJson } from "../pipeline/utils";
 import { commandHelp, parseStrictArgs, type CommandDefinition } from "./strict-args";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { clearMediaCache, inspectMediaCache, pruneMediaCache } from "../cache/cache-manager";
 
 const profileOption = { type: "string" as const, description: `Configuration profile (${builtInProfileNames.join(", ")} or config/profiles/<name>.json).` };
 const jsonOption = { type: "boolean" as const, description: "Print machine-readable JSON." };
@@ -63,6 +64,16 @@ const definitions: Record<string, CommandDefinition> = {
       video: { type: "string", description: "Related video path." },
       disabled: { type: "boolean", description: "Store the feedback disabled." },
       resolved: { type: "boolean", description: "Mark this fingerprint as resolved." },
+      json: jsonOption,
+    },
+  },
+  cache: {
+    summary: "Inspect, prune or clear the global content-addressed media cache.",
+    positionals: [{ name: "action", required: true, description: "inspect, prune or clear." }],
+    options: {
+      "max-age-days": { type: "number", description: "Prune entries not accessed within this many days." },
+      "max-size-gb": { type: "number", description: "Prune oldest entries until cache size is below this limit." },
+      "dry-run": { type: "boolean", description: "Show prune results without deleting files." },
       json: jsonOption,
     },
   },
@@ -138,6 +149,26 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
   const parsed = parseStrictArgs(commandArgs, definition);
   if (parsed.options.help) {
     console.log(commandHelp(command, definition));
+    return;
+  }
+  if (command === "cache") {
+    const action = parsed.positionals[0];
+    if (!['inspect', 'prune', 'clear'].includes(action)) throw new Error("Cache action must be inspect, prune or clear.");
+    assertNonNegative("max-age-days", parsed.options["max-age-days"]);
+    assertNonNegative("max-size-gb", parsed.options["max-size-gb"]);
+    if (action !== "prune" && (parsed.options["max-age-days"] !== undefined || parsed.options["max-size-gb"] !== undefined || parsed.options["dry-run"])) {
+      throw new Error("Cache prune options are only valid with 'scene-gen cache prune'.");
+    }
+    const result = action === "inspect"
+      ? await inspectMediaCache()
+      : action === "clear"
+        ? await clearMediaCache()
+        : await pruneMediaCache({
+          maxAgeDays: parsed.options["max-age-days"] === undefined ? undefined : Number(parsed.options["max-age-days"]),
+          maxSizeBytes: parsed.options["max-size-gb"] === undefined ? undefined : Number(parsed.options["max-size-gb"]) * 1024 ** 3,
+          dryRun: Boolean(parsed.options["dry-run"]),
+        });
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   let profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? "local-f5");

@@ -119,6 +119,8 @@ function assembly(order: number[]) {
 
 test("five-scene HTML render shares one browser and obeys bounded concurrency", { timeout: 120_000 }, async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "scene-gen-html-concurrency-"));
+  const previousCacheDir = process.env.SCENE_GEN_CACHE_DIR;
+  process.env.SCENE_GEN_CACHE_DIR = path.join(directory, "cache");
   try {
     const serialRuntime = fakeRuntime();
     const serialOrder: number[] = [];
@@ -169,6 +171,7 @@ test("five-scene HTML render shares one browser and obeys bounded concurrency", 
     assert.deepEqual(forced.metrics.renderedScenes, [2]);
     assert.deepEqual(forced.metrics.cacheHitScenes, [0, 1, 3, 4]);
   } finally {
+    if (previousCacheDir === undefined) delete process.env.SCENE_GEN_CACHE_DIR; else process.env.SCENE_GEN_CACHE_DIR = previousCacheDir;
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -176,6 +179,8 @@ test("five-scene HTML render shares one browser and obeys bounded concurrency", 
 test("scene failure preserves successful caches and resume renders only unfinished scenes", { timeout: 120_000 }, async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "scene-gen-html-failure-"));
   const workDir = path.join(directory, "work");
+  const previousCacheDir = process.env.SCENE_GEN_CACHE_DIR;
+  process.env.SCENE_GEN_CACHE_DIR = path.join(directory, "cache");
   try {
     const failingRuntime = fakeRuntime({ failScene: 2, slowScenes: [3, 4] });
     await assert.rejects(
@@ -199,6 +204,7 @@ test("scene failure preserves successful caches and resume renders only unfinish
     assert.deepEqual(resumed.metrics.cacheHitScenes, [0, 1]);
     assert.deepEqual(resumed.metrics.renderedScenes, [2, 3, 4]);
   } finally {
+    if (previousCacheDir === undefined) delete process.env.SCENE_GEN_CACHE_DIR; else process.env.SCENE_GEN_CACHE_DIR = previousCacheDir;
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -207,6 +213,8 @@ test("AbortSignal closes browser and active contexts", { timeout: 120_000 }, asy
   const directory = await mkdtemp(path.join(os.tmpdir(), "scene-gen-html-abort-"));
   const runtime = fakeRuntime({ slowScenes: [0, 1, 2, 3, 4] });
   const controller = new AbortController();
+  const previousCacheDir = process.env.SCENE_GEN_CACHE_DIR;
+  process.env.SCENE_GEN_CACHE_DIR = path.join(directory, "cache");
   try {
     const pending = renderHtmlVideoProject(fiveSceneProject(), path.join(directory, "aborted.mp4"), {
       workDir: path.join(directory, "work"), renderBudget: budget(2), signal: controller.signal,
@@ -217,6 +225,7 @@ test("AbortSignal closes browser and active contexts", { timeout: 120_000 }, asy
     assert.equal(runtime.state.browserClosed, true);
     assert.equal(runtime.state.activeContexts, 0);
   } finally {
+    if (previousCacheDir === undefined) delete process.env.SCENE_GEN_CACHE_DIR; else process.env.SCENE_GEN_CACHE_DIR = previousCacheDir;
     await rm(directory, { recursive: true, force: true });
   }
 });

@@ -1,17 +1,17 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Browser } from "playwright";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { mapWithConcurrencyUntilError } from "../pipeline/bounded-task-queue";
 import { ensureDir, fromRoot, slugify } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
-import { htmlVideoCacheSchema } from "../pipeline/schemas";
 import { resolveHtmlRenderBudget, type HtmlRenderBudget } from "./render-budget";
+import { getOrCreateMediaCache, hashFileContent, restoreMediaCache } from "../cache/media-cache";
 import {
   buildHtmlVideoContentGraph,
   topoSortHtmlVideoGraph,
@@ -79,6 +79,27 @@ export interface HtmlVideoRenderOptions {
   concatRenderer?: (frames: RenderedFrame[], outputPath: string, signal?: AbortSignal) => Promise<void>;
   audioMuxer?: (project: VideoProject, videoPath: string, outputPath: string, signal?: AbortSignal) => Promise<void>;
   renderBudget?: HtmlRenderBudget;
+  cacheFingerprint?: Partial<HtmlVideoCacheFingerprint>;
+}
+
+export interface HtmlVideoCacheFingerprint {
+  assetContentHash: string;
+  fontBundleHash: string;
+  globalCssHash: string;
+  browserVersion: string;
+  encoderProfile: string;
+  rendererVersion: string;
+}
+
+const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v2";
+let browserVersionPromise: Promise<string> | undefined;
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => [key, stableValue(child)]));
+  }
+  return value;
 }
 
 export class HtmlSceneRenderError extends Error {
@@ -95,9 +116,15 @@ export function createHtmlVideoCacheKey(input: {
   width: number;
   height: number;
   fps: number;
+  assetContentHash?: string;
+  fontBundleHash?: string;
+  globalCssHash?: string;
+  browserVersion?: string;
+  encoderProfile?: string;
+  rendererVersion?: string;
 }) {
   const scene = { ...input.scene, duration: undefined };
-  return createHash("sha256").update(JSON.stringify({
+  return createHash("sha256").update(JSON.stringify(stableValue({
     scene,
     templateId: input.templateId,
     templateVersion: input.templateVersion,
@@ -105,7 +132,66 @@ export function createHtmlVideoCacheKey(input: {
     width: input.width,
     height: input.height,
     fps: input.fps,
-  })).digest("hex");
+    assetContentHash: input.assetContentHash ?? "none",
+    fontBundleHash: input.fontBundleHash ?? "none",
+    globalCssHash: input.globalCssHash ?? "none",
+    browserVersion: input.browserVersion ?? "unknown",
+    encoderProfile: input.encoderProfile ?? "default",
+    rendererVersion: input.rendererVersion ?? HTML_RENDERER_VERSION,
+  }))).digest("hex");
+}
+
+function hashValues(values: unknown[]) {
+  return createHash("sha256").update(JSON.stringify(stableValue(values))).digest("hex");
+}
+
+async function hashDirectory(directory: string) {
+  const files: string[] = [];
+  async function visit(current: string) {
+    for (const entry of await readdir(current, { withFileTypes: true }).catch(() => [])) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) await visit(entryPath);
+      else if (entry.isFile()) files.push(entryPath);
+    }
+  }
+  await visit(directory);
+  const hashes = await Promise.all(files.sort().map(async (filePath) => [path.relative(directory, filePath), await hashFileContent(filePath)]));
+  return hashValues(hashes);
+}
+
+function localAssetPath(src: string) {
+  if (/^file:/i.test(src)) return fileURLToPath(src);
+  if (/^(https?:|data:)/i.test(src)) return undefined;
+  if (path.isAbsolute(src)) return src;
+  return fromRoot("public", src.replace(/^\/+/, ""));
+}
+
+async function resolveCacheFingerprint(html: string, budget: HtmlRenderBudget, overrides: Partial<HtmlVideoCacheFingerprint> = {}) {
+  browserVersionPromise ??= (async () => {
+    const playwrightPackage: { version?: string } = await readFile(fromRoot("node_modules", "playwright", "package.json"), "utf8")
+      .then((raw) => JSON.parse(raw) as { version?: string }).catch(() => ({}));
+    const executablePath = await import("playwright").then((module) => module.chromium.executablePath()).catch(() => "");
+    const chromiumHash = executablePath && existsSync(executablePath) ? await hashFileContent(executablePath) : "missing";
+    return `${playwrightPackage.version ?? "unknown"}:${chromiumHash}`;
+  })();
+  const globalCssPath = fromRoot("src", "remotion", "styles.css");
+  return {
+    assetContentHash: overrides.assetContentHash ?? await hashHtmlAssetContent(html),
+    fontBundleHash: overrides.fontBundleHash ?? await hashDirectory(fromRoot("public", "fonts")),
+    globalCssHash: overrides.globalCssHash ?? hashValues([html, existsSync(globalCssPath) ? await hashFileContent(globalCssPath) : "missing"]),
+    browserVersion: overrides.browserVersion ?? await browserVersionPromise,
+    encoderProfile: overrides.encoderProfile ?? `${budget.encodingPreset}:crf20:threads${budget.ffmpegThreadsPerJob}`,
+    rendererVersion: overrides.rendererVersion ?? HTML_RENDERER_VERSION,
+  } satisfies HtmlVideoCacheFingerprint;
+}
+
+export async function hashHtmlAssetContent(html: string) {
+  const assetSources = [...html.matchAll(/\bsrc=["']([^"']+)["']/g)].map((match) => match[1]);
+  const assets = await Promise.all([...new Set(assetSources)].sort().map(async (src) => {
+    const filePath = localAssetPath(src);
+    return [src, filePath && existsSync(filePath) ? await hashFileContent(filePath) : hashValues([src])];
+  }));
+  return hashValues(assets);
 }
 
 function run(command: string, args: string[], signal?: AbortSignal) {
@@ -412,6 +498,7 @@ export async function renderHtmlVideoProject(
     videoPath: string;
     cachePath: string;
     cacheKey: string;
+    cacheIdentity: Record<string, unknown>;
     templateId: string;
     cachedFrame?: RenderedFrame;
   }> = [];
@@ -434,6 +521,17 @@ export async function renderHtmlVideoProject(
     const htmlPath = path.join(workDir, `${node.id}-${template.id}.html`);
     const videoPath = path.join(workDir, `${node.id}-${template.id}.mp4`);
     const cachePath = `${videoPath}.cache.json`;
+    const fingerprint = await resolveCacheFingerprint(html, budget, options.cacheFingerprint);
+    const cacheIdentity = {
+      scene: { ...scene, duration: undefined },
+      templateId: node.templateId,
+      templateVersion: template.version,
+      variantId: node.variantId,
+      width: project.meta.width,
+      height: project.meta.height,
+      fps: project.meta.fps,
+      ...fingerprint,
+    };
     const cacheKey = createHtmlVideoCacheKey({
       scene,
       templateId: node.templateId,
@@ -442,16 +540,15 @@ export async function renderHtmlVideoProject(
       width: project.meta.width,
       height: project.meta.height,
       fps: project.meta.fps,
+      ...fingerprint,
     });
     await writeFile(htmlPath, html, "utf8");
     let cachedFrame: RenderedFrame | undefined;
-    if (!options.forceSceneIndexes?.includes(node.sceneIndex) && existsSync(videoPath) && existsSync(cachePath)) {
-      let cachedPayload: unknown = {};
-      try { cachedPayload = JSON.parse(await readFile(cachePath, "utf8")); } catch { cachedPayload = {}; }
-      const cached = htmlVideoCacheSchema.safeParse(cachedPayload);
-      if (cached.success && cached.data.cacheKey === cacheKey) {
-        const detectedMotionSec = cached.data.detectedMotionSec ?? 0;
-        const cachedDuration = cached.data.durationSec ?? node.durationSec;
+    if (!options.forceSceneIndexes?.includes(node.sceneIndex)) {
+      const cached = await restoreMediaCache({ kind: "video-scene", cacheKey, extension: ".mp4", targetPath: videoPath });
+      if (cached) {
+        const detectedMotionSec = typeof cached.details.detectedMotionSec === "number" ? cached.details.detectedMotionSec : 0;
+        const cachedDuration = typeof cached.details.durationSec === "number" ? cached.details.durationSec : node.durationSec;
         if (Math.abs(cachedDuration - node.durationSec) > 0.001) {
           const adjustedPath = `${videoPath}.adjusted.mp4`;
           const ratio = node.durationSec / cachedDuration;
@@ -474,20 +571,27 @@ export async function renderHtmlVideoProject(
         cachedFrame = { sceneIndex: node.sceneIndex, id: node.id, htmlPath, videoPath, durationSec: node.durationSec, templateId: template.id, detectedMotionSec };
       }
     }
-    prepared.push({ node, htmlPath, videoPath, cachePath, cacheKey, templateId: template.id, cachedFrame });
+    prepared.push({ node, htmlPath, videoPath, cachePath, cacheKey, cacheIdentity, templateId: template.id, cachedFrame });
   }
 
   const misses = prepared.filter((item) => !item.cachedFrame);
   const renderedByScene = new Map<number, RenderedFrame>();
   let browser: HtmlBrowser | undefined;
+  let browserPromise: Promise<HtmlBrowser> | undefined;
   if (misses.length) {
-    const browserStarted = Date.now();
     const launchBrowser = options.browserLauncher ?? (async () => {
       const playwright = await import("playwright");
       return playwright.chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-blink-features=AutomationControlled"] });
     });
-    browser = await launchBrowser();
-    metrics.browserStartupMs = Date.now() - browserStarted;
+    const ensureBrowser = async () => {
+      browserPromise ??= (async () => {
+        const browserStarted = Date.now();
+        browser = await launchBrowser();
+        metrics.browserStartupMs = Date.now() - browserStarted;
+        return browser;
+      })();
+      return browserPromise;
+    };
     const sceneRecorder = options.sceneRecorder ?? recordHtmlFrame;
     try {
       const rendered = await mapWithConcurrencyUntilError(misses, budget.renderConcurrency, async (item, _index, queueSignal) => {
@@ -495,17 +599,33 @@ export async function renderHtmlVideoProject(
         const sceneSignal = AbortSignal.any([queueSignal, AbortSignal.timeout(sceneTimeoutMs)]);
         console.log(`[html-video] recording ${item.node.id} with ${item.templateId}:${item.node.variantId}`);
         try {
-          const recorded = await sceneRecorder({
-            sceneIndex: item.node.sceneIndex, browser: browser!, htmlPath: item.htmlPath, outputPath: item.videoPath,
-            durationSec: item.node.durationSec, width: project.meta.width, height: project.meta.height,
-            fps: project.meta.fps, ffmpegThreads: budget.ffmpegThreadsPerJob,
-            encodingPreset: budget.encodingPreset, signal: sceneSignal,
+          const cacheResult = await getOrCreateMediaCache({
+            kind: "video-scene",
+            cacheKey: item.cacheKey,
+            extension: ".mp4",
+            targetPath: item.videoPath,
+            identity: item.cacheIdentity,
+            force: options.forceSceneIndexes?.includes(item.node.sceneIndex),
+            signal: sceneSignal,
+            details: { durationSec: item.node.durationSec },
+            generate: async (cacheOutputPath) => {
+              const recorded = await sceneRecorder({
+                sceneIndex: item.node.sceneIndex, browser: await ensureBrowser(), htmlPath: item.htmlPath, outputPath: cacheOutputPath,
+                durationSec: item.node.durationSec, width: project.meta.width, height: project.meta.height,
+                fps: project.meta.fps, ffmpegThreads: budget.ffmpegThreadsPerJob,
+                encodingPreset: budget.encodingPreset, signal: sceneSignal,
+              });
+              metrics.perSceneRecordMs[String(item.node.sceneIndex)] = recorded.recordMs;
+              metrics.perSceneEncodeMs[String(item.node.sceneIndex)] = recorded.encodeMs;
+              return { detectedMotionSec: recorded.detectedMotionSec, durationSec: item.node.durationSec };
+            },
           });
-          await writeFile(item.cachePath, JSON.stringify({ cacheKey: item.cacheKey, detectedMotionSec: recorded.detectedMotionSec, durationSec: item.node.durationSec }), "utf8");
-          metrics.renderedScenes.push(item.node.sceneIndex);
-          metrics.perSceneRecordMs[String(item.node.sceneIndex)] = recorded.recordMs;
-          metrics.perSceneEncodeMs[String(item.node.sceneIndex)] = recorded.encodeMs;
-          return { sceneIndex: item.node.sceneIndex, id: item.node.id, htmlPath: item.htmlPath, videoPath: item.videoPath, durationSec: item.node.durationSec, templateId: item.templateId, detectedMotionSec: recorded.detectedMotionSec } satisfies RenderedFrame;
+          const detectedMotionSec = typeof cacheResult.metadata.details.detectedMotionSec === "number"
+            ? cacheResult.metadata.details.detectedMotionSec
+            : 0;
+          await writeFile(item.cachePath, JSON.stringify({ cacheKey: item.cacheKey, detectedMotionSec, durationSec: item.node.durationSec }), "utf8");
+          (cacheResult.generated ? metrics.renderedScenes : metrics.cacheHitScenes).push(item.node.sceneIndex);
+          return { sceneIndex: item.node.sceneIndex, id: item.node.id, htmlPath: item.htmlPath, videoPath: item.videoPath, durationSec: item.node.durationSec, templateId: item.templateId, detectedMotionSec } satisfies RenderedFrame;
         } catch (error) {
           await rm(item.cachePath, { force: true }).catch(() => undefined);
           await rm(item.videoPath, { force: true }).catch(() => undefined);
@@ -514,7 +634,7 @@ export async function renderHtmlVideoProject(
       }, options.signal);
       for (const frame of rendered) renderedByScene.set(frame.sceneIndex, frame);
     } finally {
-      await browser.close().catch(() => undefined);
+      await browser?.close().catch(() => undefined);
       browser = undefined;
     }
   }

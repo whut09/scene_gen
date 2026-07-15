@@ -48,3 +48,7 @@ GitHub Actions 使用 Node.js 20，并执行：
 4. FFmpeg 生成的两秒音视频门禁测试。
 5. Playwright Chromium 模板截图检查。
 6. `npm audit --audit-level=low` 依赖审计。
+
+## Content-addressed cache
+
+`tests/integration/content-addressed-cache.test.ts` verifies that two concurrent run targets generate one cache key once, later runs restore it without regeneration, incomplete entries are ignored, and prune protects references owned by an active run. The scene audio integration test also confirms that an identical second run makes zero additional mock F5 requests.

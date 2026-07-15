@@ -7,10 +7,11 @@ import type { NarrationSegment, VideoProject } from "./types";
 import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
 import { fetchWithRetry } from "./external-operation";
 import { resolveF5PythonCommand, resolveF5ReferenceAudio } from "../runtime/runtime-paths";
-import { createF5NarrationCacheMetadata, f5NarrationCacheMetadataSchema } from "./tts-cache";
+import { createF5NarrationCacheMetadata } from "./tts-cache";
 import { applyTtsSpokenFallbacks, loadTtsPronunciationLexicon } from "./tts-pronunciation";
 import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
 import { F5WorkerPool, resolveF5WorkerDevices } from "./f5-worker-pool";
+import { getOrCreateMediaCache } from "../cache/media-cache";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
@@ -504,25 +505,38 @@ async function currentF5CacheMetadata(text: string, expectedSpeed?: string, cach
   });
 }
 
+async function synthesizeF5WithGlobalCache(input: {
+  text: string;
+  outputPath: string;
+  expectedSpeed?: string;
+  cacheSalt?: string;
+  forceRebuild?: boolean;
+  sceneIndex: number;
+  f5Runtime?: F5Runtime;
+  signal?: AbortSignal;
+}) {
+  const metadata = await currentF5CacheMetadata(input.text, input.expectedSpeed, input.cacheSalt);
+  const result = await getOrCreateMediaCache({
+    kind: "audio",
+    cacheKey: metadata.cacheKey,
+    extension: path.extname(input.outputPath) || ".wav",
+    targetPath: input.outputPath,
+    identity: metadata,
+    force: input.forceRebuild || process.env.TTS_FORCE_REBUILD === "1",
+    signal: input.signal,
+    generate: (cacheOutputPath) => synthesizeNarration("f5", input.text, cacheOutputPath, {
+      f5Speed: input.expectedSpeed,
+      sceneIndex: input.sceneIndex,
+      f5Runtime: input.f5Runtime,
+      signal: input.signal,
+    }),
+  });
+  await writeJsonAtomic(narrationCacheMetadataPath(input.outputPath), metadata);
+  return { reused: !result.generated, cacheKey: metadata.cacheKey };
+}
+
 function narrationCacheMetadataPath(segmentPath: string) {
   return `${segmentPath}.cache.json`;
-}
-
-async function writeNarrationCacheMetadata(text: string, segmentPath: string, expectedSpeed?: string, cacheSalt?: string) {
-  await writeJsonAtomic(narrationCacheMetadataPath(segmentPath), await currentF5CacheMetadata(text, expectedSpeed, cacheSalt));
-}
-
-async function canReuseNarrationSegment(provider: TtsProvider, text: string, segmentPath: string, expectedSpeed?: string, cacheSalt?: string) {
-  if (process.env.TTS_FORCE_REBUILD === "1" || provider !== "f5" || !existsSync(segmentPath)) return false;
-  const metadataPath = narrationCacheMetadataPath(segmentPath);
-  if (!existsSync(metadataPath)) return false;
-  try {
-    const cached = f5NarrationCacheMetadataSchema.parse(JSON.parse(await readFile(metadataPath, "utf8")));
-    const current = await currentF5CacheMetadata(text, expectedSpeed, cacheSalt);
-    return cached.cacheKey === current.cacheKey;
-  } catch {
-    return false;
-  }
 }
 
 function narrationSynthesisText(segment: NarrationSegment) {
@@ -571,11 +585,16 @@ async function synthesizeF5TitleScene(
     const partPath = partPaths[index];
     const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
     const synthesisText = index === 0 ? `。。。${partText}` : partText;
-    const reused = !forceRebuild && await canReuseNarrationSegment("f5", synthesisText, partPath, uniformSpeed, cacheSalt);
-    if (!reused) {
-      await synthesizeNarration("f5", synthesisText, partPath, { f5Speed: uniformSpeed, sceneIndex, f5Runtime, signal });
-      await writeNarrationCacheMetadata(synthesisText, partPath, uniformSpeed, cacheSalt);
-    }
+    const { reused } = await synthesizeF5WithGlobalCache({
+      text: synthesisText,
+      outputPath: partPath,
+      expectedSpeed: uniformSpeed,
+      cacheSalt,
+      forceRebuild,
+      sceneIndex,
+      f5Runtime,
+      signal,
+    });
     const duration = await probeDuration(partPath);
     if (duration <= 0) throw new Error(`Title narration part ${index + 1} is invalid.`);
     return { duration, reused };
@@ -627,15 +646,26 @@ async function attachSegmentedNarration(
       if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
       return { segmentPath, duration, sceneIndex: index, cacheSalt: effectiveCacheSalt, ...titleResult };
     }
-    const reused = !forceRebuild && await canReuseNarrationSegment(provider, synthesisText, segmentPath, provider === "f5" ? uniformF5Speed : undefined, effectiveCacheSalt);
-    if (!reused) {
-      await synthesisQueue.run(() => synthesizeNarration(provider, synthesisText, segmentPath, {
-        f5Speed: provider === "f5" ? uniformF5Speed : undefined,
+    let reused = false;
+    if (provider === "f5") {
+      ({ reused } = await synthesizeF5WithGlobalCache({
+        text: synthesisText,
+        outputPath: segmentPath,
+        expectedSpeed: uniformF5Speed,
+        cacheSalt: effectiveCacheSalt,
+        forceRebuild,
         sceneIndex: index,
         f5Runtime,
         signal,
       }));
-      if (provider === "f5") await writeNarrationCacheMetadata(synthesisText, segmentPath, uniformF5Speed, effectiveCacheSalt);
+    }
+    if (!reused && provider !== "f5") {
+      await synthesisQueue.run(() => synthesizeNarration(provider, synthesisText, segmentPath, {
+        f5Speed: undefined,
+        sceneIndex: index,
+        f5Runtime,
+        signal,
+      }));
     }
     const duration = await probeDuration(segmentPath);
     if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
@@ -771,10 +801,20 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     const outputPath = path.join(generatedDir, `${basename}.${extension}`);
     const forceRebuild = forceSceneIndexes.includes(0);
     const effectiveCacheSalt = forceRebuild ? cacheSalt : project.audio?.sceneCacheSalts?.["0"];
-    const reused = !forceRebuild && await canReuseNarrationSegment(provider, project.narration, outputPath, undefined, effectiveCacheSalt);
-    if (!reused) {
+    let reused = false;
+    if (provider === "f5") {
+      ({ reused } = await synthesizeF5WithGlobalCache({
+        text: project.narration,
+        outputPath,
+        cacheSalt: effectiveCacheSalt,
+        forceRebuild,
+        sceneIndex: 0,
+        f5Runtime,
+        signal: options.signal,
+      }));
+    }
+    if (!reused && provider !== "f5") {
       await synthesizeNarration(provider, project.narration, outputPath, { sceneIndex: 0, f5Runtime, signal: options.signal });
-      if (provider === "f5") await writeNarrationCacheMetadata(project.narration, outputPath, undefined, effectiveCacheSalt);
     }
     const fileSize = await stat(outputPath).then((file) => file.size).catch(() => 0);
     const duration = await probeDuration(outputPath);

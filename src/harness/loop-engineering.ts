@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { VideoProject } from "../pipeline/types";
 import type { QualityEvaluation, QualityIssue } from "./quality-protocol";
+import { dirtyPlanFromIssues, dirtyPlanFromPatch, mergeDirtyPlans, type DirtyPlan } from "./dirty-plan";
 
 export interface JsonPatchOperation {
   op: "add" | "remove" | "replace";
@@ -30,6 +31,7 @@ export interface LoopAudit {
   newIssues: string[];
   cost: LoopCost;
   progress: "pending" | "improved" | "unchanged" | "regressed";
+  dirtyPlan: DirtyPlan;
 }
 
 function stableValue(value: unknown): unknown {
@@ -104,6 +106,10 @@ export function createLoopAudit(input: {
   durationMs: number;
   usage?: Partial<Omit<LoopCost, "durationMs">>;
 }): LoopAudit {
+  const patch = createJsonPatch(
+    { scenes: input.before.scenes, narration: input.before.narration, narrationSegments: input.before.narrationSegments },
+    { scenes: input.after.scenes, narration: input.after.narration, narrationSegments: input.after.narrationSegments },
+  );
   return {
     iteration: input.iteration,
     stage: input.stage,
@@ -112,7 +118,7 @@ export function createLoopAudit(input: {
     issueSignatureBefore: issueSignature(input.evaluation.issues),
     scoreBefore: evaluationScore(input.evaluation),
     reasons: input.evaluation.issues.map((issue) => ({ code: issue.code, sceneIndex: issue.sceneIndex, repairAction: issue.repairAction })),
-    patch: createJsonPatch({ scenes: input.before.scenes, narration: input.before.narration, narrationSegments: input.before.narrationSegments }, { scenes: input.after.scenes, narration: input.after.narration, narrationSegments: input.after.narrationSegments }),
+    patch,
     resolvedIssues: [],
     newIssues: [],
     cost: {
@@ -122,6 +128,10 @@ export function createLoopAudit(input: {
       totalTokens: input.usage?.totalTokens ?? 0,
     },
     progress: "pending",
+    dirtyPlan: mergeDirtyPlans(
+      dirtyPlanFromIssues(input.evaluation.issues, input.after.scenes.length),
+      dirtyPlanFromPatch(patch, input.after.scenes.length),
+    ),
   };
 }
 

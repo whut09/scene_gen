@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { createHtmlVideoCacheKey } from "../../src/html-video/render-html-video";
+import { pathToFileURL } from "node:url";
+import { createHtmlVideoCacheKey, hashHtmlAssetContent } from "../../src/html-video/render-html-video";
 import { evaluateDraft } from "../../src/harness/quality";
 import { ensureTitleOpening } from "../../src/pipeline/llm";
 import { prepareF5SynthesisText } from "../../src/pipeline/tts";
@@ -59,4 +63,21 @@ test("HTML video cache keys ignore duration but include rendering inputs", () =>
   assert.equal(createHtmlVideoCacheKey({ ...base, scene: { ...scene, duration: 15 } }), key);
   assert.notEqual(createHtmlVideoCacheKey({ ...base, width: 720 }), key);
   assert.notEqual(createHtmlVideoCacheKey({ ...base, variantId: "research-stack" }), key);
+  assert.notEqual(createHtmlVideoCacheKey({ ...base, globalCssHash: "css-v2" }), key);
+  assert.notEqual(createHtmlVideoCacheKey({ ...base, assetContentHash: "asset-v2" }), key);
+  assert.notEqual(createHtmlVideoCacheKey({ ...base, encoderProfile: "medium" }), key);
+});
+
+test("HTML video asset fingerprints use file content instead of path or mtime", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "scene-gen-asset-hash-"));
+  const assetPath = path.join(directory, "asset.png");
+  try {
+    await writeFile(assetPath, "first", "utf8");
+    const html = `<img src="${pathToFileURL(assetPath).href}">`;
+    const first = await hashHtmlAssetContent(html);
+    await writeFile(assetPath, "second", "utf8");
+    assert.notEqual(await hashHtmlAssetContent(html), first);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

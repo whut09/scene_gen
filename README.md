@@ -24,7 +24,7 @@ Linux/macOS 将 `npm.cmd` 换成 `npm`，复制配置使用 `cp .env.example .en
 安装依赖后也可通过本地 bin 使用 `npm exec -- scene-gen doctor`。正式 CLI 提供：
 
 ```text
-scene-gen doctor|plan|run|resume|check|feedback
+scene-gen doctor|plan|run|resume|check|feedback|cache
 ```
 
 所有命令支持 `--help`，未知参数、拼写错误、缺失值、错误枚举和互斥选项会直接返回友好错误，不会静默忽略。
@@ -374,3 +374,14 @@ npm.cmd run production:inspect -- --project "public/generated/stories/<story>.js
 GitHub URL 输入会额外解析 README 中的非徽章图片，下载最多 `GITHUB_ASSET_LIMIT` 张到 `public/generated/assets/<owner>-<repo>/`。每个资产记录原始 URL、用途、Content-Type 和许可证提示。标题模板优先使用仓库自带 hero 图，同时保留真实仓库地址和 React/CSS 文字层；素材不可用时自动回退到程序化版式。
 
 运动检查现在按场景持续时间切片，除全片指标外还输出 `sceneMotionRatios` 与 `sceneLongestStaticRuns`。某一屏低运动超过阈值时，问题携带 `sceneIndex`，可只调整该模板或对应段落。
+## Global media cache
+
+Audio segments and HTML scene videos use a cross-run content-addressed cache under `dist/cache/audio/`, `dist/cache/video-scenes/`, and `dist/cache/metadata/`. Cache identities use content hashes and renderer/synthesis versions rather than paths or modification times. Writes are atomic and concurrent requests for the same key use a filesystem single-flight lock.
+
+```powershell
+npm.cmd run scene-gen -- cache inspect
+npm.cmd run scene-gen -- cache prune --max-age-days 30 --max-size-gb 20 --dry-run
+npm.cmd run scene-gen -- cache clear
+```
+
+Active runs register references in `dist/runs/<run-id>/cache-refs.json`; prune never removes entries referenced by a running journal. Quality gates emit a structured `DirtyPlan`, so pronunciation failures rebuild only the affected audio scene plus audio concat/remux, blank or static frames rebuild only the affected video scene plus video concat/remux, and stream drift starts with remux only.

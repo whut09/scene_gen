@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { ExternalOperationError } from "../pipeline/external-operation";
 import type { RunJournalStore } from "./run-journal";
 import type { StageIssue, StageResult, SuggestedAction, VideoStageName } from "./stage-types";
+import type { DirtyPlan } from "./dirty-plan";
 
 interface StageDescription {
   outputs?: Record<string, string>;
   issues?: StageIssue[];
   metrics?: Record<string, string | number | boolean>;
   suggestedAction?: SuggestedAction;
+  dirtyPlan?: DirtyPlan;
 }
 
 interface RunStageOptions<T> {
@@ -68,6 +70,7 @@ export async function runStage<T>(options: RunStageOptions<T>) {
       outputs: description.outputs ?? {},
       issues: description.issues ?? [],
       metrics: description.metrics ?? {},
+      dirtyPlan: description.dirtyPlan,
       durationMs: Math.max(0, Date.now() - Date.parse(startedAt)),
       attempt: options.attempt,
       suggestedAction: description.suggestedAction ?? "none",

@@ -10,6 +10,7 @@ import { runStage } from "./stage-runner";
 import { parseStageName, stageIndex, type StageResult, type VideoStageName } from "./stage-types";
 import { audioLoopHash, createLoopAudit, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
 import { normalizeStoredQualityEvaluation } from "./quality-protocol";
+import { mergeDirtyPlans } from "./dirty-plan";
 import { defaultOutputDir } from "../runtime/runtime-paths";
 import {
   combineNotes,
@@ -216,7 +217,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         journal, name: "draft-gate", attempt: nextAttempt(journal, "draft-gate"),
         inputs: { project: state.project, targetSeconds, feedback: ingest.feedbackGuidance }, timeoutMs: Number(process.env.HARNESS_DRAFT_GATE_TIMEOUT_MS ?? 150_000), signal,
         task: (stageSignal) => runDraftGateStage(state.project as VideoProject, targetSeconds, ingest.feedbackGuidance, stageSignal),
-        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
+        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan }),
       });
       gate.value.evaluation.metrics.projectHash = projectLoopHash(state.project);
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-draft.json`);
@@ -225,6 +226,9 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       const current = state.iterations.find((item) => item.iteration === iteration) ?? { iteration, draft: gate.value.evaluation };
       current.draft = gate.value.evaluation;
       current.draftProjectHash = String(gate.value.evaluation.metrics.projectHash);
+      current.dirtyPlan = current.dirtyPlan
+        ? mergeDirtyPlans(current.dirtyPlan, gate.value.repairPlan.dirtyPlan)
+        : gate.value.repairPlan.dirtyPlan;
       if (!state.iterations.includes(current)) state.iterations.push(current);
       await finalizePendingAudit(journal, runDir, state.iterations.filter((item) => item.iteration < iteration), "draft", gate.value.evaluation);
       draftPassed = gate.value.evaluation.passed;
@@ -304,7 +308,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       const gate: { value: GateStageOutput; result: StageResult } = await runStage<GateStageOutput>({
         journal, name: "audio-gate", attempt: nextAttempt(journal, "audio-gate"), inputs: { project: state.project, targetSeconds }, timeoutMs: Number(process.env.HARNESS_AUDIO_GATE_TIMEOUT_MS ?? 360_000), signal,
         task: (stageSignal) => runAudioGateStage(state.project as VideoProject, targetSeconds, stageSignal),
-        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
+        describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan }),
       });
       gate.value.evaluation.metrics.projectHash = audioLoopHash(state.project, state.project.audio?.metrics?.audioGenerationKey);
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-audio.json`);
@@ -313,6 +317,9 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       const current = state.iterations.find((item) => item.iteration === iteration) ?? { iteration, draft: state.iterations.at(-1)!.draft };
       current.audio = gate.value.evaluation;
       current.audioProjectHash = String(gate.value.evaluation.metrics.projectHash);
+      current.dirtyPlan = current.dirtyPlan
+        ? mergeDirtyPlans(current.dirtyPlan, gate.value.repairPlan.dirtyPlan)
+        : gate.value.repairPlan.dirtyPlan;
       if (!state.iterations.includes(current)) state.iterations.push(current);
       await finalizePendingAudit(journal, runDir, state.iterations.filter((item) => item.iteration < iteration), "audio", gate.value.evaluation);
       audioPassed = gate.value.evaluation.passed;
@@ -392,8 +399,8 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         }
         const gate = await runStage({
           journal, name: "video-gate", attempt: nextAttempt(journal, "video-gate"), inputs: { outputPath: state.story.outputPath, project: state.project }, timeoutMs: Number(process.env.HARNESS_VIDEO_GATE_TIMEOUT_MS ?? 480_000), signal,
-          task: (stageSignal) => runVideoGateStage({ story: state.story!, project: state.project!, reportDir, signal: stageSignal }),
-          describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action }),
+          task: (stageSignal) => runVideoGateStage({ story: state.story!, project: state.project!, reportDir, signal: stageSignal, repairAttempt: videoAttempt }),
+          describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan }),
         });
         gate.value.evaluation.metrics.remuxedVideo = remuxedVideo;
         Object.assign(gate.value.evaluation.metrics, lastRenderMetrics);

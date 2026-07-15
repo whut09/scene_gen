@@ -37,7 +37,7 @@ test("scene-scoped audio repair rebuilds one segment and re-concatenates narrati
   const names = [
     "F5_TTS_PYTHON", "F5_TTS_WORKER_SCRIPT", "F5_TTS_REF_AUDIO", "F5_TTS_REF_TEXT",
     "F5_TTS_WORKER_MODE", "F5_TTS_DEVICE", "F5_TTS_CONCURRENCY", "MOCK_F5_REQUEST_COUNT_FILE",
-    "TTS_DURATION_POLICY",
+    "TTS_DURATION_POLICY", "SCENE_GEN_CACHE_DIR",
   ] as const;
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   Object.assign(process.env, {
@@ -50,11 +50,15 @@ test("scene-scoped audio repair rebuilds one segment and re-concatenates narrati
     F5_TTS_CONCURRENCY: "1",
     MOCK_F5_REQUEST_COUNT_FILE: requestCount,
     TTS_DURATION_POLICY: "natural",
+    SCENE_GEN_CACHE_DIR: path.join(directory, "cache"),
   });
   try {
     const project = fiveSceneProject();
     const initial = await attachNarrationAudio(project, "partial", { generatedDir, provider: "f5" });
     assert.equal(await lineCount(requestCount), 5);
+    const secondRun = await attachNarrationAudio(project, "partial-second-run", { generatedDir: path.join(directory, "second-run"), provider: "f5" });
+    assert.equal(await lineCount(requestCount), 5, "identical audio in a second run must use the global cache");
+    assert.equal(secondRun.audio?.metrics?.reusedSceneCount, 5);
     const narrationPath = path.join(generatedDir, "partial.wav");
     const initialMtime = (await stat(narrationPath)).mtimeMs;
     await new Promise((resolve) => setTimeout(resolve, 20));

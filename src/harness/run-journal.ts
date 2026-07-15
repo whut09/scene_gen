@@ -2,6 +2,7 @@ import path from "node:path";
 import { z } from "zod";
 import { readJson, writeJsonAtomic } from "../pipeline/utils";
 import type { StageResult } from "./stage-types";
+import { dirtyPlanSchema } from "./dirty-plan";
 
 const stageStatusSchema = z.enum(["pending", "running", "succeeded", "failed", "skipped"]);
 const stageNameSchema = z.enum([
@@ -33,6 +34,7 @@ const runStageSchema = z.object({
   outputs: z.record(z.string(), z.string()).default({}),
   issues: z.array(stageIssueSchema).default([]),
   metrics: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+  dirtyPlan: dirtyPlanSchema.optional(),
   suggestedAction: suggestedActionSchema.default("none"),
   error: z.string().optional(),
 });

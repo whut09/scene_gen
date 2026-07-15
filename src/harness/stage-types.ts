@@ -43,6 +43,7 @@ export interface StageResult {
   outputs: Record<string, string>;
   issues: StageIssue[];
   metrics: Record<string, string | number | boolean>;
+  dirtyPlan?: DirtyPlan;
   durationMs: number;
   attempt: number;
   suggestedAction: SuggestedAction;
@@ -69,3 +70,4 @@ export function parseStageName(value: string): VideoStageName {
 export function stageIndex(stage: VideoStageName) {
   return videoStageOrder.indexOf(stage);
 }
+import type { DirtyPlan } from "./dirty-plan";

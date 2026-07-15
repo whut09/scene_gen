@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -149,7 +149,7 @@ test("F5 narration cache skips the worker until the lexicon hash changes", async
   const names = [
     "F5_TTS_PYTHON", "F5_TTS_WORKER_SCRIPT", "F5_TTS_REF_AUDIO", "F5_TTS_REF_TEXT",
     "F5_TTS_WORKER_MODE", "F5_TTS_DEVICE", "F5_TTS_CONCURRENCY", "TTS_PRONUNCIATION_LEXICON",
-    "MOCK_F5_REQUEST_COUNT_FILE", "MOCK_F5_START_COUNT_FILE", "TTS_DURATION_POLICY",
+    "MOCK_F5_REQUEST_COUNT_FILE", "MOCK_F5_START_COUNT_FILE", "TTS_DURATION_POLICY", "SCENE_GEN_CACHE_DIR",
   ] as const;
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
   Object.assign(process.env, {
@@ -164,6 +164,7 @@ test("F5 narration cache skips the worker until the lexicon hash changes", async
     MOCK_F5_REQUEST_COUNT_FILE: requestCount,
     MOCK_F5_START_COUNT_FILE: startCount,
     TTS_DURATION_POLICY: "natural",
+    SCENE_GEN_CACHE_DIR: path.join(directory, "cache"),
   });
   try {
     const first = await attachNarrationAudio(project, "cache-test", { generatedDir, provider: "f5" });
@@ -183,5 +184,6 @@ test("F5 narration cache skips the worker until the lexicon hash changes", async
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
+    await rm(directory, { recursive: true, force: true });
   }
 });
