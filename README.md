@@ -31,6 +31,8 @@ scene-gen doctor|plan|run|resume|check|feedback|cache
 
 ## 配置 Profiles
 
+运行时配置会在 CLI 启动时合并 profile 与显式环境变量，经过 Zod 校验后递归冻结；阶段代码不再通过修改全局 `process.env` 传递配置。每次运行会把脱敏配置快照和哈希写入 `run.json`，resume 默认强制复用原配置；如需改变 profile 或影响运行的参数，必须增加 `--override-config`。设计和扩展约束见 [`docs/RUNTIME_CONFIG.md`](docs/RUNTIME_CONFIG.md)。
+
 - `local-f5`：本地 F5-TTS、CUDA、Whisper 和 HTML Video 完整链路。
 - `openai-tts`：OpenAI 兼容 LLM/TTS，加本地 HTML Video 渲染。
 - `ci-offline`：关闭 LLM judge 与 ASR，使用离线检查设置。

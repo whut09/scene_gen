@@ -13,22 +13,22 @@ export function pythonFromVenv(venv: string) {
   return candidates.find(existsSync) ?? candidates[0];
 }
 
-export function resolvePythonCommand() {
-  if (process.env.ASR_PYTHON) return process.env.ASR_PYTHON;
-  if (process.env.F5_TTS_PYTHON) return process.env.F5_TTS_PYTHON;
-  if (process.env.F5_TTS_VENV) return pythonFromVenv(process.env.F5_TTS_VENV);
+export function resolvePythonCommand(env: NodeJS.ProcessEnv = process.env) {
+  if (env.ASR_PYTHON) return env.ASR_PYTHON;
+  if (env.F5_TTS_PYTHON) return env.F5_TTS_PYTHON;
+  if (env.F5_TTS_VENV) return pythonFromVenv(env.F5_TTS_VENV);
   return process.platform === "win32" ? "python" : "python3";
 }
 
-export function resolveF5PythonCommand() {
-  if (process.env.F5_TTS_PYTHON) return process.env.F5_TTS_PYTHON;
-  if (process.env.F5_TTS_VENV) return pythonFromVenv(process.env.F5_TTS_VENV);
+export function resolveF5PythonCommand(env: NodeJS.ProcessEnv = process.env) {
+  if (env.F5_TTS_PYTHON) return env.F5_TTS_PYTHON;
+  if (env.F5_TTS_VENV) return pythonFromVenv(env.F5_TTS_VENV);
   return process.platform === "win32" ? "python" : "python3";
 }
 
-export function resolveF5ReferenceAudio() {
-  if (process.env.F5_TTS_REF_AUDIO) return path.resolve(process.env.F5_TTS_REF_AUDIO);
-  const venv = process.env.F5_TTS_VENV;
+export function resolveF5ReferenceAudio(env: NodeJS.ProcessEnv = process.env) {
+  if (env.F5_TTS_REF_AUDIO) return path.resolve(env.F5_TTS_REF_AUDIO);
+  const venv = env.F5_TTS_VENV;
   if (!venv) return "";
   const candidates = [path.join(venv, "Lib", "site-packages", "f5_tts", "infer", "examples", "basic", "basic_ref_zh.wav")];
   const libDir = path.join(venv, "lib");

@@ -4,6 +4,7 @@ import { readJson, writeJsonAtomic } from "../pipeline/utils";
 import type { StageResult } from "./stage-types";
 import { dirtyPlanSchema } from "./dirty-plan";
 import { repairActionSchema, repairCandidateSchema, repairDecisionSchema } from "./repair-candidate";
+import { runtimeConfigSchema, type RuntimeConfigSnapshot } from "../config/runtime-config";
 
 const stageStatusSchema = z.enum(["pending", "running", "succeeded", "failed", "skipped"]);
 const stageNameSchema = z.enum([
@@ -57,6 +58,9 @@ export const runJournalSchema = z.object({
     runtimeProfile: z.string().min(1).default("custom"),
     outputDir: z.string().min(1),
     screenshotLimit: z.number().int().nonnegative(),
+    runtimeConfig: runtimeConfigSchema.optional(),
+    runtimeConfigHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    configOverrides: z.array(z.object({ changedAt: z.string(), previousHash: z.string(), nextHash: z.string() })).optional(),
   }),
   artifacts: z.record(z.string(), z.string()),
   stages: z.array(runStageSchema),
@@ -66,9 +70,10 @@ export const runJournalSchema = z.object({
 export type RunJournal = z.infer<typeof runJournalSchema>;
 export type RunStage = z.infer<typeof runStageSchema>;
 type RunJournalCreateInput = Omit<RunJournal, "specVersion" | "status" | "createdAt" | "updatedAt" | "artifacts" | "stages" | "config"> & {
-  config: Omit<RunJournal["config"], "qualityProfile" | "runtimeProfile"> & {
+  config: Omit<RunJournal["config"], "qualityProfile" | "runtimeProfile" | "configOverrides"> & {
     qualityProfile?: RunJournal["config"]["qualityProfile"];
     runtimeProfile?: RunJournal["config"]["runtimeProfile"];
+    configOverrides?: RunJournal["config"]["configOverrides"];
   };
 };
 
@@ -117,6 +122,16 @@ export class RunJournalStore {
 
   async setArtifacts(artifacts: Record<string, string>) {
     this.journal.artifacts = { ...this.journal.artifacts, ...artifacts };
+    await this.persist();
+  }
+
+  async setRuntimeConfig(runtimeConfig: RuntimeConfigSnapshot, runtimeConfigHash: string) {
+    const previousHash = this.journal.config.runtimeConfigHash;
+    if (previousHash && previousHash !== runtimeConfigHash) {
+      this.journal.config.configOverrides = [...(this.journal.config.configOverrides ?? []), { changedAt: new Date().toISOString(), previousHash, nextHash: runtimeConfigHash }];
+    }
+    this.journal.config.runtimeConfig = runtimeConfigSchema.parse(runtimeConfig);
+    this.journal.config.runtimeConfigHash = runtimeConfigHash;
     await this.persist();
   }
 

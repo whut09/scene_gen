@@ -2,19 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyConfigProfile, loadConfigProfile } from "./config-profiles";
 
-test("config profiles load and only fill missing environment values", async () => {
+test("config profiles load without mutating the global environment", async () => {
   const profile = await loadConfigProfile("fast-preview");
   assert.equal(profile.env.VIDEO_RENDER_ENGINE, "remotion");
-  const previous = Object.fromEntries([...Object.keys(profile.env), "SCENE_GEN_PROFILE"].map((key) => [key, process.env[key]]));
+  const previousEngine = process.env.VIDEO_RENDER_ENGINE;
+  const previousProfile = process.env.SCENE_GEN_PROFILE;
   process.env.VIDEO_RENDER_ENGINE = "html-video";
   try {
-    await applyConfigProfile("fast-preview");
+    const applied = await applyConfigProfile("fast-preview");
+    assert.equal(applied.name, "fast-preview");
     assert.equal(process.env.VIDEO_RENDER_ENGINE, "html-video");
+    assert.equal(process.env.SCENE_GEN_PROFILE, previousProfile);
   } finally {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    if (previousEngine === undefined) delete process.env.VIDEO_RENDER_ENGINE;
+    else process.env.VIDEO_RENDER_ENGINE = previousEngine;
   }
 });
 

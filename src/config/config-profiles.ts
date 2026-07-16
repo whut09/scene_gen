@@ -29,10 +29,5 @@ export async function loadConfigProfile(name: string) {
 }
 
 export async function applyConfigProfile(name: string) {
-  const profile = await loadConfigProfile(name);
-  for (const [key, value] of Object.entries(profile.env)) {
-    if (!process.env[key]) process.env[key] = value;
-  }
-  process.env.SCENE_GEN_PROFILE = profile.name;
-  return profile;
+  return loadConfigProfile(name);
 }

@@ -4,6 +4,7 @@ import { access, copyFile, link, mkdir, open, readFile, rename, rm, stat } from 
 import path from "node:path";
 import { z } from "zod";
 import { ensureDir, fromRoot, readJson, writeJsonAtomic } from "../pipeline/utils";
+import { getRuntimeConfig } from "../config/runtime-config";
 
 export const cacheKindSchema = z.enum(["audio", "video-scene"]);
 export type CacheKind = z.infer<typeof cacheKindSchema>;
@@ -33,7 +34,7 @@ function kindDirectory(kind: CacheKind) {
 }
 
 export function mediaCacheRoot() {
-  return path.resolve(process.env.SCENE_GEN_CACHE_DIR ?? fromRoot("dist", "cache"));
+  return getRuntimeConfig().cache.rootDir;
 }
 
 export function mediaCachePaths(kind: CacheKind, cacheKey: string, extension: string) {
@@ -128,8 +129,8 @@ export async function restoreMediaCache(input: {
 
 async function acquireLock(lockPath: string, signal?: AbortSignal) {
   await mkdir(path.dirname(lockPath), { recursive: true });
-  const timeoutMs = Math.max(5_000, Number(process.env.MEDIA_CACHE_LOCK_TIMEOUT_MS ?? 600_000));
-  const staleMs = Math.max(timeoutMs, Number(process.env.MEDIA_CACHE_STALE_LOCK_MS ?? 900_000));
+  const timeoutMs = Math.max(5_000, getRuntimeConfig().cache.lockTimeoutMs);
+  const staleMs = Math.max(timeoutMs, getRuntimeConfig().cache.staleLockMs);
   const startedAt = Date.now();
   while (true) {
     if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("Cache wait aborted.");

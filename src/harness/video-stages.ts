@@ -18,6 +18,7 @@ import { readVisualAuditFile } from "../html-video/visual-audit";
 import { recordTemplateOutcomes } from "../templates/template-learning";
 import { recordProviderOutcome } from "../production/provider-stats";
 import { findTtsPronunciations } from "../pipeline/tts-pronunciation";
+import { getRuntimeConfig, runtimeConfigProcessEnv, runtimeConfigWithTemplateExclusions } from "../config/runtime-config";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -64,6 +65,7 @@ async function runScript(
 ) {
   await runExternalProcess(process.execPath, [tsxCli, fromRoot(script), ...args], {
     cwd: fromRoot(),
+    env: runtimeConfigProcessEnv(getRuntimeConfig()),
     signal,
     timeoutMs: options.timeoutMs,
     retries: options.retries,
@@ -97,7 +99,7 @@ export async function runDraftStage(input: {
   if (input.ignoreCache) args.push("--ignore-cache");
   if (input.notes) args.push("--notes", input.notes.replace(/\r?\n/g, "；"));
   await runScript("src/pipeline/generate-stories.ts", args, input.signal, {
-    timeoutMs: Number(process.env.HARNESS_DRAFT_TIMEOUT_MS ?? 300_000),
+    timeoutMs: getRuntimeConfig().retry.stageTimeoutMs.draft,
     retries: 1,
     retryOnExit: true,
   });
@@ -128,7 +130,7 @@ export async function runRevisionStage(input: {
     "--provider-strategy", input.providerStrategy ?? "keep",
     "--result-file", input.resultPath,
   ], input.signal, {
-    timeoutMs: Number(process.env.HARNESS_REVISION_TIMEOUT_MS ?? 180_000),
+    timeoutMs: getRuntimeConfig().retry.stageTimeoutMs.revision,
     retries: 1,
     retryOnExit: true,
   });
@@ -158,7 +160,7 @@ export async function runSynthesizeStage(input: {
   if (input.reason) args.push("--reason", input.reason);
   if (input.provider) args.push("--provider", input.provider);
   await runScript("src/pipeline/synthesize-story.ts", args, input.signal, {
-    timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 900_000),
+    timeoutMs: getRuntimeConfig().retry.stageTimeoutMs.synthesize,
     retries: 1,
     retryOnExit: true,
   });
@@ -180,6 +182,7 @@ export async function runRenderStage(input: {
   remuxOnly?: boolean;
   remuxRequired?: boolean;
   resultPath?: string;
+  templateExclusions?: Record<string, string[]>;
   signal: AbortSignal;
 }) {
   const args = ["--manifest", input.manifestPath, "--overwrite", "--engine", input.engine];
@@ -187,10 +190,17 @@ export async function runRenderStage(input: {
   else if (input.forceSceneIndexes?.length) args.push("--force-scenes", input.forceSceneIndexes.join(","));
   if (input.remuxOnly) args.push("--remux-only");
   if (input.resultPath) args.push("--result", input.resultPath);
-  await runScript("src/pipeline/render-stories.ts", args, input.signal, {
-    timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_800_000),
+  const runtimeConfig = input.templateExclusions
+    ? runtimeConfigWithTemplateExclusions(getRuntimeConfig(), input.templateExclusions)
+    : getRuntimeConfig();
+  await runExternalProcess(process.execPath, [tsxCli, fromRoot("src/pipeline/render-stories.ts"), ...args], {
+    cwd: fromRoot(),
+    env: runtimeConfigProcessEnv(runtimeConfig),
+    signal: input.signal,
+    timeoutMs: getRuntimeConfig().retry.stageTimeoutMs.render,
     retries: 1,
     retryOnExit: true,
+    inheritOutput: true,
   });
   const result = input.resultPath
     ? await readJson<{ stories?: Array<{ visualAuditPath?: string; metrics?: Record<string, unknown> }> }>(input.resultPath)
@@ -308,7 +318,7 @@ export async function runPublishStage(input: {
         ? !finalAudio.issues.some((issue) => issue.code === "audio_pronunciation_mismatch")
         : undefined,
       language: "zh-CN", domain: input.project.sources[0]?.domain ?? input.project.sources[0]?.tags?.[0] ?? "general",
-      device: audioProviderId === "f5" ? process.env.F5_TTS_DEVICE ?? "auto" : undefined,
+      device: audioProviderId === "f5" ? getRuntimeConfig().tts.f5.device : undefined,
     }) : undefined,
     recordProviderOutcome({
       runId: input.runId, providerId: input.engine, capability: "programmatic", operation: "video-render",

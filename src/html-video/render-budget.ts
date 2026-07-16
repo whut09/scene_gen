@@ -1,4 +1,5 @@
 import { availableParallelism, freemem } from "node:os";
+import type { RuntimeConfig } from "../config/runtime-config";
 
 export type HtmlEncodingPreset = "ultrafast" | "veryfast" | "medium";
 
@@ -33,4 +34,16 @@ export function resolveHtmlRenderBudget(
     cpuCount,
     availableMemoryBytes,
   };
+}
+
+export function resolveHtmlRenderBudgetFromConfig(
+  sceneCount: number,
+  config: RuntimeConfig,
+  system: { cpuCount?: number; availableMemoryBytes?: number } = {},
+): HtmlRenderBudget {
+  return resolveHtmlRenderBudget(sceneCount, {
+    HTML_RENDER_CONCURRENCY: String(config.rendering.html.concurrency),
+    HTML_RENDER_MEMORY_PER_JOB_MB: String(config.rendering.html.memoryPerJobMb),
+    HTML_RENDER_PRESET: config.rendering.html.preset,
+  }, system);
 }

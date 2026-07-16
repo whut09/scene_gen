@@ -11,7 +11,6 @@ import { parseStageName, stageIndex, type StageResult, type VideoStageName } fro
 import { audioLoopHash, createLoopAudit, evaluationScore, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
 import { normalizeStoredQualityEvaluation } from "./quality-protocol";
 import { mergeDirtyPlans } from "./dirty-plan";
-import { defaultOutputDir } from "../runtime/runtime-paths";
 import {
   calculateLoopBudgetUsage,
   evaluateLoopBudget,
@@ -39,6 +38,7 @@ import {
   type IngestStageOutput,
   type IterationReport,
 } from "./video-stages";
+import { buildRuntimeConfig, runWithRuntimeConfig, runtimeConfigHash, runtimeConfigSnapshot, runtimeConfigWithRunOverrides, type RuntimeConfig } from "../config/runtime-config";
 
 interface AgentState {
   story?: StoryManifestItem;
@@ -122,10 +122,10 @@ function shouldRun(stage: VideoStageName, startStage: VideoStageName, forceStage
   return stageIndex(stage) >= stageIndex(startStage) || stage === forceStage;
 }
 
-export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
-  loadDotEnv();
+async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undefined, runtimeConfig: RuntimeConfig) {
   const args = parseArgs(argv);
   const resumeValue = typeof args.resume === "string" ? args.resume : undefined;
+  const overrideConfig = Boolean(args["override-config"]);
   const explicitFromStage = typeof args["from-stage"] === "string" ? parseStageName(args["from-stage"]) : undefined;
   const forceStage = typeof args["force-stage"] === "string" ? parseStageName(args["force-stage"]) : undefined;
   let journal: RunJournalStore;
@@ -141,9 +141,16 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
   let startStage: VideoStageName;
 
   if (resumeValue) {
+    const forbiddenOverrides = ["seconds", "iterations", "video-iterations", "screenshots", "engine", "out-dir", "quality-profile"]
+      .filter((key) => Object.hasOwn(args, key));
+    if (!overrideConfig && forbiddenOverrides.length > 0) throw new Error("Resume uses the original runtime config. Add --override-config to change: " + forbiddenOverrides.join(", "));
     runDir = resolveRunDir(resumeValue);
     journal = await RunJournalStore.open(runDir);
     const snapshot = journal.snapshot();
+    if (snapshot.config.runtimeConfigHash && !overrideConfig && snapshot.config.runtimeConfigHash !== runtimeConfigHash(runtimeConfig)) {
+      throw new Error("Runtime config hash differs from the original run. Resume without overrides must restore run.config.runtimeConfig.");
+    }
+    if (overrideConfig || !snapshot.config.runtimeConfigHash) await journal.setRuntimeConfig(runtimeConfigSnapshot(runtimeConfig), runtimeConfigHash(runtimeConfig));
     runId = snapshot.runId;
     url = typeof args.url === "string" ? args.url : snapshot.url;
     targetSeconds = typeof args.seconds === "string" ? Number(args.seconds) : snapshot.config.targetSeconds;
@@ -158,17 +165,17 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     if (typeof args.url !== "string") throw new Error('Usage: scene-gen run --url "https://example.com/news" or scene-gen resume <run-id>');
     url = args.url;
     targetSeconds = Number(args.seconds ?? 100);
-    maxIterations = Math.max(1, Math.min(8, Number(args.iterations ?? process.env.HARNESS_MAX_ITERATIONS ?? 4)));
-    outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : path.resolve(process.env.VIDEO_OUTPUT_DIR ?? defaultOutputDir());
-    screenshotLimit = Number(args.screenshots ?? process.env.SCREENSHOT_LIMIT ?? 0);
-    engine = (typeof args.engine === "string" ? args.engine : process.env.VIDEO_RENDER_ENGINE ?? "html-video") as typeof engine;
-    qualityProfile = (typeof args["quality-profile"] === "string" ? args["quality-profile"] : process.env.QUALITY_GATE_PROFILE ?? "balanced") as typeof qualityProfile;
+    maxIterations = Math.max(1, Math.min(8, Number(args.iterations ?? runtimeConfig.retry.maxIterations)));
+    outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : runtimeConfig.rendering.outputDir;
+    screenshotLimit = Number(args.screenshots ?? runtimeConfig.rendering.screenshotLimit);
+    engine = (typeof args.engine === "string" ? args.engine : runtimeConfig.rendering.engine) as typeof engine;
+    qualityProfile = (typeof args["quality-profile"] === "string" ? args["quality-profile"] : runtimeConfig.quality.profile) as typeof qualityProfile;
     runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(url, "video")}`;
     runDir = fromRoot("dist", "runs", runId);
     journal = await RunJournalStore.create(runDir, {
       runId,
       url,
-      config: { targetSeconds, maxIterations, engine, qualityProfile, runtimeProfile: process.env.SCENE_GEN_PROFILE ?? "custom", outputDir, screenshotLimit },
+      config: { targetSeconds, maxIterations, engine, qualityProfile, runtimeProfile: runtimeConfig.profile, outputDir, screenshotLimit, runtimeConfig: runtimeConfigSnapshot(runtimeConfig), runtimeConfigHash: runtimeConfigHash(runtimeConfig) },
     });
     startStage = explicitFromStage ?? "ingest";
   }
@@ -176,7 +183,6 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
   try {
     if (!new Set(["remotion", "html-video"]).has(engine)) throw new Error(`Unsupported render engine: ${engine}`);
     if (!new Set(["balanced", "strict", "lenient"]).has(qualityProfile)) throw new Error(`Unsupported quality profile: ${qualityProfile}`);
-    process.env.QUALITY_GATE_PROFILE = qualityProfile;
     if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) throw new Error("--seconds must be a positive number.");
     if (!Number.isInteger(screenshotLimit) || screenshotLimit < 0) throw new Error("--screenshots must be a non-negative integer.");
     if (!resumeValue && stageIndex(startStage) > stageIndex("draft")) throw new Error("--from-stage after draft requires --resume <run-id>.");
@@ -234,7 +240,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       if (!state.story || shouldRun("draft", startStage, forceStage)) {
         const draftStage = await runStage({
           journal, name: "draft", attempt: nextAttempt(journal, "draft"),
-          inputs: { url, targetSeconds, screenshotLimit, loopNotes, ignoreCache }, timeoutMs: Number(process.env.HARNESS_DRAFT_TIMEOUT_MS ?? 330_000), signal,
+          inputs: { url, targetSeconds, screenshotLimit, loopNotes, ignoreCache }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.draft, signal,
           task: (stageSignal) => runDraftStage({ url, targetSeconds, outputDir, screenshotLimit, runDir, generationResultPath, notes: loopNotes, ignoreCache, signal: stageSignal }),
           describe: (value) => ({ outputs: { generationResultPath, manifestPath: value.manifestPath, projectPath: value.stories[0].projectPath }, metrics: { cacheHit: value.cacheHit } }),
         });
@@ -246,7 +252,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       if (!state.story || !state.project) throw new Error("Draft stage did not produce a project.");
       const gate = await runStage({
         journal, name: "draft-gate", attempt: nextAttempt(journal, "draft-gate"),
-        inputs: { project: state.project, targetSeconds, feedback: ingest.feedbackGuidance }, timeoutMs: Number(process.env.HARNESS_DRAFT_GATE_TIMEOUT_MS ?? 150_000), signal,
+        inputs: { project: state.project, targetSeconds, feedback: ingest.feedbackGuidance }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.draftGate, signal,
         task: (stageSignal) => runDraftGateStage(state.project as VideoProject, targetSeconds, ingest.feedbackGuidance, stageSignal),
         describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan, repairCandidates: value.repairPlan.candidates, repairDecision: value.repairPlan.decision }),
       });
@@ -272,7 +278,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         draftStrategy = selectNextLoopStrategy({
           stage: "draft", iteration, issues: gate.value.evaluation.issues, repairAction: gate.value.repairPlan.action,
           affectedScenes: gate.value.repairPlan.sceneIndexes, trajectory: strategyTrajectory,
-          fallbackProviderId: process.env.REVISION_LLM_FALLBACK_MODEL,
+          fallbackProviderId: runtimeConfig.llm.revisionFallbackModel,
           scoreBefore: evaluationScore(gate.value.evaluation),
         });
         strategyTrajectory.push(draftStrategy);
@@ -346,7 +352,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       const forcedRebuild = forceAudioRebuild;
       const previousSceneDurations = state.project.scenes.map((scene) => scene.duration);
       const synth: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
-        journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, strategy: audioStrategy }, timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 930_000), signal,
+        journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, strategy: audioStrategy }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.synthesize, signal,
         task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, signal: stageSignal }),
         describe: (value) => ({
           outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "" },
@@ -373,7 +379,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       audioRepairReason = undefined;
       audioProviderOverride = undefined;
       const gate: { value: GateStageOutput; result: StageResult } = await runStage<GateStageOutput>({
-        journal, name: "audio-gate", attempt: nextAttempt(journal, "audio-gate"), inputs: { project: state.project, targetSeconds }, timeoutMs: Number(process.env.HARNESS_AUDIO_GATE_TIMEOUT_MS ?? 360_000), signal,
+        journal, name: "audio-gate", attempt: nextAttempt(journal, "audio-gate"), inputs: { project: state.project, targetSeconds }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.audioGate, signal,
         task: (stageSignal) => runAudioGateStage(state.project as VideoProject, targetSeconds, stageSignal),
         describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan, repairCandidates: value.repairPlan.candidates, repairDecision: value.repairPlan.decision }),
       });
@@ -395,7 +401,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       if (audioPassed) break;
       const audioHistory = state.iterations.filter((item) => item.audio && item.audioProjectHash).map((item) => ({ projectHash: item.audioProjectHash, evaluation: item.audio! }));
       if (hasRepeatedNoProgress(audioHistory)) {
-        const fallback = process.env.TTS_PROVIDER_FALLBACK;
+        const fallback = runtimeConfig.tts.providerFallback;
         audioStrategy = selectNextLoopStrategy({
           stage: "audio", iteration, issues: gate.value.evaluation.issues, repairAction: gate.value.repairPlan.action,
           affectedScenes: gate.value.repairPlan.audioSceneIndexes, trajectory: strategyTrajectory,
@@ -437,7 +443,8 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     }
 
     if (!audioPassed) throw new Error("Audio quality gate failed after all iterations.");
-    const videoIterations = Math.max(1, Math.min(3, Number(args["video-iterations"] ?? process.env.HARNESS_VIDEO_ITERATIONS ?? 2)));
+    const videoIterations = Math.max(1, Math.min(3, Number(args["video-iterations"] ?? runtimeConfig.retry.videoIterations)));
+    const templateExclusions = structuredClone(runtimeConfig.rendering.htmlTemplateExclusions) as Record<string, string[]>;
     let forceRender = forceStage === "render";
     let forceSceneIndexes: number[] | undefined;
     const silentVideoPath = state.story.htmlVideoGraphPath ? path.join(path.dirname(state.story.htmlVideoGraphPath), "video-no-audio.mp4") : "";
@@ -454,8 +461,8 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
           const renderAttempt = nextAttempt(journal, "render");
           const renderResultPath = path.join(runDir, "render", `attempt-${renderAttempt}.json`);
           const render = await runStage({
-            journal, name: "render", attempt: renderAttempt, inputs: { manifestPath: state.manifestPath, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired }, timeoutMs: Number(process.env.HARNESS_RENDER_TIMEOUT_MS ?? 1_830_000), signal,
-            task: (stageSignal) => runRenderStage({ manifestPath: state.manifestPath!, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired, resultPath: renderResultPath, signal: stageSignal }),
+            journal, name: "render", attempt: renderAttempt, inputs: { manifestPath: state.manifestPath, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.render, signal,
+            task: (stageSignal) => runRenderStage({ manifestPath: state.manifestPath!, engine, forceRender, forceSceneIndexes, remuxOnly, remuxRequired: pendingMuxRequired, resultPath: renderResultPath, templateExclusions, signal: stageSignal }),
             describe: (value) => {
               const renderMetrics = value.metrics ?? {};
               const scalarMetrics = {
@@ -483,7 +490,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
           pendingMuxRequired = false;
         }
         const gate = await runStage({
-          journal, name: "video-gate", attempt: nextAttempt(journal, "video-gate"), inputs: { outputPath: state.story.outputPath, project: state.project }, timeoutMs: Number(process.env.HARNESS_VIDEO_GATE_TIMEOUT_MS ?? 480_000), signal,
+          journal, name: "video-gate", attempt: nextAttempt(journal, "video-gate"), inputs: { outputPath: state.story.outputPath, project: state.project }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.videoGate, signal,
           task: (stageSignal) => runVideoGateStage({ story: state.story!, project: state.project!, reportDir, signal: stageSignal, repairAttempt: videoAttempt }),
           describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan, repairCandidates: value.repairPlan.candidates, repairDecision: value.repairPlan.decision }),
         });
@@ -511,10 +518,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
           await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
           if (strategy.strategyId === "human-review") break;
           if (strategy.strategyId === "alternate-template-variant") {
-            let exclusions: Record<string, string[]> = {};
-            try { exclusions = JSON.parse(process.env.HTML_TEMPLATE_EXCLUSIONS ?? "{}") as Record<string, string[]>; } catch { exclusions = {}; }
-            for (const selection of templateSelections) exclusions[String(selection.sceneIndex)] = [...new Set([...(exclusions[String(selection.sceneIndex)] ?? []), `${selection.templateId}:${selection.variantId}`])];
-            process.env.HTML_TEMPLATE_EXCLUSIONS = JSON.stringify(exclusions);
+            for (const selection of templateSelections) templateExclusions[String(selection.sceneIndex)] = [...new Set([...(templateExclusions[String(selection.sceneIndex)] ?? []), `${selection.templateId}:${selection.variantId}`])];
             forceSceneIndexes = affectedScenes.length ? affectedScenes : state.project.scenes.map((_, index) => index);
             forceRender = false;
             pendingMuxRequired = true;
@@ -551,4 +555,20 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     await journal.fail(error);
     throw error;
   }
+}
+
+export async function runVideoAgent(argv: string[], signal?: AbortSignal, providedConfig?: RuntimeConfig) {
+  loadDotEnv();
+  const args = parseArgs(argv);
+  const baseConfig = providedConfig ?? buildRuntimeConfig();
+  const mayOverride = !args.resume || Boolean(args["override-config"]);
+  const effectiveConfig = mayOverride ? runtimeConfigWithRunOverrides(baseConfig, {
+    engine: typeof args.engine === "string" ? args.engine as "remotion" | "html-video" : undefined,
+    outputDir: typeof args["out-dir"] === "string" ? args["out-dir"] : undefined,
+    screenshotLimit: typeof args.screenshots === "string" ? Number(args.screenshots) : undefined,
+    qualityProfile: typeof args["quality-profile"] === "string" ? args["quality-profile"] as "balanced" | "strict" | "lenient" : undefined,
+    maxIterations: typeof args.iterations === "string" ? Math.max(1, Math.min(8, Number(args.iterations))) : undefined,
+    videoIterations: typeof args["video-iterations"] === "string" ? Math.max(1, Math.min(3, Number(args["video-iterations"]))) : undefined,
+  }) : baseConfig;
+  return runWithRuntimeConfig(effectiveConfig, () => runVideoAgentInternal(argv, signal, effectiveConfig));
 }

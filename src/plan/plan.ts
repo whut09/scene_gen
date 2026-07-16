@@ -3,10 +3,12 @@ import type { SourceConfig } from "../pipeline/types";
 import { collectWebpage } from "../pipeline/sources";
 import { fromRoot, readJson, slugify, writeJsonAtomic } from "../pipeline/utils";
 import type { ConfigProfile } from "../config/config-profiles";
+import type { RuntimeConfig } from "../config/runtime-config";
 
 export interface PlanOptions {
   url: string;
   profile: ConfigProfile;
+  runtimeConfig: RuntimeConfig;
   targetSeconds: number;
   engine: "html-video" | "remotion";
   screenshots: number;
@@ -24,7 +26,7 @@ export async function createExecutionPlan(options: PlanOptions) {
     import("../templates/template-registry"),
   ]);
   const providers = listProviders();
-  const preferredTts = process.env.TTS_PROVIDER === "openai" ? "openai-tts" : process.env.TTS_PROVIDER === "f5" ? "f5" : "local-tts";
+  const preferredTts = options.runtimeConfig.tts.provider === "openai" ? "openai-tts" : options.runtimeConfig.tts.provider === "f5" ? "f5" : "local-tts";
   const selectedProviders = [
     providers.find((provider) => provider.id === options.engine),
     providers.find((provider) => provider.id === "playwright"),

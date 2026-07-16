@@ -7,6 +7,7 @@ import { writeStoryManifest } from "../pipeline/story-manifest";
 import { fromRoot, writeJsonAtomic } from "../pipeline/utils";
 import { RunJournalStore } from "./run-journal";
 import { runVideoAgent } from "./video-agent";
+import { buildRuntimeConfig, runtimeConfigHash, runtimeConfigSnapshot, runtimeConfigWithRunOverrides } from "../config/runtime-config";
 
 test("resume from publish reuses prior project and gate artifacts", async () => {
   const runId = `resume-test-${randomUUID()}`;
@@ -45,6 +46,34 @@ test("resume from publish reuses prior project and gate artifacts", async () => 
     const stages = (await RunJournalStore.open(runDir)).snapshot().stages;
     assert.equal(stages.some((stage) => stage.name === "publish" && stage.status === "succeeded"), true);
     assert.equal(stages.some((stage) => stage.name === "render"), false);
+  } finally {
+    await rm(runDir, { recursive: true, force: true });
+  }
+});
+
+test("resume rejects configuration drift unless override-config is explicit", async () => {
+  const runId = `resume-config-test-${randomUUID()}`;
+  const runDir = fromRoot("dist", "runs", runId);
+  const initial = buildRuntimeConfig({ SCENE_GEN_PROFILE: "test", NEWS_LLM_MODEL: "model" });
+  const changed = runtimeConfigWithRunOverrides(initial, { screenshotLimit: 3 });
+  try {
+    await RunJournalStore.create(runDir, {
+      runId,
+      url: "https://example.com/config-resume",
+      config: {
+        targetSeconds: 30,
+        maxIterations: 2,
+        engine: "html-video",
+        qualityProfile: "balanced",
+        outputDir: runDir,
+        screenshotLimit: 0,
+        runtimeProfile: initial.profile,
+        runtimeConfig: runtimeConfigSnapshot(initial),
+        runtimeConfigHash: runtimeConfigHash(initial),
+      },
+    });
+    await assert.rejects(() => runVideoAgent(["--resume", runId], undefined, changed), /Runtime config hash differs/);
+    await assert.rejects(() => runVideoAgent(["--resume", runId, "--screenshots", "3"], undefined, initial), /--override-config/);
   } finally {
     await rm(runDir, { recursive: true, force: true });
   }

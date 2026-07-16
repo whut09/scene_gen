@@ -15,6 +15,7 @@ import type {
   TemplateSelection,
 } from "./template.schema";
 import { buildTemplateLearningFeatures, readTemplateOutcomes, scoreTemplateCandidate, shouldExploreTemplate } from "./template-learning";
+import { getRuntimeConfig } from "../config/runtime-config";
 
 export const htmlVideoTemplates: HtmlTemplateDefinition[] = [
   boldSignalTemplate,
@@ -37,12 +38,7 @@ function primarySource(project: VideoProject): HotItem | undefined {
 }
 
 function excludedTemplateVariants(sceneIndex: number) {
-  try {
-    const parsed = JSON.parse(process.env.HTML_TEMPLATE_EXCLUSIONS ?? "{}") as Record<string, string[]>;
-    return new Set(parsed[String(sceneIndex)] ?? []);
-  } catch {
-    return new Set<string>();
-  }
+  return new Set(getRuntimeConfig().rendering.htmlTemplateExclusions[String(sceneIndex)] ?? []);
 }
 
 export function sceneIntent(scene: VideoScene): SceneIntent {

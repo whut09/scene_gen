@@ -10,7 +10,8 @@ import type { VideoProject, VideoScene } from "../pipeline/types";
 import { mapWithConcurrencyUntilError } from "../pipeline/bounded-task-queue";
 import { ensureDir, fromRoot, slugify } from "../pipeline/utils";
 import { getTemplateById } from "../templates/template-registry";
-import { resolveHtmlRenderBudget, type HtmlRenderBudget } from "./render-budget";
+import { resolveHtmlRenderBudgetFromConfig, type HtmlRenderBudget } from "./render-budget";
+import { getRuntimeConfig } from "../config/runtime-config";
 import { getOrCreateMediaCache, hashFileContent, restoreMediaCache } from "../cache/media-cache";
 import { inspectSceneDom, sceneVisualAuditSchema, visualAuditFileSchema, type SceneVisualAudit } from "./visual-audit";
 import {
@@ -139,7 +140,7 @@ export function createHtmlVideoCacheKey(input: {
   rendererVersion?: string;
 }) {
   const scene = { ...input.scene, duration: undefined };
-  const cueTimingBucketMs = Math.max(1, Number(process.env.HTML_SYNC_CUE_CACHE_BUCKET_MS ?? 120));
+  const cueTimingBucketMs = getRuntimeConfig().rendering.html.syncCueCacheBucketMs;
   const syncCues = (input.syncCues ?? []).map((cue) => ({
     text: cue.text,
     emphasis: cue.emphasis,
@@ -552,7 +553,8 @@ export async function renderHtmlVideoProject(
   const frames: RenderedFrame[] = [];
   const silentVideoPath = path.join(workDir, "video-no-audio.mp4");
   const finalTemp = path.join(workDir, "final.mp4");
-  const budget = options.renderBudget ?? resolveHtmlRenderBudget(project.scenes.length);
+  const runtimeConfig = getRuntimeConfig();
+  const budget = options.renderBudget ?? resolveHtmlRenderBudgetFromConfig(project.scenes.length, runtimeConfig);
   const metrics: HtmlRenderMetrics = {
     ...budget,
     browserStartupMs: 0,
@@ -690,7 +692,7 @@ export async function renderHtmlVideoProject(
     const sceneRecorder = options.sceneRecorder ?? recordHtmlFrame;
     try {
       const rendered = await mapWithConcurrencyUntilError(misses, budget.renderConcurrency, async (item, _index, queueSignal) => {
-        const sceneTimeoutMs = Math.max(1_000, Number(process.env.HTML_RENDER_SCENE_TIMEOUT_MS ?? 300_000));
+        const sceneTimeoutMs = runtimeConfig.rendering.html.sceneTimeoutMs;
         const sceneSignal = AbortSignal.any([queueSignal, AbortSignal.timeout(sceneTimeoutMs)]);
         console.log(`[html-video] recording ${item.node.id} with ${item.templateId}:${item.node.variantId}`);
         try {

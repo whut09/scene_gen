@@ -1,15 +1,15 @@
 import { appendFeedback, type FeedbackSeverity } from "../harness/feedback-store";
 import { runManualCheck } from "../harness/manual-check";
 import { runVideoAgent } from "../harness/video-agent";
-import { applyConfigProfile, builtInProfileNames } from "../config/config-profiles";
+import { builtInProfileNames, loadConfigProfile } from "../config/config-profiles";
 import { formatDoctorReport, runDoctor } from "../doctor/doctor";
 import { createExecutionPlan, formatExecutionPlan } from "../plan/plan";
-import { defaultOutputDir } from "../runtime/runtime-paths";
 import { fromRoot, loadDotEnv, readJson } from "../pipeline/utils";
 import { commandHelp, parseStrictArgs, type CommandDefinition } from "./strict-args";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { clearMediaCache, inspectMediaCache, pruneMediaCache } from "../cache/cache-manager";
+import { createRuntimeConfig, restoreRuntimeConfig, runWithRuntimeConfig, runtimeConfigWithRunOverrides, type RuntimeConfigSnapshot } from "../config/runtime-config";
 
 const profileOption = { type: "string" as const, description: `Configuration profile (${builtInProfileNames.join(", ")} or config/profiles/<name>.json).` };
 const jsonOption = { type: "boolean" as const, description: "Print machine-readable JSON." };
@@ -59,6 +59,7 @@ const definitions: Record<string, CommandDefinition> = {
       notes: runOptions.notes,
       "quality-profile": runOptions["quality-profile"],
       "ignore-cache": runOptions["ignore-cache"],
+      "override-config": { type: "boolean", description: "Allow resume to replace the immutable original runtime config." },
     },
     mutuallyExclusive: [["from-stage", "force-stage"]],
   },
@@ -142,14 +143,21 @@ async function planFromOptions(options: Record<string, string | number | boolean
   assertUrl(options.url);
   assertPositive("seconds", options.seconds);
   assertNonNegative("screenshots", options.screenshots, true);
-  const profile = await applyConfigProfile(profileName);
+  const profile = await loadConfigProfile(profileName);
+  const baseConfig = await createRuntimeConfig(profileName);
+  const runtimeConfig = runtimeConfigWithRunOverrides(baseConfig, {
+    engine: typeof options.engine === "string" ? options.engine as "html-video" | "remotion" : undefined,
+    outputDir: typeof options["out-dir"] === "string" ? options["out-dir"] : undefined,
+    screenshotLimit: options.screenshots === undefined ? undefined : Number(options.screenshots),
+  });
   return createExecutionPlan({
     url: String(options.url),
     profile,
+    runtimeConfig,
     targetSeconds: Number(options.seconds ?? 100),
-    engine: (options.engine ?? process.env.VIDEO_RENDER_ENGINE ?? "html-video") as "html-video" | "remotion",
-    screenshots: Number(options.screenshots ?? process.env.SCREENSHOT_LIMIT ?? 0),
-    outputDir: String(options["out-dir"] ?? process.env.VIDEO_OUTPUT_DIR ?? defaultOutputDir()),
+    engine: runtimeConfig.rendering.engine,
+    screenshots: runtimeConfig.rendering.screenshotLimit,
+    outputDir: runtimeConfig.rendering.outputDir,
   });
 }
 
@@ -195,8 +203,9 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     if (stored.config?.runtimeProfile && stored.config.runtimeProfile !== "custom") profileName = stored.config.runtimeProfile;
   }
   if (command === "doctor") {
-    const profile = await applyConfigProfile(profileName);
-    const report = await runDoctor(profile, typeof parsed.options["out-dir"] === "string" ? parsed.options["out-dir"] : undefined);
+    const profile = await loadConfigProfile(profileName);
+    const runtimeConfig = runtimeConfigWithRunOverrides(await createRuntimeConfig(profileName), { outputDir: typeof parsed.options["out-dir"] === "string" ? parsed.options["out-dir"] : undefined });
+    const report = await runDoctor(profile, runtimeConfig);
     console.log(parsed.options.json ? JSON.stringify(report, null, 2) : formatDoctorReport(report));
     if (!report.passed) process.exitCode = 2;
     return;
@@ -221,8 +230,8 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
       console.log(formatExecutionPlan(await planFromOptions(parsed.options, profileName)));
       return;
     }
-    await applyConfigProfile(profileName);
-    const result = await runVideoAgent(harnessArgv(parsed.options), signal);
+    const runtimeConfig = await createRuntimeConfig(profileName);
+    const result = await runVideoAgent(harnessArgv(parsed.options), signal, runtimeConfig);
     console.log(JSON.stringify(result, null, 2));
     if (!result.passed) process.exitCode = 2;
     return;
@@ -237,16 +246,23 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     assertPositive("max-estimated-cost", parsed.options["max-estimated-cost"]);
     assertPositive("max-issue-repairs", parsed.options["max-issue-repairs"]);
     assertNonNegative("screenshots", parsed.options.screenshots, true);
-    await applyConfigProfile(profileName);
-    const result = await runVideoAgent(harnessArgv(parsed.options, ["--resume", parsed.positionals[0]]), signal);
+    const direct = path.resolve(parsed.positionals[0]);
+    const runDir = existsSync(path.join(direct, "run.json")) ? direct : fromRoot("dist", "runs", parsed.positionals[0]);
+    const stored = await readJson<{ config?: { runtimeConfig?: RuntimeConfigSnapshot; runtimeProfile?: string } }>(path.join(runDir, "run.json"));
+    const overrideConfig = Boolean(parsed.options["override-config"]);
+    if (parsed.options.profile && !overrideConfig) throw new Error("--profile requires --override-config when resuming a run.");
+    const runtimeConfig = !overrideConfig && stored.config?.runtimeConfig
+      ? restoreRuntimeConfig(stored.config.runtimeConfig)
+      : await createRuntimeConfig(profileName);
+    const result = await runVideoAgent(harnessArgv(parsed.options, ["--resume", parsed.positionals[0]]), signal, runtimeConfig);
     console.log(JSON.stringify(result, null, 2));
     if (!result.passed) process.exitCode = 2;
     return;
   }
   if (command === "check") {
     assertPositive("seconds", parsed.options.seconds);
-    await applyConfigProfile(profileName);
-    const report = await runManualCheck({ projectPath: String(parsed.options.project), videoPath: String(parsed.options.video), targetSeconds: Number(parsed.options.seconds ?? 100) });
+    const runtimeConfig = await createRuntimeConfig(profileName);
+    const report = await runWithRuntimeConfig(runtimeConfig, () => runManualCheck({ projectPath: String(parsed.options.project), videoPath: String(parsed.options.video), targetSeconds: Number(parsed.options.seconds ?? 100) }));
     console.log(parsed.options.json ? JSON.stringify(report, null, 2) : `Check ${report.passed ? "passed" : "failed"}\nReport: ${report.reportPath}`);
     if (!report.passed) process.exitCode = 2;
     return;

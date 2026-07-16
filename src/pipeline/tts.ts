@@ -6,7 +6,6 @@ import path from "node:path";
 import type { NarrationSegment, VideoProject } from "./types";
 import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
 import { fetchWithRetry } from "./external-operation";
-import { resolveF5PythonCommand, resolveF5ReferenceAudio } from "../runtime/runtime-paths";
 import { createF5NarrationCacheMetadata } from "./tts-cache";
 import { applyTtsSpokenFallbacks, findTtsPronunciations, loadTtsPronunciationLexicon, pronunciationCacheHash } from "./tts-pronunciation";
 import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
@@ -15,6 +14,7 @@ import { getOrCreateMediaCache } from "../cache/media-cache";
 import { selectProviderWithAudit } from "../production/provider-registry";
 import { recordProviderOutcome } from "../production/provider-stats";
 import type { ProviderSelectionAudit } from "../production/types";
+import { getRuntimeConfig } from "../config/runtime-config";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
@@ -102,9 +102,10 @@ async function probeDuration(filePath: string) {
 }
 
 async function openAiTts(text: string, outputPath: string) {
-  const apiKey = process.env.OPENAI_TTS_API_KEY ?? process.env.OPENAI_API_KEY;
+  const config = getRuntimeConfig().tts;
+  const apiKey = config.openai.apiKey;
   if (!apiKey) throw new Error("OPENAI_TTS_API_KEY or OPENAI_API_KEY is not set");
-  const baseUrl = process.env.OPENAI_TTS_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+  const baseUrl = config.openai.baseUrl;
   const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/audio/speech`, {
     method: "POST",
     headers: {
@@ -112,13 +113,13 @@ async function openAiTts(text: string, outputPath: string) {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_TTS_MODEL ?? "gpt-4o-mini-tts",
-      voice: process.env.OPENAI_TTS_VOICE ?? "alloy",
+      model: config.openai.model,
+      voice: config.openai.voice,
       input: text,
       format: "mp3",
-      speed: Number(process.env.OPENAI_TTS_SPEED ?? 1.12),
+      speed: config.openai.speed,
     }),
-  }, { label: "openai-tts", timeoutMs: Number(process.env.TTS_FETCH_TIMEOUT_MS ?? 180_000) });
+  }, { label: "openai-tts", timeoutMs: config.fetchTimeoutMs });
   if (!response.ok) throw new Error(`OpenAI TTS failed: ${response.status} ${await response.text()}`);
   await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
 }
@@ -143,11 +144,11 @@ $synth.Dispose()
 }
 
 function resolveF5Python() {
-  return resolveF5PythonCommand();
+  return getRuntimeConfig().tts.f5.python;
 }
 
 function resolveF5RefAudio() {
-  return resolveF5ReferenceAudio();
+  return getRuntimeConfig().tts.f5.refAudio ?? "";
 }
 
 function normalizeFilePath(filePath: string) {
@@ -160,7 +161,7 @@ function isDefaultF5RefAudio(refAudio: string) {
 
 async function resolveF5RefText(refAudio: string) {
   if (Object.hasOwn(process.env, "F5_TTS_REF_TEXT")) {
-    return process.env.F5_TTS_REF_TEXT ?? "";
+    return getRuntimeConfig().tts.f5.refText;
   }
 
   const textPath = refAudio.replace(/\.[^.]+$/, ".txt");
@@ -302,10 +303,11 @@ async function f5TtsCli(text: string, outputPath: string, speedOverride?: string
   const refAudio = resolveF5RefAudio();
   if (!refAudio) throw new Error("F5 reference audio is not configured. Set F5_TTS_REF_AUDIO or use a virtual environment containing the F5-TTS example audio.");
   const refText = await resolveF5RefText(refAudio);
-  const model = process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base";
-  const speed = speedOverride ?? process.env.F5_TTS_SPEED ?? "1.12";
-  const nfeStep = process.env.F5_TTS_NFE_STEP ?? "16";
-  const device = process.env.F5_TTS_DEVICE ?? "cuda";
+  const config = getRuntimeConfig().tts.f5;
+  const model = config.model;
+  const speed = speedOverride ?? String(config.speed);
+  const nfeStep = String(config.nfeStep);
+  const device = config.device;
   const outputDir = path.dirname(outputPath);
   const outputFile = path.basename(outputPath);
   const textPath = path.join(outputDir, `${path.basename(outputPath, path.extname(outputPath))}.txt`);
@@ -339,47 +341,48 @@ async function f5TtsCli(text: string, outputPath: string, speedOverride?: string
     device,
   ], {
     env: {
-      HF_HUB_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
-      TRANSFORMERS_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
+      HF_HUB_OFFLINE: config.hfOffline ? "1" : "0",
+      TRANSFORMERS_OFFLINE: config.hfOffline ? "1" : "0",
     },
   });
 }
 
 async function createF5Runtime(limitToSingleWorker = false) {
+  const config = getRuntimeConfig().tts.f5;
   const refAudio = resolveF5RefAudio();
   if (!refAudio) throw new Error("F5 reference audio is not configured. Set F5_TTS_REF_AUDIO or F5_TTS_VENV.");
   const refText = await resolveF5RefText(refAudio);
   const pronunciationLexicon = loadTtsPronunciationLexicon();
   const pool = new F5WorkerPool({
     pythonCommand: resolveF5Python(),
-    workerScript: process.env.F5_TTS_WORKER_SCRIPT,
-    model: process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base",
+    workerScript: config.workerScript,
+    model: config.model,
     devices: limitToSingleWorker ? resolveF5WorkerDevices().slice(0, 1) : resolveF5WorkerDevices(),
     refAudio,
     refText,
     lexiconPath: pronunciationLexicon.filePath,
     pronunciationLexiconHash: pronunciationLexicon.hash,
-    defaultNfeStep: Number(process.env.F5_TTS_NFE_STEP ?? 16),
-    readyTimeoutMs: Number(process.env.F5_TTS_WORKER_READY_TIMEOUT_MS ?? 120_000),
-    requestTimeoutMs: Number(process.env.F5_TTS_WORKER_REQUEST_TIMEOUT_MS ?? 600_000),
-    maxRestarts: Number(process.env.F5_TTS_WORKER_MAX_RESTARTS ?? 1),
+    defaultNfeStep: config.nfeStep,
+    readyTimeoutMs: config.workerReadyTimeoutMs,
+    requestTimeoutMs: config.workerRequestTimeoutMs,
+    maxRestarts: config.workerMaxRestarts,
     env: {
-      HF_HUB_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
-      TRANSFORMERS_OFFLINE: process.env.F5_TTS_HF_OFFLINE ?? "1",
+      HF_HUB_OFFLINE: config.hfOffline ? "1" : "0",
+      TRANSFORMERS_OFFLINE: config.hfOffline ? "1" : "0",
     },
   });
   return { pool, refAudio, refText, pronunciationLexiconHash: pronunciationLexicon.hash } satisfies F5Runtime;
 }
 
-function positiveInteger(value: string | undefined, fallback: number) {
+function positiveInteger(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function providerConcurrency(provider: TtsProvider, f5Runtime?: F5Runtime) {
   if (provider === "f5") return f5Runtime?.pool.concurrency ?? 1;
-  if (provider === "openai") return positiveInteger(process.env.OPENAI_TTS_CONCURRENCY, 4);
-  return positiveInteger(process.env.LOCAL_TTS_CONCURRENCY, 1);
+  if (provider === "openai") return getRuntimeConfig().tts.openai.concurrency;
+  return getRuntimeConfig().tts.local.concurrency;
 }
 
 async function f5TtsWorker(
@@ -401,9 +404,9 @@ async function f5TtsWorker(
     sceneIndex,
     text: synthesisText,
     outputPath,
-    speed: Number(speedOverride ?? process.env.F5_TTS_SPEED ?? 1.12),
-    nfeStep: Number(process.env.F5_TTS_NFE_STEP ?? 16),
-    seed: Number(process.env.F5_TTS_SEED ?? -1),
+    speed: Number(speedOverride ?? getRuntimeConfig().tts.f5.speed),
+    nfeStep: getRuntimeConfig().tts.f5.nfeStep,
+    seed: getRuntimeConfig().tts.f5.seed,
     pronunciationLexiconHash: runtime.pronunciationLexiconHash,
     signal,
   });
@@ -426,12 +429,11 @@ function ttsDomain(project: VideoProject) {
 }
 
 function resolveTtsProvider(project: VideoProject, explicit?: TtsProvider) {
-  const configuredProvider = explicit ?? (process.env.TTS_PROVIDER === "openai" || process.env.TTS_PROVIDER === "f5" || process.env.TTS_PROVIDER === "local"
-    ? process.env.TTS_PROVIDER
-    : undefined);
-  const profilePreference = process.env.SCENE_GEN_PROFILE === "local-f5"
+  const runtime = getRuntimeConfig();
+  const configuredProvider = explicit ?? runtime.tts.provider;
+  const profilePreference = runtime.profile === "local-f5"
     ? ["f5", "openai-tts", "local-tts"]
-    : process.env.SCENE_GEN_PROFILE === "production" || process.env.SCENE_GEN_PROFILE === "openai-tts"
+    : runtime.profile === "production" || runtime.profile === "openai-tts"
       ? ["openai-tts", "f5", "local-tts"]
       : ["openai-tts", "f5", "local-tts"];
   const preferred = configuredProvider
@@ -440,9 +442,9 @@ function resolveTtsProvider(project: VideoProject, explicit?: TtsProvider) {
   const result = selectProviderWithAudit("tts", preferred, {
     language: "zh-CN",
     domain: ttsDomain(project),
-    device: process.env.F5_TTS_DEVICE ?? "auto",
+    device: runtime.tts.f5.device,
     highRiskTerms: findTtsPronunciations(project.narration).length > 0,
-    memoryPressure: process.env.F5_GPU_MEMORY_PRESSURE === "1",
+    memoryPressure: runtime.tts.f5.gpuMemoryPressure,
   });
   if (explicit) {
     result.audit.selectedProviderId = ttsProviderId(explicit);
@@ -463,7 +465,7 @@ function providerErrorType(error: unknown) {
 
 function providerCost(provider: TtsProvider, characters: number) {
   if (provider !== "openai") return 0;
-  return characters / 1000 * Math.max(0, Number(process.env.OPENAI_TTS_COST_PER_1K_CHARS ?? 0.015));
+  return characters / 1000 * getRuntimeConfig().tts.openai.costPer1kChars;
 }
 
 async function recordTtsProviderResult(input: { provider: TtsProvider; project: VideoProject; startedAt: number; success: boolean; error?: unknown; retryCount?: number }) {
@@ -472,7 +474,7 @@ async function recordTtsProviderResult(input: { provider: TtsProvider; project: 
     latencyMs: Date.now() - input.startedAt, timeout: providerErrorType(input.error) === "timeout", retryCount: input.retryCount ?? 0,
     cost: input.success ? providerCost(input.provider, [...input.project.narration].length) : 0,
     unitKind: "chars", unitCount: [...input.project.narration].length,
-    language: "zh-CN", domain: ttsDomain(input.project), device: input.provider === "f5" ? process.env.F5_TTS_DEVICE ?? "auto" : undefined,
+    language: "zh-CN", domain: ttsDomain(input.project), device: input.provider === "f5" ? getRuntimeConfig().tts.f5.device : undefined,
     errorType: input.success ? undefined : providerErrorType(input.error),
   }).catch(() => undefined);
 }
@@ -490,7 +492,7 @@ async function synthesizeNarration(
   if (provider === "openai") {
     await openAiTts(text, outputPath);
   } else if (provider === "f5") {
-    if ((process.env.F5_TTS_WORKER_MODE ?? "worker").trim().toLowerCase() === "cli") {
+    if (getRuntimeConfig().tts.f5.workerMode === "cli") {
       await f5TtsCli(text, outputPath, options?.f5Speed);
     } else {
       if (!options?.f5Runtime) throw new Error("Persistent F5 worker runtime is unavailable.");
@@ -536,10 +538,10 @@ async function fitNarrationSegmentsToTarget(
   targetSeconds: number,
   totalGapSeconds: number,
 ) {
-  const durationPolicy = (process.env.TTS_DURATION_POLICY ?? "natural").trim().toLowerCase();
+  const durationPolicy = getRuntimeConfig().tts.durationPolicy;
   if (
     durationPolicy !== "fit" ||
-    process.env.TTS_FIT_TARGET === "0" ||
+    !getRuntimeConfig().tts.fitTarget ||
     !Number.isFinite(targetSeconds) ||
     targetSeconds <= totalGapSeconds + 5
   ) {
@@ -548,12 +550,12 @@ async function fitNarrationSegmentsToTarget(
   const speechDuration = durations.reduce((sum, duration) => sum + duration, 0);
   const targetSpeechDuration = targetSeconds - totalGapSeconds;
   const desiredTempo = speechDuration / targetSpeechDuration;
-  const minimumTempo = Number(process.env.TTS_MIN_TEMPO ?? 0.9);
-  const maximumTempo = Number(process.env.TTS_MAX_TEMPO ?? 1.22);
+  const minimumTempo = getRuntimeConfig().tts.minTempo;
+  const maximumTempo = getRuntimeConfig().tts.maxTempo;
   const tempo = Math.max(minimumTempo, Math.min(maximumTempo, desiredTempo));
   if (Math.abs(tempo - 1) < 0.03) return { paths: segmentPaths, durations };
 
-  const fitted = await mapWithConcurrency(segmentPaths, Math.max(1, Number(process.env.TTS_FFMPEG_CONCURRENCY ?? 2)), async (inputPath, index) => {
+  const fitted = await mapWithConcurrency(segmentPaths, getRuntimeConfig().tts.ffmpegConcurrency, async (inputPath, index) => {
     const fittedPath = inputPath.replace(/\.[^.]+$/, `-fitted-${tempo.toFixed(2)}x.wav`);
     await run("ffmpeg", [
       "-y", "-i", inputPath,
@@ -580,13 +582,13 @@ async function currentF5CacheMetadata(text: string, expectedSpeed?: string, cach
   const refText = await resolveF5RefText(refAudio);
   return createF5NarrationCacheMetadata({
     provider: "f5",
-    model: process.env.F5_TTS_MODEL ?? "F5TTS_v1_Base",
+    model: getRuntimeConfig().tts.f5.model,
     normalizedTtsText: prepareF5SynthesisText(text).trim(),
     pronunciationLexiconHash: pronunciationCacheHash(prepareF5SynthesisText(text).trim()),
     refAudioHash: await hashFile(refAudio),
     refTextHash: hashText(refText.trim()),
-    speed: expectedSpeed ?? process.env.F5_TTS_SPEED ?? "1.12",
-    nfeStep: process.env.F5_TTS_NFE_STEP ?? "16",
+    speed: expectedSpeed ?? String(getRuntimeConfig().tts.f5.speed),
+    nfeStep: String(getRuntimeConfig().tts.f5.nfeStep),
     frontendVersion: F5_FRONTEND_VERSION,
     cacheSalt,
   });
@@ -609,7 +611,7 @@ async function synthesizeF5WithGlobalCache(input: {
     extension: path.extname(input.outputPath) || ".wav",
     targetPath: input.outputPath,
     identity: metadata,
-    force: input.forceRebuild || process.env.TTS_FORCE_REBUILD === "1",
+    force: input.forceRebuild || getRuntimeConfig().tts.forceRebuild,
     signal: input.signal,
     generate: (cacheOutputPath) => synthesizeNarration("f5", input.text, cacheOutputPath, {
       f5Speed: input.expectedSpeed,
@@ -670,7 +672,7 @@ async function synthesizeF5TitleScene(
   const partPaths = partTexts.map((_, index) => `${stem}-${index === 0 ? "title" : "body"}${extension}`);
   const partResults = await mapWithConcurrency(partTexts, Math.max(1, f5Runtime?.pool.concurrency ?? 1), async (partText, index) => {
     const partPath = partPaths[index];
-    const uniformSpeed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
+    const uniformSpeed = String(getRuntimeConfig().tts.f5.uniformSpeed);
     const synthesisText = index === 0 ? `。 。 。 ${partText}` : partText;
     const { reused } = await synthesizeF5WithGlobalCache({
       text: synthesisText,
@@ -706,13 +708,13 @@ async function attachSegmentedNarration(
   cacheSalt?: string,
 ) {
   const segments = [...(project.narrationSegments ?? [])].sort((a, b) => a.sceneIndex - b.sceneIndex);
-  const uniformF5Speed = process.env.F5_TTS_UNIFORM_SPEED ?? "1.25";
+  const uniformF5Speed = String(getRuntimeConfig().tts.f5.uniformSpeed);
   if (segments.length !== project.scenes.length) {
     throw new Error(`Narration segment count ${segments.length} does not match scene count ${project.scenes.length}.`);
   }
 
   const extension = providerExtension(provider);
-  const taskConcurrency = positiveInteger(process.env.TTS_PREPROCESS_CONCURRENCY, 4);
+  const taskConcurrency = getRuntimeConfig().tts.preprocessConcurrency;
   const synthesisQueue = new BoundedTaskQueue(providerConcurrency(provider, f5Runtime));
   const forcedScenes = new Set(forceSceneIndexes);
   const existingSceneCacheSalts = project.audio?.sceneCacheSalts ?? {};
@@ -877,7 +879,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     ? options.forceSceneIndexes?.length ? options.forceSceneIndexes : allSceneIndexes
     : options.forceSceneIndexes ?? [];
   const cacheSalt = forceSceneIndexes.length ? options.cacheSalt ?? options.reason ?? "forced-audio-rebuild" : undefined;
-  const usePersistentF5 = provider === "f5" && (process.env.F5_TTS_WORKER_MODE ?? "worker").trim().toLowerCase() !== "cli";
+  const usePersistentF5 = provider === "f5" && getRuntimeConfig().tts.f5.workerMode !== "cli";
   let f5Runtime: F5Runtime | undefined;
 
   try {
@@ -949,7 +951,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
   } catch (error) {
     await recordTtsProviderResult({ provider, project, startedAt, success: false, error, retryCount: Math.max(0, (f5Runtime?.pool.metrics().workerStartCount ?? 1) - 1) });
     console.warn(`[tts] primary provider failed: ${(error as Error).message}`);
-    if (process.env.TTS_FAIL_FAST === "1") throw error;
+    if (getRuntimeConfig().tts.failFast) throw error;
 
     if (provider !== "local") {
       const fallbackLocalPath = path.join(generatedDir, `${basename}.wav`);

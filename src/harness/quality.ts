@@ -9,7 +9,8 @@ import { buildProductionDecisions } from "../production/visual-planner";
 import { qualityJudgeResponseSchema } from "../pipeline/schemas";
 import { isNewsProject, projectNewsDate } from "../pipeline/news-date";
 import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operation";
-import { finalizeQualityEvaluation, loadQualityProfile, type QualityEvaluation, type QualityIssueInput, type QualityScoreStatus } from "./quality-protocol";
+import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "./quality-protocol";
+import { getRuntimeConfig, type RuntimeConfig } from "../config/runtime-config";
 import { canonicalSpeechText } from "./speech-normalization";
 import { findFactConflicts, highRiskPredicatesInText, sceneFactText } from "../pipeline/fact-ledger";
 import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts } from "./scene-audio-verification";
@@ -103,14 +104,12 @@ type QualityJudgeAttempt = {
   revisionNotes?: string[];
 };
 
-async function callQualityJudge(project: VideoProject, feedbackGuidance: string, signal?: AbortSignal): Promise<QualityJudgeAttempt> {
-  if (process.env.QUALITY_LLM_DISABLED === "1") return { status: "not-required", reason: "QUALITY_LLM_DISABLED=1" };
-  const apiKey =
-    process.env.QUALITY_LLM_API_KEY ?? process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
+async function callQualityJudge(project: VideoProject, feedbackGuidance: string, config: RuntimeConfig, signal?: AbortSignal): Promise<QualityJudgeAttempt> {
+  if (!config.llm.quality.enabled) return { status: "not-required", reason: "Quality judge is disabled by runtime config." };
+  const apiKey = config.llm.quality.apiKey;
   if (!apiKey) return { status: "unavailable", reason: "Quality judge API key is not configured." };
-  const baseUrl =
-    process.env.QUALITY_LLM_BASE_URL ?? process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL;
-  const model = process.env.QUALITY_LLM_MODEL ?? process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
+  const baseUrl = config.llm.quality.baseUrl;
+  const model = config.llm.quality.model;
   if (!baseUrl || !model) return { status: "unavailable", reason: "Quality judge base URL or model is not configured." };
 
   const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -158,7 +157,7 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string,
         },
       ],
     }),
-  }, { signal, label: "quality-judge", timeoutMs: Number(process.env.QUALITY_LLM_TIMEOUT_MS ?? 90_000) });
+  }, { signal, label: "quality-judge", timeoutMs: config.llm.quality.timeoutMs });
   if (!response.ok) throw new Error(`Quality judge failed: ${response.status} ${await response.text()}`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content;
@@ -186,12 +185,13 @@ export async function evaluateDraft(
   targetSeconds: number,
   feedbackGuidance: string,
   signal?: AbortSignal,
+  config: RuntimeConfig = getRuntimeConfig(),
 ): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
   const revisionNotes: string[] = [];
   const source = project.sources[0];
   const narrationChars = project.narration.replace(/\s+/g, "").length;
-  const naturalDuration = (process.env.TTS_DURATION_POLICY ?? "natural").trim().toLowerCase() === "natural";
+  const naturalDuration = config.tts.durationPolicy === "natural";
   const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.8 : 6));
   const maximumChars = Math.round(targetSeconds * 11);
   const templateGraph = buildHtmlVideoContentGraph(project);
@@ -336,15 +336,15 @@ export async function evaluateDraft(
     }
   });
 
-  const qualityProfile = loadQualityProfile();
-  const requestedJudgeSamples = Math.max(1, Math.min(2, Number(process.env.QUALITY_JUDGE_SAMPLES ?? (qualityProfile.name === "strict" ? 2 : 1)) || 1));
+  const qualityProfile: QualityProfile = { name: config.quality.profile, blockWarnings: config.quality.profile === "strict", blockingWarningCodes: [...config.quality.blockingWarningCodes] };
+  const requestedJudgeSamples = config.llm.quality.samples;
   const judgeAttempts: QualityJudgeAttempt[] = [];
   let scoreStatus: QualityScoreStatus = "unavailable";
   let judgeReason = "";
   for (let sampleIndex = 0; sampleIndex < requestedJudgeSamples; sampleIndex += 1) {
     let attempt: QualityJudgeAttempt;
     try {
-      attempt = await callQualityJudge(project, feedbackGuidance, signal);
+      attempt = await callQualityJudge(project, feedbackGuidance, config, signal);
     } catch (error) {
       attempt = { status: "unavailable", reason: (error as Error).message };
     }
@@ -400,7 +400,7 @@ export async function evaluateDraft(
         const values = judgeAttempts.flatMap((attempt) => attempt.scores?.[key] === undefined ? [] : [attempt.scores[key]]);
         return values.length > 1 ? Math.max(...values) - Math.min(...values) : 0;
       }));
-      const unstableThreshold = Math.max(1, Number(process.env.QUALITY_JUDGE_MAX_SCORE_DELTA ?? 15) || 15);
+      const unstableThreshold = config.llm.quality.maxScoreDelta;
       if (judgeMaxDelta > unstableThreshold) {
         issues.push({
           severity: qualityProfile.name === "strict" ? "error" : "warning",
@@ -470,16 +470,16 @@ export async function evaluateDraft(
   });
 }
 
-export async function evaluateAudio(project: VideoProject, targetSeconds: number, signal?: AbortSignal): Promise<QualityEvaluation> {
+export async function evaluateAudio(project: VideoProject, targetSeconds: number, signal?: AbortSignal, config: RuntimeConfig = getRuntimeConfig()): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
   const segments = project.narrationSegments ?? [];
   const duration = project.audio?.durationSeconds ?? 0;
-  const minimumDuration = targetSeconds * Number(process.env.QUALITY_MIN_DURATION_FACTOR ?? 0.7);
-  const maximumDuration = targetSeconds * Number(process.env.QUALITY_MAX_DURATION_FACTOR ?? 1.65);
+  const minimumDuration = targetSeconds * config.quality.minDurationFactor;
+  const maximumDuration = targetSeconds * config.quality.maxDurationFactor;
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const charsPerSecond = duration > 0 ? narrationChars / duration : 0;
-  const minimumCharsPerSecond = Number(process.env.QUALITY_MIN_CHARS_PER_SECOND ?? 6.3);
-  const maximumCharsPerSecond = Number(process.env.QUALITY_MAX_CHARS_PER_SECOND ?? 11.5);
+  const minimumCharsPerSecond = config.quality.minCharsPerSecond;
+  const maximumCharsPerSecond = config.quality.maxCharsPerSecond;
   const segmentRates = segments
     .map((segment) => {
       const segmentDuration = segment.durationSeconds ?? 0;
@@ -501,8 +501,8 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
     ? Math.sqrt(segmentRates.reduce((sum, value) => sum + (value - meanSegmentRate) ** 2, 0) / segmentRates.length) / meanSegmentRate
     : 0;
   const firstToMedianSpeed = medianSegmentRate > 0 && segmentRates.length ? segmentRates[0] / medianSegmentRate : 0;
-  const maximumSegmentSpeedRatio = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_RATIO ?? 1.35);
-  const maximumSegmentSpeedCv = Number(process.env.QUALITY_MAX_SEGMENT_SPEED_CV ?? 0.16);
+  const maximumSegmentSpeedRatio = config.quality.maxSegmentSpeedRatio;
+  const maximumSegmentSpeedCv = config.quality.maxSegmentSpeedCv;
   const ttsNumericResidue = segments.reduce((count, segment) => {
     const prepared = prepareF5SynthesisText(segment.ttsText ?? segment.text);
     return count + (prepared.match(/\d/g)?.length ?? 0);
@@ -552,7 +552,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
         if (!actualTitle.startsWith(expectedHook)) {
           issues.push({ severity: "error", code: "audio_title_opening_missing", message: `实际语音没有从标题开头播报。ASR：${titleTranscript}`, sceneIndex: 0 });
         }
-        const minimumCoverage = Number(process.env.ASR_TITLE_COVERAGE_MIN ?? 0.58);
+        const minimumCoverage = config.asr.titleCoverageMin;
         if (titleAudioCoverage < minimumCoverage) {
           issues.push({ severity: "error", code: "audio_title_incomplete", message: `标题语音覆盖率 ${(titleAudioCoverage * 100).toFixed(1)}%，低于 ${(minimumCoverage * 100).toFixed(0)}%。`, sceneIndex: 0 });
         }
@@ -609,7 +609,7 @@ function runCapture(command: string, args: string[], signal?: AbortSignal) {
     signal,
     retries: 1,
     retryOnExit: true,
-    timeoutMs: Number(process.env.QUALITY_PROCESS_TIMEOUT_MS ?? 300_000),
+    timeoutMs: getRuntimeConfig().rendering.processTimeoutMs,
   });
 }
 
@@ -620,7 +620,7 @@ async function sampleMotionMetrics(videoPath: string, sceneDurations: number[] =
     "-vf", "fps=2,scale=64:64,select='gte(scene,0)',metadata=print:file=-", "-f", "null", "-",
   ], signal);
   const scores = [...capture.stdout.matchAll(/lavfi\.scene_score=([0-9.]+)/g)].map((match) => Number(match[1]));
-  const threshold = Number(process.env.MOTION_SCENE_THRESHOLD ?? 0.0005);
+  const threshold = getRuntimeConfig().rendering.motionSceneThreshold;
   function summarize(values: number[]) {
     if (values.length < 2) return { activeMotionRatio: 1, meanSceneChange: 0, longestStaticRun: 0 };
     let currentStatic = 0;
@@ -719,6 +719,7 @@ export async function evaluateVideo(
   sceneDurations: number[] = [],
   signal?: AbortSignal,
   options: { visualAuditPath?: string; htmlVideoGraphPath?: string; project?: VideoProject } = {},
+  config: RuntimeConfig = getRuntimeConfig(),
 ): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
   const probe = await runCapture("ffprobe", [
@@ -842,19 +843,19 @@ export async function evaluateVideo(
   }
 
   let ocrVerifiedScenes = 0;
-  if (process.env.VIDEO_OCR_ENABLED === "1" && options.project) {
+  if (config.rendering.ocr.enabled && options.project) {
     try {
-      const command = process.env.VIDEO_OCR_COMMAND ?? "tesseract";
+      const command = config.rendering.ocr.command;
       for (const [sceneIndex, scene] of options.project.scenes.entries()) {
         const frame = frameMetrics.find((item) => item.sceneIndex === sceneIndex && item.position === "middle");
         if (!frame) continue;
-        const result = await runCapture(command, [frame.framePath, "stdout", "-l", process.env.VIDEO_OCR_LANGUAGE ?? "chi_sim+eng", "--psm", "6"], signal);
+        const result = await runCapture(command, [frame.framePath, "stdout", "-l", config.rendering.ocr.language, "--psm", "6"], signal);
         const expected = canonicalSpeechText(scene.headline);
         const actual = canonicalSpeechText(result.stdout);
         const tokens = expected.length < 2 ? [expected] : Array.from({ length: expected.length - 1 }, (_, index) => expected.slice(index, index + 2));
         const coverage = tokens.filter((token) => actual.includes(token)).length / Math.max(1, tokens.length);
         ocrVerifiedScenes += 1;
-        if (coverage < Number(process.env.VIDEO_OCR_KEY_TEXT_MIN ?? 0.45)) issues.push({ severity: "error", code: "key_text_ocr_missing", message: `第 ${sceneIndex + 1} 屏 OCR 未稳定识别关键标题。`, sceneIndex, evidence: { expected: scene.headline, transcript: result.stdout.trim(), coverage: Number(coverage.toFixed(3)) } });
+        if (coverage < config.rendering.ocr.keyTextMin) issues.push({ severity: "error", code: "key_text_ocr_missing", message: `第 ${sceneIndex + 1} 屏 OCR 未稳定识别关键标题。`, sceneIndex, evidence: { expected: scene.headline, transcript: result.stdout.trim(), coverage: Number(coverage.toFixed(3)) } });
       }
     } catch (error) {
       issues.push({ severity: "warning", code: "ocr_verification_unavailable", message: `OCR 视觉验证不可用：${(error as Error).message}`, issueClass: "environment", repairAction: "check-environment", retryable: false });
