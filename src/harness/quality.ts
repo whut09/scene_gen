@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
+import { buildHtmlVideoContentGraph, type HtmlVideoContentGraph } from "../html-video/content-graph";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { prepareF5SynthesisText } from "../pipeline/tts";
 import { getTemplateById } from "../templates/template-registry";
@@ -552,13 +552,78 @@ async function sampleMotionMetrics(videoPath: string, sceneDurations: number[] =
   return { sampledFrames: scores.length, ...global, sceneMotion };
 }
 
+async function probeMediaDuration(filePath: string, signal?: AbortSignal) {
+  const probe = await runCapture("ffprobe", [
+    "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filePath,
+  ], signal);
+  const duration = Number(probe.stdout.trim());
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error(`Invalid media duration for ${filePath}.`);
+  return duration;
+}
+
+export interface VideoDurationDiagnosis {
+  likelySource: "mux" | "concat" | "scene" | "unknown";
+  confidence: number;
+  invalidSceneIndexes: string[];
+  sceneDurationDeltas: string[];
+  silentVideoDurationSeconds?: number;
+  expectedSceneDurationSeconds?: number;
+}
+
+export async function diagnoseVideoDurationDrift(input: {
+  htmlVideoGraphPath?: string;
+  expectedDuration: number;
+  signal?: AbortSignal;
+  probeDuration?: (filePath: string, signal?: AbortSignal) => Promise<number>;
+}): Promise<VideoDurationDiagnosis> {
+  if (!input.htmlVideoGraphPath || !existsSync(input.htmlVideoGraphPath)) {
+    return { likelySource: "unknown", confidence: 0.55, invalidSceneIndexes: [], sceneDurationDeltas: [] };
+  }
+  try {
+    const graph = JSON.parse(await readFile(input.htmlVideoGraphPath, "utf8")) as HtmlVideoContentGraph;
+    const workDir = path.dirname(input.htmlVideoGraphPath);
+    const probeDuration = input.probeDuration ?? probeMediaDuration;
+    const invalidSceneIndexes: string[] = [];
+    const sceneDurationDeltas: string[] = [];
+    for (const node of graph.nodes) {
+      const sceneVideoPath = path.join(workDir, `${node.id}-${node.templateId}.mp4`);
+      if (!existsSync(sceneVideoPath)) {
+        invalidSceneIndexes.push(String(node.sceneIndex));
+        sceneDurationDeltas.push(`${node.sceneIndex}:missing`);
+        continue;
+      }
+      const actualDuration = await probeDuration(sceneVideoPath, input.signal).catch(() => 0);
+      const delta = Math.abs(actualDuration - node.durationSec);
+      if (!actualDuration || delta > 0.15) invalidSceneIndexes.push(String(node.sceneIndex));
+      sceneDurationDeltas.push(`${node.sceneIndex}:${delta.toFixed(3)}`);
+    }
+    const expectedSceneDurationSeconds = graph.nodes.reduce((sum, node) => sum + node.durationSec, 0);
+    const silentVideoPath = path.join(workDir, "video-no-audio.mp4");
+    const silentVideoDurationSeconds = existsSync(silentVideoPath)
+      ? await probeDuration(silentVideoPath, input.signal).catch(() => undefined)
+      : undefined;
+    if (invalidSceneIndexes.length) {
+      return { likelySource: "scene", confidence: 0.96, invalidSceneIndexes, sceneDurationDeltas, silentVideoDurationSeconds, expectedSceneDurationSeconds };
+    }
+    if (silentVideoDurationSeconds !== undefined && Math.abs(silentVideoDurationSeconds - expectedSceneDurationSeconds) > 0.2) {
+      return { likelySource: "concat", confidence: 0.92, invalidSceneIndexes, sceneDurationDeltas, silentVideoDurationSeconds, expectedSceneDurationSeconds };
+    }
+    if (silentVideoDurationSeconds !== undefined && Math.abs(silentVideoDurationSeconds - input.expectedDuration) <= 0.2) {
+      return { likelySource: "mux", confidence: 0.9, invalidSceneIndexes, sceneDurationDeltas, silentVideoDurationSeconds, expectedSceneDurationSeconds };
+    }
+    return { likelySource: "unknown", confidence: 0.65, invalidSceneIndexes, sceneDurationDeltas, silentVideoDurationSeconds, expectedSceneDurationSeconds };
+  } catch {
+    return { likelySource: "unknown", confidence: 0.5, invalidSceneIndexes: [], sceneDurationDeltas: [] };
+  }
+}
+
 export async function evaluateVideo(
   videoPath: string,
   reportDir: string,
   expectedDuration?: number,
   sceneDurations: number[] = [],
   signal?: AbortSignal,
-  options: { visualAuditPath?: string; project?: VideoProject } = {},
+  options: { visualAuditPath?: string; htmlVideoGraphPath?: string; project?: VideoProject } = {},
 ): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
   const probe = await runCapture("ffprobe", [
@@ -587,6 +652,13 @@ export async function evaluateVideo(
     const videoDuration = Number(video?.duration ?? duration);
     const audioDuration = Number(audio?.duration ?? duration);
     const projectStreamDelta = Math.abs(videoDuration - audioDuration);
+    const diagnosis = await diagnoseVideoDurationDrift({ htmlVideoGraphPath: options.htmlVideoGraphPath, expectedDuration, signal });
+    const likelySource = diagnosis.likelySource !== "unknown"
+      ? diagnosis.likelySource
+      : projectStreamDelta > 0.2 ? "mux" : "unknown";
+    const confidence = diagnosis.likelySource !== "unknown"
+      ? diagnosis.confidence
+      : projectStreamDelta > 0.2 ? 0.92 : diagnosis.confidence;
     issues.push({
       severity: "error",
       code: "video_project_duration_drift",
@@ -598,8 +670,12 @@ export async function evaluateVideo(
         videoStreamDurationSeconds: videoDuration,
         audioStreamDurationSeconds: audioDuration,
         streamDeltaSeconds: projectStreamDelta,
-        likelySource: projectStreamDelta > 0.2 ? "mux" : "unknown",
-        confidence: projectStreamDelta > 0.2 ? 0.92 : 0.72,
+        likelySource,
+        confidence,
+        invalidSceneIndexes: diagnosis.invalidSceneIndexes,
+        sceneDurationDeltas: diagnosis.sceneDurationDeltas,
+        ...(diagnosis.silentVideoDurationSeconds === undefined ? {} : { silentVideoDurationSeconds: diagnosis.silentVideoDurationSeconds }),
+        ...(diagnosis.expectedSceneDurationSeconds === undefined ? {} : { expectedSceneDurationSeconds: diagnosis.expectedSceneDurationSeconds }),
       },
     });
   }

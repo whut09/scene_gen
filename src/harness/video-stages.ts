@@ -213,6 +213,7 @@ export async function runVideoGateStage(input: {
     input.signal,
     {
       project: input.project,
+      htmlVideoGraphPath: input.story.htmlVideoGraphPath,
       visualAuditPath: input.story.htmlVideoGraphPath ? path.join(path.dirname(input.story.htmlVideoGraphPath), "visual-audit.json") : undefined,
     },
   );

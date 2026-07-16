@@ -37,7 +37,7 @@ test("duration drift uses evidence instead of attempt-only escalation", () => {
   const concat = planRepair("video", [{
     severity: "error", code: "video_project_duration_drift", message: "drift",
     evidence: { likelySource: "concat", confidence: 0.9 },
-  }], undefined, 5, 1);
+  }, { severity: "error", code: "stream_duration_drift", message: "stream drift" }], undefined, 5, 1);
   assert.equal(concat.action, "reconcat-video");
   assert.equal(concat.dirtyPlan.concatVideo, true);
   assert.deepEqual(concat.videoSceneIndexes, []);
@@ -46,7 +46,7 @@ test("duration drift uses evidence instead of attempt-only escalation", () => {
   const scene = planRepair("video", [{
     severity: "error", code: "video_project_duration_drift", message: "drift",
     evidence: { likelySource: "scene", confidence: 0.95, invalidSceneIndexes: ["2"] },
-  }], undefined, 5, 1);
+  }, { severity: "error", code: "stream_duration_drift", message: "stream drift" }], undefined, 5, 1);
   assert.equal(scene.action, "rerender-scenes");
   assert.deepEqual(scene.videoSceneIndexes, [2]);
   assert.equal(scene.candidates.some((candidate) => candidate.action === "rerender-scenes"), true);

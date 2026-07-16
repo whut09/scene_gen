@@ -31,6 +31,8 @@ Weights default to `0.28`, `0.18`, and `0.24`. They can be tuned with `REPAIR_CO
 3. `invalidSceneIndexes` present: add a `rerender-scenes` candidate limited to those scenes.
 4. Without scene-file evidence, the planner does not create a full-scene rerender candidate.
 
+For HTML Video runs, the video gate probes every cached scene MP4 and `video-no-audio.mp4`. Scene duration errors produce `invalidSceneIndexes`; valid scenes with an invalid silent timeline produce `likelySource=concat`; a valid silent timeline with a drifting final file produces `likelySource=mux`. This makes the routing operational rather than relying on manually supplied evidence.
+
 Repeated attempts reduce the expected success of the action that already failed, but attempt count is only one feature. Evidence, scope, cost, latency, and risk still determine the final action.
 
 ## Maintenance
