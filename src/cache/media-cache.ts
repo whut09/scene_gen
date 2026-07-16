@@ -5,12 +5,14 @@ import path from "node:path";
 import { z } from "zod";
 import { ensureDir, fromRoot, readJson, writeJsonAtomic } from "../pipeline/utils";
 import { getRuntimeConfig } from "../config/runtime-config";
+import { readVersionedFormat } from "../persistence/versioned-format";
 
 export const cacheKindSchema = z.enum(["audio", "video-scene"]);
 export type CacheKind = z.infer<typeof cacheKindSchema>;
 
 export const mediaCacheMetadataSchema = z.object({
-  version: z.literal(1),
+  metadataVersion: z.literal(2),
+  identityVersion: z.literal(1),
   kind: cacheKindSchema,
   cacheKey: z.string().length(64),
   extension: z.string().regex(/^\.[a-z0-9]+$/i),
@@ -22,6 +24,27 @@ export const mediaCacheMetadataSchema = z.object({
   details: z.record(z.string(), z.unknown()).default({}),
 }).strict();
 export type MediaCacheMetadata = z.infer<typeof mediaCacheMetadataSchema>;
+
+function migrateMediaCacheMetadataV1ToV2(value: Record<string, unknown>) {
+  const { version: _version, ...rest } = value;
+  return { ...rest, metadataVersion: 2, identityVersion: 1 };
+}
+
+export function readMediaCacheMetadata(raw: unknown) {
+  const normalized = raw && typeof raw === "object" && !Array.isArray(raw) && "metadataVersion" in raw
+    ? raw
+    : raw && typeof raw === "object" && !Array.isArray(raw) && "version" in raw
+      ? { ...(raw as Record<string, unknown>), metadataVersion: (raw as Record<string, unknown>).version }
+      : raw;
+  return readVersionedFormat({
+    raw: normalized,
+    format: "media cache metadata",
+    versionField: "metadataVersion",
+    currentVersion: 2,
+    migrations: { 1: migrateMediaCacheMetadataV1ToV2 },
+    schema: mediaCacheMetadataSchema,
+  });
+}
 
 const runCacheReferencesSchema = z.object({
   version: z.literal(1),
@@ -59,7 +82,10 @@ async function validateEntry(kind: CacheKind, cacheKey: string, extension: strin
   const paths = mediaCachePaths(kind, cacheKey, extension);
   if (!await exists(paths.mediaPath) || !await exists(paths.metadataPath)) return undefined;
   try {
-    const metadata = mediaCacheMetadataSchema.parse(await readJson<unknown>(paths.metadataPath));
+    const raw = await readJson<unknown>(paths.metadataPath);
+    const result = readMediaCacheMetadata(raw);
+    const metadata = result.value;
+    if (result.migratedFrom !== undefined) await writeJsonAtomic(paths.metadataPath, metadata);
     if (metadata.kind !== kind || metadata.cacheKey !== cacheKey || metadata.extension !== extension) return undefined;
     const info = await stat(paths.mediaPath);
     if (!info.isFile() || info.size !== metadata.sizeBytes || info.size <= 0) return undefined;
@@ -204,7 +230,8 @@ export async function getOrCreateMediaCache(input: {
           });
           const timestamp = new Date().toISOString();
           const metadata = mediaCacheMetadataSchema.parse({
-            version: 1,
+            metadataVersion: 2,
+            identityVersion: 1,
             kind: input.kind,
             cacheKey: input.cacheKey,
             extension: input.extension,

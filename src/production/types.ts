@@ -92,7 +92,7 @@ export interface ProductionDecision {
 }
 
 export interface ProductionReport {
-  specVersion: 1;
+  specVersion: 2;
   createdAt: string;
   projectTitle: string;
   sourceUrl: string;

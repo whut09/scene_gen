@@ -2,6 +2,60 @@ import type { VideoProject } from "../pipeline/types";
 import { listProviders } from "./provider-registry";
 import { buildProductionDecisions } from "./visual-planner";
 import type { ProductionReport } from "./types";
+import { z } from "zod";
+import { readJson } from "../pipeline/utils";
+import { persistMigratedJson, readVersionedFormat } from "../persistence/versioned-format";
+
+export const productionReportSchema = z.object({
+  specVersion: z.literal(2),
+  createdAt: z.string(),
+  projectTitle: z.string(),
+  sourceUrl: z.string(),
+  renderEngine: z.string(),
+  providers: z.array(z.unknown()),
+  providerSelections: z.array(z.unknown()),
+  decisions: z.array(z.unknown()),
+  storyPlanning: z.unknown().optional(),
+  summary: z.object({
+    sourceMix: z.record(z.string(), z.number()),
+    enabledProviders: z.array(z.string()),
+    disabledProviders: z.array(z.string()),
+    estimatedExternalCost: z.number(),
+    wordAlignment: z.enum(["estimated-keyword-cues", "forced-alignment"]),
+    alignedCueCount: z.number().int().nonnegative(),
+    estimatedCueCount: z.number().int().nonnegative(),
+    alignmentCoverage: z.number().min(0).max(1),
+    averageAlignmentConfidence: z.number().min(0).max(1),
+    exploredTemplateCount: z.number().int().nonnegative(),
+    averageTemplateLearnedAdjustment: z.number(),
+    templateHistorySamples: z.number().int().nonnegative(),
+    unhealthyProviders: z.array(z.string()),
+    degradedProviders: z.array(z.string()),
+  }),
+}).passthrough();
+
+function migrateProductionReportV1ToV2(value: Record<string, unknown>) {
+  return { ...value, specVersion: 2 };
+}
+
+export function readProductionReport(raw: unknown) {
+  const result = readVersionedFormat({
+    raw,
+    format: "production report",
+    versionField: "specVersion",
+    currentVersion: 2,
+    migrations: { 1: migrateProductionReportV1ToV2 },
+    schema: productionReportSchema,
+  });
+  return { ...result, value: result.value as ProductionReport };
+}
+
+export async function readProductionReportFile(filePath: string, persistMigration = false) {
+  const raw = await readJson<unknown>(filePath);
+  const result = readProductionReport(raw);
+  const backupPath = persistMigration ? await persistMigratedJson(filePath, raw, result) : undefined;
+  return { ...result, backupPath };
+}
 
 export function buildProductionReport(project: VideoProject, renderEngine = "html-video"): ProductionReport {
   const providers = listProviders();
@@ -21,7 +75,7 @@ export function buildProductionReport(project: VideoProject, renderEngine = "htm
   const sourceMix: Record<string, number> = {};
   for (const decision of decisions) sourceMix[decision.visualPlan.source] = (sourceMix[decision.visualPlan.source] ?? 0) + 1;
   return {
-    specVersion: 1,
+    specVersion: 2,
     createdAt: new Date().toISOString(),
     projectTitle: project.meta.title,
     sourceUrl: project.sources[0]?.url ?? "",

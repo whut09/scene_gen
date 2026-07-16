@@ -1,0 +1,26 @@
+{
+  "specVersion": 1,
+  "createdAt": "2026-07-01T00:00:00.000Z",
+  "projectTitle": "Legacy report",
+  "sourceUrl": "https://example.com/legacy",
+  "renderEngine": "html-video",
+  "providers": [],
+  "providerSelections": [],
+  "decisions": [],
+  "summary": {
+    "sourceMix": {},
+    "enabledProviders": [],
+    "disabledProviders": [],
+    "estimatedExternalCost": 0,
+    "wordAlignment": "estimated-keyword-cues",
+    "alignedCueCount": 0,
+    "estimatedCueCount": 0,
+    "alignmentCoverage": 0,
+    "averageAlignmentConfidence": 0,
+    "exploredTemplateCount": 0,
+    "averageTemplateLearnedAdjustment": 0,
+    "templateHistorySamples": 0,
+    "unhealthyProviders": [],
+    "degradedProviders": []
+  }
+}

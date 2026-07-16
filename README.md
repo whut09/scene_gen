@@ -24,8 +24,10 @@ Linux/macOS 将 `npm.cmd` 换成 `npm`，复制配置使用 `cp .env.example .en
 安装依赖后也可通过本地 bin 使用 `npm exec -- scene-gen doctor`。正式 CLI 提供：
 
 ```text
-scene-gen doctor|plan|run|resume|check|feedback|cache
+scene-gen doctor|plan|run|resume|migrate|check|feedback|cache
 ```
+
+持久化文件使用逐版本迁移 reader。旧 run 在 resume 时会先备份 `run.json.vN.bak` 再自动升级；也可显式执行 `scene-gen migrate <run-id>`，同时迁移 manifest 引用的 ContentGraph 和 production report。格式版本、缓存 identity 版本和新增迁移步骤见 [`docs/PERSISTENCE_MIGRATIONS.md`](docs/PERSISTENCE_MIGRATIONS.md)。
 
 所有命令支持 `--help`，未知参数、拼写错误、缺失值、错误枚举和互斥选项会直接返回友好错误，不会静默忽略。
 

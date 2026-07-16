@@ -4,6 +4,11 @@ import type { TemplateHistoryStats, TemplateLearningFeatures, TemplateScoreBreak
 import { buildProductionDecisions } from "../production/visual-planner";
 import type { SyncCue, VisualPlan } from "../production/types";
 import { highRiskPredicatesInText, qualifiersInText, referencedClaims } from "../pipeline/fact-ledger";
+import { z } from "zod";
+import { videoSceneSchema } from "../pipeline/schemas";
+import { readJson } from "../pipeline/utils";
+import { getTemplateById, sceneIntent } from "../templates/template-registry";
+import { persistMigratedJson, readVersionedFormat } from "../persistence/versioned-format";
 
 export type HtmlVideoGraphEdgeType = "sequence" | "contrast" | "dependency";
 
@@ -119,6 +124,92 @@ function sourceEvidence(scene: VideoScene, project: VideoProject) {
     unsupportedPredicates: highRiskPredicatesInText(sceneText).filter((predicate) => !sourceText.includes(predicate)),
     missingQualifiers: [...new Set(claims.flatMap((claim) => claim.qualifiers).filter((qualifier) => !sceneQualifiers.has(qualifier)))],
   };
+}
+
+const legacyContentGraphV1Schema = z.object({
+  specVersion: z.literal(1),
+  engine: z.literal("html-video-compatible"),
+  sourceProject: z.object({ title: z.string(), createdAt: z.string(), width: z.number().positive(), height: z.number().positive(), fps: z.number().positive() }),
+  nodes: z.array(z.object({ id: z.string().min(1), sceneIndex: z.number().int().nonnegative(), sceneType: z.enum(["title", "briefing_points", "news_stack", "signal_chart", "web_screenshot_zoom", "timeline", "github_pulse", "flow", "outro"]), templateId: z.string().min(1), durationSec: z.number().positive(), data: videoSceneSchema })),
+  edges: z.array(z.object({ from: z.string().min(1), to: z.string().min(1), type: z.literal("sequence") })),
+});
+
+export const htmlVideoContentGraphSchema = z.object({
+  specVersion: z.literal(2),
+  engine: z.literal("html-video-compatible"),
+  intent: z.enum(["explainer", "data-viz", "comparison", "promo"]),
+  synopsis: z.string(),
+  visualSystem: z.object({ family: z.string(), palette: z.literal("ocean-editorial"), typography: z.literal("cn-sans-editorial"), motionFamilies: z.array(z.enum(["kinetic", "editorial", "diagram", "measured"])) }),
+  sourceProject: z.object({ title: z.string(), createdAt: z.string(), width: z.number().positive(), height: z.number().positive(), fps: z.number().positive() }),
+  nodes: z.array(z.object({
+    id: z.string().min(1), sceneIndex: z.number().int().nonnegative(), sceneType: z.enum(["title", "briefing_points", "news_stack", "signal_chart", "web_screenshot_zoom", "timeline", "github_pulse", "flow", "outro"]), kind: z.enum(["text", "data", "entity"]), intent: z.enum(["hook", "briefing", "comparison", "evidence", "timeline", "workflow", "repository", "summary"]), frameIntent: z.string(), templateId: z.string().min(1), variantId: z.string().min(1), templateScore: z.number(), templateRuleScore: z.number(), templateLearnedAdjustment: z.number(), templateExplored: z.boolean(), templateReasons: z.array(z.string()), templateFeatures: z.custom<TemplateLearningFeatures>((value) => Boolean(value && typeof value === "object")), templateHistory: z.custom<TemplateHistoryStats>((value) => Boolean(value && typeof value === "object")), templateScoreBreakdown: z.custom<TemplateScoreBreakdown>((value) => Boolean(value && typeof value === "object")), durationSec: z.number().positive(), data: videoSceneSchema, visualPlan: z.custom<VisualPlan>((value) => Boolean(value && typeof value === "object")), syncCues: z.custom<SyncCue[]>((value) => Array.isArray(value)),
+    sourceEvidence: z.object({ sourceId: z.string(), url: z.string(), claimIds: z.array(z.string()), sourceIds: z.array(z.string()), matchedNumbers: z.array(z.string()), unmatchedNumbers: z.array(z.string()), unsupportedPredicates: z.array(z.string()), missingQualifiers: z.array(z.string()) }),
+  })),
+  edges: z.array(z.object({ from: z.string().min(1), to: z.string().min(1), type: z.enum(["sequence", "contrast", "dependency"]), reason: z.string().optional() })),
+});
+
+function migratedGraphIntent(nodes: Array<{ data: VideoScene }>): HtmlVideoContentGraph["intent"] {
+  const chartCount = nodes.filter((node) => node.data.type === "signal_chart").length;
+  if (chartCount > 1) return "data-viz";
+  if (chartCount === 1) return "comparison";
+  return "explainer";
+}
+
+function migrationProviderSelection() {
+  return { capability: "programmatic" as const, profile: "migration", selectedProviderId: "html-video", context: { profile: "migration" }, candidates: [], createdAt: new Date(0).toISOString() };
+}
+
+function migrateContentGraphV1ToV2(value: Record<string, unknown>) {
+  const legacy = legacyContentGraphV1Schema.parse(value);
+  const nodes = legacy.nodes.map((node) => {
+    const intent = sceneIntent(node.data);
+    const template = getTemplateById(node.templateId);
+    const motionFamily = template?.motionFamily ?? "editorial";
+    const templateFeatures: TemplateLearningFeatures = { domain: "general", intent, sceneType: node.data.type, textLength: JSON.stringify(node.data).length, itemCount: 0, dataCount: 0, numericCount: 0, informationStructure: "mixed", assetAvailable: false };
+    const templateHistory: TemplateHistoryStats = { samples: 0, scope: "prior", passRate: 0.5, blankRate: 0, overflowRate: 0, staticRate: 0, averageQualityScore: 50, averageRenderMs: 0, cacheHitRate: 0, averageFeedbackScore: 0, uncertainty: 1 };
+    const templateScoreBreakdown: TemplateScoreBreakdown = { ruleScore: 0, historyPass: 0, quality: 0, overflowRisk: 0, blankRisk: 0, staticRisk: 0, estimatedCost: 0, estimatedLatency: 0, cacheProbability: 0, userFeedback: 0, exploration: 0, learnedAdjustment: 0, finalScore: 0 };
+    return {
+      ...node,
+      sceneType: node.data.type,
+      kind: nodeKind(node.data),
+      intent,
+      frameIntent: frameIntent(node.data, intent),
+      variantId: template?.variants[0]?.id ?? "legacy",
+      templateScore: 0,
+      templateRuleScore: 0,
+      templateLearnedAdjustment: 0,
+      templateExplored: false,
+      templateReasons: ["Migrated from ContentGraph v1."],
+      templateFeatures,
+      templateHistory,
+      templateScoreBreakdown,
+      visualPlan: { source: "programmatic", providerId: "html-video", fallback: "programmatic", fallbackProviderId: "html-video", searchQueries: [], rationale: ["Migrated from ContentGraph v1."], motionTargets: 1, expectedMotionRatio: 0, providerSelection: migrationProviderSelection(), fallbackSelection: migrationProviderSelection() },
+      syncCues: [],
+      sourceEvidence: { sourceId: "unknown", url: "", claimIds: [], sourceIds: [], matchedNumbers: [], unmatchedNumbers: [], unsupportedPredicates: [], missingQualifiers: [] },
+    } satisfies HtmlVideoGraphNode;
+  });
+  return {
+    specVersion: 2,
+    engine: legacy.engine,
+    intent: migratedGraphIntent(nodes),
+    synopsis: legacy.sourceProject.title,
+    visualSystem: { family: "scene-gen-editorial-v2", palette: "ocean-editorial", typography: "cn-sans-editorial", motionFamilies: [...new Set(nodes.map((node) => getTemplateById(node.templateId)?.motionFamily ?? "editorial"))] },
+    sourceProject: legacy.sourceProject,
+    nodes,
+    edges: legacy.edges.map((edge) => ({ ...edge, reason: "Migrated sequence order." })),
+  };
+}
+
+export function readHtmlVideoContentGraph(raw: unknown) {
+  const result = readVersionedFormat({ raw, format: "HTML video ContentGraph", versionField: "specVersion", currentVersion: 2, migrations: { 1: migrateContentGraphV1ToV2 }, schema: htmlVideoContentGraphSchema });
+  return { ...result, value: result.value as HtmlVideoContentGraph };
+}
+
+export async function readHtmlVideoContentGraphFile(filePath: string, persistMigration = false) {
+  const raw = await readJson<unknown>(filePath);
+  const result = readHtmlVideoContentGraph(raw);
+  const backupPath = persistMigration ? await persistMigratedJson(filePath, raw, result) : undefined;
+  return { ...result, backupPath };
 }
 function nodeKind(scene: VideoScene): HtmlVideoGraphNode["kind"] {
   if (scene.type === "signal_chart") return "data";

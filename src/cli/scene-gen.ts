@@ -4,12 +4,14 @@ import { runVideoAgent } from "../harness/video-agent";
 import { builtInProfileNames, loadConfigProfile } from "../config/config-profiles";
 import { formatDoctorReport, runDoctor } from "../doctor/doctor";
 import { createExecutionPlan, formatExecutionPlan } from "../plan/plan";
-import { fromRoot, loadDotEnv, readJson } from "../pipeline/utils";
+import { fromRoot, loadDotEnv } from "../pipeline/utils";
 import { commandHelp, parseStrictArgs, type CommandDefinition } from "./strict-args";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { clearMediaCache, inspectMediaCache, pruneMediaCache } from "../cache/cache-manager";
-import { createRuntimeConfig, restoreRuntimeConfig, runWithRuntimeConfig, runtimeConfigWithRunOverrides, type RuntimeConfigSnapshot } from "../config/runtime-config";
+import { createRuntimeConfig, restoreRuntimeConfig, runWithRuntimeConfig, runtimeConfigWithRunOverrides } from "../config/runtime-config";
+import { migrateRunArtifacts } from "../persistence/run-migration";
+import { readRunJournalFile } from "../harness/run-journal";
 
 const profileOption = { type: "string" as const, description: `Configuration profile (${builtInProfileNames.join(", ")} or config/profiles/<name>.json).` };
 const jsonOption = { type: "boolean" as const, description: "Print machine-readable JSON." };
@@ -62,6 +64,11 @@ const definitions: Record<string, CommandDefinition> = {
       "override-config": { type: "boolean", description: "Allow resume to replace the immutable original runtime config." },
     },
     mutuallyExclusive: [["from-stage", "force-stage"]],
+  },
+  migrate: {
+    summary: "Back up and migrate a run journal and its versioned artifacts.",
+    positionals: [{ name: "run-id", required: true, description: "Run id or run directory." }],
+    options: { json: jsonOption },
   },
   check: { summary: "Run draft, audio and video quality gates against existing artifacts.", options: { project: { type: "string", required: true, description: "Project JSON path." }, video: { type: "string", required: true, description: "Video file path." }, seconds: runOptions.seconds, profile: profileOption, json: jsonOption } },
   feedback: {
@@ -195,12 +202,17 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  if (command === "migrate") {
+    const result = await migrateRunArtifacts(parsed.positionals[0]);
+    console.log(parsed.options.json ? JSON.stringify(result, null, 2) : `Migrated ${result.migratedCount} artifact(s) for ${result.runId}.\nRun: ${result.runDir}`);
+    return;
+  }
   let profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? (command === "doctor" ? "ci-offline" : "local-f5"));
   if (command === "resume" && !parsed.options.profile) {
     const direct = path.resolve(parsed.positionals[0]);
     const runDir = existsSync(path.join(direct, "run.json")) ? direct : fromRoot("dist", "runs", parsed.positionals[0]);
-    const stored: { config?: { runtimeProfile?: string } } = await readJson<{ config?: { runtimeProfile?: string } }>(path.join(runDir, "run.json")).catch(() => ({ config: undefined }));
-    if (stored.config?.runtimeProfile && stored.config.runtimeProfile !== "custom") profileName = stored.config.runtimeProfile;
+    const stored = await readRunJournalFile(path.join(runDir, "run.json")).then((result) => result.value).catch(() => undefined);
+    if (stored?.config.runtimeProfile && stored.config.runtimeProfile !== "custom") profileName = stored.config.runtimeProfile;
   }
   if (command === "doctor") {
     const profile = await loadConfigProfile(profileName);
@@ -248,10 +260,10 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     assertNonNegative("screenshots", parsed.options.screenshots, true);
     const direct = path.resolve(parsed.positionals[0]);
     const runDir = existsSync(path.join(direct, "run.json")) ? direct : fromRoot("dist", "runs", parsed.positionals[0]);
-    const stored = await readJson<{ config?: { runtimeConfig?: RuntimeConfigSnapshot; runtimeProfile?: string } }>(path.join(runDir, "run.json"));
+    const stored = (await readRunJournalFile(path.join(runDir, "run.json"))).value;
     const overrideConfig = Boolean(parsed.options["override-config"]);
     if (parsed.options.profile && !overrideConfig) throw new Error("--profile requires --override-config when resuming a run.");
-    const runtimeConfig = !overrideConfig && stored.config?.runtimeConfig
+    const runtimeConfig = !overrideConfig && stored.config.runtimeConfig
       ? restoreRuntimeConfig(stored.config.runtimeConfig)
       : await createRuntimeConfig(profileName);
     const result = await runVideoAgent(harnessArgv(parsed.options, ["--resume", parsed.positionals[0]]), signal, runtimeConfig);

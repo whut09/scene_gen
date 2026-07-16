@@ -1,6 +1,6 @@
 import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import { mediaCacheMetadataSchema, mediaCachePaths, mediaCacheRoot, readRunCacheReferences, type CacheKind, type MediaCacheMetadata } from "./media-cache";
+import { mediaCachePaths, mediaCacheRoot, readMediaCacheMetadata, readRunCacheReferences, type CacheKind, type MediaCacheMetadata } from "./media-cache";
 import { fromRoot, readJson } from "../pipeline/utils";
 
 interface CacheEntry {
@@ -26,7 +26,7 @@ async function readEntries() {
   const invalid: string[] = [];
   for (const metadataPath of files) {
     try {
-      const metadata = mediaCacheMetadataSchema.parse(await readJson<unknown>(metadataPath));
+      const metadata = readMediaCacheMetadata(await readJson<unknown>(metadataPath)).value;
       const mediaPath = mediaCachePaths(metadata.kind, metadata.cacheKey, metadata.extension).mediaPath;
       const info = await stat(mediaPath);
       if (!info.isFile() || info.size !== metadata.sizeBytes) throw new Error("media size mismatch");

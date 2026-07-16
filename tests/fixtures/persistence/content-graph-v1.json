@@ -1,0 +1,29 @@
+{
+  "specVersion": 1,
+  "engine": "html-video-compatible",
+  "sourceProject": {
+    "title": "Legacy graph",
+    "createdAt": "2026-07-01T00:00:00.000Z",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30
+  },
+  "nodes": [
+    {
+      "id": "scene-01",
+      "sceneIndex": 0,
+      "sceneType": "title",
+      "templateId": "kinetic-title",
+      "durationSec": 5,
+      "data": {
+        "type": "title",
+        "duration": 5,
+        "kicker": "Legacy",
+        "headline": "Legacy graph migration",
+        "subhead": "Version one fixture",
+        "sources": ["fixture"]
+      }
+    }
+  ],
+  "edges": []
+}

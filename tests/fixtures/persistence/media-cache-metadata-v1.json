@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "kind": "audio",
+  "cacheKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "extension": ".wav",
+  "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "sizeBytes": 12,
+  "createdAt": "2026-07-01T00:00:00.000Z",
+  "lastAccessedAt": "2026-07-01T00:00:00.000Z",
+  "identity": { "provider": "f5", "model": "legacy-model" },
+  "details": { "durationSeconds": 1 }
+}

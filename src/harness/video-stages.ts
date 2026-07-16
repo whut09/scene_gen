@@ -13,7 +13,7 @@ import { planRepair, withSuggestedActions, type RepairPlan } from "./retry-polic
 import type { LoopAudit } from "./loop-engineering";
 import { emptyDirtyPlan, mergeDirtyPlans, type DirtyPlan } from "./dirty-plan";
 import { recordStoryPlanOutcome } from "../pipeline/story-planner";
-import type { HtmlVideoContentGraph } from "../html-video/content-graph";
+import { readHtmlVideoContentGraphFile } from "../html-video/content-graph";
 import { readVisualAuditFile } from "../html-video/visual-audit";
 import { recordTemplateOutcomes } from "../templates/template-learning";
 import { recordProviderOutcome } from "../production/provider-stats";
@@ -287,7 +287,7 @@ export async function runPublishStage(input: {
   const reportPath = path.join(input.reportDir, "report.json");
   const markdownPath = path.join(input.reportDir, "report.md");
   const graph = input.story.htmlVideoGraphPath
-    ? await readJson<HtmlVideoContentGraph>(input.story.htmlVideoGraphPath).catch(() => undefined)
+    ? await readHtmlVideoContentGraphFile(input.story.htmlVideoGraphPath).then((result) => result.value).catch(() => undefined)
     : undefined;
   const visualAudit = input.story.htmlVideoGraphPath
     ? await readVisualAuditFile(path.join(path.dirname(input.story.htmlVideoGraphPath), "visual-audit.json")).catch(() => undefined)

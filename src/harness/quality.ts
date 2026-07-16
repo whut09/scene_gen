@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { buildHtmlVideoContentGraph, type HtmlVideoContentGraph } from "../html-video/content-graph";
+import { buildHtmlVideoContentGraph, readHtmlVideoContentGraphFile, type HtmlVideoContentGraph } from "../html-video/content-graph";
 import type { VideoProject, VideoScene } from "../pipeline/types";
 import { prepareF5SynthesisText } from "../pipeline/tts";
 import { getTemplateById } from "../templates/template-registry";
@@ -675,7 +675,7 @@ export async function diagnoseVideoDurationDrift(input: {
     return { likelySource: "unknown", confidence: 0.55, invalidSceneIndexes: [], sceneDurationDeltas: [] };
   }
   try {
-    const graph = JSON.parse(await readFile(input.htmlVideoGraphPath, "utf8")) as HtmlVideoContentGraph;
+    const graph = (await readHtmlVideoContentGraphFile(input.htmlVideoGraphPath)).value;
     const workDir = path.dirname(input.htmlVideoGraphPath);
     const probeDuration = input.probeDuration ?? probeMediaDuration;
     const invalidSceneIndexes: string[] = [];

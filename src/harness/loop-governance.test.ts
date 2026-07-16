@@ -42,9 +42,9 @@ test("video no-progress starts with an alternate template and budget usage reads
   assert.equal(video.strategyId, "alternate-template-variant");
   assert.equal(video.templateSelections[0].variantId, "launch-impact");
   const usage = calculateLoopBudgetUsage({
-    specVersion: 1, runId: "run", url: "https://example.com", status: "running", createdAt: "now", updatedAt: "now",
+    specVersion: 2, runId: "run", url: "https://example.com", status: "running", createdAt: "now", updatedAt: "now",
     config: { targetSeconds: 10, maxIterations: 4, engine: "html-video", qualityProfile: "balanced", runtimeProfile: "test", outputDir: "out", screenshotLimit: 0 },
-    artifacts: {}, error: undefined,
+    artifacts: {}, migrationHistory: [], error: undefined,
     stages: [{ name: "synthesize", status: "succeeded", attempt: 1, inputHash: "x", durationMs: 1000, outputs: {}, issues: [], metrics: { generatedSceneCount: 2, forcedAudioRebuild: true }, suggestedAction: "none" }],
   }, [{ cost: { totalTokens: 50, promptTokens: 30, completionTokens: 20, durationMs: 100 }, iteration: 1, stage: "draft", beforeHash: "a", afterHash: "b", issueSignatureBefore: "same", scoreBefore: 60, reasons: [], patch: [], resolvedIssues: [], newIssues: [], progress: "improved", dirtyPlan: { audioSceneIndexes: [], videoSceneIndexes: [], concatAudio: false, concatVideo: false, remux: false, fullRebuild: false, reasons: [] } }]);
   assert.equal(usage.llmTokens, 50);

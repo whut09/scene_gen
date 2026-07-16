@@ -5,6 +5,7 @@ import type { StageResult } from "./stage-types";
 import { dirtyPlanSchema } from "./dirty-plan";
 import { repairActionSchema, repairCandidateSchema, repairDecisionSchema } from "./repair-candidate";
 import { runtimeConfigSchema, type RuntimeConfigSnapshot } from "../config/runtime-config";
+import { persistMigratedJson, readVersionedFormat } from "../persistence/versioned-format";
 
 const stageStatusSchema = z.enum(["pending", "running", "succeeded", "failed", "skipped"]);
 const stageNameSchema = z.enum([
@@ -44,7 +45,7 @@ const runStageSchema = z.object({
 });
 
 export const runJournalSchema = z.object({
-  specVersion: z.literal(1),
+  specVersion: z.literal(2),
   runId: z.string().min(1),
   url: z.string().min(1),
   status: z.enum(["running", "succeeded", "failed"]),
@@ -64,18 +65,48 @@ export const runJournalSchema = z.object({
   }),
   artifacts: z.record(z.string(), z.string()),
   stages: z.array(runStageSchema),
+  migrationHistory: z.array(z.object({ fromVersion: z.number().int().positive(), toVersion: z.number().int().positive(), migratedAt: z.string() })).default([]),
   error: z.string().optional(),
 });
 
 export type RunJournal = z.infer<typeof runJournalSchema>;
 export type RunStage = z.infer<typeof runStageSchema>;
-type RunJournalCreateInput = Omit<RunJournal, "specVersion" | "status" | "createdAt" | "updatedAt" | "artifacts" | "stages" | "config"> & {
+type RunJournalCreateInput = Omit<RunJournal, "specVersion" | "status" | "createdAt" | "updatedAt" | "artifacts" | "stages" | "migrationHistory" | "config"> & {
   config: Omit<RunJournal["config"], "qualityProfile" | "runtimeProfile" | "configOverrides"> & {
     qualityProfile?: RunJournal["config"]["qualityProfile"];
     runtimeProfile?: RunJournal["config"]["runtimeProfile"];
     configOverrides?: RunJournal["config"]["configOverrides"];
   };
 };
+
+function migrateRunJournalV1ToV2(value: Record<string, unknown>) {
+  return {
+    ...value,
+    specVersion: 2,
+    migrationHistory: [
+      ...(Array.isArray(value.migrationHistory) ? value.migrationHistory : []),
+      { fromVersion: 1, toVersion: 2, migratedAt: new Date().toISOString() },
+    ],
+  };
+}
+
+export function readRunJournal(raw: unknown) {
+  return readVersionedFormat({
+    raw,
+    format: "run journal",
+    versionField: "specVersion",
+    currentVersion: 2,
+    migrations: { 1: migrateRunJournalV1ToV2 },
+    schema: runJournalSchema,
+  });
+}
+
+export async function readRunJournalFile(filePath: string, persistMigration = false) {
+  const raw = await readJson<unknown>(filePath);
+  const result = readRunJournal(raw);
+  const backupPath = persistMigration ? await persistMigratedJson(filePath, raw, result) : undefined;
+  return { ...result, backupPath };
+}
 
 export class RunJournalStore {
   readonly filePath: string;
@@ -89,12 +120,13 @@ export class RunJournalStore {
   static async create(runDir: string, input: RunJournalCreateInput) {
     const timestamp = new Date().toISOString();
     const journal = runJournalSchema.parse({
-      specVersion: 1,
+      specVersion: 2,
       status: "running",
       createdAt: timestamp,
       updatedAt: timestamp,
       artifacts: {},
       stages: [],
+      migrationHistory: [],
       ...input,
     });
     const store = new RunJournalStore(path.join(runDir, "run.json"), journal);
@@ -106,8 +138,8 @@ export class RunJournalStore {
     const filePath = path.basename(runDirOrFile).toLowerCase() === "run.json"
       ? runDirOrFile
       : path.join(runDirOrFile, "run.json");
-    const journal = runJournalSchema.parse(await readJson<unknown>(filePath));
-    return new RunJournalStore(filePath, journal);
+    const result = await readRunJournalFile(filePath, true);
+    return new RunJournalStore(filePath, result.value);
   }
 
   snapshot() {

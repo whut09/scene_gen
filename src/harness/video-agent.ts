@@ -20,7 +20,7 @@ import {
   selectNextLoopStrategy,
   type LoopStrategyTrace,
 } from "./loop-governance";
-import type { HtmlVideoContentGraph } from "../html-video/content-graph";
+import { readHtmlVideoContentGraphFile } from "../html-video/content-graph";
 import {
   combineNotes,
   narrationBasename,
@@ -510,7 +510,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
             ? gate.value.repairPlan.videoSceneIndexes
             : [...new Set(gate.value.evaluation.issues.map((issue) => issue.sceneIndex).filter((value): value is number => typeof value === "number"))];
           const graph = state.story.htmlVideoGraphPath && existsSync(state.story.htmlVideoGraphPath)
-            ? await readJson<HtmlVideoContentGraph>(state.story.htmlVideoGraphPath).catch(() => undefined)
+            ? await readHtmlVideoContentGraphFile(state.story.htmlVideoGraphPath).then((result) => result.value).catch(() => undefined)
             : undefined;
           const templateSelections = graph?.nodes.filter((node) => !affectedScenes.length || affectedScenes.includes(node.sceneIndex)).map((node) => ({ sceneIndex: node.sceneIndex, templateId: node.templateId, variantId: node.variantId })) ?? [];
           const strategy = selectNextLoopStrategy({ stage: "video", iteration: videoAttempt, issues: gate.value.evaluation.issues, repairAction: gate.value.repairPlan.action, affectedScenes, trajectory: strategyTrajectory, templateSelections, scoreBefore: evaluationScore(gate.value.evaluation) });

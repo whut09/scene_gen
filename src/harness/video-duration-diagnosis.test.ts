@@ -8,8 +8,21 @@ import { diagnoseVideoDurationDrift } from "./quality";
 async function fixture(durations: Record<string, number>) {
   const workDir = await mkdtemp(path.join(tmpdir(), "scene-gen-duration-diagnosis-"));
   const graphPath = path.join(workDir, "content-graph.json");
-  const nodes = [0, 1].map((sceneIndex) => ({ id: `scene-0${sceneIndex + 1}`, sceneIndex, templateId: "fixture", durationSec: 1 }));
-  await writeFile(graphPath, JSON.stringify({ nodes }), "utf8");
+  const nodes = [0, 1].map((sceneIndex) => ({
+    id: `scene-0${sceneIndex + 1}`,
+    sceneIndex,
+    sceneType: "title",
+    templateId: "fixture",
+    durationSec: 1,
+    data: { type: "title", duration: 1, kicker: "Fixture", headline: `Duration fixture ${sceneIndex + 1}`, subhead: "Migration-aware diagnosis", sources: ["test"] },
+  }));
+  await writeFile(graphPath, JSON.stringify({
+    specVersion: 1,
+    engine: "html-video-compatible",
+    sourceProject: { title: "Duration fixture", createdAt: "2026-07-16T00:00:00.000Z", width: 1080, height: 1920, fps: 30 },
+    nodes,
+    edges: [{ from: "scene-01", to: "scene-02", type: "sequence" }],
+  }), "utf8");
   for (const node of nodes) await writeFile(path.join(workDir, `${node.id}-${node.templateId}.mp4`), "fixture", "utf8");
   await writeFile(path.join(workDir, "video-no-audio.mp4"), "fixture", "utf8");
   return { workDir, graphPath, probeDuration: async (filePath: string) => durations[path.basename(filePath)] ?? 0 };
