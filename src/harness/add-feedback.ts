@@ -23,6 +23,12 @@ const result = await appendFeedback({
   url: typeof args.url === "string" ? args.url : undefined,
   videoPath: typeof args.video === "string" ? args.video : undefined,
   appliesTo: typeof args["applies-to"] === "string" ? args["applies-to"].split(",").map((item) => item.trim()).filter(Boolean) : undefined,
+  contentDomains: typeof args["content-domains"] === "string" ? args["content-domains"].split(",").map((item) => item.trim()).filter(Boolean) : undefined,
+  templateIds: typeof args["template-ids"] === "string" ? args["template-ids"].split(",").map((item) => item.trim()).filter(Boolean) : undefined,
+  providerIds: typeof args["provider-ids"] === "string" ? args["provider-ids"].split(",").map((item) => item.trim()).filter(Boolean) : undefined,
+  conflictsWith: typeof args["conflicts-with"] === "string" ? args["conflicts-with"].split(",").map((item) => item.trim()).filter(Boolean) : undefined,
+  minimumConfidence: typeof args["minimum-confidence"] === "string" ? Number(args["minimum-confidence"]) : undefined,
+  expiresAt: typeof args["expires-at"] === "string" ? args["expires-at"] : undefined,
   enabled: !args.disabled,
   resolvedAt: args.resolved ? new Date().toISOString() : undefined,
 });

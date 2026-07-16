@@ -71,6 +71,12 @@ const definitions: Record<string, CommandDefinition> = {
       severity: { type: "string", choices: ["low", "medium", "high", "critical"], description: "Feedback severity." },
       desired: { type: "string", description: "Desired behavior." },
       "applies-to": { type: "string", description: "Comma-separated scopes: global, url:<url>, stage:<stage>, category:<category>." },
+      "content-domains": { type: "string", description: "Comma-separated content domains where this feedback applies." },
+      "template-ids": { type: "string", description: "Comma-separated template IDs where this feedback applies." },
+      "provider-ids": { type: "string", description: "Comma-separated provider IDs where this feedback applies." },
+      "conflicts-with": { type: "string", description: "Comma-separated feedback fingerprints that conflict with this entry." },
+      "minimum-confidence": { type: "number", description: "Minimum context confidence from 0 to 1." },
+      "expires-at": { type: "string", description: "ISO timestamp after which this feedback is ignored." },
       video: { type: "string", description: "Related video path." },
       disabled: { type: "boolean", description: "Store the feedback disabled." },
       resolved: { type: "boolean", description: "Mark this fingerprint as resolved." },
@@ -246,8 +252,13 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     return;
   }
   if (command === "feedback") {
+    const csv = (name: string) => typeof parsed.options[name] === "string" ? String(parsed.options[name]).split(",").map((item) => item.trim()).filter(Boolean) : undefined;
     const appliesTo = typeof parsed.options["applies-to"] === "string" ? parsed.options["applies-to"].split(",").map((item) => item.trim()).filter(Boolean) : ["global"];
     if (appliesTo.some((scope) => scope !== "global" && !/^(url:https?:\/\/|stage:[a-z-]+$|category:[^\s]+$)/.test(scope))) throw new Error("--applies-to scopes must be global, url:<http(s)-url>, stage:<stage>, or category:<category>.");
+    const minimumConfidence = Number(parsed.options["minimum-confidence"] ?? 0);
+    if (minimumConfidence < 0 || minimumConfidence > 1) throw new Error("--minimum-confidence must be between 0 and 1.");
+    const expiresAt = typeof parsed.options["expires-at"] === "string" ? parsed.options["expires-at"] : undefined;
+    if (expiresAt && !Number.isFinite(Date.parse(expiresAt))) throw new Error("--expires-at must be a valid ISO timestamp.");
     const result = await appendFeedback({
       createdAt: new Date().toISOString(),
       category: String(parsed.options.category ?? "general"),
@@ -256,6 +267,12 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
       desired: typeof parsed.options.desired === "string" ? parsed.options.desired : undefined,
       videoPath: typeof parsed.options.video === "string" ? parsed.options.video : undefined,
       appliesTo,
+      contentDomains: csv("content-domains"),
+      templateIds: csv("template-ids"),
+      providerIds: csv("provider-ids"),
+      conflictsWith: csv("conflicts-with"),
+      minimumConfidence,
+      expiresAt,
       enabled: !parsed.options.disabled,
       resolvedAt: parsed.options.resolved ? new Date().toISOString() : undefined,
     });

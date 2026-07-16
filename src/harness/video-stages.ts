@@ -322,6 +322,12 @@ export async function runPublishStage(input: {
   ].filter((operation) => operation !== undefined);
   const providerOutcomeResults = await Promise.all(providerOperations).catch(() => []);
   const providerHistory = { recorded: providerOutcomeResults.length };
+  const initialDraft = input.iterations[0]?.draft;
+  const feedbackOutcomes = await recordFeedbackOutcome(input.feedback.map((entry) => entry.fingerprint), {
+    succeeded: passed,
+    scoreBefore: initialDraft ? Number(initialDraft.metrics.scoreAverage ?? 0) : undefined,
+    scoreAfter: finalDraft ? Number(finalDraft.metrics.scoreAverage ?? 0) : undefined,
+  }).catch(() => []);
   await writeFile(productionReportPath, `${JSON.stringify(production, null, 2)}\n`, "utf8");
   await writeJsonAtomic(reportPath, {
     createdAt: new Date().toISOString(),
@@ -335,6 +341,7 @@ export async function runPublishStage(input: {
     maxIterations: input.maxIterations,
     engine: input.engine,
     feedbackApplied: input.feedback,
+    feedbackOutcomes,
     iterations: input.iterations,
     video: input.video,
     dirtyPlan,
@@ -356,6 +363,7 @@ export async function runPublishStage(input: {
     `- Engine: ${input.engine}`,
     `- Passed: ${passed}`,
     `- Feedback applied: ${input.feedback.length}`,
+    `- Feedback outcomes recorded: ${feedbackOutcomes.length}`,
     `- Dirty plan: ${JSON.stringify(dirtyPlan)}`,
     `- Repair decisions: ${repairDecisions.length}`,
     `- Strategy trajectory entries: ${strategyTrajectory.length}`,
@@ -395,7 +403,6 @@ export async function runPublishStage(input: {
     "",
   ].join("\n");
   await writeFile(markdownPath, markdown, "utf8");
-  await recordFeedbackOutcome(input.feedback.map((entry) => entry.fingerprint), passed).catch(() => undefined);
   await recordStoryPlanOutcome(input.project, passed, Number(finalDraft?.metrics.scoreAverage ?? 0) - 78).catch(() => undefined);
   return { passed, reportPath, markdownPath, productionReportPath, templateLearning, providerHistory };
 }
