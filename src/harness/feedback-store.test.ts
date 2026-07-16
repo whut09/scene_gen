@@ -7,8 +7,12 @@ import {
   appendFeedback,
   buildFeedbackGuidance,
   feedbackBayesianSuccessRate,
+  compactFeedback,
+  inspectFeedbackStore,
   readFeedback,
   recordFeedbackOutcome,
+  resolveFeedback,
+  setFeedbackEnabled,
   selectFeedback,
   type FeedbackEntry,
 } from "./feedback-store";
@@ -170,4 +174,32 @@ test("conflicting feedback keeps the higher-effect deterministic winner", () => 
   });
   const selected = selectFeedback([loser, winner], { url: "https://example.com", now: new Date("2026-07-16T00:00:00.000Z") });
   assert.deepEqual(selected.map((entry) => entry.fingerprint), ["winner"]);
+});
+
+test("concurrent mutations are locked, atomic and audited", async () => {
+  await withFeedbackFile(async (filePath) => {
+    const inputs = Array.from({ length: 20 }, (_, index) => ({ createdAt: new Date(2026, 6, 16, 0, 0, index).toISOString(), category: "concurrency", severity: "medium" as const, issue: `issue-${index}`, appliesTo: ["global"] }));
+    await Promise.all(inputs.map((entry) => appendFeedback(entry, { actor: "test", runId: "run-concurrent", reason: "concurrency-test" })));
+    assert.equal((await readFeedback(30)).length, 20);
+    const audit = await readFile(`${filePath}.audit.jsonl`, "utf8");
+    assert.equal(audit.trim().split(/\r?\n/).length, 20);
+    assert.match(audit, /run-concurrent/);
+  });
+});
+
+test("invalid lines are quarantined and management operations are transactional", async () => {
+  await withFeedbackFile(async (filePath) => {
+    const created = await appendFeedback({ createdAt: "2026-07-16T00:00:00.000Z", category: "quality", severity: "high", issue: "bad frame", appliesTo: ["global"] });
+    await writeFile(filePath, `${await readFile(filePath, "utf8")}{broken-json}\n`, "utf8");
+    await readFeedback();
+    const inspected = await inspectFeedbackStore();
+    assert.equal(inspected.invalidLines, 0);
+    assert.equal(inspected.quarantineCount, 1);
+    assert.match(await readFile(inspected.quarantinePath, "utf8"), /broken-json/);
+    await setFeedbackEnabled(created.entry.fingerprint, false, { actor: "tester", reason: "disable-test" });
+    assert.equal((await inspectFeedbackStore()).enabled, 0);
+    await resolveFeedback(created.entry.fingerprint, { actor: "tester", reason: "resolved" });
+    assert.equal((await inspectFeedbackStore()).resolved, 1);
+    assert.deepEqual(await compactFeedback({ actor: "tester", reason: "compact" }), { before: 1, after: 1 });
+  });
 });

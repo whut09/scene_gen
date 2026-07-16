@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { fromRoot } from "../pipeline/utils";
@@ -57,6 +57,14 @@ export interface FeedbackOutcome {
   appliedAt?: string;
 }
 
+export interface FeedbackMutationContext {
+  actor?: string;
+  runId?: string;
+  reason?: string;
+}
+
+interface InvalidFeedbackLine { lineNumber: number; raw: string; error: string }
+
 const severityWeight = { critical: 4, high: 3, medium: 2, low: 1 } as const;
 const feedbackHalfLifeDays = 90;
 
@@ -96,21 +104,76 @@ function normalizeFeedback(entry: FeedbackInput) {
   });
 }
 
-async function readAllFeedback() {
+export function feedbackQuarantinePath() { return `${feedbackFilePath()}.quarantine.jsonl`; }
+export function feedbackAuditPath() { return `${feedbackFilePath()}.audit.jsonl`; }
+
+async function readFeedbackDocument(filePath = feedbackFilePath()) {
   try {
-    const raw = await readFile(feedbackFilePath(), "utf8");
-    return raw.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-      try {
-        return [normalizeFeedback(JSON.parse(line) as FeedbackInput)];
-      } catch {
-        return [];
-      }
+    const raw = await readFile(filePath, "utf8");
+    const entries: FeedbackEntry[] = [];
+    const invalidLines: InvalidFeedbackLine[] = [];
+    raw.split(/\r?\n/).forEach((line, index) => {
+      if (!line) return;
+      try { entries.push(normalizeFeedback(JSON.parse(line) as FeedbackInput)); }
+      catch (error) { invalidLines.push({ lineNumber: index + 1, raw: line, error: error instanceof Error ? error.message : String(error) }); }
     });
-  } catch {
-    return [];
+    return { entries, invalidLines };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { entries: [], invalidLines: [] };
+    throw error;
   }
 }
 
+async function writeFeedbackAtomic(filePath: string, entries: FeedbackEntry[]) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(temporaryPath, entries.map((entry) => JSON.stringify(entry)).join("\n") + (entries.length ? "\n" : ""), "utf8");
+  await rename(temporaryPath, filePath);
+}
+
+async function withFeedbackLock<T>(task: () => Promise<T>) {
+  const filePath = feedbackFilePath(); const lockPath = `${filePath}.lock`;
+  await mkdir(path.dirname(filePath), { recursive: true });
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    try {
+      const handle = await open(lockPath, "wx");
+      try { return await task(); } finally { await handle.close(); await unlink(lockPath).catch(() => undefined); }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const age = await stat(lockPath).then((value) => Date.now() - value.mtimeMs).catch(() => 0);
+      if (age > 60_000) await unlink(lockPath).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250, 10 + attempt * 5)));
+    }
+  }
+  throw new Error(`Timed out waiting for feedback lock: ${lockPath}`);
+}
+
+async function quarantineInvalidLines(filePath: string, invalidLines: InvalidFeedbackLine[]) {
+  if (!invalidLines.length) return;
+  await appendFile(`${filePath}.quarantine.jsonl`, invalidLines.map((line) => JSON.stringify({ quarantinedAt: new Date().toISOString(), sourceFile: filePath, ...line })).join("\n") + "\n", "utf8");
+}
+
+function mutationContext(context: FeedbackMutationContext = {}) {
+  return { actor: context.actor ?? process.env.USERNAME ?? process.env.USER ?? "unknown", runId: context.runId, reason: context.reason ?? "unspecified" };
+}
+
+async function mutateFeedback<T>(operation: string, context: FeedbackMutationContext, mutate: (entries: FeedbackEntry[]) => { entries: FeedbackEntry[]; result: T; fingerprints?: string[] }) {
+  return withFeedbackLock(async () => {
+    const filePath = feedbackFilePath(); const document = await readFeedbackDocument(filePath);
+    await quarantineInvalidLines(filePath, document.invalidLines);
+    const mutation = mutate(document.entries); await writeFeedbackAtomic(filePath, mutation.entries);
+    await appendFile(`${filePath}.audit.jsonl`, JSON.stringify({ timestamp: new Date().toISOString(), operation, ...mutationContext(context), fingerprints: mutation.fingerprints ?? [], quarantinedLines: document.invalidLines.length }) + "\n", "utf8");
+    return mutation.result;
+  });
+}
+
+async function readAllFeedback() {
+  return withFeedbackLock(async () => {
+    const filePath = feedbackFilePath(); const document = await readFeedbackDocument(filePath);
+    if (document.invalidLines.length) { await quarantineInvalidLines(filePath, document.invalidLines); await writeFeedbackAtomic(filePath, document.entries); }
+    return document.entries;
+  });
+}
 function feedbackRecency(entry: FeedbackEntry, now: Date) {
   const timestamp = Date.parse(entry.lastAppliedAt ?? entry.createdAt);
   if (!Number.isFinite(timestamp)) return 0;
@@ -178,56 +241,41 @@ export function selectFeedback(entries: FeedbackEntry[], context: FeedbackSelect
   return selected;
 }
 
-export async function appendFeedback(entry: FeedbackInput) {
-  const filePath = feedbackFilePath();
-  const normalized = normalizeFeedback(entry);
-  const compacted = new Map<string, FeedbackEntry>();
-  for (const item of await readAllFeedback()) compacted.set(item.fingerprint, item);
-  const current = compacted.get(normalized.fingerprint);
-  const definedInput = Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== undefined)) as Partial<FeedbackInput>;
-  const next = current ? normalizeFeedback({
-    ...current,
-    ...definedInput,
-    createdAt: current.createdAt,
-    fingerprint: current.fingerprint,
-    trialCount: current.trialCount,
-    successCount: current.successCount,
-    failureCount: current.failureCount,
-    lastAppliedAt: current.lastAppliedAt,
-    lastSucceededAt: current.lastSucceededAt,
-    effectScoreBefore: current.effectScoreBefore,
-    effectScoreAfter: current.effectScoreAfter,
-  }) : normalized;
-  if (current && JSON.stringify(current) === JSON.stringify(next)) {
-    return { filePath, entry: current, deduplicated: true };
-  }
-  compacted.set(next.fingerprint, next);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${[...compacted.values()].map((item) => JSON.stringify(item)).join("\n")}\n`, "utf8");
-  return { filePath, entry: next, deduplicated: false };
+export async function appendFeedback(entry: FeedbackInput, context: FeedbackMutationContext = {}) {
+  const filePath = feedbackFilePath(); const normalized = normalizeFeedback(entry);
+  return mutateFeedback("append", context, (stored) => {
+    const compacted = new Map<string, FeedbackEntry>(); for (const item of stored) compacted.set(item.fingerprint, item);
+    const current = compacted.get(normalized.fingerprint);
+    const definedInput = Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== undefined)) as Partial<FeedbackInput>;
+    const next = current ? normalizeFeedback({ ...current, ...definedInput, createdAt: current.createdAt, fingerprint: current.fingerprint, trialCount: current.trialCount, successCount: current.successCount, failureCount: current.failureCount, lastAppliedAt: current.lastAppliedAt, lastSucceededAt: current.lastSucceededAt, effectScoreBefore: current.effectScoreBefore, effectScoreAfter: current.effectScoreAfter }) : normalized;
+    const deduplicated = Boolean(current && JSON.stringify(current) === JSON.stringify(next)); compacted.set(next.fingerprint, next);
+    return { entries: [...compacted.values()], result: { filePath, entry: deduplicated ? current! : next, deduplicated }, fingerprints: [next.fingerprint] };
+  });
 }
 
-export async function recordFeedbackOutcome(fingerprints: string[], result: boolean | FeedbackOutcome) {
-  if (fingerprints.length === 0) return [];
-  const outcome = typeof result === "boolean" ? { succeeded: result } : result;
-  const selected = new Set(fingerprints);
-  const compacted = new Map<string, FeedbackEntry>();
-  for (const entry of await readAllFeedback()) compacted.set(entry.fingerprint, entry);
-  const appliedAt = outcome.appliedAt ?? new Date().toISOString();
-  const entries = [...compacted.values()].map((entry) => selected.has(entry.fingerprint) ? feedbackEntrySchema.parse({
-    ...entry,
-    trialCount: entry.trialCount + 1,
-    successCount: entry.successCount + (outcome.succeeded ? 1 : 0),
-    failureCount: entry.failureCount + (outcome.succeeded ? 0 : 1),
-    lastAppliedAt: appliedAt,
-    lastSucceededAt: outcome.succeeded ? appliedAt : entry.lastSucceededAt,
-    effectScoreBefore: outcome.scoreBefore ?? entry.effectScoreBefore,
-    effectScoreAfter: outcome.scoreAfter ?? entry.effectScoreAfter,
-  }) : entry);
-  const filePath = feedbackFilePath();
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, entries.map((entry) => JSON.stringify(entry)).join("\n") + (entries.length ? "\n" : ""), "utf8");
-  return entries.filter((entry) => selected.has(entry.fingerprint));
+export async function recordFeedbackOutcome(fingerprints: string[], result: boolean | FeedbackOutcome, context: FeedbackMutationContext = {}) {
+  if (fingerprints.length === 0) return []; const outcome = typeof result === "boolean" ? { succeeded: result } : result; const selected = new Set(fingerprints); const appliedAt = outcome.appliedAt ?? new Date().toISOString();
+  return mutateFeedback("record-outcome", context, (stored) => {
+    const compacted = new Map<string, FeedbackEntry>(); for (const entry of stored) compacted.set(entry.fingerprint, entry);
+    const entries = [...compacted.values()].map((entry) => selected.has(entry.fingerprint) ? feedbackEntrySchema.parse({ ...entry, trialCount: entry.trialCount + 1, successCount: entry.successCount + (outcome.succeeded ? 1 : 0), failureCount: entry.failureCount + (outcome.succeeded ? 0 : 1), lastAppliedAt: appliedAt, lastSucceededAt: outcome.succeeded ? appliedAt : entry.lastSucceededAt, effectScoreBefore: outcome.scoreBefore ?? entry.effectScoreBefore, effectScoreAfter: outcome.scoreAfter ?? entry.effectScoreAfter }) : entry);
+    return { entries, result: entries.filter((entry) => selected.has(entry.fingerprint)), fingerprints: [...selected] };
+  });
+}
+
+export async function inspectFeedbackStore() {
+  return withFeedbackLock(async () => { const filePath = feedbackFilePath(); const document = await readFeedbackDocument(filePath); const quarantineCount = await readFile(`${filePath}.quarantine.jsonl`, "utf8").then((raw) => raw.split(/\r?\n/).filter(Boolean).length).catch(() => 0); return { filePath, total: document.entries.length, enabled: document.entries.filter((entry) => entry.enabled).length, resolved: document.entries.filter((entry) => Boolean(entry.resolvedAt)).length, invalidLines: document.invalidLines.length, quarantineCount, quarantinePath: `${filePath}.quarantine.jsonl`, auditPath: `${filePath}.audit.jsonl` }; });
+}
+
+export async function setFeedbackEnabled(fingerprint: string, enabled: boolean, context: FeedbackMutationContext = {}) {
+  return mutateFeedback(enabled ? "enable" : "disable", context, (entries) => { let matched: FeedbackEntry | undefined; const next = entries.map((entry) => entry.fingerprint === fingerprint ? (matched = feedbackEntrySchema.parse({ ...entry, enabled }), matched) : entry); if (!matched) throw new Error(`Feedback fingerprint not found: ${fingerprint}`); return { entries: next, result: matched, fingerprints: [fingerprint] }; });
+}
+
+export async function resolveFeedback(fingerprint: string, context: FeedbackMutationContext = {}) {
+  return mutateFeedback("resolve", context, (entries) => { let matched: FeedbackEntry | undefined; const next = entries.map((entry) => entry.fingerprint === fingerprint ? (matched = feedbackEntrySchema.parse({ ...entry, resolvedAt: new Date().toISOString(), enabled: false }), matched) : entry); if (!matched) throw new Error(`Feedback fingerprint not found: ${fingerprint}`); return { entries: next, result: matched, fingerprints: [fingerprint] }; });
+}
+
+export async function compactFeedback(context: FeedbackMutationContext = {}) {
+  return mutateFeedback("compact", context, (entries) => { const compacted = new Map(entries.map((entry) => [entry.fingerprint, entry])); return { entries: [...compacted.values()], result: { before: entries.length, after: compacted.size } }; });
 }
 
 export function buildFeedbackGuidance(entries: FeedbackEntry[]) {

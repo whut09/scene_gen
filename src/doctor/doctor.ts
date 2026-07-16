@@ -13,6 +13,7 @@ import { fromRoot } from "../pipeline/utils";
 import { readTemplateOutcomes, templateOutcomeFilePath } from "../templates/template-learning";
 import { listProviders } from "../production/provider-registry";
 import { providerOutcomeFilePath, readProviderOutcomes } from "../production/provider-stats";
+import { inspectFeedbackStore } from "../harness/feedback-store";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 export interface DoctorCheck { id: string; status: DoctorStatus; required: boolean; summary: string; details?: string }
@@ -155,6 +156,8 @@ export async function runDoctor(profile: ConfigProfile, config: RuntimeConfig): 
   checks.push(visualQualityConfigCheck(config));
   checks.push(await templateLearningCheck(config));
   checks.push(await providerHistoryCheck());
+  const feedback = await inspectFeedbackStore();
+  checks.push({ id: "feedback", status: feedback.invalidLines > 0 || feedback.quarantineCount > 0 ? "warn" : "pass", required: false, summary: `${feedback.total} entries; ${feedback.quarantineCount} quarantined lines`, details: feedback.quarantineCount ? feedback.quarantinePath : feedback.filePath });
   if (config.rendering.ocr.enabled) checks.push(await commandCheck("video-ocr", config.rendering.ocr.command, ["--version"], true));
   const browserPath = chromium.executablePath();
   checks.push({ id: "playwright", status: existsSync(browserPath) ? "pass" : profile.doctor.requireBrowser ? "fail" : "warn", required: profile.doctor.requireBrowser, summary: existsSync(browserPath) ? "Playwright Chromium installed" : "Playwright Chromium missing", details: browserPath });

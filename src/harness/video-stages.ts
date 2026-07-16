@@ -344,7 +344,7 @@ export async function runPublishStage(input: {
     succeeded: passed,
     scoreBefore: initialDraftScore,
     scoreAfter: finalDraftScore,
-  }).catch(() => []);
+  }, { actor: "video-agent", runId: input.runId, reason: "publish-quality-outcome" }).catch(() => []);
   await writeFile(productionReportPath, `${JSON.stringify(production, null, 2)}\n`, "utf8");
   await writeJsonAtomic(reportPath, {
     createdAt: new Date().toISOString(),

@@ -1,4 +1,4 @@
-import { appendFeedback, type FeedbackSeverity } from "../harness/feedback-store";
+import { appendFeedback, compactFeedback, inspectFeedbackStore, resolveFeedback, setFeedbackEnabled, type FeedbackSeverity } from "../harness/feedback-store";
 import { runManualCheck } from "../harness/manual-check";
 import { runVideoAgent } from "../harness/video-agent";
 import { builtInProfileNames, loadConfigProfile } from "../config/config-profiles";
@@ -72,9 +72,14 @@ const definitions: Record<string, CommandDefinition> = {
   },
   check: { summary: "Run draft, audio and video quality gates against existing artifacts.", options: { project: { type: "string", required: true, description: "Project JSON path." }, video: { type: "string", required: true, description: "Video file path." }, seconds: runOptions.seconds, profile: profileOption, json: jsonOption } },
   feedback: {
-    summary: "Add scoped, deduplicated feedback to the feedback store.",
+    summary: "Add, inspect, disable, resolve or compact feedback.",
+    positionals: [{ name: "action", description: "add (default), inspect, enable, disable, resolve, compact." }],
     options: {
-      issue: { type: "string", required: true, description: "Observed problem." },
+      issue: { type: "string", description: "Observed problem for add." },
+      fingerprint: { type: "string", description: "Feedback fingerprint for enable, disable or resolve." },
+      actor: { type: "string", description: "Person or service making the change." },
+      "run-id": { type: "string", description: "Run that caused this change." },
+      reason: { type: "string", description: "Reason for the mutation." },
       category: { type: "string", description: "Feedback category." },
       severity: { type: "string", choices: ["low", "medium", "high", "critical"], description: "Feedback severity." },
       desired: { type: "string", description: "Desired behavior." },
@@ -280,6 +285,18 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     return;
   }
   if (command === "feedback") {
+    const action = parsed.positionals[0] ?? "add";
+    const context = { actor: typeof parsed.options.actor === "string" ? parsed.options.actor : undefined, runId: typeof parsed.options["run-id"] === "string" ? parsed.options["run-id"] : undefined, reason: typeof parsed.options.reason === "string" ? parsed.options.reason : action };
+    if (action === "inspect") { const result = await inspectFeedbackStore(); console.log(JSON.stringify(result, null, 2)); return; }
+    if (action === "compact") { const result = await compactFeedback(context); console.log(parsed.options.json ? JSON.stringify(result, null, 2) : `Feedback compacted: ${result.before} -> ${result.after}`); return; }
+    if (["enable", "disable", "resolve"].includes(action)) {
+      const fingerprint = typeof parsed.options.fingerprint === "string" ? parsed.options.fingerprint : undefined;
+      if (!fingerprint) throw new Error(`feedback ${action} requires --fingerprint.`);
+      const result = action === "resolve" ? await resolveFeedback(fingerprint, context) : await setFeedbackEnabled(fingerprint, action === "enable", context);
+      console.log(parsed.options.json ? JSON.stringify(result, null, 2) : `Feedback ${action}: ${result.fingerprint}`); return;
+    }
+    if (action !== "add") throw new Error("feedback action must be add, inspect, enable, disable, resolve, or compact.");
+    if (typeof parsed.options.issue !== "string") throw new Error("feedback add requires --issue.");
     const csv = (name: string) => typeof parsed.options[name] === "string" ? String(parsed.options[name]).split(",").map((item) => item.trim()).filter(Boolean) : undefined;
     const appliesTo = typeof parsed.options["applies-to"] === "string" ? parsed.options["applies-to"].split(",").map((item) => item.trim()).filter(Boolean) : ["global"];
     if (appliesTo.some((scope) => scope !== "global" && !/^(url:https?:\/\/|stage:[a-z-]+$|category:[^\s]+$)/.test(scope))) throw new Error("--applies-to scopes must be global, url:<http(s)-url>, stage:<stage>, or category:<category>.");
@@ -303,7 +320,7 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
       expiresAt,
       enabled: !parsed.options.disabled,
       resolvedAt: parsed.options.resolved ? new Date().toISOString() : undefined,
-    });
+    }, context);
     console.log(parsed.options.json ? JSON.stringify(result, null, 2) : `Feedback ${result.deduplicated ? "deduplicated" : "saved"}: ${result.entry.fingerprint}`);
   }
 }
