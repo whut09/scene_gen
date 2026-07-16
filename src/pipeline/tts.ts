@@ -13,6 +13,7 @@ import { selectProviderWithAudit } from "../production/provider-registry";
 import { recordProviderOutcome } from "../production/provider-stats";
 import type { ProviderSelectionAudit } from "../production/types";
 import { getRuntimeConfig } from "../config/runtime-config";
+import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
 import { probeDuration, run } from "./tts/process";
@@ -25,7 +26,7 @@ const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
 const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|浼|棰|勭/g;
 
-type TtsProvider = "openai" | "f5" | "local";
+type TtsProvider = "azure" | "openai" | "f5" | "local";
 const F5_FRONTEND_VERSION = "scene-gen-pypinyin-lexicon-v1";
 let warnedDeprecatedF5Cli = false;
 
@@ -184,6 +185,7 @@ function positiveInteger(value: unknown, fallback: number) {
 
 function providerConcurrency(provider: TtsProvider, f5Runtime?: F5Runtime) {
   if (provider === "f5") return f5Runtime?.pool.concurrency ?? 1;
+  if (provider === "azure") return getRuntimeConfig().tts.azure.concurrency;
   if (provider === "openai") return getRuntimeConfig().tts.openai.concurrency;
   return getRuntimeConfig().tts.local.concurrency;
 }
@@ -216,10 +218,11 @@ async function f5TtsWorker(
 }
 
 function ttsProviderId(provider: TtsProvider) {
-  return provider === "openai" ? "openai-tts" : provider === "f5" ? "f5" : "local-tts";
+  return provider === "azure" ? "azure-speech" : provider === "openai" ? "openai-tts" : provider === "f5" ? "f5" : "local-tts";
 }
 
 function providerFromId(providerId?: string): TtsProvider {
+  if (providerId === "azure-speech") return "azure";
   if (providerId === "f5") return "f5";
   if (providerId === "openai-tts") return "openai";
   return "local";
@@ -234,11 +237,13 @@ function ttsDomain(project: VideoProject) {
 function resolveTtsProvider(project: VideoProject, explicit?: TtsProvider) {
   const runtime = getRuntimeConfig();
   const configuredProvider = explicit ?? runtime.tts.provider;
-  const profilePreference = runtime.profile === "local-f5"
-    ? ["f5", "openai-tts", "local-tts"]
+  const profilePreference = runtime.profile === "azure-free"
+    ? ["azure-speech", "openai-tts", "f5", "local-tts"]
+    : runtime.profile === "local-f5"
+      ? ["f5", "azure-speech", "openai-tts", "local-tts"]
     : runtime.profile === "production" || runtime.profile === "openai-tts"
-      ? ["openai-tts", "f5", "local-tts"]
-      : ["openai-tts", "f5", "local-tts"];
+      ? ["openai-tts", "azure-speech", "f5", "local-tts"]
+      : ["openai-tts", "azure-speech", "f5", "local-tts"];
   const preferred = configuredProvider
     ? [ttsProviderId(configuredProvider), ...profilePreference.filter((providerId) => providerId !== ttsProviderId(configuredProvider))]
     : profilePreference;
@@ -258,6 +263,7 @@ function resolveTtsProvider(project: VideoProject, explicit?: TtsProvider) {
 }
 
 function providerErrorType(error: unknown) {
+  if (error instanceof AzureTtsError) return error.result.errorType ?? "operation_failed";
   const message = error instanceof Error ? error.message : String(error);
   if (/out of memory|cuda oom|cuda.*memory/i.test(message)) return "cuda_oom";
   if (/timed?\s*out|timeout/i.test(message)) return "timeout";
@@ -271,12 +277,12 @@ function providerCost(provider: TtsProvider, characters: number) {
   return characters / 1000 * getRuntimeConfig().tts.openai.costPer1kChars;
 }
 
-async function recordTtsProviderResult(input: { provider: TtsProvider; project: VideoProject; startedAt: number; success: boolean; error?: unknown; retryCount?: number }) {
+async function recordTtsProviderResult(input: { provider: TtsProvider; project: VideoProject; startedAt: number; success: boolean; error?: unknown; retryCount?: number; billedCharacters?: number }) {
   await recordProviderOutcome({
     providerId: ttsProviderId(input.provider), capability: "tts", operation: "narration-synthesis", success: input.success,
     latencyMs: Date.now() - input.startedAt, timeout: providerErrorType(input.error) === "timeout", retryCount: input.retryCount ?? 0,
-    cost: input.success ? providerCost(input.provider, [...input.project.narration].length) : 0,
-    unitKind: "chars", unitCount: [...input.project.narration].length,
+    cost: input.success ? providerCost(input.provider, input.billedCharacters ?? [...input.project.narration].length) : 0,
+    unitKind: "chars", unitCount: input.billedCharacters ?? [...input.project.narration].length,
     language: "zh-CN", domain: ttsDomain(input.project), device: input.provider === "f5" ? getRuntimeConfig().tts.f5.device : undefined,
     errorType: input.success ? undefined : providerErrorType(input.error),
   }).catch(() => undefined);
@@ -290,8 +296,20 @@ async function synthesizeNarration(
   provider: TtsProvider,
   text: string,
   outputPath: string,
-  options?: { f5Speed?: string; sceneIndex?: number; f5Runtime?: F5Runtime; signal?: AbortSignal },
-) {
+  options?: { f5Speed?: string; sceneIndex?: number; f5Runtime?: F5Runtime; signal?: AbortSignal; forceRebuild?: boolean; cacheSalt?: string },
+): Promise<{ reused: boolean; result?: AzureTtsResult; cacheKey?: string }> {
+  if (provider === "azure") {
+    return azureTts({
+      sceneIndex: options?.sceneIndex ?? 0,
+      displayText: text,
+      synthesisText: text,
+      outputPath,
+      pronunciationPlanHash: pronunciationCacheHash(text),
+      force: options?.forceRebuild,
+      cacheSalt: options?.cacheSalt,
+      signal: options?.signal,
+    });
+  }
   if (provider === "openai") {
     await openAiTts(text, outputPath);
   } else if (provider === "f5") {
@@ -304,6 +322,7 @@ async function synthesizeNarration(
   } else {
     await windowsTts(text, outputPath);
   }
+  return { reused: false as const };
 }
 
 function hashText(text: string) {
@@ -351,12 +370,14 @@ async function synthesizeF5WithGlobalCache(input: {
     identity: metadata,
     force: input.forceRebuild || getRuntimeConfig().tts.forceRebuild,
     signal: input.signal,
-    generate: (cacheOutputPath) => synthesizeNarration("f5", input.text, cacheOutputPath, {
-      f5Speed: input.expectedSpeed,
-      sceneIndex: input.sceneIndex,
-      f5Runtime: input.f5Runtime,
-      signal: input.signal,
-    }),
+    generate: async (cacheOutputPath) => {
+      await synthesizeNarration("f5", input.text, cacheOutputPath, {
+        f5Speed: input.expectedSpeed,
+        sceneIndex: input.sceneIndex,
+        f5Runtime: input.f5Runtime,
+        signal: input.signal,
+      });
+    },
   });
   await writeJsonAtomic(narrationCacheMetadataPath(input.outputPath), metadata);
   return { reused: !result.generated, cacheKey: metadata.cacheKey };
@@ -447,6 +468,7 @@ async function attachSegmentedNarration(
       return { segmentPath, duration, sceneIndex: index, cacheSalt: effectiveCacheSalt, ...titleResult };
     }
     let reused = false;
+    let azureResult: AzureTtsResult | undefined;
     if (provider === "f5") {
       ({ reused } = await synthesizeF5WithGlobalCache({
         text: synthesisText,
@@ -460,12 +482,19 @@ async function attachSegmentedNarration(
       }));
     }
     if (!reused && provider !== "f5") {
-      await synthesisQueue.run(() => synthesizeNarration(provider, synthesisText, segmentPath, {
+      const synthesis = await synthesisQueue.run(() => synthesizeNarration(provider, synthesisText, segmentPath, {
         f5Speed: undefined,
         sceneIndex: index,
         f5Runtime,
         signal,
+        forceRebuild,
+        cacheSalt: effectiveCacheSalt,
       }));
+      if (provider === "azure") {
+        reused = synthesis.reused;
+        azureResult = synthesis.result;
+        if (!azureResult) throw new Error("Azure Speech synthesis result is missing.");
+      }
     }
     const duration = await probeDuration(segmentPath);
     if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
@@ -477,6 +506,7 @@ async function attachSegmentedNarration(
       generated: !reused,
       sceneIndex: index,
       cacheSalt: effectiveCacheSalt,
+      azureResult,
     };
   });
   const segmentPaths = results.map((result) => result.segmentPath);
@@ -531,7 +561,15 @@ async function attachSegmentedNarration(
     reusedAudioSceneIndexes: reusedAudioSceneIndexes.join(","),
     concatenatedAudio: true,
     audioGenerationKey: audioGenerationKey(sceneCacheSalts),
+    requestMs: results.reduce((sum, result) => sum + (result.azureResult?.requestMs ?? 0), 0),
+    retryCount: results.reduce((sum, result) => sum + (result.azureResult?.retryCount ?? 0), 0),
+    billedCharacters: results.reduce((sum, result) => sum + (result.azureResult?.billedCharacters ?? 0), 0),
+    providerRequestIds: results.map((result) => result.azureResult?.providerRequestId).filter(Boolean).join(","),
+    budgetUsedCharacters: Math.max(0, ...results.map((result) => result.azureResult?.budgetUsedCharacters ?? 0)),
+    budgetRemainingCharacters: Math.min(...results.map((result) => result.azureResult?.budgetRemainingCharacters ?? Number.MAX_SAFE_INTEGER)),
+    budgetWarning: results.some((result) => result.azureResult?.budgetWarning),
   };
+  if (metrics.budgetRemainingCharacters === Number.MAX_SAFE_INTEGER) delete metrics.budgetRemainingCharacters;
 
   return {
     ...project,
@@ -589,7 +627,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         audio: attached.audio ? { ...attached.audio, metrics: { ...attached.audio.metrics!, providerSelection: JSON.stringify(selection.audit) } } : attached.audio,
       } satisfies VideoProject;
       if ((result.audio?.metrics?.generatedSceneCount ?? 0) > 0) {
-        await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: Math.max(0, (result.audio?.metrics?.workerStartCount ?? 1) - 1) });
+        await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: result.audio?.metrics?.retryCount ?? Math.max(0, (result.audio?.metrics?.workerStartCount ?? 1) - 1), billedCharacters: result.audio?.metrics?.billedCharacters });
       }
       return result;
     }
@@ -599,6 +637,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     const forceRebuild = forceSceneIndexes.includes(0);
     const effectiveCacheSalt = forceRebuild ? cacheSalt : project.audio?.sceneCacheSalts?.["0"];
     let reused = false;
+    let azureResult: AzureTtsResult | undefined;
     if (provider === "f5") {
       ({ reused } = await synthesizeF5WithGlobalCache({
         text: project.narration,
@@ -611,7 +650,12 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       }));
     }
     if (!reused && provider !== "f5") {
-      await synthesizeNarration(provider, project.narration, outputPath, { sceneIndex: 0, f5Runtime, signal: options.signal });
+      const synthesis = await synthesizeNarration(provider, project.narration, outputPath, { sceneIndex: 0, f5Runtime, signal: options.signal, forceRebuild, cacheSalt: effectiveCacheSalt });
+      if (provider === "azure") {
+        reused = synthesis.reused;
+        azureResult = synthesis.result;
+        if (!azureResult) throw new Error("Azure Speech synthesis result is missing.");
+      }
     }
     const fileSize = await stat(outputPath).then((file) => file.size).catch(() => 0);
     const duration = await probeDuration(outputPath);
@@ -629,6 +673,13 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       concatenatedAudio: false,
       audioGenerationKey: audioGenerationKey(effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts ?? {}),
       providerSelection: JSON.stringify(selection.audit),
+      requestMs: azureResult?.requestMs,
+      retryCount: azureResult?.retryCount,
+      billedCharacters: azureResult?.billedCharacters,
+      providerRequestIds: azureResult?.providerRequestId,
+      budgetUsedCharacters: azureResult?.budgetUsedCharacters,
+      budgetRemainingCharacters: azureResult?.budgetRemainingCharacters,
+      budgetWarning: azureResult?.budgetWarning,
     };
     const result = {
       ...project,
@@ -640,10 +691,10 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         sceneCacheSalts: effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts,
       },
     } satisfies VideoProject;
-    if (!reused) await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: Math.max(0, (metrics.workerStartCount ?? 1) - 1) });
+    if (!reused) await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: metrics.retryCount ?? Math.max(0, (metrics.workerStartCount ?? 1) - 1), billedCharacters: metrics.billedCharacters });
     return result;
   } catch (error) {
-    await recordTtsProviderResult({ provider, project, startedAt, success: false, error, retryCount: Math.max(0, (f5Runtime?.pool.metrics().workerStartCount ?? 1) - 1) });
+    await recordTtsProviderResult({ provider, project, startedAt, success: false, error, retryCount: error instanceof AzureTtsError ? error.result.retryCount : Math.max(0, (f5Runtime?.pool.metrics().workerStartCount ?? 1) - 1), billedCharacters: error instanceof AzureTtsError ? error.result.billedCharacters : undefined });
     console.warn(`[tts] primary provider failed: ${(error as Error).message}`);
     if (getRuntimeConfig().tts.failFast) throw error;
 

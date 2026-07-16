@@ -17,7 +17,7 @@ const profileSchema = z.object({
 
 export type ConfigProfile = z.infer<typeof profileSchema>;
 
-export const builtInProfileNames = ["local-f5", "openai-tts", "ci-offline", "fast-preview", "production"] as const;
+export const builtInProfileNames = ["azure-free", "local-f5", "openai-tts", "ci-offline", "fast-preview", "production"] as const;
 
 export async function loadConfigProfile(name: string) {
   const filePath = fromRoot("config", "profiles", `${name}.json`);

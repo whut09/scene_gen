@@ -146,7 +146,7 @@ export async function runSynthesizeStage(input: {
   cacheSalt?: string;
   reason?: string;
   forceAudioRebuild?: boolean;
-  provider?: "openai" | "f5" | "local";
+  provider?: "azure" | "openai" | "f5" | "local";
   signal: AbortSignal;
 }) {
   const args = [
@@ -303,7 +303,8 @@ export async function runPublishStage(input: {
       feedback: input.feedback,
     }).catch(() => ({ recorded: 0, filePath: "" }))
     : { recorded: 0, filePath: "" };
-  const audioProviderId = input.project.audio?.provider === "openai" ? "openai-tts"
+  const audioProviderId = input.project.audio?.provider === "azure" ? "azure-speech"
+    : input.project.audio?.provider === "openai" ? "openai-tts"
     : input.project.audio?.provider === "f5" ? "f5"
       : input.project.audio?.provider === "local" ? "local-tts" : undefined;
   const providerOperations = [
@@ -311,8 +312,8 @@ export async function runPublishStage(input: {
       runId: input.runId, providerId: audioProviderId, capability: "tts", operation: "narration-quality",
       success: finalAudio.passed, latencyMs: Number(input.project.audio?.metrics?.synthesisMs ?? 0) + Number(input.project.audio?.metrics?.workerStartupMs ?? 0),
       timeout: finalAudio.issues.some((issue) => issue.code === "asr_verification_failed" && /timeout/i.test(issue.message)),
-      retryCount: Math.max(0, Number(input.project.audio?.metrics?.workerStartCount ?? 1) - 1), cost: 0,
-      unitKind: "chars", unitCount: [...input.project.narration].length,
+      retryCount: Number(input.project.audio?.metrics?.retryCount ?? Math.max(0, Number(input.project.audio?.metrics?.workerStartCount ?? 1) - 1)), cost: 0,
+      unitKind: "chars", unitCount: Number(input.project.audio?.metrics?.billedCharacters ?? [...input.project.narration].length),
       qualityScore: Math.max(0, Math.min(1, 1 - finalAudio.issues.filter((issue) => issue.severity === "error").length * 0.2 - finalAudio.issues.filter((issue) => issue.severity === "warning").length * 0.05)),
       pronunciationAccurate: findTtsPronunciations(input.project.narration).length
         ? !finalAudio.issues.some((issue) => issue.code === "audio_pronunciation_mismatch")

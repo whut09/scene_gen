@@ -265,7 +265,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     let forceAudioRebuild = false;
     let audioCacheSalt: string | undefined;
     let audioRepairReason: string | undefined;
-    let audioProviderOverride: "openai" | "f5" | "local" | undefined;
+    let audioProviderOverride: "azure" | "openai" | "f5" | "local" | undefined;
     let audioStrategy: LoopStrategyTrace | undefined;
     let audioRemuxRequired = false;
     let audioRetimeRequired = false;
@@ -334,7 +334,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         strategyTrajectory.push(audioStrategy);
         await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
         if (audioStrategy.strategyId === "human-review") throw new Error("Audio loop requires human confirmation after exhausting repair strategies.");
-        if (audioStrategy.strategyId === "alternate-provider" && (audioStrategy.providerId === "openai" || audioStrategy.providerId === "f5" || audioStrategy.providerId === "local")) audioProviderOverride = audioStrategy.providerId;
+        if (audioStrategy.strategyId === "alternate-provider" && (audioStrategy.providerId === "azure" || audioStrategy.providerId === "openai" || audioStrategy.providerId === "f5" || audioStrategy.providerId === "local")) audioProviderOverride = audioStrategy.providerId;
       }
       if (iteration >= maxIterations) break;
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {

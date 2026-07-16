@@ -26,7 +26,7 @@ export async function createExecutionPlan(options: PlanOptions) {
     import("../templates/template-registry"),
   ]);
   const providers = listProviders();
-  const preferredTts = options.runtimeConfig.tts.provider === "openai" ? "openai-tts" : options.runtimeConfig.tts.provider === "f5" ? "f5" : "local-tts";
+  const preferredTts = options.runtimeConfig.tts.provider === "azure" ? "azure-speech" : options.runtimeConfig.tts.provider === "openai" ? "openai-tts" : options.runtimeConfig.tts.provider === "f5" ? "f5" : "local-tts";
   const selectedProviders = [
     providers.find((provider) => provider.id === options.engine),
     providers.find((provider) => provider.id === "playwright"),

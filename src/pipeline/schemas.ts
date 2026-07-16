@@ -197,7 +197,7 @@ export const videoProjectSchema = z.object({
   audio: z.object({
     src: z.string(),
     durationSeconds: z.number().positive(),
-    provider: z.enum(["openai", "local", "f5", "silent"]),
+    provider: z.enum(["azure", "openai", "local", "f5", "silent"]),
     metrics: z.object({
       workerStartCount: z.number().int().nonnegative(),
       workerStartupMs: z.number().nonnegative(),
@@ -214,6 +214,13 @@ export const videoProjectSchema = z.object({
       concatenatedAudio: z.boolean().default(false),
       audioGenerationKey: z.string().default("default"),
       providerSelection: z.string().default("{}"),
+      requestMs: z.number().nonnegative().optional(),
+      retryCount: z.number().int().nonnegative().optional(),
+      billedCharacters: z.number().int().nonnegative().optional(),
+      providerRequestIds: z.string().optional(),
+      budgetUsedCharacters: z.number().int().nonnegative().optional(),
+      budgetRemainingCharacters: z.number().int().nonnegative().optional(),
+      budgetWarning: z.boolean().optional(),
     }).optional(),
     sceneCacheSalts: z.record(z.string(), z.string()).optional(),
   }).optional(),

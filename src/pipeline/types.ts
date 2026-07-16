@@ -214,7 +214,7 @@ export interface VideoProject {
   audio?: {
     src: string;
     durationSeconds: number;
-    provider: "openai" | "local" | "f5" | "silent";
+    provider: "azure" | "openai" | "local" | "f5" | "silent";
     metrics?: {
       workerStartCount: number;
       workerStartupMs: number;
@@ -231,6 +231,13 @@ export interface VideoProject {
       concatenatedAudio: boolean;
       audioGenerationKey: string;
       providerSelection: string;
+      requestMs?: number;
+      retryCount?: number;
+      billedCharacters?: number;
+      providerRequestIds?: string;
+      budgetUsedCharacters?: number;
+      budgetRemainingCharacters?: number;
+      budgetWarning?: boolean;
     };
     sceneCacheSalts?: Record<string, string>;
   };

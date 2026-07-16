@@ -20,10 +20,15 @@ export const runtimeConfigSchema = z.object({
     revisionFallbackModel: z.string().optional(),
   }),
   tts: z.object({
-    provider: z.enum(["openai", "f5", "local"]),
-    providerFallback: z.enum(["openai", "f5", "local"]).optional(),
+    provider: z.enum(["azure", "openai", "f5", "local"]),
+    providerFallback: z.enum(["azure", "openai", "f5", "local"]).optional(),
     failFast: z.boolean(), durationPolicy: z.enum(["natural", "fit"]), fitTarget: z.boolean(), forceRebuild: z.boolean(),
     fetchTimeoutMs: positiveInteger, minTempo: positiveNumber, maxTempo: positiveNumber, preprocessConcurrency: positiveInteger, ffmpegConcurrency: positiveInteger,
+    azure: z.object({
+      endpoint: z.string().url().optional(), region: z.string().optional(), apiKey: z.string().optional(), voice: z.string().min(1), outputFormat: z.string().min(1),
+      style: z.string().optional(), role: z.string().optional(), timeoutMs: positiveInteger, maxRetries: z.number().int().nonnegative(),
+      monthlyCharacterBudget: positiveInteger, budgetWarningRatio: z.number().min(0).max(1), concurrency: positiveInteger, requestsPerMinute: positiveInteger,
+    }).default({ voice: "zh-CN-XiaoxiaoNeural", outputFormat: "riff-24khz-16bit-mono-pcm", timeoutMs: 120_000, maxRetries: 2, monthlyCharacterBudget: 500_000, budgetWarningRatio: 0.8, concurrency: 2, requestsPerMinute: 20 }),
     openai: z.object({ apiKey: z.string().optional(), baseUrl: z.string(), model: z.string(), voice: z.string(), speed: positiveNumber, concurrency: positiveInteger, costPer1kChars: nonnegativeNumber }),
     f5: z.object({ python: z.string().min(1).default(process.platform === "win32" ? "python" : "python3"), model: z.string(), device: z.string(), refAudio: z.string().optional(), refText: z.string(), speed: positiveNumber, uniformSpeed: positiveNumber, nfeStep: positiveInteger, seed: z.number().int(), hfOffline: z.boolean(), workerMode: z.enum(["worker", "cli"]), workerScript: z.string().optional(), workerReadyTimeoutMs: positiveInteger, workerRequestTimeoutMs: positiveInteger, workerMaxRestarts: z.number().int().nonnegative(), gpuMemoryPressure: z.boolean() }),
     local: z.object({ concurrency: positiveInteger }),
@@ -63,8 +68,8 @@ function booleanValue(env: NodeJS.ProcessEnv, key: string, fallback = false) {
   return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
-function providerValue(value: string | undefined, fallback: "openai" | "f5" | "local") {
-  return value === "openai" || value === "f5" || value === "local" ? value : fallback;
+function providerValue(value: string | undefined, fallback: "azure" | "openai" | "f5" | "local") {
+  return value === "azure" || value === "openai" || value === "f5" || value === "local" ? value : fallback;
 }
 
 function parseTemplateExclusions(value: string | undefined) {
@@ -104,6 +109,14 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
       provider: providerValue(stringValue(env, "TTS_PROVIDER"), profile === "local-f5" ? "f5" : "openai"),
       providerFallback: stringValue(env, "TTS_PROVIDER_FALLBACK") ? providerValue(stringValue(env, "TTS_PROVIDER_FALLBACK"), "local") : undefined,
       failFast: booleanValue(env, "TTS_FAIL_FAST"), durationPolicy: stringValue(env, "TTS_DURATION_POLICY", "natural") === "fit" ? "fit" : "natural", fitTarget: stringValue(env, "TTS_FIT_TARGET") !== "0", forceRebuild: booleanValue(env, "TTS_FORCE_REBUILD"), fetchTimeoutMs: numberValue(env, "TTS_FETCH_TIMEOUT_MS", 180_000), minTempo: numberValue(env, "TTS_MIN_TEMPO", 0.9), maxTempo: numberValue(env, "TTS_MAX_TEMPO", 1.22), preprocessConcurrency: numberValue(env, "TTS_PREPROCESS_CONCURRENCY", 4), ffmpegConcurrency: numberValue(env, "TTS_FFMPEG_CONCURRENCY", 2),
+      azure: {
+        endpoint: stringValue(env, "AZURE_SPEECH_ENDPOINT"), region: stringValue(env, "AZURE_SPEECH_REGION"), apiKey: stringValue(env, "AZURE_SPEECH_KEY"),
+        voice: stringValue(env, "AZURE_TTS_VOICE", "zh-CN-XiaoxiaoNeural")!, outputFormat: stringValue(env, "AZURE_TTS_OUTPUT_FORMAT", "riff-24khz-16bit-mono-pcm")!,
+        style: stringValue(env, "AZURE_TTS_STYLE"), role: stringValue(env, "AZURE_TTS_ROLE"), timeoutMs: numberValue(env, "AZURE_TTS_TIMEOUT_MS", 120_000),
+        maxRetries: Math.max(0, numberValue(env, "AZURE_TTS_MAX_RETRIES", 2)), monthlyCharacterBudget: Math.max(1, numberValue(env, "AZURE_TTS_MONTHLY_CHARACTER_BUDGET", 500_000)),
+        budgetWarningRatio: Math.max(0, Math.min(1, numberValue(env, "AZURE_TTS_BUDGET_WARNING_RATIO", 0.8))), concurrency: Math.max(1, numberValue(env, "AZURE_TTS_CONCURRENCY", 2)),
+        requestsPerMinute: Math.max(1, numberValue(env, "AZURE_TTS_REQUESTS_PER_MINUTE", 20)),
+      },
       openai: { apiKey: stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY"), baseUrl: stringValue(env, "OPENAI_TTS_BASE_URL") ?? stringValue(env, "OPENAI_BASE_URL", "https://api.openai.com/v1")!, model: stringValue(env, "OPENAI_TTS_MODEL", "gpt-4o-mini-tts")!, voice: stringValue(env, "OPENAI_TTS_VOICE", "alloy")!, speed: numberValue(env, "OPENAI_TTS_SPEED", 1.12), concurrency: numberValue(env, "OPENAI_TTS_CONCURRENCY", 4), costPer1kChars: numberValue(env, "OPENAI_TTS_COST_PER_1K_CHARS", 0.015) },
       f5: { python: resolveF5PythonCommand(env), model: stringValue(env, "F5_TTS_MODEL", "F5TTS_v1_Base")!, device: stringValue(env, "F5_TTS_DEVICE", "cuda")!, refAudio: stringValue(env, "F5_TTS_REF_AUDIO") ?? (resolveF5ReferenceAudio(env) || undefined), refText: stringValue(env, "F5_TTS_REF_TEXT", "")!, speed: numberValue(env, "F5_TTS_SPEED", 1.12), uniformSpeed: numberValue(env, "F5_TTS_UNIFORM_SPEED", 1.25), nfeStep: numberValue(env, "F5_TTS_NFE_STEP", 16), seed: numberValue(env, "F5_TTS_SEED", -1), hfOffline: booleanValue(env, "F5_TTS_HF_OFFLINE", true), workerMode: stringValue(env, "F5_TTS_WORKER_MODE", "worker") === "cli" ? "cli" : "worker", workerScript: stringValue(env, "F5_TTS_WORKER_SCRIPT"), workerReadyTimeoutMs: numberValue(env, "F5_TTS_WORKER_READY_TIMEOUT_MS", 120_000), workerRequestTimeoutMs: numberValue(env, "F5_TTS_WORKER_REQUEST_TIMEOUT_MS", 600_000), workerMaxRestarts: numberValue(env, "F5_TTS_WORKER_MAX_RESTARTS", 1), gpuMemoryPressure: booleanValue(env, "F5_GPU_MEMORY_PRESSURE") },
       local: { concurrency: numberValue(env, "LOCAL_TTS_CONCURRENCY", 1) },
@@ -126,6 +139,7 @@ export function runtimeConfigSnapshot(config: RuntimeConfig): RuntimeConfigSnaps
   const snapshot = structuredClone(config) as RuntimeConfigSnapshot;
   snapshot.llm.news.apiKey = undefined;
   snapshot.llm.quality.apiKey = undefined;
+  snapshot.tts.azure.apiKey = undefined;
   snapshot.tts.openai.apiKey = undefined;
   return runtimeConfigSchema.parse(snapshot);
 }
@@ -145,6 +159,7 @@ export function restoreRuntimeConfig(snapshot: unknown, env: NodeJS.ProcessEnv =
   const restored = structuredClone(parsed);
   restored.llm.news.apiKey = stringValue(env, "NEWS_LLM_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
   restored.llm.quality.apiKey = stringValue(env, "QUALITY_LLM_API_KEY") ?? stringValue(env, "NEWS_LLM_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
+  restored.tts.azure.apiKey = stringValue(env, "AZURE_SPEECH_KEY");
   restored.tts.openai.apiKey = stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
   return deepFreeze(runtimeConfigSchema.parse(restored)) as RuntimeConfig;
 }

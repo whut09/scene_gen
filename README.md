@@ -38,12 +38,15 @@ scene-gen doctor|plan|run|resume|migrate|check|feedback|cache
 运行时配置会在 CLI 启动时合并 profile 与显式环境变量，经过 Zod 校验后递归冻结；阶段代码不再通过修改全局 `process.env` 传递配置。每次运行会把脱敏配置快照和哈希写入 `run.json`，resume 默认强制复用原配置；如需改变 profile 或影响运行的参数，必须增加 `--override-config`。设计和扩展约束见 [`docs/RUNTIME_CONFIG.md`](docs/RUNTIME_CONFIG.md)。
 
 - `local-f5`：本地 F5-TTS、CUDA、Whisper 和 HTML Video 完整链路。
+- `azure-free`：Azure Speech Neural TTS、月度字符硬预算和 HTML Video 渲染。
 - `openai-tts`：OpenAI 兼容 LLM/TTS，加本地 HTML Video 渲染。
 - `ci-offline`：关闭 LLM judge 与 ASR，使用离线检查设置。
 - `fast-preview`：Remotion、单轮 loop、无截图，适合快速预览。
 - `production`：严格质量门、HTML Video、三轮 loop 和 fail-fast。
 
 profile 文件位于 `config/profiles/`。环境变量中的显式配置优先于 profile 默认值。Windows 本机路径不要提交到通用配置；可复制 `config/profiles/windows-local-f5.example.json` 为 `windows-local-f5.local.json`，修改路径后使用 `--profile windows-local-f5.local`。`*.local.json` 已被 Git 忽略。
+
+Azure 免费 profile 使用 REST API，不引入 Azure SDK。设置 `AZURE_SPEECH_KEY` 和 `AZURE_SPEECH_REGION` 后运行 `scene-gen doctor --profile azure-free`，doctor 会检查配置、voices endpoint、指定 voice、当前月度字符用量和输出目录。默认 voice 为 `zh-CN-XiaoxiaoNeural`，输出为可直接进入现有 FFmpeg 流程的 `riff-24khz-16bit-mono-pcm`。`AZURE_TTS_MONTHLY_CHARACTER_BUDGET=500000` 是硬限制，达到上限后不会继续调用 Azure；中文汉字按两个预算字符估算，使用量保存在 `dist/cache/metadata/azure-tts-usage.json`。API key 会从 runtime config snapshot、run journal 和公开错误信息中移除。
 
 ## 一键生成
 

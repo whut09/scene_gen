@@ -1,0 +1,21 @@
+{
+  "name": "azure-free",
+  "description": "Azure Speech F0 neural TTS with hard monthly budget protection and local rendering.",
+  "env": {
+    "TTS_PROVIDER": "azure",
+    "TTS_FAIL_FAST": "1",
+    "AZURE_TTS_CONCURRENCY": "2",
+    "AZURE_TTS_REQUESTS_PER_MINUTE": "20",
+    "AZURE_TTS_MONTHLY_CHARACTER_BUDGET": "500000",
+    "AZURE_TTS_BUDGET_WARNING_RATIO": "0.8",
+    "TTS_PREPROCESS_CONCURRENCY": "4",
+    "TTS_FFMPEG_CONCURRENCY": "2",
+    "VIDEO_RENDER_ENGINE": "html-video",
+    "HTML_RENDER_CONCURRENCY": "2",
+    "HTML_RENDER_PRESET": "veryfast",
+    "QUALITY_GATE_PROFILE": "balanced",
+    "STORY_PLAN_CANDIDATES": "2",
+    "TEMPLATE_EXPLORATION_RATE": "0.05"
+  },
+  "doctor": { "requireApi": false, "requireBrowser": true }
+}

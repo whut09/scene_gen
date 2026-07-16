@@ -14,10 +14,42 @@ import { readTemplateOutcomes, templateOutcomeFilePath } from "../templates/temp
 import { listProviders } from "../production/provider-registry";
 import { providerOutcomeFilePath, readProviderOutcomes } from "../production/provider-stats";
 import { inspectFeedbackStore } from "../harness/feedback-store";
+import { inspectAzureVoice, readAzureUsage } from "../pipeline/tts/providers/azure";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 export interface DoctorCheck { id: string; status: DoctorStatus; required: boolean; summary: string; details?: string }
 export interface DoctorReport { profile: string; createdAt: string; checks: DoctorCheck[]; passed: boolean }
+
+async function azureSpeechChecks(config: RuntimeConfig): Promise<DoctorCheck[]> {
+  const required = config.tts.provider === "azure";
+  const configured = Boolean(config.tts.azure.apiKey && (config.tts.azure.region || config.tts.azure.endpoint));
+  const usage = await readAzureUsage(config);
+  const budget = config.tts.azure.monthlyCharacterBudget;
+  const ratio = usage.usedCharacters / budget;
+  const checks: DoctorCheck[] = [{
+    id: "azure-config",
+    status: configured ? "pass" : required ? "fail" : "warn",
+    required,
+    summary: configured ? "Azure Speech configured for " + (config.tts.azure.region ?? "custom endpoint") : "Azure Speech configuration incomplete",
+    details: "Set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION, or provide AZURE_SPEECH_ENDPOINT.",
+  }, {
+    id: "azure-budget",
+    status: usage.usedCharacters >= budget ? "fail" : ratio >= config.tts.azure.budgetWarningRatio ? "warn" : "pass",
+    required,
+    summary: usage.usedCharacters + "/" + budget + " Azure billed characters used for " + usage.month,
+    details: Math.max(0, budget - usage.usedCharacters) + " characters remain before the hard limit.",
+  }];
+  if (!configured) return checks;
+  try {
+    const voice = await inspectAzureVoice(config);
+    checks.push({ id: "azure-network", status: "pass", required, summary: "Azure voices endpoint reachable (" + voice.voiceCount + " voices)" });
+    checks.push({ id: "azure-voice", status: voice.voiceFound ? "pass" : "fail", required, summary: voice.voiceFound ? "Azure voice " + config.tts.azure.voice + " is available" : "Azure voice " + config.tts.azure.voice + " was not found" });
+  } catch (error) {
+    checks.push({ id: "azure-network", status: required ? "fail" : "warn", required, summary: "Azure voices endpoint is unavailable", details: (error as Error).message });
+    checks.push({ id: "azure-voice", status: required ? "fail" : "warn", required, summary: "Could not verify Azure voice " + config.tts.azure.voice });
+  }
+  return checks;
+}
 
 async function commandCheck(id: string, command: string, args: string[], required: boolean): Promise<DoctorCheck> {
   try {
@@ -156,6 +188,7 @@ export async function runDoctor(profile: ConfigProfile, config: RuntimeConfig): 
   checks.push(visualQualityConfigCheck(config));
   checks.push(await templateLearningCheck(config));
   checks.push(await providerHistoryCheck());
+  checks.push(...await azureSpeechChecks(config));
   const feedback = await inspectFeedbackStore();
   checks.push({ id: "feedback", status: feedback.invalidLines > 0 || feedback.quarantineCount > 0 ? "warn" : "pass", required: false, summary: `${feedback.total} entries; ${feedback.quarantineCount} quarantined lines`, details: feedback.quarantineCount ? feedback.quarantinePath : feedback.filePath });
   if (config.rendering.ocr.enabled) checks.push(await commandCheck("video-ocr", config.rendering.ocr.command, ["--version"], true));
