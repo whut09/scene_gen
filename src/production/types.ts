@@ -101,6 +101,7 @@ export interface ProductionReport {
   providerSelections: ProviderSelectionAudit[];
   decisions: ProductionDecision[];
   storyPlanning?: StoryPlanningAudit;
+  pronunciationPlans?: import("../pipeline/pronunciation/schema").PronunciationPlan[];
   summary: {
     sourceMix: Record<string, number>;
     enabledProviders: string[];

@@ -129,6 +129,7 @@ export class F5WorkerClient {
         nfeStep: input.nfeStep,
         seed: input.seed,
         pronunciationLexiconHash: input.pronunciationLexiconHash,
+        pronunciationPhrasesBase64: input.pronunciationPhrasesBase64,
       });
       let lastError: Error | undefined;
       const attempts = Math.max(1, (this.options.maxRestarts ?? 1) + 1);

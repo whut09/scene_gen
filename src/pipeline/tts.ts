@@ -5,7 +5,7 @@ import path from "node:path";
 import type { NarrationSegment, VideoProject } from "./types";
 import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
 import { createF5NarrationCacheMetadata } from "./tts-cache";
-import { findTtsPronunciations, loadTtsPronunciationLexicon, pronunciationCacheHash } from "./tts-pronunciation";
+import { findTtsPronunciations, loadTtsPronunciationLexicon } from "./tts-pronunciation";
 import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
 import { F5WorkerPool, resolveF5WorkerDevices } from "./f5-worker-pool";
 import { getOrCreateMediaCache } from "../cache/media-cache";
@@ -20,6 +20,11 @@ import { probeDuration, run } from "./tts/process";
 import { prepareF5SynthesisText } from "./tts/text-normalization";
 import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from "./tts/segmentation";
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
+import { compilePronunciationPlan } from "./pronunciation/compiler";
+import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
+import { azurePronunciationSsml } from "./pronunciation/provider-adapters";
+import { f5PronunciationInput } from "./pronunciation/provider-adapters";
+import type { PronunciationPlan } from "./pronunciation/schema";
 export { prepareF5SynthesisText, removeLoneSurrogates } from "./tts/text-normalization";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
@@ -29,6 +34,17 @@ const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|�
 type TtsProvider = "azure" | "openai" | "f5" | "local";
 const F5_FRONTEND_VERSION = "scene-gen-pypinyin-lexicon-v1";
 let warnedDeprecatedF5Cli = false;
+let g2pwClient: G2pwWorkerClient | undefined;
+let pypinyinClient: G2pwWorkerClient | undefined;
+let pronunciationWorkerUsers = 0;
+
+async function releasePronunciationWorkers() {
+  pronunciationWorkerUsers = Math.max(0, pronunciationWorkerUsers - 1);
+  if (pronunciationWorkerUsers > 0) return;
+  await Promise.all([g2pwClient?.dispose(), pypinyinClient?.dispose()]);
+  g2pwClient = undefined;
+  pypinyinClient = undefined;
+}
 
 type TtsSynthesisMetrics = NonNullable<NonNullable<VideoProject["audio"]>["metrics"]>;
 
@@ -191,14 +207,14 @@ function providerConcurrency(provider: TtsProvider, f5Runtime?: F5Runtime) {
 }
 
 async function f5TtsWorker(
-  text: string,
+  plan: PronunciationPlan,
   outputPath: string,
   sceneIndex: number,
   runtime: F5Runtime,
   speedOverride?: string,
   signal?: AbortSignal,
 ) {
-  const synthesisText = prepareF5SynthesisText(text);
+  const synthesisText = prepareF5SynthesisText(plan.synthesisText);
   assertCleanTtsText(synthesisText, runtime.refAudio, runtime.refText);
   const textPath = path.join(path.dirname(outputPath), `${path.basename(outputPath, path.extname(outputPath))}.txt`);
   await Promise.all([
@@ -213,6 +229,7 @@ async function f5TtsWorker(
     nfeStep: getRuntimeConfig().tts.f5.nfeStep,
     seed: getRuntimeConfig().tts.f5.seed,
     pronunciationLexiconHash: runtime.pronunciationLexiconHash,
+    pronunciationPhrasesBase64: Buffer.from(JSON.stringify(f5PronunciationInput(plan).phraseDictionary), "utf8").toString("base64"),
     signal,
   });
 }
@@ -294,33 +311,34 @@ function providerExtension(provider: TtsProvider) {
 
 async function synthesizeNarration(
   provider: TtsProvider,
-  text: string,
+  plan: PronunciationPlan,
   outputPath: string,
   options?: { f5Speed?: string; sceneIndex?: number; f5Runtime?: F5Runtime; signal?: AbortSignal; forceRebuild?: boolean; cacheSalt?: string },
 ): Promise<{ reused: boolean; result?: AzureTtsResult; cacheKey?: string }> {
   if (provider === "azure") {
     return azureTts({
       sceneIndex: options?.sceneIndex ?? 0,
-      displayText: text,
-      synthesisText: text,
+      displayText: plan.displayText,
+      synthesisText: plan.synthesisText,
+      ssml: azurePronunciationSsml(plan, { voice: getRuntimeConfig().tts.azure.voice, style: getRuntimeConfig().tts.azure.style, role: getRuntimeConfig().tts.azure.role }),
       outputPath,
-      pronunciationPlanHash: pronunciationCacheHash(text),
+      pronunciationPlanHash: plan.planHash,
       force: options?.forceRebuild,
       cacheSalt: options?.cacheSalt,
       signal: options?.signal,
     });
   }
   if (provider === "openai") {
-    await openAiTts(text, outputPath);
+    await openAiTts(plan.synthesisText, outputPath);
   } else if (provider === "f5") {
     if (getRuntimeConfig().tts.f5.workerMode === "cli") {
-      await f5TtsCli(text, outputPath, options?.f5Speed);
+      await f5TtsCli(plan.synthesisText, outputPath, options?.f5Speed);
     } else {
       if (!options?.f5Runtime) throw new Error("Persistent F5 worker runtime is unavailable.");
-      await f5TtsWorker(text, outputPath, options.sceneIndex ?? 0, options.f5Runtime, options.f5Speed, options.signal);
+      await f5TtsWorker(plan, outputPath, options.sceneIndex ?? 0, options.f5Runtime, options.f5Speed, options.signal);
     }
   } else {
-    await windowsTts(text, outputPath);
+    await windowsTts(plan.synthesisText, outputPath);
   }
   return { reused: false as const };
 }
@@ -333,15 +351,16 @@ async function hashFile(filePath: string) {
   return createHash("sha256").update(await readFile(filePath)).digest("hex");
 }
 
-async function currentF5CacheMetadata(text: string, expectedSpeed?: string, cacheSalt?: string) {
+async function currentF5CacheMetadata(plan: PronunciationPlan, expectedSpeed?: string, cacheSalt?: string) {
   const refAudio = resolveF5RefAudio();
   if (!refAudio) throw new Error("F5 reference audio is not configured.");
   const refText = await resolveF5RefText(refAudio);
   return createF5NarrationCacheMetadata({
     provider: "f5",
     model: getRuntimeConfig().tts.f5.model,
-    normalizedTtsText: prepareF5SynthesisText(text).trim(),
-    pronunciationLexiconHash: pronunciationCacheHash(prepareF5SynthesisText(text).trim()),
+    normalizedTtsText: prepareF5SynthesisText(plan.synthesisText).trim(),
+    pronunciationLexiconHash: loadTtsPronunciationLexicon().hash,
+    pronunciationPlanHash: plan.planHash,
     refAudioHash: await hashFile(refAudio),
     refTextHash: hashText(refText.trim()),
     speed: expectedSpeed ?? String(getRuntimeConfig().tts.f5.speed),
@@ -352,7 +371,7 @@ async function currentF5CacheMetadata(text: string, expectedSpeed?: string, cach
 }
 
 async function synthesizeF5WithGlobalCache(input: {
-  text: string;
+  plan: PronunciationPlan;
   outputPath: string;
   expectedSpeed?: string;
   cacheSalt?: string;
@@ -361,7 +380,7 @@ async function synthesizeF5WithGlobalCache(input: {
   f5Runtime?: F5Runtime;
   signal?: AbortSignal;
 }) {
-  const metadata = await currentF5CacheMetadata(input.text, input.expectedSpeed, input.cacheSalt);
+  const metadata = await currentF5CacheMetadata(input.plan, input.expectedSpeed, input.cacheSalt);
   const result = await getOrCreateMediaCache({
     kind: "audio",
     cacheKey: metadata.cacheKey,
@@ -371,7 +390,7 @@ async function synthesizeF5WithGlobalCache(input: {
     force: input.forceRebuild || getRuntimeConfig().tts.forceRebuild,
     signal: input.signal,
     generate: async (cacheOutputPath) => {
-      await synthesizeNarration("f5", input.text, cacheOutputPath, {
+      await synthesizeNarration("f5", input.plan, cacheOutputPath, {
         f5Speed: input.expectedSpeed,
         sceneIndex: input.sceneIndex,
         f5Runtime: input.f5Runtime,
@@ -381,6 +400,23 @@ async function synthesizeF5WithGlobalCache(input: {
   });
   await writeJsonAtomic(narrationCacheMetadataPath(input.outputPath), metadata);
   return { reused: !result.generated, cacheKey: metadata.cacheKey };
+}
+
+async function pronunciationPlanFor(text: string, segment?: NarrationSegment, signal?: AbortSignal) {
+  const config = getRuntimeConfig().tts.pronunciation;
+  if (config.g2pwEnabled && !g2pwClient) g2pwClient = new G2pwWorkerClient({ python: config.g2pwPython, script: config.g2pwScript, modelDir: config.g2pwModelDir, readyTimeoutMs: config.g2pwReadyTimeoutMs, requestTimeoutMs: config.g2pwRequestTimeoutMs });
+  if (!pypinyinClient) pypinyinClient = new G2pwWorkerClient({ python: config.g2pwPython, script: config.g2pwScript, readyTimeoutMs: config.g2pwReadyTimeoutMs, requestTimeoutMs: config.g2pwRequestTimeoutMs, pypinyinOnly: true });
+  return compilePronunciationPlan({
+    displayText: segment?.text ?? text,
+    semanticText: segment?.text ?? text,
+    synthesisText: segment?.ttsText ?? text,
+    overrides: segment?.pronunciationOverrides,
+    domain: config.domain,
+    g2pw: config.g2pwEnabled ? g2pwClient : undefined,
+    g2pwMinimumConfidence: config.g2pwMinimumConfidence,
+    pypinyinFallback: async (value) => (await pypinyinClient!.pypinyin(value, { signal })).map((prediction) => ({ phrase: prediction.phrase, start: prediction.start, end: prediction.end, expectedPinyin: prediction.pinyin, source: "pypinyin", confidence: prediction.confidence, risk: "medium", providerOverrides: {} })),
+    signal,
+  });
 }
 
 function narrationCacheMetadataPath(segmentPath: string) {
@@ -406,8 +442,9 @@ async function synthesizeF5TitleScene(
     const partPath = partPaths[index];
     const uniformSpeed = String(getRuntimeConfig().tts.f5.uniformSpeed);
     const synthesisText = index === 0 ? `。 。 。 ${partText}` : partText;
+    const { plan } = await pronunciationPlanFor(synthesisText, undefined, signal);
     const { reused } = await synthesizeF5WithGlobalCache({
-      text: synthesisText,
+      plan,
       outputPath: partPath,
       expectedSpeed: uniformSpeed,
       cacheSalt,
@@ -459,19 +496,21 @@ async function attachSegmentedNarration(
       `${basename}-scene-${String(index + 1).padStart(2, "0")}.${extension}`,
     );
     const synthesisText = narrationSynthesisText(segment);
+    const pronunciation = await pronunciationPlanFor(synthesisText, segment, signal);
+    const plan = pronunciation.plan;
     const forceRebuild = forcedScenes.has(index);
     const effectiveCacheSalt = forceRebuild ? cacheSalt : existingSceneCacheSalts[String(index)];
     if (provider === "f5" && index === 0) {
       const titleResult = await synthesizeF5TitleScene(project, synthesisText, segmentPath, index, f5Runtime, forceRebuild, effectiveCacheSalt, signal);
       const duration = await probeDuration(segmentPath);
       if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
-      return { segmentPath, duration, sceneIndex: index, cacheSalt: effectiveCacheSalt, ...titleResult };
+      return { segmentPath, duration, sceneIndex: index, cacheSalt: effectiveCacheSalt, pronunciationPlan: plan, pronunciationIssues: pronunciation.issues, pronunciationIssueCount: pronunciation.issues.length, ...titleResult };
     }
     let reused = false;
     let azureResult: AzureTtsResult | undefined;
     if (provider === "f5") {
       ({ reused } = await synthesizeF5WithGlobalCache({
-        text: synthesisText,
+        plan,
         outputPath: segmentPath,
         expectedSpeed: uniformF5Speed,
         cacheSalt: effectiveCacheSalt,
@@ -482,7 +521,7 @@ async function attachSegmentedNarration(
       }));
     }
     if (!reused && provider !== "f5") {
-      const synthesis = await synthesisQueue.run(() => synthesizeNarration(provider, synthesisText, segmentPath, {
+      const synthesis = await synthesisQueue.run(() => synthesizeNarration(provider, plan, segmentPath, {
         f5Speed: undefined,
         sceneIndex: index,
         f5Runtime,
@@ -507,6 +546,9 @@ async function attachSegmentedNarration(
       sceneIndex: index,
       cacheSalt: effectiveCacheSalt,
       azureResult,
+      pronunciationPlan: plan,
+      pronunciationIssues: pronunciation.issues,
+      pronunciationIssueCount: pronunciation.issues.length,
     };
   });
   const segmentPaths = results.map((result) => result.segmentPath);
@@ -525,6 +567,7 @@ async function attachSegmentedNarration(
     const durationSeconds = playbackDurations[index] + gaps[index];
     const aligned = {
       ...segment,
+      pronunciationPlan: results[index].pronunciationPlan,
       audioStartSeconds,
       durationSeconds,
     };
@@ -568,9 +611,13 @@ async function attachSegmentedNarration(
     budgetUsedCharacters: Math.max(0, ...results.map((result) => result.azureResult?.budgetUsedCharacters ?? 0)),
     budgetRemainingCharacters: Math.min(...results.map((result) => result.azureResult?.budgetRemainingCharacters ?? Number.MAX_SAFE_INTEGER)),
     budgetWarning: results.some((result) => result.azureResult?.budgetWarning),
+    pronunciationPlanCount: results.length,
+    pronunciationUncertainCount: results.reduce((sum, result) => sum + result.pronunciationIssueCount, 0),
   };
   if (metrics.budgetRemainingCharacters === Number.MAX_SAFE_INTEGER) delete metrics.budgetRemainingCharacters;
 
+  const pronunciationPlansPath = path.join(generatedDir, `${basename}-pronunciation-plans.json`);
+  await writeJsonAtomic(pronunciationPlansPath, results.map((result) => ({ sceneIndex: result.sceneIndex, plan: result.pronunciationPlan, issues: result.pronunciationIssues })));
   return {
     ...project,
     meta: {
@@ -586,6 +633,7 @@ async function attachSegmentedNarration(
       provider,
       metrics,
       sceneCacheSalts,
+      pronunciationPlansPath,
     },
   } satisfies VideoProject;
 }
@@ -601,6 +649,7 @@ export interface AttachNarrationAudioOptions {
 }
 
 export async function attachNarrationAudio(project: VideoProject, basename = "narration", options: AttachNarrationAudioOptions = {}) {
+  pronunciationWorkerUsers += 1;
   const startedAt = Date.now();
   const generatedDir = options.generatedDir ?? fromRoot("public", "generated");
   await ensureDir(generatedDir);
@@ -638,9 +687,10 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     const effectiveCacheSalt = forceRebuild ? cacheSalt : project.audio?.sceneCacheSalts?.["0"];
     let reused = false;
     let azureResult: AzureTtsResult | undefined;
+    const pronunciation = await pronunciationPlanFor(project.narration, undefined, options.signal);
     if (provider === "f5") {
       ({ reused } = await synthesizeF5WithGlobalCache({
-        text: project.narration,
+        plan: pronunciation.plan,
         outputPath,
         cacheSalt: effectiveCacheSalt,
         forceRebuild,
@@ -650,7 +700,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       }));
     }
     if (!reused && provider !== "f5") {
-      const synthesis = await synthesizeNarration(provider, project.narration, outputPath, { sceneIndex: 0, f5Runtime, signal: options.signal, forceRebuild, cacheSalt: effectiveCacheSalt });
+      const synthesis = await synthesizeNarration(provider, pronunciation.plan, outputPath, { sceneIndex: 0, f5Runtime, signal: options.signal, forceRebuild, cacheSalt: effectiveCacheSalt });
       if (provider === "azure") {
         reused = synthesis.reused;
         azureResult = synthesis.result;
@@ -680,7 +730,11 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       budgetUsedCharacters: azureResult?.budgetUsedCharacters,
       budgetRemainingCharacters: azureResult?.budgetRemainingCharacters,
       budgetWarning: azureResult?.budgetWarning,
+      pronunciationPlanCount: 1,
+      pronunciationUncertainCount: pronunciation.issues.length,
     };
+    const pronunciationPlansPath = path.join(generatedDir, `${basename}-pronunciation-plans.json`);
+    await writeJsonAtomic(pronunciationPlansPath, [{ sceneIndex: 0, plan: pronunciation.plan, issues: pronunciation.issues }]);
     const result = {
       ...project,
       audio: {
@@ -689,6 +743,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         provider,
         metrics,
         sceneCacheSalts: effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts,
+        pronunciationPlansPath,
       },
     } satisfies VideoProject;
     if (!reused) await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: metrics.retryCount ?? Math.max(0, (metrics.workerStartCount ?? 1) - 1), billedCharacters: metrics.billedCharacters });
@@ -742,5 +797,6 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     } satisfies VideoProject;
   } finally {
     await f5Runtime?.pool.dispose();
+    await releasePronunciationWorkers();
   }
 }

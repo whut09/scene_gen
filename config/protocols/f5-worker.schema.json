@@ -31,7 +31,8 @@
         "speed": { "type": "number", "exclusiveMinimum": 0 },
         "nfeStep": { "type": "integer", "minimum": 1 },
         "seed": { "type": "integer" },
-        "pronunciationLexiconHash": { "type": "string", "minLength": 64, "maxLength": 64 }
+        "pronunciationLexiconHash": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "pronunciationPhrasesBase64": { "type": "string" }
       }
     },
     "F5WorkerShutdownRequest": {

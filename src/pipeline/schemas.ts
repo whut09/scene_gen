@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pronunciationOverrideSchema, pronunciationPlanSchema } from "./pronunciation/schema";
 import { issueCodeSchema, issueEvidenceSchema, issueSeveritySchema } from "../harness/issue-registry";
 import { repairActionSchema } from "../harness/repair-candidate";
 
@@ -173,6 +174,8 @@ export const narrationSegmentSchema = z.object({
   sceneIndex: z.number().int().nonnegative(),
   text: z.string(),
   ttsText: z.string().min(1).optional(),
+  pronunciationOverrides: z.array(pronunciationOverrideSchema).optional(),
+  pronunciationPlan: pronunciationPlanSchema.optional(),
   claimIds: claimIdsSchema.optional(),
   audioStartSeconds: z.number().nonnegative().optional(),
   durationSeconds: z.number().positive().optional(),
@@ -221,8 +224,11 @@ export const videoProjectSchema = z.object({
       budgetUsedCharacters: z.number().int().nonnegative().optional(),
       budgetRemainingCharacters: z.number().int().nonnegative().optional(),
       budgetWarning: z.boolean().optional(),
+      pronunciationPlanCount: z.number().int().nonnegative().optional(),
+      pronunciationUncertainCount: z.number().int().nonnegative().optional(),
     }).optional(),
     sceneCacheSalts: z.record(z.string(), z.string()).optional(),
+    pronunciationPlansPath: z.string().optional(),
   }).optional(),
   scenes: z.array(videoSceneSchema).min(1),
   sources: z.array(hotItemSchema).min(1),

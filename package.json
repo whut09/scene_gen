@@ -21,7 +21,7 @@
     "generate:protocols": "node scripts/generate-f5-worker-protocol.mjs",
     "test:protocols": "node scripts/generate-f5-worker-protocol.mjs --check",
     "test": "npm run test:unit",
-    "test:pronunciation": "python scripts/verify-tts-pronunciation.py --lexicon config/tts/zh-CN.json && tsx --test tests/unit/tts-pronunciation.test.ts",
+    "test:pronunciation": "python scripts/verify-tts-pronunciation.py --lexicon config/tts/zh-CN.json && tsx --test tests/unit/tts-pronunciation.test.ts tests/unit/pronunciation-plan.test.ts",
     "test:worker": "tsx --test tests/unit/f5-worker-client.test.ts",
     "test:incremental": "tsx --test tests/integration/incremental-media-performance.test.ts tests/integration/content-addressed-cache.test.ts tests/integration/scene-audio-regeneration.test.ts tests/integration/html-render-concurrency.test.ts",
     "benchmark:media": "tsx tests/benchmark/media-benchmark.ts",

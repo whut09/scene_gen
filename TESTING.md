@@ -9,6 +9,8 @@ npm.cmd run test:pronunciation
 
 该测试不加载 F5 模型，也不需要 GPU。它会让真实 pypinyin 前端加载 `config/tts/zh-CN.json`，验证“重构”为 `chong2 gou4`，同时检查长句上下文、spoken fallback 和 F5 缓存 key。`config/asr/` 只负责 ASR 转写规范化；`config/tts/` 才控制合成前端发音。缓存使用当前文本命中的词典条目 hash，因此修改目标短语只使相关分段 WAV 失效。
 
+新增的 PronunciationPlan 测试同时覆盖软件领域包、最长短语优先级、人工词典/G2PW/pypinyin 覆盖顺序、低置信度 `pronunciation_uncertain`、provider adapter、SSML 转义、稳定 plan hash 和场景级缓存失效。`tests/unit/g2pw-client.test.ts` 使用轻量 mock JSONL worker 验证多个预测只启动一次进程，并覆盖请求 timeout 与 AbortSignal；CI 不下载 G2PW 模型，也不需要 GPU。
+
 `npm.cmd run test:unit` 还会使用 `tests/fixtures/mock-f5-worker.py` 验证持久化 worker 协议，不加载真实 F5 模型或 GPU。覆盖 ready 超时、崩溃后有限重启、AbortSignal 取消、单 worker 串行请求、单/多 GPU 设备解析、缓存命中不调用 worker，以及发音词典 hash 变化后重新合成。
 
 `tests/integration/scene-audio-regeneration.test.ts` 使用五分镜 mock F5 项目验证局部音频修复：只强制 scene 2 时仅增加一次 TTS 调用，其余四段命中缓存，总旁白仍会重新 concat；未提供 sceneIndex 时五段全部重建。该测试还用 FFmpeg 创建两秒无声视频，确认 remux-only 路径不会录制任何 HTML scene，只把新音频封装到已有画面。

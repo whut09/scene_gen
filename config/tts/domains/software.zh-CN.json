@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "domain": "software",
+  "entries": [
+    { "phrase": "函数重载", "pinyin": ["han2", "shu4", "chong2", "zai4"], "spokenFallback": "函数重新加载", "enabled": true, "risk": "high", "providerOverrides": {} },
+    { "phrase": "重载模型", "pinyin": ["chong2", "zai4", "mo2", "xing2"], "spokenFallback": "重新加载模型", "enabled": true, "risk": "high", "providerOverrides": {} },
+    { "phrase": "重载", "pinyin": ["chong2", "zai4"], "spokenFallback": "重新加载", "enabled": true, "risk": "high", "providerOverrides": {} }
+  ]
+}

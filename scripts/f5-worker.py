@@ -1,4 +1,5 @@
 import argparse
+import base64
 import contextlib
 import ctypes
 import hashlib
@@ -13,6 +14,7 @@ from typing import Any, cast
 
 from generated.f5_worker_protocol import F5WorkerInbound
 from tts_pronunciation import load_pronunciation_lexicon, read_pronunciation_lexicon
+from pypinyin import load_phrases_dict
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -115,6 +117,9 @@ def main() -> None:
                 raise ValueError("Unknown worker request type.")
             if request.get("pronunciationLexiconHash") != current_lexicon_hash:
                 raise ValueError("Pronunciation lexicon hash does not match the loaded worker lexicon.")
+            pronunciation_payload = str(request.get("pronunciationPhrasesBase64", ""))
+            pronunciation_phrases = json.loads(base64.b64decode(pronunciation_payload).decode("utf-8")) if pronunciation_payload else {}
+            load_phrases_dict({phrase: [[syllable] for syllable in pinyin] for phrase, pinyin in pronunciation_phrases.items()})
 
             request_id = str(request["requestId"])
             scene_index = int(request["sceneIndex"])

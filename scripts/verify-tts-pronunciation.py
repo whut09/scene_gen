@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from pypinyin import Style, lazy_pinyin
 from tts_pronunciation import load_pronunciation_lexicon
@@ -13,6 +14,9 @@ def main() -> None:
     parser.add_argument("--lexicon", required=True)
     args = parser.parse_args()
     payload = load_pronunciation_lexicon(args.lexicon)
+    domain_lexicon = Path(args.lexicon).parent / "domains" / "software.zh-CN.json"
+    if domain_lexicon.exists():
+        load_pronunciation_lexicon(str(domain_lexicon))
 
     for entry in payload.get("entries", []):
         if not entry.get("enabled", False):

@@ -164,6 +164,8 @@ export interface NarrationSegment {
   sceneIndex: number;
   text: string;
   ttsText?: string;
+  pronunciationOverrides?: import("./pronunciation/compiler").PronunciationOverride[];
+  pronunciationPlan?: import("./pronunciation/schema").PronunciationPlan;
   claimIds?: string[];
   audioStartSeconds?: number;
   durationSeconds?: number;
@@ -238,8 +240,11 @@ export interface VideoProject {
       budgetUsedCharacters?: number;
       budgetRemainingCharacters?: number;
       budgetWarning?: boolean;
+      pronunciationPlanCount?: number;
+      pronunciationUncertainCount?: number;
     };
     sceneCacheSalts?: Record<string, string>;
+    pronunciationPlansPath?: string;
   };
   scenes: VideoScene[];
   sources: HotItem[];

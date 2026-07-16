@@ -6,6 +6,7 @@ export const f5NarrationCacheIdentitySchema = z.object({
   model: z.string().min(1),
   normalizedTtsText: z.string().min(1),
   pronunciationLexiconHash: z.string().length(64),
+  pronunciationPlanHash: z.string().length(64).optional(),
   refAudioHash: z.string().length(64),
   refTextHash: z.string().length(64),
   speed: z.string().min(1),
@@ -23,7 +24,10 @@ export type F5NarrationCacheMetadata = z.infer<typeof f5NarrationCacheMetadataSc
 
 export function createF5NarrationCacheKey(input: F5NarrationCacheIdentity) {
   const identity = f5NarrationCacheIdentitySchema.parse(input);
-  return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
+  const cacheIdentity = identity.pronunciationPlanHash
+    ? Object.fromEntries(Object.entries(identity).filter(([key]) => key !== "pronunciationLexiconHash"))
+    : identity;
+  return createHash("sha256").update(JSON.stringify(cacheIdentity)).digest("hex");
 }
 
 export function createF5NarrationCacheMetadata(input: F5NarrationCacheIdentity): F5NarrationCacheMetadata {

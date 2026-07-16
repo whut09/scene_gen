@@ -22,6 +22,7 @@ class F5WorkerRequest(TypedDict):
     nfeStep: int
     seed: int
     pronunciationLexiconHash: str
+    pronunciationPhrasesBase64: NotRequired[str]
 
 class F5WorkerShutdownRequest(TypedDict):
     type: Literal["shutdown"]

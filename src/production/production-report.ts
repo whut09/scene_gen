@@ -5,6 +5,7 @@ import type { ProductionReport } from "./types";
 import { z } from "zod";
 import { readJson } from "../pipeline/utils";
 import { persistMigratedJson, readVersionedFormat } from "../persistence/versioned-format";
+import { pronunciationPlanSchema } from "../pipeline/pronunciation/schema";
 
 export const productionReportSchema = z.object({
   specVersion: z.literal(2),
@@ -16,6 +17,7 @@ export const productionReportSchema = z.object({
   providerSelections: z.array(z.unknown()),
   decisions: z.array(z.unknown()),
   storyPlanning: z.unknown().optional(),
+  pronunciationPlans: z.array(pronunciationPlanSchema).optional(),
   summary: z.object({
     sourceMix: z.record(z.string(), z.number()),
     enabledProviders: z.array(z.string()),
@@ -84,6 +86,7 @@ export function buildProductionReport(project: VideoProject, renderEngine = "htm
     providerSelections,
     decisions,
     storyPlanning: project.storyPlanning,
+    pronunciationPlans: project.narrationSegments?.flatMap((segment) => segment.pronunciationPlan ? [segment.pronunciationPlan] : []),
     summary: {
       sourceMix,
       enabledProviders: providers.filter((provider) => provider.enabled).map((provider) => provider.id),

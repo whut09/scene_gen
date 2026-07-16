@@ -23,6 +23,7 @@ export const f5WorkerRequestSchema = z.object({
   "nfeStep": z.number().int().positive(),
   "seed": z.number().int(),
   "pronunciationLexiconHash": z.string().length(64),
+  "pronunciationPhrasesBase64": z.string().optional(),
 }).strict();
 export type F5WorkerRequest = z.infer<typeof f5WorkerRequestSchema>;
 

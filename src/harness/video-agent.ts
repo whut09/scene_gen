@@ -278,7 +278,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, strategy: audioStrategy }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.synthesize, signal,
         task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, signal: stageSignal }),
         describe: (value) => ({
-          outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "" },
+          outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "", pronunciationPlans: value.audio?.pronunciationPlansPath ?? "" },
           metrics: {
             duration: value.audio?.durationSeconds ?? 0,
             forcedAudioRebuild: forcedRebuild,

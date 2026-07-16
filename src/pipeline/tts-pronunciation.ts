@@ -3,6 +3,7 @@ import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { fromRoot } from "./utils";
+import { pronunciationLexiconSchema } from "./pronunciation/lexicon";
 
 const tone3SyllableSchema = z.string().regex(/^[a-z]+[1-5]$/i, "Expected tone-number pinyin such as chong2.");
 
@@ -11,6 +12,8 @@ export const ttsPronunciationEntrySchema = z.object({
   pinyin: z.array(tone3SyllableSchema).min(1),
   spokenFallback: z.string().min(1),
   enabled: z.boolean(),
+  risk: z.enum(["low", "medium", "high"]).default("medium"),
+  providerOverrides: z.record(z.string(), z.object({ pinyin: z.array(tone3SyllableSchema).min(1).optional(), spokenFallback: z.string().min(1).optional(), reject: z.boolean().optional() }).strict()).default({}),
 }).strict();
 
 export const ttsPronunciationLexiconSchema = z.object({
@@ -46,6 +49,7 @@ export function resolveTtsPronunciationLexiconPath() {
 }
 
 export function parseTtsPronunciationLexicon(content: string, filePath = "tts-pronunciation-lexicon.json"): LoadedTtsPronunciationLexicon {
+  pronunciationLexiconSchema.parse(JSON.parse(content));
   const lexicon = ttsPronunciationLexiconSchema.parse(JSON.parse(content));
   const canonical = JSON.stringify(lexicon);
   return {
