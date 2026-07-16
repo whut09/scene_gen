@@ -14,4 +14,6 @@ test("GitHub CI runs the complete suite on Linux and Windows with Node 20 and 22
   assert.match(packageJson.scripts["test:ci"], /npm run test:offline/);
   assert.match(packageJson.scripts["test:ci"], /npm run test:golden/);
   assert.equal(packageJson.scripts["test:unit"], "node scripts/run-test-files.mjs src tests/unit");
+  assert.equal(packageJson.scripts["test:offline"], "node scripts/run-test-files.mjs tests/integration");
+  assert.equal(packageJson.scripts["test:golden"], "node scripts/run-test-files.mjs tests/golden");
 });
