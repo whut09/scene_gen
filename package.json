@@ -25,7 +25,7 @@
     "test:worker": "tsx --test tests/unit/f5-worker-client.test.ts",
     "test:incremental": "tsx --test tests/integration/incremental-media-performance.test.ts tests/integration/content-addressed-cache.test.ts tests/integration/scene-audio-regeneration.test.ts tests/integration/html-render-concurrency.test.ts",
     "benchmark:media": "tsx tests/benchmark/media-benchmark.ts",
-    "test:unit": "tsx --test src/**/*.test.ts tests/unit/*.test.ts",
+    "test:unit": "node scripts/run-test-files.mjs src tests/unit",
     "test:offline": "tsx --test tests/integration/*.test.ts",
     "test:golden": "tsx --test tests/golden/*.test.ts",
     "test:ci": "npm run test:protocols && npm run lint:types && npm run test:pronunciation && npm run test:unit && npm run test:worker && npm run test:incremental && npm run test:offline && npm run test:golden && npm audit --audit-level=low",
