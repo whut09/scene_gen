@@ -22,7 +22,7 @@ export class G2pwWorkerClient implements G2pwPredictor {
   private start() {
     if (this.ready) return this.ready;
     this.ready = new Promise<void>((resolve, reject) => {
-      const child = spawn(this.options.python ?? (process.platform === "win32" ? "python" : "python3"), [this.options.script ?? fromRoot("scripts", "g2pw-worker.py"), ...(this.options.modelDir ? ["--model-dir", path.resolve(this.options.modelDir)] : []), ...(this.options.pypinyinOnly ? ["--pypinyin-only"] : [])], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      const child = spawn(this.options.python ?? (process.platform === "win32" ? "python" : "python3"), [this.options.script ?? fromRoot("scripts", "g2pw-worker.py"), ...(this.options.modelDir ? ["--model-dir", path.resolve(this.options.modelDir)] : []), ...(this.options.pypinyinOnly ? ["--pypinyin-only"] : [])], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } });
       this.child = child;
       const timer = setTimeout(() => reject(new Error("G2PW worker ready timeout.")), this.options.readyTimeoutMs ?? 30_000);
       const onReady = (line: string) => {

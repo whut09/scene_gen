@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def emit(payload):
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    print(json.dumps(payload, ensure_ascii=True), flush=True)
 
 
 counter = os.environ.get("MOCK_G2PW_START_FILE")
