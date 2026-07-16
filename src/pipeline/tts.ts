@@ -1,13 +1,11 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { NarrationSegment, VideoProject } from "./types";
 import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
-import { fetchWithRetry } from "./external-operation";
 import { createF5NarrationCacheMetadata } from "./tts-cache";
-import { applyTtsSpokenFallbacks, findTtsPronunciations, loadTtsPronunciationLexicon, pronunciationCacheHash } from "./tts-pronunciation";
+import { findTtsPronunciations, loadTtsPronunciationLexicon, pronunciationCacheHash } from "./tts-pronunciation";
 import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
 import { F5WorkerPool, resolveF5WorkerDevices } from "./f5-worker-pool";
 import { getOrCreateMediaCache } from "../cache/media-cache";
@@ -15,6 +13,13 @@ import { selectProviderWithAudit } from "../production/provider-registry";
 import { recordProviderOutcome } from "../production/provider-stats";
 import type { ProviderSelectionAudit } from "../production/types";
 import { getRuntimeConfig } from "../config/runtime-config";
+import { openAiTts } from "./tts/providers/openai";
+import { windowsTts } from "./tts/providers/windows";
+import { probeDuration, run } from "./tts/process";
+import { prepareF5SynthesisText } from "./tts/text-normalization";
+import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from "./tts/segmentation";
+import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
+export { prepareF5SynthesisText, removeLoneSurrogates } from "./tts/text-normalization";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
@@ -51,96 +56,6 @@ function emptySynthesisMetrics(): TtsSynthesisMetrics {
     audioGenerationKey: "",
     providerSelection: "{}",
   };
-}
-
-function run(command: string, args: string[], options?: { input?: string; env?: NodeJS.ProcessEnv }) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: options?.input ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      env: { ...process.env, ...options?.env },
-    });
-    let stderr = "";
-    child.stderr?.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      code === 0 ? resolve() : reject(new Error(`${command} exited ${code}: ${stderr}`));
-    });
-    if (options?.input) {
-      child.stdin?.write(options.input);
-      child.stdin?.end();
-    }
-  });
-}
-
-async function probeDuration(filePath: string) {
-  try {
-    const output = await new Promise<string>((resolve, reject) => {
-      const child = spawn(
-        "ffprobe",
-        ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", filePath],
-        { windowsHide: true },
-      );
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("close", (code) => {
-        code === 0 ? resolve(stdout.trim()) : reject(new Error(stderr));
-      });
-    });
-    return Number(output) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-async function openAiTts(text: string, outputPath: string) {
-  const config = getRuntimeConfig().tts;
-  const apiKey = config.openai.apiKey;
-  if (!apiKey) throw new Error("OPENAI_TTS_API_KEY or OPENAI_API_KEY is not set");
-  const baseUrl = config.openai.baseUrl;
-  const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/audio/speech`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: config.openai.model,
-      voice: config.openai.voice,
-      input: text,
-      format: "mp3",
-      speed: config.openai.speed,
-    }),
-  }, { label: "openai-tts", timeoutMs: config.fetchTimeoutMs });
-  if (!response.ok) throw new Error(`OpenAI TTS failed: ${response.status} ${await response.text()}`);
-  await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
-}
-
-async function windowsTts(text: string, outputPath: string) {
-  const textPath = path.join(path.dirname(outputPath), "narration.txt");
-  const scriptPath = path.join(path.dirname(outputPath), "local-tts.ps1");
-  await writeFile(textPath, text, "utf8");
-  const script = `
-Add-Type -AssemblyName System.Speech
-$text = Get-Content -LiteralPath "${textPath.replace(/"/g, '`"')}" -Raw -Encoding UTF8
-$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$synth.Rate = 3
-$synth.Volume = 95
-$synth.SetOutputToWaveFile("${outputPath.replace(/"/g, '`"')}")
-$synth.Speak($text)
-$synth.SetOutputToNull()
-$synth.Dispose()
-`;
-  await writeFile(scriptPath, script, "utf8");
-  await run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath]);
 }
 
 function resolveF5Python() {
@@ -182,118 +97,6 @@ function assertCleanTtsText(text: string, refAudio: string, refText: string) {
   }
 }
 
-const CHINESE_DIGITS: Record<string, string> = {
-  "0": "零", "1": "一", "2": "二", "3": "三", "4": "四",
-  "5": "五", "6": "六", "7": "七", "8": "八", "9": "九",
-};
-
-function pronounceDigits(value: string) {
-  return [...value].map((digit) => CHINESE_DIGITS[digit] ?? digit).join("");
-}
-
-function chineseSection(value: number) {
-  const units = ["千", "百", "十", ""];
-  const divisors = [1000, 100, 10, 1];
-  let result = "";
-  let pendingZero = false;
-  for (let index = 0; index < divisors.length; index += 1) {
-    const divisor = divisors[index];
-    const digit = Math.floor(value / divisor) % 10;
-    const remainder = value % divisor;
-    if (digit === 0) {
-      if (result && remainder > 0) pendingZero = true;
-      continue;
-    }
-    if (pendingZero) result += "零";
-    const omitLeadingOne = digit === 1 && divisor === 10 && !result;
-    result += `${omitLeadingOne ? "" : CHINESE_DIGITS[String(digit)]}${units[index]}`;
-    pendingZero = false;
-  }
-  return result || "零";
-}
-
-function integerToChinese(value: string): string {
-  const normalized = value.replace(/^0+(?=\d)/, "");
-  const numeric = Number(normalized);
-  if (!Number.isSafeInteger(numeric) || numeric < 0) return pronounceDigits(normalized);
-  if (numeric < 10000) return chineseSection(numeric);
-  if (numeric < 100000000) {
-    const high = Math.floor(numeric / 10000);
-    const low = numeric % 10000;
-    return `${integerToChinese(String(high))}万${low ? `${low < 1000 ? "零" : ""}${chineseSection(low)}` : ""}`;
-  }
-  if (numeric < 1000000000000) {
-    const high = Math.floor(numeric / 100000000);
-    const low = numeric % 100000000;
-    return `${integerToChinese(String(high))}亿${low ? `${low < 10000000 ? "零" : ""}${integerToChinese(String(low))}` : ""}`;
-  }
-  return pronounceDigits(normalized);
-}
-
-function numberToChinese(value: string) {
-  const [whole, fraction] = value.split(".");
-  const spokenWhole = integerToChinese(whole || "0");
-  return fraction ? `${spokenWhole}点${pronounceDigits(fraction)}` : spokenWhole;
-}
-
-export function removeLoneSurrogates(text: string) {
-  let clean = "";
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = text.charCodeAt(index + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        clean += text[index] + text[index + 1];
-        index += 1;
-      }
-      continue;
-    }
-    if (code >= 0xdc00 && code <= 0xdfff) continue;
-    clean += text[index];
-  }
-  return clean;
-}
-
-export function prepareF5SynthesisText(text: string) {
-  const trimmed = applyTtsSpokenFallbacks(removeLoneSurrogates(text)).trim();
-  const startsWithLatin = /^[A-Za-z0-9]/.test(trimmed);
-  const pronounceable = trimmed
-    .replace(/^曝/u, "爆料称：")
-    .replace(/重置/g, "重新设置")
-    .replace(/豆包和千问/g, "豆包，和千问，")
-    .replace(/DeepSeek/gi, "深度求索")
-    .replace(/MoneyPrinterTurbo/gi, "Money Printer Turbo")
-    .replace(/awesome-llm-apps/gi, "这个项目")
-    .replace(/\bRAG\b/gi, "检索增强生成")
-    .replace(/\bAI\b/g, "人工智能")
-    .replace(/K2[.]7 Code HighSpeed/gi, "K二点七代码高速版")
-    .replace(/K2[.]7 Code/gi, "K二点七代码")
-    .replace(/Kimi Code CLI/gi, "Kimi代码命令行工具")
-    .replace(/Kimi Code/gi, "Kimi代码")
-    .replace(/Coding Plan/gi, "编程套餐")
-    .replace(/Allegretto/gi, "阿莱格雷托")
-    .replace(/GitNexus/gi, "吉特奈克瑟斯")
-    .replace(/AI[ -]?Berkshire/gi, "AI 伯克希尔")
-    .replace(/OmniRoute/gi, "奥姆尼路由")
-    .replace(/Superpowers/gi, "超级能力")
-    .replace(/next-ai-draw-io/gi, "奈克斯特，人工智能绘图工具，")
-    .replace(/Next[.]js/gi, "Next JS")
-    .replace(/draw[.]io/gi, "Draw IO")
-    .replace(/ChatGPT/gi, "聊天 GPT，")
-    .replace(/Codex/gi, "Codex，")
-    .replace(/OpenAI/gi, "欧盆艾，")
-    .replace(/Prompt/gi, "提示词")
-    .replace(/Agent/gi, "智能体")
-    .replace(/(?<=\d),(?=\d{3}(?:\D|$))/g, "")
-    .replace(/(\d+(?:[.]\d+)?)\s*%/g, (_, value: string) => `百分之${numberToChinese(value)}`)
-    .replace(/(\d+)\+(?=\D|$)/g, (_, value: string) => `${numberToChinese(value)}以上`)
-    .replace(/(?<!\d)(\d{4})(?=年)/g, (_, value: string) => pronounceDigits(value))
-    .replace(/\d+(?:[.]\d+)?/g, (value) => numberToChinese(value));
-  if (/\d/.test(pronounceable)) {
-    throw new Error(`TTS number normalization left Arabic digits: ${pronounceable.match(/\d+/g)?.join(", ")}`);
-  }
-  return /^[。！？!?]/.test(pronounceable) ? pronounceable : `。${pronounceable}`;
-}
 async function f5TtsCli(text: string, outputPath: string, speedOverride?: string) {
   if (!warnedDeprecatedF5Cli) {
     console.warn("[tts] F5_TTS_WORKER_MODE=cli is deprecated; use the persistent worker mode.");
@@ -503,71 +306,6 @@ async function synthesizeNarration(
   }
 }
 
-async function concatNarrationSegments(
-  inputs: string[],
-  durations: number[],
-  gaps: number[],
-  outputPath: string,
-) {
-  const args = ["-y"];
-  for (const input of inputs) args.push("-i", input);
-  const filters = inputs.map((_, index) => {
-    const total = durations[index] + gaps[index];
-    return `[${index}:a]aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=${gaps[index].toFixed(3)},atrim=duration=${total.toFixed(3)}[a${index}]`;
-  });
-  filters.push(`${inputs.map((_, index) => `[a${index}]`).join("")}concat=n=${inputs.length}:v=0:a=1[out]`);
-  args.push(
-    "-filter_complex",
-    filters.join(";"),
-    "-map",
-    "[out]",
-    "-ar",
-    "24000",
-    "-ac",
-    "1",
-    "-c:a",
-    "pcm_s16le",
-    outputPath,
-  );
-  await run("ffmpeg", args);
-}
-
-async function fitNarrationSegmentsToTarget(
-  segmentPaths: string[],
-  durations: number[],
-  targetSeconds: number,
-  totalGapSeconds: number,
-) {
-  const durationPolicy = getRuntimeConfig().tts.durationPolicy;
-  if (
-    durationPolicy !== "fit" ||
-    !getRuntimeConfig().tts.fitTarget ||
-    !Number.isFinite(targetSeconds) ||
-    targetSeconds <= totalGapSeconds + 5
-  ) {
-    return { paths: segmentPaths, durations };
-  }
-  const speechDuration = durations.reduce((sum, duration) => sum + duration, 0);
-  const targetSpeechDuration = targetSeconds - totalGapSeconds;
-  const desiredTempo = speechDuration / targetSpeechDuration;
-  const minimumTempo = getRuntimeConfig().tts.minTempo;
-  const maximumTempo = getRuntimeConfig().tts.maxTempo;
-  const tempo = Math.max(minimumTempo, Math.min(maximumTempo, desiredTempo));
-  if (Math.abs(tempo - 1) < 0.03) return { paths: segmentPaths, durations };
-
-  const fitted = await mapWithConcurrency(segmentPaths, getRuntimeConfig().tts.ffmpegConcurrency, async (inputPath, index) => {
-    const fittedPath = inputPath.replace(/\.[^.]+$/, `-fitted-${tempo.toFixed(2)}x.wav`);
-    await run("ffmpeg", [
-      "-y", "-i", inputPath,
-      "-filter:a", `atempo=${tempo.toFixed(6)}`,
-      "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", fittedPath,
-    ]);
-    const fittedDuration = await probeDuration(fittedPath);
-    if (fittedDuration <= 0) throw new Error(`Fitted narration segment ${index + 1} is invalid.`);
-    return { path: fittedPath, duration: fittedDuration };
-  });
-  return { paths: fitted.map((item) => item.path), durations: fitted.map((item) => item.duration) };
-}
 function hashText(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
@@ -626,33 +364,6 @@ async function synthesizeF5WithGlobalCache(input: {
 
 function narrationCacheMetadataPath(segmentPath: string) {
   return `${segmentPath}.cache.json`;
-}
-
-function narrationSynthesisText(segment: NarrationSegment) {
-  return segment.ttsText?.trim() || segment.text;
-}
-
-function audioGenerationKey(sceneCacheSalts: Record<string, string>) {
-  return Object.entries(sceneCacheSalts)
-    .sort(([left], [right]) => Number(left) - Number(right))
-    .map(([sceneIndex, salt]) => `${sceneIndex}:${salt}`)
-    .join("|") || "default";
-}
-function splitTitleNarration(title: string, narration: string) {
-  const trimmedTitle = title.trim().replace(/[。！？!?]+$/, "");
-  const trimmedNarration = narration.trim();
-  if (trimmedNarration.startsWith(trimmedTitle)) {
-    const body = trimmedNarration.slice(trimmedTitle.length).replace(/^[。！？!?，,:：;；\s]+/, "").trim();
-    return { titleText: trimmedTitle, bodyText: body };
-  }
-  const boundary = trimmedNarration.search(/[。！？!?]/);
-  if (boundary >= 0) {
-    return {
-      titleText: trimmedNarration.slice(0, boundary).trim(),
-      bodyText: trimmedNarration.slice(boundary + 1).trim(),
-    };
-  }
-  return { titleText: trimmedNarration, bodyText: "" };
 }
 
 async function synthesizeF5TitleScene(
@@ -839,23 +550,6 @@ async function attachSegmentedNarration(
       sceneCacheSalts,
     },
   } satisfies VideoProject;
-}
-
-async function silentAudio(outputPath: string, duration: number) {
-  await run("ffmpeg", [
-    "-y",
-    "-f",
-    "lavfi",
-    "-i",
-    "anullsrc=channel_layout=stereo:sample_rate=44100",
-    "-t",
-    String(duration),
-    "-q:a",
-    "9",
-    "-acodec",
-    "libmp3lame",
-    outputPath,
-  ]);
 }
 
 export interface AttachNarrationAudioOptions {

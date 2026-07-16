@@ -39,88 +39,12 @@ import {
   type IterationReport,
 } from "./video-stages";
 import { buildRuntimeConfig, runWithRuntimeConfig, runtimeConfigHash, runtimeConfigSnapshot, runtimeConfigWithRunOverrides, type RuntimeConfig } from "../config/runtime-config";
+import { finalizePendingAudit, loadIterations, nextAttempt, persistLoopAudit, persistStrategyTrajectory, resolveRunDir, resumeStage, shouldRun, type AgentState } from "./agent/loop-support";
+import { initialDraftLoopState, shouldContinueDraftLoop } from "./agent/draft-loop";
+import { generatedAudioSceneIndexes } from "./agent/audio-loop";
+import { addTemplateExclusions, affectedVideoScenes } from "./agent/video-loop";
+import { publishAgentRun } from "./agent/publish";
 
-interface AgentState {
-  story?: StoryManifestItem;
-  project?: VideoProject;
-  manifestPath?: string;
-  iterations: IterationReport[];
-  video?: QualityEvaluation;
-}
-
-function resolveRunDir(value: string) {
-  const direct = path.resolve(value);
-  if (existsSync(path.join(direct, "run.json"))) return direct;
-  return fromRoot("dist", "runs", value);
-}
-
-function nextAttempt(journal: RunJournalStore, name: VideoStageName) {
-  const attempts = journal.snapshot().stages.filter((stage) => stage.name === name).map((stage) => stage.attempt);
-  return Math.max(0, ...attempts) + 1;
-}
-
-async function loadIterations(artifacts: Record<string, string>) {
-  const reports = new Map<number, IterationReport>();
-  for (const [key, filePath] of Object.entries(artifacts)) {
-    const match = key.match(/^iteration(\d+)(Draft|Audio)$/);
-    if (!match || !existsSync(filePath)) continue;
-    const iteration = Number(match[1]);
-    const evaluation = normalizeStoredQualityEvaluation(await readJson<unknown>(filePath));
-    const current = reports.get(iteration) ?? { iteration, draft: evaluation };
-    if (match[2] === "Draft") {
-      current.draft = evaluation;
-      current.draftProjectHash = typeof evaluation.metrics.projectHash === "string" ? evaluation.metrics.projectHash : undefined;
-    } else {
-      current.audio = evaluation;
-      current.audioProjectHash = typeof evaluation.metrics.projectHash === "string" ? evaluation.metrics.projectHash : undefined;
-    }
-    reports.set(iteration, current);
-  }
-  for (const [key, filePath] of Object.entries(artifacts)) {
-    const match = key.match(/^iteration(\d+)(Draft|Audio)Audit$/);
-    if (!match || !existsSync(filePath)) continue;
-    const current = reports.get(Number(match[1]));
-    if (!current) continue;
-    current.audits = [...(current.audits ?? []), await readJson<LoopAudit>(filePath)];
-  }
-  return [...reports.values()].filter((item) => item.draft?.stage === "draft").sort((left, right) => left.iteration - right.iteration);
-}
-
-async function persistLoopAudit(journal: RunJournalStore, runDir: string, audit: LoopAudit) {
-  const auditPath = path.join(runDir, "loop", `iteration-${audit.iteration}-${audit.stage}.json`);
-  await writeJsonAtomic(auditPath, audit);
-  await journal.setArtifacts({ [`iteration${audit.iteration}${audit.stage === "draft" ? "Draft" : "Audio"}Audit`]: auditPath });
-}
-
-async function persistStrategyTrajectory(journal: RunJournalStore, runDir: string, trajectory: LoopStrategyTrace[]) {
-  const filePath = path.join(runDir, "loop", "strategy-trajectory.json");
-  await writeJsonAtomic(filePath, { version: 1, updatedAt: new Date().toISOString(), entries: trajectory });
-  await journal.setArtifacts({ strategyTrajectory: filePath });
-}
-
-async function finalizePendingAudit(journal: RunJournalStore, runDir: string, reports: IterationReport[], stage: "draft" | "audio", evaluation: QualityEvaluation) {
-  const previous = [...reports].reverse().find((item) => item.audits?.some((audit) => audit.stage === stage && audit.progress === "pending"));
-  const index = previous?.audits?.findIndex((audit) => audit.stage === stage && audit.progress === "pending") ?? -1;
-  if (!previous?.audits || index < 0) return;
-  const audit = finalizeLoopAudit(previous.audits[index], evaluation);
-  previous.audits[index] = audit;
-  await persistLoopAudit(journal, runDir, audit);
-}
-
-function resumeStage(journal: RunJournalStore): VideoStageName {
-  const stages = journal.snapshot().stages;
-  const failed = [...stages].reverse().find((stage) => stage.status === "failed" || stage.status === "running");
-  if (failed) {
-    try { return parseStageName(failed.name); } catch { return "draft"; }
-  }
-  const completed = new Set(stages.filter((stage) => stage.status === "succeeded").map((stage) => stage.name));
-  return (["ingest", "draft", "draft-gate", "synthesize", "audio-gate", "render", "video-gate", "publish"] as VideoStageName[])
-    .find((stage) => !completed.has(stage)) ?? "publish";
-}
-
-function shouldRun(stage: VideoStageName, startStage: VideoStageName, forceStage?: VideoStageName) {
-  return stageIndex(stage) >= stageIndex(startStage) || stage === forceStage;
-}
 
 async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undefined, runtimeConfig: RuntimeConfig) {
   const args = parseArgs(argv);
@@ -233,10 +157,9 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     let ignoreCache = Boolean(args["ignore-cache"]);
     let globalRewriteEscalated = Boolean(journal.snapshot().artifacts.noProgressEscalation);
     let draftStrategy: LoopStrategyTrace | undefined;
-    let draftPassed = state.iterations.at(-1)?.draft?.passed ?? false;
-    let iteration = Math.max(1, (state.iterations.at(-1)?.iteration ?? 0) + (draftPassed ? 0 : 1));
+    let { draftPassed, iteration } = initialDraftLoopState(state.iterations);
 
-    while ((!draftPassed || shouldRun("draft", startStage, forceStage) || shouldRun("draft-gate", startStage, forceStage)) && iteration <= maxIterations) {
+    while (shouldContinueDraftLoop({ draftPassed, draftStageRequested: shouldRun("draft", startStage, forceStage), draftGateRequested: shouldRun("draft-gate", startStage, forceStage), iteration, maxIterations })) {
       if (!state.story || shouldRun("draft", startStage, forceStage)) {
         const draftStage = await runStage({
           journal, name: "draft", attempt: nextAttempt(journal, "draft"),
@@ -368,7 +291,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       });
       state.project = synth.value;
       if (forcedRebuild) {
-        const generatedIndexes = String(state.project.audio?.metrics?.generatedAudioSceneIndexes ?? "").split(",").filter(Boolean).map(Number);
+        const generatedIndexes = generatedAudioSceneIndexes(state.project.audio?.metrics?.generatedAudioSceneIndexes);
         if (generatedIndexes.length === 0) throw new Error("resynthesize-audio did not rebuild any narration segment.");
         audioRemuxRequired = true;
         audioRetimeRequired ||= state.project.scenes.some((scene, index) => Math.abs(scene.duration - previousSceneDurations[index]) > 0.001);
@@ -506,9 +429,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         if (state.video.passed) break;
         const repeatedVideoNoProgress = videoEvidenceHistory.length >= 2 && videoEvidenceHistory.at(-1) === videoEvidenceHistory.at(-2);
         if (repeatedVideoNoProgress) {
-          const affectedScenes = gate.value.repairPlan.videoSceneIndexes.length
-            ? gate.value.repairPlan.videoSceneIndexes
-            : [...new Set(gate.value.evaluation.issues.map((issue) => issue.sceneIndex).filter((value): value is number => typeof value === "number"))];
+          const affectedScenes = affectedVideoScenes(gate.value.repairPlan.videoSceneIndexes, gate.value.evaluation.issues);
           const graph = state.story.htmlVideoGraphPath && existsSync(state.story.htmlVideoGraphPath)
             ? await readHtmlVideoContentGraphFile(state.story.htmlVideoGraphPath).then((result) => result.value).catch(() => undefined)
             : undefined;
@@ -518,7 +439,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
           await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
           if (strategy.strategyId === "human-review") break;
           if (strategy.strategyId === "alternate-template-variant") {
-            for (const selection of templateSelections) templateExclusions[String(selection.sceneIndex)] = [...new Set([...(templateExclusions[String(selection.sceneIndex)] ?? []), `${selection.templateId}:${selection.variantId}`])];
+            addTemplateExclusions(templateExclusions, templateSelections);
             forceSceneIndexes = affectedScenes.length ? affectedScenes : state.project.scenes.map((_, index) => index);
             forceRender = false;
             pendingMuxRequired = true;
@@ -542,15 +463,8 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     }
 
     if (!state.video) throw new Error("Video gate did not produce an evaluation.");
-    const publish = await runStage({
-      journal, name: "publish", attempt: nextAttempt(journal, "publish"), inputs: { iterations: state.iterations, video: state.video }, timeoutMs: 60_000, signal,
-      task: () => runPublishStage({ runId, journalPath: journal.filePath, url, story: state.story!, project: state.project!, manifestPath: state.manifestPath!, targetSeconds, maxIterations, engine, feedback: ingest.feedback, iterations: state.iterations, video: state.video!, reportDir }),
-      describe: (value) => ({ outputs: { reportPath: value.reportPath, markdownPath: value.markdownPath, productionReportPath: value.productionReportPath, templateOutcomeFile: value.templateLearning.filePath }, metrics: { passed: value.passed, templateOutcomesRecorded: value.templateLearning.recorded, providerOutcomesRecorded: value.providerHistory.recorded } }),
-    });
-    await journal.setArtifacts({ qualityReport: publish.value.reportPath, qualityReportMarkdown: publish.value.markdownPath, productionReport: publish.value.productionReportPath });
-    if (publish.value.passed) await journal.succeed();
-    else await journal.fail(new Error("Final video quality gate failed."));
-    return { runId, runDir, outputPath: state.story.outputPath, passed: publish.value.passed };
+    const publish = await publishAgentRun({ journal, runId, url, story: state.story, project: state.project, manifestPath: state.manifestPath, targetSeconds, maxIterations, engine, ingest, iterations: state.iterations, video: state.video, reportDir, signal });
+    return { runId, runDir, outputPath: state.story.outputPath, passed: publish.passed };
   } catch (error) {
     await journal.fail(error);
     throw error;
