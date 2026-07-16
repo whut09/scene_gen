@@ -33,3 +33,13 @@ test("G2PW request supports timeout and AbortSignal", async () => {
   await assert.rejects(() => pending, /cancelled/i);
   await aborting.dispose();
 });
+
+test("pypinyin worker tolerates malformed surrounding Unicode", async () => {
+  const client = new G2pwWorkerClient({ python: process.platform === "win32" ? "python" : "python3", script: path.resolve("scripts/g2pw-worker.py"), pypinyinOnly: true });
+  try {
+    const predictions = await client.pypinyin(`重复${String.fromCharCode(0xdc00)}文本`);
+    assert.ok(Array.isArray(predictions));
+  } finally {
+    await client.dispose();
+  }
+});

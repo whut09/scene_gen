@@ -32,9 +32,15 @@ def predictions(converter, text):
 
 def pypinyin_predictions(text):
     from pypinyin import Style, lazy_pinyin
-    polyphonic = set("重行长乐朝薄差藏曾处传弹调都发供冠和划会几假降角觉空累量露落难宁强曲少数说宿汤提为系鲜相校血咽要应载着种转")
-    pinyin = lazy_pinyin(text, style=Style.TONE3, neutral_tone_with_five=True)
-    return [{"phrase": character, "start": index, "end": index + 1, "pinyin": [pinyin[index]], "confidence": 0.55} for index, character in enumerate(text) if character in polyphonic]
+    polyphonic = {chr(codepoint) for codepoint in (0x91CD, 0x884C, 0x957F, 0x4E50, 0x671D, 0x8584, 0x5DEE, 0x85CF, 0x66FE, 0x5904, 0x4F20, 0x5F39, 0x8C03, 0x90FD, 0x53D1, 0x4F9B, 0x51A0, 0x548C, 0x5212, 0x4F1A, 0x51E0, 0x5047, 0x964D, 0x89D2, 0x89C9, 0x7A7A, 0x7D2F, 0x91CF, 0x9732, 0x843D, 0x96BE, 0x5B81, 0x5F3A, 0x66F2, 0x5C11, 0x6570, 0x8BF4, 0x5BBF, 0x6C64, 0x63D0, 0x4E3A, 0x7CFB, 0x9C9C, 0x76F8, 0x6821, 0x8840, 0x54BD, 0x8981, 0x5E94, 0x8F7D, 0x7740, 0x79CD, 0x8F6C)}
+    output = []
+    for index, character in enumerate(text):
+        if character not in polyphonic:
+            continue
+        syllables = lazy_pinyin(character, style=Style.TONE3, neutral_tone_with_five=True)
+        if syllables:
+            output.append({"phrase": character, "start": index, "end": index + 1, "pinyin": [syllables[0]], "confidence": 0.55})
+    return output
 
 
 def main():
