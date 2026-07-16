@@ -64,6 +64,7 @@ export async function runStage<T>(options: RunStageOptions<T>) {
     startedAt,
   });
   try {
+    if (controller.signal.aborted) throw controller.signal.reason ?? new Error(`${options.name} was cancelled before execution.`);
     const value = await options.task(controller.signal);
     const description = options.describe?.(value) ?? {};
     const result: StageResult = {
