@@ -7,45 +7,56 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [20, 22]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: npm
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install system test dependencies
+      - name: Install Linux system test dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Install Windows system test dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install ffmpeg -y --no-progress
       - name: Install Node dependencies
         run: npm ci
       - name: Install pronunciation test dependencies
         run: python -m pip install -r requirements-test.txt
-      - name: Install Playwright Chromium
+      - name: Install Playwright Chromium on Linux
+        if: runner.os == 'Linux'
         run: npx playwright install --with-deps chromium
-      - name: Type check
-        run: npm run lint:types
-      - name: Pronunciation tests
-        run: npm run test:pronunciation
-      - name: Unit tests
-        run: npm run test:unit
-      - name: Offline integration and media smoke
-        run: npm run test:offline
-      - name: HTML template screenshot golden
-        run: npm run test:golden
-      - name: Dependency audit
-        run: npm audit --audit-level=low
+      - name: Install Playwright Chromium on Windows
+        if: runner.os == 'Windows'
+        run: npx playwright install chromium
+      - name: Run complete CI test suite
+        run: npm run test:ci
+        env:
+          SCENE_GEN_PROFILE: ci-offline
       - name: Upload golden screenshots
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: html-template-golden
+          name: html-template-golden-${{ runner.os }}-node-${{ matrix.node }}
           path: test-results/golden
           if-no-files-found: ignore
