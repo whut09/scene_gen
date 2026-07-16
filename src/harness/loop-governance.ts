@@ -26,7 +26,7 @@ export interface LoopStrategyTrace {
   repairAction: SuggestedAction;
   issueCodes: string[];
   issueEvidenceSignature: string;
-  scoreBefore: number;
+  scoreBefore?: number;
   scoreAfter?: number;
   affectedScenes: number[];
   outcome: "pending" | "improved" | "no-progress" | "failed";
@@ -74,7 +74,7 @@ export function finalizePendingStrategies(trajectory: LoopStrategyTrace[], stage
   const scoreValues = Object.values(evaluation.scores ?? {});
   const scoreAfter = typeof evaluation.metrics.scoreAverage === "number"
     ? evaluation.metrics.scoreAverage
-    : scoreValues.length ? scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length : 100;
+    : scoreValues.length ? scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length : undefined;
   let pendingIndex = -1;
   for (let index = trajectory.length - 1; index >= 0; index -= 1) {
     if (trajectory[index].stage === stage && trajectory[index].outcome === "pending") {
@@ -84,7 +84,8 @@ export function finalizePendingStrategies(trajectory: LoopStrategyTrace[], stage
   }
   if (pendingIndex < 0) return trajectory;
   const entry = trajectory[pendingIndex];
-  const improved = signature !== entry.issueEvidenceSignature || scoreAfter > entry.scoreBefore + 0.5 || evaluation.passed;
+  const scoreImproved = scoreAfter !== undefined && entry.scoreBefore !== undefined && scoreAfter > entry.scoreBefore + 0.5;
+  const improved = signature !== entry.issueEvidenceSignature || scoreImproved || evaluation.passed;
   const updated = [...trajectory];
   updated[pendingIndex] = { ...entry, scoreAfter, outcome: improved ? "improved" : "no-progress", observedSuccess: improved, completedAt: new Date().toISOString() };
   return updated;
@@ -129,7 +130,7 @@ export function selectNextLoopStrategy(input: {
     repairAction: input.repairAction,
     issueCodes,
     issueEvidenceSignature: issueEvidenceSignature(input.issues),
-    scoreBefore: input.scoreBefore ?? 0,
+    scoreBefore: input.scoreBefore,
     affectedScenes: [...new Set(input.affectedScenes)].sort((left, right) => left - right),
     outcome: "pending",
     actualSuccessRate: strategySuccessRate(input.trajectory, strategyId, issueCodes),

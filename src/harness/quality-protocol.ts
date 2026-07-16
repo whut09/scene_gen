@@ -3,6 +3,7 @@ import type { SuggestedAction } from "./stage-types";
 import { repairActionSchema } from "./repair-candidate";
 
 export const qualityStageSchema = z.enum(["draft", "audio", "video"]);
+export const qualityScoreStatusSchema = z.enum(["measured", "partially-measured", "unavailable", "not-required"]);
 export const issueSeveritySchema = z.enum(["warning", "error"]);
 export const issueClassSchema = z.enum(["soft", "hard", "environment"]);
 export { repairActionSchema } from "./repair-candidate";
@@ -39,10 +40,12 @@ const storedEvaluationSchema = z.object({
   issues: z.array(storedIssueSchema).default([]),
   revisionNotes: z.array(z.string()).default([]),
   scores: z.record(z.string(), z.number()).optional(),
+  scoreStatus: qualityScoreStatusSchema.optional(),
   metrics: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
 });
 
 export type QualityStage = z.infer<typeof qualityStageSchema>;
+export type QualityScoreStatus = z.infer<typeof qualityScoreStatusSchema>;
 export type QualityIssue = z.infer<typeof qualityIssueSchema>;
 export type QualityOutcome = "passed" | "failed" | "blocked";
 
@@ -72,6 +75,7 @@ export interface QualityEvaluation {
   issues: QualityIssue[];
   revisionNotes: string[];
   scores?: Record<string, number>;
+  scoreStatus: QualityScoreStatus;
   metrics: Record<string, number | string | boolean>;
 }
 
@@ -143,9 +147,10 @@ export function normalizeQualityIssue(stage: QualityStage, issue: QualityIssueIn
   });
 }
 
-export function finalizeQualityEvaluation(input: Omit<QualityEvaluation, "profile" | "outcome" | "passed" | "issues"> & {
+export function finalizeQualityEvaluation(input: Omit<QualityEvaluation, "profile" | "outcome" | "passed" | "issues" | "scoreStatus"> & {
   issues: QualityIssueInput[];
   profile?: QualityProfile;
+  scoreStatus?: QualityScoreStatus;
 }): QualityEvaluation {
   const profile = input.profile ?? loadQualityProfile();
   const issues = input.issues.map((issue) => normalizeQualityIssue(input.stage, issue));
@@ -154,7 +159,10 @@ export function finalizeQualityEvaluation(input: Omit<QualityEvaluation, "profil
   const softFailed = issues.some((issue) => issue.issueClass === "soft" && issue.severity === "warning"
     && (profile.blockWarnings || profile.blockingWarningCodes.includes(issue.code)));
   const outcome: QualityOutcome = environmentBlocked ? "blocked" : hardFailed || softFailed ? "failed" : "passed";
-  return { ...input, profile, outcome, passed: outcome === "passed", issues };
+  const scoreStatus = input.scoreStatus ?? (input.scores && Object.keys(input.scores).length > 0
+    ? "measured"
+    : input.stage === "draft" ? "unavailable" : "not-required");
+  return { ...input, scoreStatus, profile, outcome, passed: outcome === "passed", issues };
 }
 
 export function normalizeStoredQualityEvaluation(value: unknown) {

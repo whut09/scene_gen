@@ -367,6 +367,8 @@ RepairPlan 使用候选效用模型综合预计成功率、证据置信度、成
 
 No-progress 会记录 prompt、模板 variant、provider、repair action、issue evidence 和策略实际成功率，并按局部约束、替代 prompt、模板、provider、扩大 dirty scope、全局重规划、人工确认逐级升级。token、TTS 重建、渲染分钟、预计成本和单 issue 修复次数均有预算闸门，详见 [`docs/LOOP_GOVERNANCE.md`](docs/LOOP_GOVERNANCE.md)。
 
+Draft Judge 使用 `measured`、`partially-measured`、`unavailable`、`not-required` 四态评分协议。Judge 不可用时不会再生成虚假的 100 分；production/strict 会阻止发布，fast-preview/lenient 可带明确 warning 降级。strict 默认执行两次评分，关键维度差异超过阈值会产生 `judge_unstable`。详见 [`docs/QUALITY_JUDGE.md`](docs/QUALITY_JUDGE.md)。
+
 ## 安全约定
 
 - 不提交真实 API key、账号密码、`.env.local` 或 `*.local.json`。

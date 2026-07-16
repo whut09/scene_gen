@@ -23,7 +23,7 @@ export interface LoopAudit {
   afterHash: string;
   issueSignatureBefore: string;
   issueSignatureAfter?: string;
-  scoreBefore: number;
+  scoreBefore?: number;
   scoreAfter?: number;
   reasons: Array<{ code: string; sceneIndex?: number; repairAction: string }>;
   patch: JsonPatchOperation[];
@@ -69,7 +69,7 @@ export function issueEvidenceSignature(issues: Array<Pick<QualityIssue, "code" |
 export function evaluationScore(evaluation: Pick<QualityEvaluation, "scores" | "metrics">) {
   if (typeof evaluation.metrics.scoreAverage === "number") return evaluation.metrics.scoreAverage;
   const values = Object.values(evaluation.scores ?? {});
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 100;
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
 }
 
 function escapePath(value: string) {
@@ -145,22 +145,29 @@ export function finalizeLoopAudit(audit: LoopAudit, evaluation: QualityEvaluatio
   const scoreAfter = evaluationScore(evaluation);
   const resolvedIssues = [...before].filter((item) => !after.has(item));
   const newIssues = [...after].filter((item) => !before.has(item));
-  const unchanged = audit.afterHash === audit.beforeHash || (resolvedIssues.length === 0 && newIssues.length === 0 && Math.abs(scoreAfter - audit.scoreBefore) < 0.5);
+  const scoreUnchanged = scoreAfter === undefined && audit.scoreBefore === undefined
+    || scoreAfter !== undefined && audit.scoreBefore !== undefined && Math.abs(scoreAfter - audit.scoreBefore) < 0.5;
+  const scoreRegressed = scoreAfter !== undefined && audit.scoreBefore !== undefined && scoreAfter < audit.scoreBefore - 0.5;
+  const unchanged = audit.afterHash === audit.beforeHash || (resolvedIssues.length === 0 && newIssues.length === 0 && scoreUnchanged);
   return {
     ...audit,
     issueSignatureAfter: [...after].sort().join("|"),
     scoreAfter,
     resolvedIssues,
     newIssues,
-    progress: unchanged ? "unchanged" : newIssues.length > resolvedIssues.length || scoreAfter < audit.scoreBefore - 0.5 ? "regressed" : "improved",
+    progress: unchanged ? "unchanged" : newIssues.length > resolvedIssues.length || scoreRegressed ? "regressed" : "improved",
   } satisfies LoopAudit;
 }
 
 export function hasRepeatedNoProgress(items: Array<{ projectHash?: string; evaluation: QualityEvaluation }>) {
   if (items.length < 2) return false;
   const [previous, current] = items.slice(-2);
+  const previousScore = evaluationScore(previous.evaluation);
+  const currentScore = evaluationScore(current.evaluation);
+  const scoreUnchanged = previousScore === undefined && currentScore === undefined
+    || previousScore !== undefined && currentScore !== undefined && Math.abs(previousScore - currentScore) < 0.5;
   return Boolean(previous.projectHash && previous.projectHash === current.projectHash
     && issueSignature(previous.evaluation.issues) === issueSignature(current.evaluation.issues)
     && issueEvidenceSignature(previous.evaluation.issues) === issueEvidenceSignature(current.evaluation.issues)
-    && Math.abs(evaluationScore(previous.evaluation) - evaluationScore(current.evaluation)) < 0.5);
+    && scoreUnchanged);
 }

@@ -9,7 +9,7 @@ import { buildProductionDecisions } from "../production/visual-planner";
 import { qualityJudgeResponseSchema } from "../pipeline/schemas";
 import { isNewsProject, projectNewsDate } from "../pipeline/news-date";
 import { fetchWithRetry, runExternalProcess } from "../pipeline/external-operation";
-import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput } from "./quality-protocol";
+import { finalizeQualityEvaluation, loadQualityProfile, type QualityEvaluation, type QualityIssueInput, type QualityScoreStatus } from "./quality-protocol";
 import { canonicalSpeechText } from "./speech-normalization";
 import { findFactConflicts, highRiskPredicatesInText, sceneFactText } from "../pipeline/fact-ledger";
 import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts } from "./scene-audio-verification";
@@ -92,15 +92,26 @@ function sceneShapeIssues(scene: VideoScene, index: number) {
   return issues;
 }
 
-async function callQualityJudge(project: VideoProject, feedbackGuidance: string, signal?: AbortSignal) {
-  if (process.env.QUALITY_LLM_DISABLED === "1") return null;
+const expectedJudgeScoreKeys = ["sourceFidelity", "titleHook", "informationDensity", "visualStructure", "sceneAlignment", "ttsReadability"] as const;
+
+type QualityJudgeAttempt = {
+  status: QualityScoreStatus;
+  reason?: string;
+  scores?: Record<string, number>;
+  missingScoreKeys?: string[];
+  issues?: QualityIssueInput[];
+  revisionNotes?: string[];
+};
+
+async function callQualityJudge(project: VideoProject, feedbackGuidance: string, signal?: AbortSignal): Promise<QualityJudgeAttempt> {
+  if (process.env.QUALITY_LLM_DISABLED === "1") return { status: "not-required", reason: "QUALITY_LLM_DISABLED=1" };
   const apiKey =
     process.env.QUALITY_LLM_API_KEY ?? process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) return { status: "unavailable", reason: "Quality judge API key is not configured." };
   const baseUrl =
     process.env.QUALITY_LLM_BASE_URL ?? process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL;
   const model = process.env.QUALITY_LLM_MODEL ?? process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
-  if (!baseUrl || !model) return null;
+  if (!baseUrl || !model) return { status: "unavailable", reason: "Quality judge base URL or model is not configured." };
 
   const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -151,8 +162,23 @@ async function callQualityJudge(project: VideoProject, feedbackGuidance: string,
   if (!response.ok) throw new Error(`Quality judge failed: ${response.status} ${await response.text()}`);
   const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const content = data.choices?.[0]?.message?.content;
-  if (!content) return null;
-  return qualityJudgeResponseSchema.parse(JSON.parse(content));
+  if (!content) return { status: "unavailable", reason: "Quality judge returned no response content." };
+  const parsed = qualityJudgeResponseSchema.parse(JSON.parse(content));
+  const scores = Object.fromEntries(Object.entries(parsed.scores ?? {})
+    .filter(([, value]) => Number.isFinite(value))
+    .map(([key, value]) => [key, Math.max(0, Math.min(100, value))]));
+  const measuredKeys = expectedJudgeScoreKeys.filter((key) => scores[key] !== undefined);
+  if (measuredKeys.length === 0) {
+    return { status: "unavailable", reason: "Quality judge returned no recognized scores." };
+  }
+  const missingScoreKeys = expectedJudgeScoreKeys.filter((key) => scores[key] === undefined);
+  return {
+    status: missingScoreKeys.length > 0 ? "partially-measured" : "measured",
+    scores,
+    missingScoreKeys,
+    issues: parsed.issues,
+    revisionNotes: parsed.revisionNotes,
+  };
 }
 
 export async function evaluateDraft(
@@ -310,27 +336,89 @@ export async function evaluateDraft(
     }
   });
 
-  let scores: Record<string, number> | undefined;
-  try {
-    const judged = await callQualityJudge(project, feedbackGuidance, signal);
-    if (judged?.scores) {
-      scores = Object.fromEntries(
-        Object.entries(judged.scores).map(([key, value]) => [key, Math.max(0, Math.min(100, Number(value) || 0))]),
-      );
-      issues.push(...(judged.issues ?? []));
-      revisionNotes.push(...(judged.revisionNotes ?? []));
+  const qualityProfile = loadQualityProfile();
+  const requestedJudgeSamples = Math.max(1, Math.min(2, Number(process.env.QUALITY_JUDGE_SAMPLES ?? (qualityProfile.name === "strict" ? 2 : 1)) || 1));
+  const judgeAttempts: QualityJudgeAttempt[] = [];
+  let scoreStatus: QualityScoreStatus = "unavailable";
+  let judgeReason = "";
+  for (let sampleIndex = 0; sampleIndex < requestedJudgeSamples; sampleIndex += 1) {
+    let attempt: QualityJudgeAttempt;
+    try {
+      attempt = await callQualityJudge(project, feedbackGuidance, signal);
+    } catch (error) {
+      attempt = { status: "unavailable", reason: (error as Error).message };
     }
-  } catch (error) {
-    issues.push({ severity: "warning", code: "judge_unavailable", message: (error as Error).message });
+    if (attempt.status === "not-required") {
+      scoreStatus = "not-required";
+      judgeReason = attempt.reason ?? "Quality judge is not required.";
+      break;
+    }
+    if (attempt.status === "unavailable") {
+      judgeReason = attempt.reason ?? "Quality judge is unavailable.";
+      issues.push({
+        severity: qualityProfile.name === "strict" ? "error" : "warning",
+        code: "judge_unavailable",
+        issueClass: "environment",
+        message: judgeReason,
+        evidence: { sample: sampleIndex + 1, requestedSamples: requestedJudgeSamples, reason: judgeReason },
+        repairAction: "check-environment",
+        retryable: false,
+      });
+      scoreStatus = judgeAttempts.length > 0 ? "partially-measured" : "unavailable";
+      break;
+    }
+    judgeAttempts.push(attempt);
+    if (sampleIndex === 0) {
+      issues.push(...(attempt.issues ?? []));
+      revisionNotes.push(...(attempt.revisionNotes ?? []));
+    }
+  }
+
+  let scores: Record<string, number> | undefined;
+  let judgeMaxDelta = 0;
+  if (judgeAttempts.length > 0) {
+    scores = Object.fromEntries(expectedJudgeScoreKeys.flatMap((key) => {
+      const values = judgeAttempts.flatMap((attempt) => attempt.scores?.[key] === undefined ? [] : [attempt.scores[key]]);
+      return values.length > 0 ? [[key, Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2))]] : [];
+    }));
+    const missingScoreKeys = expectedJudgeScoreKeys.filter((key) => scores?.[key] === undefined);
+    const incompleteAttempt = judgeAttempts.some((attempt) => attempt.status === "partially-measured");
+    scoreStatus = missingScoreKeys.length > 0 || incompleteAttempt || judgeAttempts.length < requestedJudgeSamples ? "partially-measured" : "measured";
+    if (scoreStatus === "partially-measured") {
+      issues.push({
+        severity: "warning",
+        code: "judge_partially_measured",
+        issueClass: "soft",
+        message: "Quality judge measured only part of the required score set: " + (missingScoreKeys.join(", ") || "consistency sample unavailable") + ".",
+        evidence: { missingScoreKeys, completedSamples: judgeAttempts.length, requestedSamples: requestedJudgeSamples },
+        repairAction: "check-environment",
+        retryable: false,
+      });
+    }
+    if (judgeAttempts.length > 1) {
+      judgeMaxDelta = Math.max(...expectedJudgeScoreKeys.map((key) => {
+        const values = judgeAttempts.flatMap((attempt) => attempt.scores?.[key] === undefined ? [] : [attempt.scores[key]]);
+        return values.length > 1 ? Math.max(...values) - Math.min(...values) : 0;
+      }));
+      const unstableThreshold = Math.max(1, Number(process.env.QUALITY_JUDGE_MAX_SCORE_DELTA ?? 15) || 15);
+      if (judgeMaxDelta > unstableThreshold) {
+        issues.push({
+          severity: qualityProfile.name === "strict" ? "error" : "warning",
+          code: "judge_unstable",
+          issueClass: "hard",
+          message: "Quality judge samples differ by as much as " + judgeMaxDelta.toFixed(1) + " points.",
+          evidence: { sampleCount: judgeAttempts.length, maxScoreDelta: judgeMaxDelta, threshold: unstableThreshold },
+          repairAction: "retry-stage",
+          retryable: true,
+        });
+      }
+    }
   }
 
   const scoreValues = scores ? Object.values(scores) : [];
-  const scoreAverage = scoreValues.length
-    ? scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length
-    : 100;
-  const scoreMinimum = scoreValues.length ? Math.min(...scoreValues) : 100;
-  const passed = !issues.some((issue) => issue.severity === "error");
-  if (scores && (scoreAverage < 78 || scoreMinimum < 70)) {
+  const scoreAverage = scoreValues.length ? scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length : undefined;
+  const scoreMinimum = scoreValues.length ? Math.min(...scoreValues) : undefined;
+  if (scoreAverage !== undefined && scoreMinimum !== undefined && (scoreAverage < 78 || scoreMinimum < 70)) {
     issues.push({
       severity: "warning",
       code: "llm_score_below_target",
@@ -343,11 +431,18 @@ export async function evaluateDraft(
     issues,
     revisionNotes: [...new Set(revisionNotes.filter(Boolean))],
     scores,
+    scoreStatus,
+    profile: qualityProfile,
     metrics: {
       narrationChars,
       targetSeconds,
-      scoreAverage: Number(scoreAverage.toFixed(1)),
-      scoreMinimum,
+      ...(scoreAverage === undefined ? {} : { scoreAverage: Number(scoreAverage.toFixed(1)) }),
+      ...(scoreMinimum === undefined ? {} : { scoreMinimum }),
+      scoreStatus,
+      judgeSamplesRequested: scoreStatus === "not-required" ? 0 : requestedJudgeSamples,
+      judgeSamplesCompleted: judgeAttempts.length,
+      judgeMaxScoreDelta: Number(judgeMaxDelta.toFixed(2)),
+      ...(judgeReason ? { judgeReason } : {}),
       sceneCount: project.scenes.length,
       sceneAlignmentAverage: alignmentScores.length
         ? Number((alignmentScores.reduce((sum, value) => sum + value, 0) / alignmentScores.length).toFixed(3))

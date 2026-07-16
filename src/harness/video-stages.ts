@@ -228,9 +228,14 @@ export async function runVideoGateStage(input: {
 }
 
 function evaluationMarkdown(evaluation: QualityEvaluation) {
+  const scoreLabel = evaluation.scoreStatus === "unavailable" ? "未评估"
+    : evaluation.scoreStatus === "not-required" ? "无需评估"
+      : evaluation.scoreStatus === "partially-measured" ? "部分评估" : "已评估";
   const lines = [`### ${evaluation.stage}`, `- Outcome: ${evaluation.outcome}`, `- Profile: ${evaluation.profile.name}`, `- Passed: ${evaluation.passed}`, `- Metrics: ${JSON.stringify(evaluation.metrics)}`];
   if (evaluation.scores) lines.push(`- Scores: ${JSON.stringify(evaluation.scores)}`);
   for (const issue of evaluation.issues) lines.push(`- ${issue.severity.toUpperCase()} ${issue.code} [${issue.issueClass}] -> ${issue.repairAction} (retryable=${issue.retryable}): ${JSON.stringify(issue.evidence)}`);
+  lines.splice(4, 0, "- Score status: " + scoreLabel + " (" + evaluation.scoreStatus + ")");
+  if (!evaluation.scores) lines.push("- Scores: " + scoreLabel);
   return lines.join("\n");
 }
 
@@ -323,10 +328,12 @@ export async function runPublishStage(input: {
   const providerOutcomeResults = await Promise.all(providerOperations).catch(() => []);
   const providerHistory = { recorded: providerOutcomeResults.length };
   const initialDraft = input.iterations[0]?.draft;
+  const initialDraftScore = typeof initialDraft?.metrics.scoreAverage === "number" ? initialDraft.metrics.scoreAverage : undefined;
+  const finalDraftScore = typeof finalDraft?.metrics.scoreAverage === "number" ? finalDraft.metrics.scoreAverage : undefined;
   const feedbackOutcomes = await recordFeedbackOutcome(input.feedback.map((entry) => entry.fingerprint), {
     succeeded: passed,
-    scoreBefore: initialDraft ? Number(initialDraft.metrics.scoreAverage ?? 0) : undefined,
-    scoreAfter: finalDraft ? Number(finalDraft.metrics.scoreAverage ?? 0) : undefined,
+    scoreBefore: initialDraftScore,
+    scoreAfter: finalDraftScore,
   }).catch(() => []);
   await writeFile(productionReportPath, `${JSON.stringify(production, null, 2)}\n`, "utf8");
   await writeJsonAtomic(reportPath, {
