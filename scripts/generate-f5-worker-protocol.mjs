@@ -87,11 +87,21 @@ const python = [
 async function writeOrCheck(filePath, content) {
   if (process.argv.includes("--check")) {
     const current = await readFile(filePath, "utf8").catch(() => "");
-    if (current !== content) throw new Error(`${path.relative(root, filePath)} is stale. Run npm run generate:protocols.`);
+    if (!generatedContentMatches(current, content)) throw new Error(`${path.relative(root, filePath)} is stale. Run npm run generate:protocols.`);
     return;
   }
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, content, "utf8");
 }
 
-await Promise.all([writeOrCheck(tsPath, ts), writeOrCheck(pythonPath, python)]);
+export function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, "\n");
+}
+
+export function generatedContentMatches(current, expected) {
+  return normalizeLineEndings(current) === normalizeLineEndings(expected);
+}
+
+if (fileURLToPath(import.meta.url) === path.resolve(process.argv[1] ?? "")) {
+  await Promise.all([writeOrCheck(tsPath, ts), writeOrCheck(pythonPath, python)]);
+}
