@@ -79,6 +79,7 @@ def main() -> None:
     emit({
         "type": "ready",
         "status": "ready",
+        "pid": os.getpid(),
         "model": args.model,
         "device": args.device,
         "pronunciationLexiconHash": lexicon_hash,

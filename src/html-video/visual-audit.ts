@@ -2,9 +2,10 @@ import { readFile } from "node:fs/promises";
 import type { Page } from "playwright";
 import { z } from "zod";
 import type { SyncCue } from "../production/types";
+import { issueCodeSchema, type IssueCode } from "../harness/issue-registry";
 
 export const visualAuditIssueSchema = z.object({
-  code: z.string().min(1),
+  code: issueCodeSchema,
   severity: z.enum(["warning", "error"]),
   message: z.string().min(1),
   evidence: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).default({}),
@@ -41,7 +42,7 @@ export async function inspectSceneDom(page: Page, input: {
 }) {
   await page.addScriptTag({ content: "globalThis.__name ||= ((target) => target);" });
   const audit = await page.evaluate(async ({ width, height, durationSec, headline, syncCues }) => {
-    type BrowserIssue = { code: string; severity: "warning" | "error"; message: string; evidence: Record<string, string | number | boolean | string[]> };
+    type BrowserIssue = { code: IssueCode; severity: "warning" | "error"; message: string; evidence: Record<string, string | number | boolean | string[]> };
     const issues: BrowserIssue[] = [];
     const normalize = (value: string) => value.toLowerCase().replace(/\s+|[^a-z0-9\u4e00-\u9fff]/g, "");
     const animations = document.getAnimations();

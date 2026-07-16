@@ -1,47 +1,24 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { z } from "zod";
 import { fromRoot } from "./utils";
+import {
+  f5WorkerReadySchema,
+  f5WorkerRequestSchema,
+  f5WorkerResultSchema,
+  type F5WorkerReady,
+  type F5WorkerRequest,
+  type F5WorkerResult,
+} from "./generated/f5-worker-protocol";
 
-export const f5WorkerReadySchema = z.object({
-  type: z.literal("ready"),
-  status: z.literal("ready"),
-  model: z.string(),
-  device: z.string(),
-  pronunciationLexiconHash: z.string().length(64),
-  workerStartupMs: z.number().nonnegative(),
-  modelLoadMs: z.number().nonnegative(),
-});
-
-export const f5WorkerRequestSchema = z.object({
-  type: z.literal("synthesize"),
-  requestId: z.string().min(1),
-  sceneIndex: z.number().int().nonnegative(),
-  text: z.string().min(1),
-  outputPath: z.string().min(1),
-  speed: z.number().positive(),
-  nfeStep: z.number().int().positive(),
-  seed: z.number().int(),
-  pronunciationLexiconHash: z.string().length(64),
-});
-
-export const f5WorkerResultSchema = z.object({
-  type: z.literal("result"),
-  requestId: z.string(),
-  sceneIndex: z.number().int(),
-  status: z.enum(["succeeded", "failed"]),
-  outputPath: z.string(),
-  durationSeconds: z.number().nonnegative(),
-  synthesisMs: z.number().nonnegative(),
-  errorType: z.string().nullable(),
-  retryable: z.boolean(),
-  error: z.string().nullable(),
-});
-
-export type F5WorkerReady = z.infer<typeof f5WorkerReadySchema>;
-export type F5WorkerRequest = z.infer<typeof f5WorkerRequestSchema>;
-export type F5WorkerResult = z.infer<typeof f5WorkerResultSchema>;
+export {
+  f5WorkerReadySchema,
+  f5WorkerRequestSchema,
+  f5WorkerResultSchema,
+  type F5WorkerReady,
+  type F5WorkerRequest,
+  type F5WorkerResult,
+} from "./generated/f5-worker-protocol";
 
 class F5WorkerResultError extends Error {
   constructor(readonly result: F5WorkerResult) {

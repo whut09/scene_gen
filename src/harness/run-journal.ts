@@ -1,46 +1,27 @@
 import path from "node:path";
 import { z } from "zod";
 import { readJson, writeJsonAtomic } from "../pipeline/utils";
-import type { StageResult } from "./stage-types";
-import { dirtyPlanSchema } from "./dirty-plan";
-import { repairActionSchema, repairCandidateSchema, repairDecisionSchema } from "./repair-candidate";
+import { stageResultSchema, videoStageOrder, type StageResult } from "./stage-types";
 import { runtimeConfigSchema, type RuntimeConfigSnapshot } from "../config/runtime-config";
 import { persistMigratedJson, readVersionedFormat } from "../persistence/versioned-format";
+import { normalizeIssueCode } from "./issue-registry";
 
-const stageStatusSchema = z.enum(["pending", "running", "succeeded", "failed", "skipped"]);
 const stageNameSchema = z.enum([
-  "ingest", "draft", "draft-gate", "revise", "synthesize", "audio-gate", "render", "video-gate", "publish",
+  ...videoStageOrder,
   "generate", "revise-draft", "synthesize-audio", "revise-audio",
 ]);
-const suggestedActionSchema = repairActionSchema;
-
-const stageIssueSchema = z.object({
-  severity: z.enum(["warning", "error"]),
-  code: z.string(),
-  message: z.string(),
-  stage: z.enum(["draft", "audio", "video"]).default("draft"),
-  issueClass: z.enum(["soft", "hard", "environment"]).default("hard"),
-  sceneIndex: z.number().int().nonnegative().optional(),
-  evidence: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).default({}),
-  repairAction: suggestedActionSchema.default("retry-stage"),
-  retryable: z.boolean().default(false),
-});
-
-const runStageSchema = z.object({
+const runStageSchema = stageResultSchema.extend({
   name: stageNameSchema,
-  status: stageStatusSchema,
+  status: z.enum(["pending", "running", "succeeded", "failed", "skipped"]),
   attempt: z.number().int().positive(),
   inputHash: z.string().default(""),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
   durationMs: z.number().nonnegative().default(0),
   outputs: z.record(z.string(), z.string()).default({}),
-  issues: z.array(stageIssueSchema).default([]),
+  issues: stageResultSchema.shape.issues.default([]),
   metrics: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
-  dirtyPlan: dirtyPlanSchema.optional(),
-  repairCandidates: z.array(repairCandidateSchema).optional(),
-  repairDecision: repairDecisionSchema.optional(),
-  suggestedAction: suggestedActionSchema.default("none"),
+  suggestedAction: stageResultSchema.shape.suggestedAction.default("none"),
   error: z.string().optional(),
 });
 
@@ -90,9 +71,37 @@ function migrateRunJournalV1ToV2(value: Record<string, unknown>) {
   };
 }
 
+function normalizeJournalIssueCodes(raw: unknown) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const journal = raw as Record<string, unknown>;
+  if (!Array.isArray(journal.stages)) return raw;
+  return {
+    ...journal,
+    stages: journal.stages.map((stage) => {
+      if (!stage || typeof stage !== "object" || Array.isArray(stage)) return stage;
+      const stageRecord = stage as Record<string, unknown>;
+      if (!Array.isArray(stageRecord.issues)) return stage;
+      return {
+        ...stageRecord,
+        issues: stageRecord.issues.map((issue) => {
+          if (!issue || typeof issue !== "object" || Array.isArray(issue)) return issue;
+          const issueRecord = issue as Record<string, unknown>;
+          if (typeof issueRecord.code !== "string") return issue;
+          const code = normalizeIssueCode(issueRecord.code);
+          if (code === issueRecord.code) return issue;
+          const evidence = issueRecord.evidence && typeof issueRecord.evidence === "object" && !Array.isArray(issueRecord.evidence)
+            ? issueRecord.evidence as Record<string, unknown>
+            : {};
+          return { ...issueRecord, code, evidence: { ...evidence, originalCode: issueRecord.code } };
+        }),
+      };
+    }),
+  };
+}
+
 export function readRunJournal(raw: unknown) {
   return readVersionedFormat({
-    raw,
+    raw: normalizeJournalIssueCodes(raw),
     format: "run journal",
     versionField: "specVersion",
     currentVersion: 2,

@@ -9,8 +9,9 @@ import threading
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from generated.f5_worker_protocol import F5WorkerInbound
 from tts_pronunciation import load_pronunciation_lexicon, read_pronunciation_lexicon
 
 
@@ -104,9 +105,9 @@ def main() -> None:
     for line in sys.stdin:
         if not line.strip():
             continue
-        request: dict[str, Any] = {}
+        request = cast(F5WorkerInbound, {})
         try:
-            request = json.loads(line)
+            request = cast(F5WorkerInbound, json.loads(line))
             if request.get("type") == "shutdown":
                 emit({"type": "shutdown", "status": "stopped"})
                 return

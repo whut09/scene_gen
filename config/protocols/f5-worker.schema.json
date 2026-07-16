@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scene-gen.local/protocols/f5-worker.schema.json",
+  "title": "F5 Worker JSON Lines Protocol",
+  "$defs": {
+    "F5WorkerReady": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "status", "pid", "model", "device", "pronunciationLexiconHash", "workerStartupMs", "modelLoadMs"],
+      "properties": {
+        "type": { "const": "ready" },
+        "status": { "const": "ready" },
+        "pid": { "type": "integer", "minimum": 1 },
+        "model": { "type": "string" },
+        "device": { "type": "string" },
+        "pronunciationLexiconHash": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "workerStartupMs": { "type": "number", "minimum": 0 },
+        "modelLoadMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "F5WorkerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "requestId", "sceneIndex", "text", "outputPath", "speed", "nfeStep", "seed", "pronunciationLexiconHash"],
+      "properties": {
+        "type": { "const": "synthesize" },
+        "requestId": { "type": "string", "minLength": 1 },
+        "sceneIndex": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string", "minLength": 1 },
+        "outputPath": { "type": "string", "minLength": 1 },
+        "speed": { "type": "number", "exclusiveMinimum": 0 },
+        "nfeStep": { "type": "integer", "minimum": 1 },
+        "seed": { "type": "integer" },
+        "pronunciationLexiconHash": { "type": "string", "minLength": 64, "maxLength": 64 }
+      }
+    },
+    "F5WorkerShutdownRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": { "type": { "const": "shutdown" } }
+    },
+    "F5WorkerResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "requestId", "sceneIndex", "status", "outputPath", "durationSeconds", "synthesisMs", "errorType", "retryable", "error"],
+      "properties": {
+        "type": { "const": "result" },
+        "requestId": { "type": "string" },
+        "sceneIndex": { "type": "integer" },
+        "status": { "enum": ["succeeded", "failed"] },
+        "outputPath": { "type": "string" },
+        "durationSeconds": { "type": "number", "minimum": 0 },
+        "synthesisMs": { "type": "number", "minimum": 0 },
+        "errorType": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "retryable": { "type": "boolean" },
+        "error": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "traceback": { "type": "string" }
+      }
+    },
+    "F5WorkerShutdownResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "status"],
+      "properties": {
+        "type": { "const": "shutdown" },
+        "status": { "const": "stopped" }
+      }
+    }
+  }
+}

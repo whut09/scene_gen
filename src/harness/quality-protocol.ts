@@ -1,16 +1,13 @@
 import { z } from "zod";
-import type { SuggestedAction } from "./stage-types";
 import { repairActionSchema } from "./repair-candidate";
+import { issueClassSchema, issueCodeSchema, issueDefinition, issueEvidenceSchema, issueSeveritySchema, normalizeIssueCode, qualityStageSchema, type RepairAction } from "./issue-registry";
 
-export const qualityStageSchema = z.enum(["draft", "audio", "video"]);
 export const qualityScoreStatusSchema = z.enum(["measured", "partially-measured", "unavailable", "not-required"]);
-export const issueSeveritySchema = z.enum(["warning", "error"]);
-export const issueClassSchema = z.enum(["soft", "hard", "environment"]);
 export { repairActionSchema } from "./repair-candidate";
-export const issueEvidenceSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]));
+export { issueClassSchema, issueCodeSchema, issueEvidenceSchema, issueSeveritySchema, qualityStageSchema } from "./issue-registry";
 
 export const qualityIssueSchema = z.object({
-  code: z.string().min(1),
+  code: issueCodeSchema,
   stage: qualityStageSchema,
   severity: issueSeveritySchema,
   issueClass: issueClassSchema,
@@ -19,6 +16,21 @@ export const qualityIssueSchema = z.object({
   repairAction: repairActionSchema,
   retryable: z.boolean(),
   message: z.string().min(1),
+}).superRefine((issue, context) => {
+  const evidence = issueDefinition(issue.code).evidenceSchema.safeParse(issue.evidence);
+  if (!evidence.success) context.addIssue({ code: "custom", message: `Invalid evidence for ${issue.code}: ${evidence.error.message}` });
+});
+
+export const qualityIssueInputSchema = z.object({
+  code: z.string().min(1),
+  severity: issueSeveritySchema,
+  message: z.string().optional(),
+  stage: qualityStageSchema.optional(),
+  issueClass: issueClassSchema.optional(),
+  sceneIndex: z.number().int().nonnegative().optional(),
+  evidence: issueEvidenceSchema.optional(),
+  repairAction: repairActionSchema.optional(),
+  retryable: z.boolean().optional(),
 });
 
 const storedIssueSchema = z.object({
@@ -47,78 +59,19 @@ const storedEvaluationSchema = z.object({
 export type QualityStage = z.infer<typeof qualityStageSchema>;
 export type QualityScoreStatus = z.infer<typeof qualityScoreStatusSchema>;
 export type QualityIssue = z.infer<typeof qualityIssueSchema>;
-export type QualityOutcome = "passed" | "failed" | "blocked";
+export type QualityIssueInput = z.infer<typeof qualityIssueInputSchema>;
+export const qualityOutcomeSchema = z.enum(["passed", "failed", "blocked"]);
+export type QualityOutcome = z.infer<typeof qualityOutcomeSchema>;
+export const qualityProfileSchema = z.object({ name: z.enum(["balanced", "strict", "lenient"]), blockWarnings: z.boolean(), blockingWarningCodes: z.array(z.string()) });
+export type QualityProfile = z.infer<typeof qualityProfileSchema>;
+export const qualityEvaluationSchema = z.object({ stage: qualityStageSchema, profile: qualityProfileSchema, outcome: qualityOutcomeSchema, passed: z.boolean(), issues: z.array(qualityIssueSchema), revisionNotes: z.array(z.string()), scores: z.record(z.string(), z.number()).optional(), scoreStatus: qualityScoreStatusSchema, metrics: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])) });
+export type QualityEvaluation = z.infer<typeof qualityEvaluationSchema>;
 
-export interface QualityIssueInput {
-  code: string;
-  severity: "warning" | "error";
-  message?: string;
-  stage?: QualityStage;
-  issueClass?: "soft" | "hard" | "environment";
-  sceneIndex?: number;
-  evidence?: Record<string, string | number | boolean | string[]>;
-  repairAction?: SuggestedAction;
-  retryable?: boolean;
+export function repairActionForIssue(issue: Pick<QualityIssueInput, "code">, _stage: QualityStage): RepairAction {
+  return issueDefinition(normalizeIssueCode(issue.code)).repairAction;
 }
 
-export interface QualityProfile {
-  name: "balanced" | "strict" | "lenient";
-  blockWarnings: boolean;
-  blockingWarningCodes: string[];
-}
-
-export interface QualityEvaluation {
-  stage: QualityStage;
-  profile: QualityProfile;
-  outcome: QualityOutcome;
-  passed: boolean;
-  issues: QualityIssue[];
-  revisionNotes: string[];
-  scores?: Record<string, number>;
-  scoreStatus: QualityScoreStatus;
-  metrics: Record<string, number | string | boolean>;
-}
-
-const issueActions: Record<string, SuggestedAction> = {
-  scene_narration_mismatch: "revise-scenes", scene_narration_overloaded: "revise-scenes",
-  scene_extra_numbers: "revise-scenes", scene_source_number_unverified: "revise-scenes",
-  briefing_thin: "revise-scenes", chart_thin: "revise-scenes", flow_thin: "revise-scenes",
-  outro_thin: "revise-scenes", qualitative_chart_fake_percentage: "revise-scenes",
-  parallel_flow_prompt_mismatch: "revise-scenes", github_briefing_template_mismatch: "revise-scenes",
-  title_not_spoken_first: "revise-scenes", news_date_not_spoken: "revise-scenes",
-  news_date_missing: "regenerate-draft", title_not_chinese_summary: "regenerate-draft",
-  audio_title_opening_missing: "revise-scenes", audio_title_incomplete: "revise-scenes",
-  duration_out_of_range: "revise-scenes", speech_too_fast: "revise-scenes", speech_too_slow: "revise-scenes",
-  segment_speed_uneven: "revise-scenes", segment_speed_variance: "revise-scenes", tts_arabic_digits: "revise-scenes",
-  audio_missing: "resynthesize-audio", segment_timing_missing: "resynthesize-audio", audio_scene_drift: "resynthesize-audio",
-  audio_pronunciation_mismatch: "resynthesize-audio",
-  audio_entity_mismatch: "resynthesize-audio", audio_number_mismatch: "resynthesize-audio",
-  audio_semantic_mismatch: "resynthesize-audio", audio_segment_cross_talk: "resynthesize-audio",
-  verification_inconclusive: "retry-stage",
-  asr_verification_failed: "check-environment", judge_unavailable: "check-environment",
-  stream_duration_drift: "remux", video_project_duration_drift: "remux",
-  blank_frame: "rerender-scenes", stream_missing: "rerender-scenes", wrong_dimensions: "rerender-scenes",
-  scene_motion_too_static: "switch-template", video_motion_too_static: "switch-template",
-  dom_element_out_of_bounds: "switch-template", text_unsafe_zone: "switch-template",
-  text_contrast_low: "switch-template", text_too_small: "switch-template", text_line_too_long: "switch-template",
-  content_clipped: "switch-template", element_overlap: "switch-template", key_text_not_visible: "switch-template",
-  key_text_ocr_missing: "switch-template", image_subject_crop_risk: "switch-template",
-  conclusion_hold_too_short: "switch-template", sync_cue_visual_late: "switch-template",
-  frame_low_visual_complexity: "switch-template",
-  visual_audit_unavailable: "check-environment", ocr_verification_unavailable: "check-environment",
-};
-
-const environmentCodes = new Set(["asr_verification_failed", "verification_inconclusive", "visual_audit_unavailable", "ocr_verification_unavailable", "judge_unavailable", "stage_timeout_or_cancelled"]);
-
-export function repairActionForIssue(issue: Pick<QualityIssueInput, "code" | "sceneIndex">, stage: QualityStage): SuggestedAction {
-  if (issueActions[issue.code]) return issueActions[issue.code];
-  if (stage === "draft") return issue.sceneIndex === undefined ? "regenerate-draft" : "revise-scenes";
-  if (stage === "audio") return issue.sceneIndex === undefined ? "check-environment" : "revise-scenes";
-  if (stage === "video") return "rerender-scenes";
-  return "stop";
-}
-
-export function actionIsRetryable(action: SuggestedAction) {
+export function actionIsRetryable(action: RepairAction) {
   return !["none", "check-environment", "stop", "switch-template"].includes(action);
 }
 
@@ -128,21 +81,25 @@ export function loadQualityProfile(value = process.env.QUALITY_GATE_PROFILE): Qu
   return {
     name,
     blockWarnings: name === "strict",
-    blockingWarningCodes: (process.env.QUALITY_BLOCKING_WARNING_CODES ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+    blockingWarningCodes: (process.env.QUALITY_BLOCKING_WARNING_CODES ?? "").split(",").map((item) => item.trim()).filter(Boolean).map(normalizeIssueCode),
   };
 }
 
 export function normalizeQualityIssue(stage: QualityStage, issue: QualityIssueInput): QualityIssue {
-  const repairAction = issue.repairAction ?? repairActionForIssue(issue, stage);
-  const issueClass = issue.issueClass ?? (environmentCodes.has(issue.code) ? "environment" : issue.severity === "error" ? "hard" : "soft");
+  const code = normalizeIssueCode(issue.code);
+  const definition = issueDefinition(code);
+  const repairAction = issue.repairAction ?? definition.repairAction;
+  const issueClass = issue.issueClass ?? definition.issueClass;
   const message = issue.message ?? String(issue.evidence?.summary ?? issue.code);
+  const evidence = { ...(issue.evidence ?? { summary: message }), ...(code === "unregistered_issue" ? { originalCode: issue.code } : {}) };
   return qualityIssueSchema.parse({
     ...issue,
+    code,
     stage,
     issueClass,
-    evidence: issue.evidence ?? { summary: message },
+    evidence,
     repairAction,
-    retryable: issue.retryable ?? actionIsRetryable(repairAction),
+    retryable: issue.retryable ?? definition.retryable,
     message,
   });
 }
@@ -169,6 +126,10 @@ export function normalizeStoredQualityEvaluation(value: unknown) {
   const stored = storedEvaluationSchema.parse(value);
   return finalizeQualityEvaluation({
     ...stored,
-    issues: stored.issues.map((issue) => ({ ...issue, repairAction: issue.repairAction ?? issue.suggestedAction })),
+    issues: stored.issues.map((issue) => {
+      const code = normalizeIssueCode(issue.code);
+      const evidence = { ...(issue.evidence ?? {}), ...(code === "unregistered_issue" ? { originalCode: issue.code } : {}) };
+      return { ...issue, code, evidence, repairAction: issue.repairAction ?? issue.suggestedAction };
+    }),
   });
 }

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { issueCodeSchema, issueEvidenceSchema, issueSeveritySchema } from "../harness/issue-registry";
+import { repairActionSchema } from "../harness/repair-candidate";
 
 const sourceKindSchema = z.enum(["rss", "github", "hackernews", "webpage", "seed"]);
 
@@ -302,12 +304,12 @@ export const sceneRevisionResponseSchema = z.object({
 export const qualityJudgeResponseSchema = z.object({
   scores: z.record(z.string(), z.number()).optional(),
   issues: z.array(z.object({
-    code: z.string().min(1),
+    code: issueCodeSchema,
     stage: z.literal("draft"),
-    severity: z.enum(["warning", "error"]),
+    severity: issueSeveritySchema,
     sceneIndex: z.number().int().nonnegative().optional(),
-    evidence: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])),
-    repairAction: z.enum(["none", "regenerate-draft", "revise-scenes", "retry-stage", "check-environment", "resynthesize-audio", "remux", "rerender-scenes", "switch-template", "stop"]),
+    evidence: issueEvidenceSchema,
+    repairAction: repairActionSchema,
     retryable: z.boolean(),
   })).optional(),
   revisionNotes: z.array(z.string()).optional(),

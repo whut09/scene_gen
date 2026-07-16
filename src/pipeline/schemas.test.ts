@@ -70,12 +70,12 @@ test("generation result requires explicit manifest and project paths", () => {
 test("quality judge requires structured issue protocol", () => {
   assert.throws(() => qualityJudgeResponseSchema.parse({ issues: ["vague title"] }));
   const parsed = qualityJudgeResponseSchema.parse({ issues: [{
-    code: "title_vague",
+    code: "title_not_chinese_summary",
     stage: "draft",
     severity: "warning",
     evidence: { summary: "title lacks a concrete subject" },
     repairAction: "regenerate-draft",
     retryable: true,
   }] });
-  assert.equal(parsed.issues?.[0].code, "title_vague");
+  assert.equal(parsed.issues?.[0].code, "title_not_chinese_summary");
 });

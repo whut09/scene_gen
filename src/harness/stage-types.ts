@@ -1,3 +1,8 @@
+import { z } from "zod";
+import { dirtyPlanSchema } from "./dirty-plan";
+import { qualityIssueSchema } from "./quality-protocol";
+import { repairActionSchema, repairCandidateSchema, repairDecisionSchema } from "./repair-candidate";
+
 export const videoStageOrder = [
   "ingest",
   "draft",
@@ -10,50 +15,32 @@ export const videoStageOrder = [
   "publish",
 ] as const;
 
-export type VideoStageName = (typeof videoStageOrder)[number];
-export type StageStatus = "running" | "succeeded" | "failed" | "skipped";
-export type SuggestedAction =
-  | "none"
-  | "regenerate-draft"
-  | "revise-scenes"
-  | "retry-stage"
-  | "check-environment"
-  | "resynthesize-audio"
-  | "remux"
-  | "reconcat-video"
-  | "rerender-scenes"
-  | "switch-template"
-  | "stop";
+export const videoStageNameSchema = z.enum(videoStageOrder);
+export const stageStatusSchema = z.enum(["running", "succeeded", "failed", "skipped"]);
+export const stageMetricValueSchema = z.union([z.string(), z.number(), z.boolean()]);
+export const stageResultSchema = z.object({
+  name: videoStageNameSchema,
+  status: stageStatusSchema,
+  inputHash: z.string(),
+  outputs: z.record(z.string(), z.string()),
+  issues: z.array(qualityIssueSchema),
+  metrics: z.record(z.string(), stageMetricValueSchema),
+  dirtyPlan: dirtyPlanSchema.optional(),
+  repairCandidates: z.array(repairCandidateSchema).optional(),
+  repairDecision: repairDecisionSchema.optional(),
+  durationMs: z.number().nonnegative(),
+  attempt: z.number().int().positive(),
+  suggestedAction: repairActionSchema,
+  startedAt: z.string(),
+  completedAt: z.string().optional(),
+  error: z.string().optional(),
+});
 
-export interface StageIssue {
-  severity: "warning" | "error";
-  code: string;
-  message: string;
-  stage: "draft" | "audio" | "video";
-  issueClass: "soft" | "hard" | "environment";
-  sceneIndex?: number;
-  evidence: Record<string, string | number | boolean | string[]>;
-  repairAction: SuggestedAction;
-  retryable: boolean;
-}
-
-export interface StageResult {
-  name: VideoStageName;
-  status: StageStatus;
-  inputHash: string;
-  outputs: Record<string, string>;
-  issues: StageIssue[];
-  metrics: Record<string, string | number | boolean>;
-  dirtyPlan?: DirtyPlan;
-  repairCandidates?: RepairCandidate[];
-  repairDecision?: RepairDecision;
-  durationMs: number;
-  attempt: number;
-  suggestedAction: SuggestedAction;
-  startedAt: string;
-  completedAt?: string;
-  error?: string;
-}
+export type VideoStageName = z.infer<typeof videoStageNameSchema>;
+export type StageStatus = z.infer<typeof stageStatusSchema>;
+export type SuggestedAction = z.infer<typeof repairActionSchema>;
+export type StageIssue = z.infer<typeof qualityIssueSchema>;
+export type StageResult = z.infer<typeof stageResultSchema>;
 
 const stageAliases: Record<string, VideoStageName> = {
   audio: "synthesize",
@@ -73,5 +60,3 @@ export function parseStageName(value: string): VideoStageName {
 export function stageIndex(stage: VideoStageName) {
   return videoStageOrder.indexOf(stage);
 }
-import type { DirtyPlan } from "./dirty-plan";
-import type { RepairCandidate, RepairDecision } from "./repair-candidate";

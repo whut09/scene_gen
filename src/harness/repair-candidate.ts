@@ -1,10 +1,9 @@
 import { z } from "zod";
 import { dirtyPlanSchema } from "./dirty-plan";
+import { issueCodeSchema } from "./issue-registry";
+import { repairActionSchema } from "./protocol-primitives";
 
-export const repairActionSchema = z.enum([
-  "none", "regenerate-draft", "revise-scenes", "retry-stage", "check-environment",
-  "resynthesize-audio", "remux", "reconcat-video", "rerender-scenes", "switch-template", "stop",
-]);
+export { repairActionSchema } from "./protocol-primitives";
 
 export const repairPolicyWeightsSchema = z.object({
   costWeight: z.number().nonnegative(),
@@ -21,7 +20,7 @@ export const repairCandidateSchema = z.object({
   risk: z.number().min(0).max(1),
   evidenceConfidence: z.number().min(0).max(1),
   utility: z.number(),
-  issueCodes: z.array(z.string().min(1)),
+  issueCodes: z.array(issueCodeSchema),
   reasons: z.array(z.string()),
   dirtyPlan: dirtyPlanSchema,
 }).strict();

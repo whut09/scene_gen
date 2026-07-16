@@ -3,7 +3,8 @@ import test from "node:test";
 import { calculateLoopBudgetUsage, evaluateLoopBudget, finalizePendingStrategies, issueEvidenceSignature, selectNextLoopStrategy, type LoopStrategyTrace } from "./loop-governance";
 import { finalizeQualityEvaluation } from "./quality-protocol";
 
-const evaluation = finalizeQualityEvaluation({ stage: "draft", issues: [{ severity: "error", code: "same", message: "same", evidence: { field: "headline" } }], revisionNotes: [], scores: { quality: 60 }, metrics: {} });
+const issueCode = "scene_narration_mismatch";
+const evaluation = finalizeQualityEvaluation({ stage: "draft", issues: [{ severity: "error", code: issueCode, message: "same", evidence: { field: "headline" } }], revisionNotes: [], scores: { quality: 60 }, metrics: {} });
 
 test("no-progress strategy escalates through applicable alternatives", () => {
   const trajectory: LoopStrategyTrace[] = [];
@@ -18,7 +19,7 @@ test("no-progress strategy escalates through applicable alternatives", () => {
 
 test("strategy outcome uses issue evidence changes and tracks success rate", () => {
   const strategy = selectNextLoopStrategy({ stage: "audio", iteration: 1, issues: evaluation.issues, repairAction: "resynthesize-audio", affectedScenes: [0], trajectory: [] });
-  const changed = finalizeQualityEvaluation({ stage: "audio", issues: [{ severity: "error", code: "same", message: "same", evidence: { field: "narration" } }], revisionNotes: [], metrics: {} });
+  const changed = finalizeQualityEvaluation({ stage: "audio", issues: [{ severity: "error", code: issueCode, message: "same", evidence: { field: "narration" } }], revisionNotes: [], metrics: {} });
   const finalized = finalizePendingStrategies([strategy], "audio", changed);
   assert.equal(finalized[0].outcome, "improved");
   assert.notEqual(issueEvidenceSignature(evaluation.issues), issueEvidenceSignature(changed.issues));
@@ -27,11 +28,11 @@ test("strategy outcome uses issue evidence changes and tracks success rate", () 
 test("loop budgets block token, media and per-issue overruns", () => {
   const status = evaluateLoopBudget(
     { maxLlmTokens: 100, maxTtsRebuilds: 2, maxRenderMinutes: 1, maxEstimatedCost: 1, maxRepairsPerIssue: 2 },
-    { llmTokens: 100, ttsRebuilds: 2, renderMinutes: 1, estimatedCost: 1, repairsByIssue: { same: 2 } },
+    { llmTokens: 100, ttsRebuilds: 2, renderMinutes: 1, estimatedCost: 1, repairsByIssue: { [issueCode]: 2 } },
     evaluation.issues,
   );
   assert.equal(status.allowed, false);
-  assert.deepEqual(status.exceeded, ["max-llm-tokens", "max-tts-rebuilds", "max-render-minutes", "max-estimated-cost", "max-issue-repairs:same"]);
+  assert.deepEqual(status.exceeded, ["max-llm-tokens", "max-tts-rebuilds", "max-render-minutes", "max-estimated-cost", `max-issue-repairs:${issueCode}`]);
 });
 
 test("video no-progress starts with an alternate template and budget usage reads journals", () => {
