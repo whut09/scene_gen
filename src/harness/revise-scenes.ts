@@ -32,9 +32,11 @@ const project = videoProjectSchema.parse(await readJson<unknown>(projectPath)) a
 const sceneIndexes = [...new Set(args.scenes.split(",").map(Number).filter((value) => Number.isInteger(value) && value >= 0 && value < project.scenes.length))];
 if (sceneIndexes.length === 0) throw new Error("No valid scene indexes were provided.");
 
-const apiKey = process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
-const baseUrl = process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL;
-const model = process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
+const providerStrategy = args["provider-strategy"] === "fallback" ? "fallback" : "keep";
+const promptStrategy = args["prompt-strategy"] === "evidence-constrained" || args["prompt-strategy"] === "counterexample-first" ? args["prompt-strategy"] : "default";
+const apiKey = providerStrategy === "fallback" ? process.env.REVISION_LLM_FALLBACK_API_KEY ?? process.env.OPENAI_API_KEY : process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
+const baseUrl = providerStrategy === "fallback" ? process.env.REVISION_LLM_FALLBACK_BASE_URL ?? process.env.OPENAI_BASE_URL : process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL;
+const model = providerStrategy === "fallback" ? process.env.REVISION_LLM_FALLBACK_MODEL ?? process.env.OPENAI_MODEL : process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL;
 if (!apiKey || !baseUrl || !model) throw new Error("NEWS_LLM_API_KEY, NEWS_LLM_BASE_URL and NEWS_LLM_MODEL are required.");
 
 const selected = sceneIndexes.map((sceneIndex) => ({ sceneIndex, scene: project.scenes[sceneIndex], narration: project.narrationSegments?.[sceneIndex]?.text ?? "", maxNarrationChars: narrationMax(project.scenes[sceneIndex]) }));
@@ -50,8 +52,10 @@ const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/comple
         "旁白只能复述该屏可见字段；第一屏第一句话必须逐字念项目标题，不得增加来源中没有的数字。",
         "scene 必须返回 claimIds，只能引用 factLedger 中直接支持修订后画面与旁白的声明。不得省略声明中的范围、时间或可能性限定词。",
         "必须严格遵守每项 maxNarrationChars。问题包含过长、overloaded 或超过上限时，只能压缩，不得扩写。",
-        "返回 JSON：{ revisions: [{ sceneIndex, scene, narration }] }。"
-      ].join("\n") },
+        "返回 JSON：{ revisions: [{ sceneIndex, scene, narration }] }。",
+        promptStrategy === "evidence-constrained" ? "只处理 issue evidence 明确指出的字段；逐项核对原值与约束，只返回最小必要修改。" : "",
+        promptStrategy === "counterexample-first" ? "先在内部构造一个会再次触发同一 issue 的反例，确保结果避开该反例，并且不得重复上一轮措辞。" : "",
+      ].filter(Boolean).join("\n") },
       { role: "user", content: JSON.stringify({ title: project.meta.title, issues: typeof args.issues === "string" ? args.issues : "", factLedger: project.factLedger, source: project.sources, selected }) }
     ]
   })
@@ -92,6 +96,9 @@ if (typeof args["result-file"] === "string") {
       completionTokens: payload.usage?.completion_tokens ?? 0,
       totalTokens: payload.usage?.total_tokens ?? 0,
     },
+    promptStrategy,
+    providerStrategy,
+    providerId: model,
   });
 }
 console.log(`Revised scenes: ${sceneIndexes.map((index) => index + 1).join(", ")}`);

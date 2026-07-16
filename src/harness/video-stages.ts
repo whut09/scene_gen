@@ -114,6 +114,8 @@ export async function runRevisionStage(input: {
   projectPath: string;
   sceneIndexes: number[];
   issues: string;
+  promptStrategy?: "default" | "evidence-constrained" | "counterexample-first";
+  providerStrategy?: "keep" | "fallback";
   resultPath: string;
   signal: AbortSignal;
 }) {
@@ -122,6 +124,8 @@ export async function runRevisionStage(input: {
     "--project", input.projectPath,
     "--scenes", input.sceneIndexes.join(","),
     "--issues", input.issues,
+    "--prompt-strategy", input.promptStrategy ?? "default",
+    "--provider-strategy", input.providerStrategy ?? "keep",
     "--result-file", input.resultPath,
   ], input.signal, {
     timeoutMs: Number(process.env.HARNESS_REVISION_TIMEOUT_MS ?? 180_000),
@@ -140,6 +144,7 @@ export async function runSynthesizeStage(input: {
   cacheSalt?: string;
   reason?: string;
   forceAudioRebuild?: boolean;
+  provider?: "openai" | "f5" | "local";
   signal: AbortSignal;
 }) {
   const args = [
@@ -151,6 +156,7 @@ export async function runSynthesizeStage(input: {
   if (input.forceSceneIndexes?.length) args.push("--force-scenes", input.forceSceneIndexes.join(","));
   if (input.cacheSalt) args.push("--cache-salt", input.cacheSalt);
   if (input.reason) args.push("--reason", input.reason);
+  if (input.provider) args.push("--provider", input.provider);
   await runScript("src/pipeline/synthesize-story.ts", args, input.signal, {
     timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 900_000),
     retries: 1,
@@ -252,11 +258,15 @@ export async function runPublishStage(input: {
     ...input.iterations.flatMap((iteration) => (iteration.audits ?? []).map((audit) => audit.dirtyPlan)),
     planRepair("video", input.video.issues, input.video.profile, input.project.scenes.length).dirtyPlan,
   );
-  const journal = await readJson<{ stages?: Array<{ name?: string; attempt?: number; repairCandidates?: unknown; repairDecision?: unknown }> }>(input.journalPath)
-    .catch(() => ({ stages: [] }));
+  const journal = await readJson<{ artifacts?: Record<string, string>; stages?: Array<{ name?: string; attempt?: number; repairCandidates?: unknown; repairDecision?: unknown }> }>(input.journalPath)
+    .catch(() => ({ stages: [], artifacts: {} as Record<string, string> }));
   const repairDecisions = (journal.stages ?? [])
     .filter((stage) => stage.repairDecision)
     .map((stage) => ({ stage: stage.name, attempt: stage.attempt, decision: stage.repairDecision, candidates: stage.repairCandidates ?? [] }));
+  const strategyTrajectory = journal.artifacts?.strategyTrajectory
+    ? await readJson<{ entries?: unknown[] }>(journal.artifacts.strategyTrajectory).then((value) => value.entries ?? []).catch(() => [])
+    : [];
+  const loopBudget = journal.artifacts?.loopBudget ? await readJson<unknown>(journal.artifacts.loopBudget).catch(() => undefined) : undefined;
   await mkdir(input.reportDir, { recursive: true });
   const productionReportPath = path.join(input.reportDir, "production-report.json");
   const reportPath = path.join(input.reportDir, "report.json");
@@ -329,6 +339,8 @@ export async function runPublishStage(input: {
     video: input.video,
     dirtyPlan,
     repairDecisions,
+    strategyTrajectory,
+    loopBudget,
     production,
     templateLearning,
     providerHistory,
@@ -346,6 +358,8 @@ export async function runPublishStage(input: {
     `- Feedback applied: ${input.feedback.length}`,
     `- Dirty plan: ${JSON.stringify(dirtyPlan)}`,
     `- Repair decisions: ${repairDecisions.length}`,
+    `- Strategy trajectory entries: ${strategyTrajectory.length}`,
+    `- Loop budget: ${JSON.stringify(loopBudget ?? {})}`,
     "",
     ...input.iterations.flatMap((item) => [
       `## Iteration ${item.iteration}`,

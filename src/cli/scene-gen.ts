@@ -19,6 +19,11 @@ const runOptions = {
   seconds: { type: "number" as const, description: "Target duration in seconds." },
   iterations: { type: "number" as const, description: "Maximum draft/audio loop iterations." },
   "video-iterations": { type: "number" as const, description: "Maximum render/video-gate attempts." },
+  "max-llm-tokens": { type: "number" as const, description: "Maximum cumulative LLM tokens for repair loops." },
+  "max-tts-rebuilds": { type: "number" as const, description: "Maximum generated TTS scene segments." },
+  "max-render-minutes": { type: "number" as const, description: "Maximum cumulative render minutes." },
+  "max-estimated-cost": { type: "number" as const, description: "Maximum cumulative normalized repair cost." },
+  "max-issue-repairs": { type: "number" as const, description: "Maximum repairs attempted for one issue code." },
   screenshots: { type: "number" as const, description: "Maximum webpage screenshots." },
   engine: { type: "string" as const, choices: ["html-video", "remotion"], description: "Rendering engine." },
   "out-dir": { type: "string" as const, description: "Final video output directory." },
@@ -42,6 +47,11 @@ const definitions: Record<string, CommandDefinition> = {
       "force-stage": { type: "string", choices: ["ingest", "draft", "draft-gate", "revise", "synthesize", "audio", "audio-gate", "render", "video-gate", "publish"], description: "Force this stage and continue." },
       iterations: runOptions.iterations,
       "video-iterations": runOptions["video-iterations"],
+      "max-llm-tokens": runOptions["max-llm-tokens"],
+      "max-tts-rebuilds": runOptions["max-tts-rebuilds"],
+      "max-render-minutes": runOptions["max-render-minutes"],
+      "max-estimated-cost": runOptions["max-estimated-cost"],
+      "max-issue-repairs": runOptions["max-issue-repairs"],
       seconds: runOptions.seconds,
       screenshots: runOptions.screenshots,
       engine: runOptions.engine,
@@ -193,8 +203,13 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
   if (command === "run") {
     assertUrl(parsed.options.url);
     assertPositive("seconds", parsed.options.seconds);
-    assertIntegerRange("iterations", parsed.options.iterations, 1, 4);
+    assertIntegerRange("iterations", parsed.options.iterations, 1, 8);
     assertIntegerRange("video-iterations", parsed.options["video-iterations"], 1, 3);
+    assertPositive("max-llm-tokens", parsed.options["max-llm-tokens"]);
+    assertPositive("max-tts-rebuilds", parsed.options["max-tts-rebuilds"]);
+    assertPositive("max-render-minutes", parsed.options["max-render-minutes"]);
+    assertPositive("max-estimated-cost", parsed.options["max-estimated-cost"]);
+    assertPositive("max-issue-repairs", parsed.options["max-issue-repairs"]);
     assertNonNegative("screenshots", parsed.options.screenshots, true);
     if (parsed.options["dry-run"] || parsed.options["plan-only"]) {
       console.log(formatExecutionPlan(await planFromOptions(parsed.options, profileName)));
@@ -208,8 +223,13 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
   }
   if (command === "resume") {
     assertPositive("seconds", parsed.options.seconds);
-    assertIntegerRange("iterations", parsed.options.iterations, 1, 4);
+    assertIntegerRange("iterations", parsed.options.iterations, 1, 8);
     assertIntegerRange("video-iterations", parsed.options["video-iterations"], 1, 3);
+    assertPositive("max-llm-tokens", parsed.options["max-llm-tokens"]);
+    assertPositive("max-tts-rebuilds", parsed.options["max-tts-rebuilds"]);
+    assertPositive("max-render-minutes", parsed.options["max-render-minutes"]);
+    assertPositive("max-estimated-cost", parsed.options["max-estimated-cost"]);
+    assertPositive("max-issue-repairs", parsed.options["max-issue-repairs"]);
     assertNonNegative("screenshots", parsed.options.screenshots, true);
     await applyConfigProfile(profileName);
     const result = await runVideoAgent(harnessArgv(parsed.options, ["--resume", parsed.positionals[0]]), signal);

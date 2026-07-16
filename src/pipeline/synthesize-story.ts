@@ -30,9 +30,10 @@ const forceSceneIndexes = typeof args["force-scenes"] === "string"
 const forceAudioRebuild = Boolean(args["force-audio-rebuild"]);
 const cacheSalt = typeof args["cache-salt"] === "string" ? args["cache-salt"] : undefined;
 const reason = typeof args.reason === "string" ? args.reason : undefined;
+const provider = args.provider === "openai" || args.provider === "f5" || args.provider === "local" ? args.provider : undefined;
 
 if (project.revision?.changedSceneIndexes.length) console.log(`Rebuilding narration scenes: ${project.revision.changedSceneIndexes.map((index) => index + 1).join(", ")}`);
-project = await attachNarrationAudio(project, basename, { forceSceneIndexes, forceAudioRebuild, cacheSalt, reason });
+project = await attachNarrationAudio(project, basename, { forceSceneIndexes, forceAudioRebuild, cacheSalt, reason, provider });
 try {
   project = await alignProjectSpeech(project);
   const alignedCueCount = project.narrationSegments?.reduce((sum, segment) => sum + (segment.speechAlignment?.phrases.length ?? 0), 0) ?? 0;

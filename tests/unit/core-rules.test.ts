@@ -47,6 +47,19 @@ test("template selection is deterministic and supports the scene", () => {
   assert.equal(first.template.supportedScenes.includes(project.scenes[0].type), true);
 });
 
+test("no-progress template exclusions select an alternate template or variant", () => {
+  const project = createFixtureProject();
+  const previous = process.env.HTML_TEMPLATE_EXCLUSIONS;
+  try {
+    const first = selectTemplateForScene(project.scenes[0], project, { sceneIndex: 0 });
+    process.env.HTML_TEMPLATE_EXCLUSIONS = JSON.stringify({ 0: [`${first.template.id}:${first.variantId}`] });
+    const alternate = selectTemplateForScene(project.scenes[0], project, { sceneIndex: 0 });
+    assert.notEqual(`${alternate.template.id}:${alternate.variantId}`, `${first.template.id}:${first.variantId}`);
+  } finally {
+    if (previous === undefined) delete process.env.HTML_TEMPLATE_EXCLUSIONS; else process.env.HTML_TEMPLATE_EXCLUSIONS = previous;
+  }
+});
+
 test("HTML video cache keys ignore duration but include rendering inputs", () => {
   const project = createFixtureProject();
   const scene = project.scenes[0];

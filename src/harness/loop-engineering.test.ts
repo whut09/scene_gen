@@ -16,6 +16,8 @@ test("no-progress detection requires stable project, issues and score", () => {
   const evaluation = finalizeQualityEvaluation({ stage: "draft", issues: [{ severity: "error", code: "same", message: "same" }], revisionNotes: [], scores: { quality: 60 }, metrics: {} });
   assert.equal(hasRepeatedNoProgress([{ projectHash: "one", evaluation }, { projectHash: "one", evaluation }]), true);
   assert.equal(hasRepeatedNoProgress([{ projectHash: "one", evaluation }, { projectHash: "two", evaluation }]), false);
+  const changedEvidence = finalizeQualityEvaluation({ stage: "draft", issues: [{ severity: "error", code: "same", message: "same", evidence: { field: "narration" } }], revisionNotes: [], scores: { quality: 60 }, metrics: {} });
+  assert.equal(hasRepeatedNoProgress([{ projectHash: "one", evaluation }, { projectHash: "one", evaluation: changedEvidence }]), false);
 });
 
 test("scene-scoped audio regeneration changes progress identity once", () => {

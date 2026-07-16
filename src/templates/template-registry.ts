@@ -36,6 +36,15 @@ function primarySource(project: VideoProject): HotItem | undefined {
   return project.sources[0];
 }
 
+function excludedTemplateVariants(sceneIndex: number) {
+  try {
+    const parsed = JSON.parse(process.env.HTML_TEMPLATE_EXCLUSIONS ?? "{}") as Record<string, string[]>;
+    return new Set(parsed[String(sceneIndex)] ?? []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
 export function sceneIntent(scene: VideoScene): SceneIntent {
   switch (scene.type) {
     case "title": return "hook";
@@ -109,6 +118,7 @@ export function rankTemplatesForScene(
   const features = buildTemplateLearningFeatures(scene, project, intent);
   const outcomes = readTemplateOutcomes();
   const explore = shouldExploreTemplate(project, options.sceneIndex ?? 0);
+  const excluded = excludedTemplateVariants(options.sceneIndex ?? 0);
 
   return htmlVideoTemplates
     .filter((template) => template.supportedScenes.includes(scene.type))
@@ -130,6 +140,10 @@ export function rankTemplatesForScene(
       }
       let score = 35 + Math.min(16, variant.score) + (scorePenalty ?? 0);
       const reasons = ["supports " + scene.type, "variant " + variant.variant.id];
+      if (excluded.has(`${template.id}:${variant.variant.id}`)) {
+        score -= 10_000;
+        reasons.push("excluded by no-progress strategy");
+      }
       if (variant.tagMatches.length) reasons.push("variant tags " + variant.tagMatches.join(", "));
 
       if (template.supportedIntents.includes(intent)) {

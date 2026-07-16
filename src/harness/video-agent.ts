@@ -8,10 +8,20 @@ import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJsonAtomic } f
 import { RunJournalStore } from "./run-journal";
 import { runStage } from "./stage-runner";
 import { parseStageName, stageIndex, type StageResult, type VideoStageName } from "./stage-types";
-import { audioLoopHash, createLoopAudit, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
+import { audioLoopHash, createLoopAudit, evaluationScore, finalizeLoopAudit, hasRepeatedNoProgress, projectLoopHash, type LoopAudit } from "./loop-engineering";
 import { normalizeStoredQualityEvaluation } from "./quality-protocol";
 import { mergeDirtyPlans } from "./dirty-plan";
 import { defaultOutputDir } from "../runtime/runtime-paths";
+import {
+  calculateLoopBudgetUsage,
+  evaluateLoopBudget,
+  finalizePendingStrategies,
+  issueEvidenceSignature,
+  resolveLoopBudgetLimits,
+  selectNextLoopStrategy,
+  type LoopStrategyTrace,
+} from "./loop-governance";
+import type { HtmlVideoContentGraph } from "../html-video/content-graph";
 import {
   combineNotes,
   narrationBasename,
@@ -82,6 +92,12 @@ async function persistLoopAudit(journal: RunJournalStore, runDir: string, audit:
   await journal.setArtifacts({ [`iteration${audit.iteration}${audit.stage === "draft" ? "Draft" : "Audio"}Audit`]: auditPath });
 }
 
+async function persistStrategyTrajectory(journal: RunJournalStore, runDir: string, trajectory: LoopStrategyTrace[]) {
+  const filePath = path.join(runDir, "loop", "strategy-trajectory.json");
+  await writeJsonAtomic(filePath, { version: 1, updatedAt: new Date().toISOString(), entries: trajectory });
+  await journal.setArtifacts({ strategyTrajectory: filePath });
+}
+
 async function finalizePendingAudit(journal: RunJournalStore, runDir: string, reports: IterationReport[], stage: "draft" | "audio", evaluation: QualityEvaluation) {
   const previous = [...reports].reverse().find((item) => item.audits?.some((audit) => audit.stage === stage && audit.progress === "pending"));
   const index = previous?.audits?.findIndex((audit) => audit.stage === stage && audit.progress === "pending") ?? -1;
@@ -131,7 +147,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     runId = snapshot.runId;
     url = typeof args.url === "string" ? args.url : snapshot.url;
     targetSeconds = typeof args.seconds === "string" ? Number(args.seconds) : snapshot.config.targetSeconds;
-    maxIterations = typeof args.iterations === "string" ? Math.max(1, Math.min(4, Number(args.iterations))) : snapshot.config.maxIterations;
+    maxIterations = typeof args.iterations === "string" ? Math.max(1, Math.min(8, Number(args.iterations))) : snapshot.config.maxIterations;
     outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : snapshot.config.outputDir;
     screenshotLimit = typeof args.screenshots === "string" ? Number(args.screenshots) : snapshot.config.screenshotLimit;
     engine = typeof args.engine === "string" ? args.engine as typeof engine : snapshot.config.engine;
@@ -142,7 +158,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     if (typeof args.url !== "string") throw new Error('Usage: scene-gen run --url "https://example.com/news" or scene-gen resume <run-id>');
     url = args.url;
     targetSeconds = Number(args.seconds ?? 100);
-    maxIterations = Math.max(1, Math.min(4, Number(args.iterations ?? process.env.HARNESS_MAX_ITERATIONS ?? 2)));
+    maxIterations = Math.max(1, Math.min(8, Number(args.iterations ?? process.env.HARNESS_MAX_ITERATIONS ?? 4)));
     outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : path.resolve(process.env.VIDEO_OUTPUT_DIR ?? defaultOutputDir());
     screenshotLimit = Number(args.screenshots ?? process.env.SCREENSHOT_LIMIT ?? 0);
     engine = (typeof args.engine === "string" ? args.engine : process.env.VIDEO_RENDER_ENGINE ?? "html-video") as typeof engine;
@@ -169,6 +185,20 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     const generationResultPath = path.join(runDir, "generation-result.json");
     await journal.setArtifacts({ runDir, runJournal: journal.filePath, generationResult: generationResultPath, reportDir });
     const state: AgentState = { iterations: await loadIterations(journal.snapshot().artifacts) };
+    const strategyArtifact = journal.snapshot().artifacts.strategyTrajectory;
+    let strategyTrajectory = strategyArtifact && existsSync(strategyArtifact)
+      ? (await readJson<{ entries?: LoopStrategyTrace[] }>(strategyArtifact).catch(() => ({ entries: [] }))).entries ?? []
+      : [];
+    const budgetLimits = resolveLoopBudgetLimits(args);
+    const enforceBudget = async (issues: QualityIssue[]) => {
+      const audits = state.iterations.flatMap((item) => item.audits ?? []);
+      const status = evaluateLoopBudget(budgetLimits, calculateLoopBudgetUsage(journal.snapshot(), audits), issues);
+      const budgetPath = path.join(runDir, "loop", "budget-status.json");
+      await writeJsonAtomic(budgetPath, { updatedAt: new Date().toISOString(), ...status });
+      await journal.setArtifacts({ loopBudget: budgetPath });
+      if (!status.allowed) throw new Error(`Loop budget requires human confirmation: ${status.exceeded.join(", ")}`);
+      return status;
+    };
     const existingManifestPath = journal.snapshot().artifacts.manifestPath;
     if (existingManifestPath && existsSync(existingManifestPath)) {
       state.manifestPath = existingManifestPath;
@@ -196,6 +226,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     let loopNotes = combineNotes([explicitNotes, ingest.feedbackGuidance ? `历史用户反馈，必须避免重复：\n${ingest.feedbackGuidance}` : ""]);
     let ignoreCache = Boolean(args["ignore-cache"]);
     let globalRewriteEscalated = Boolean(journal.snapshot().artifacts.noProgressEscalation);
+    let draftStrategy: LoopStrategyTrace | undefined;
     let draftPassed = state.iterations.at(-1)?.draft?.passed ?? false;
     let iteration = Math.max(1, (state.iterations.at(-1)?.iteration ?? 0) + (draftPassed ? 0 : 1));
 
@@ -231,10 +262,25 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         : gate.value.repairPlan.dirtyPlan;
       if (!state.iterations.includes(current)) state.iterations.push(current);
       await finalizePendingAudit(journal, runDir, state.iterations.filter((item) => item.iteration < iteration), "draft", gate.value.evaluation);
+      strategyTrajectory = finalizePendingStrategies(strategyTrajectory, "draft", gate.value.evaluation);
+      await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
       draftPassed = gate.value.evaluation.passed;
       if (draftPassed) break;
       const draftHistory = state.iterations.filter((item) => item.draftProjectHash).map((item) => ({ projectHash: item.draftProjectHash, evaluation: item.draft }));
+      let strategyHandlesNoProgress = false;
       if (hasRepeatedNoProgress(draftHistory)) {
+        draftStrategy = selectNextLoopStrategy({
+          stage: "draft", iteration, issues: gate.value.evaluation.issues, repairAction: gate.value.repairPlan.action,
+          affectedScenes: gate.value.repairPlan.sceneIndexes, trajectory: strategyTrajectory,
+          fallbackProviderId: process.env.REVISION_LLM_FALLBACK_MODEL,
+          scoreBefore: evaluationScore(gate.value.evaluation),
+        });
+        strategyTrajectory.push(draftStrategy);
+        await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
+        strategyHandlesNoProgress = !["global-replan", "human-review"].includes(draftStrategy.strategyId);
+        if (draftStrategy.strategyId === "human-review") globalRewriteEscalated = true;
+      }
+      if (hasRepeatedNoProgress(draftHistory) && !strategyHandlesNoProgress) {
         if (!globalRewriteEscalated && iteration < maxIterations) {
           const escalationPath = path.join(runDir, "loop", `iteration-${iteration}-no-progress.json`);
           await writeJsonAtomic(escalationPath, { stage: "draft", iteration, action: "regenerate-draft", reason: "project hash, issue set and score were unchanged for two rounds" });
@@ -251,23 +297,33 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         throw new Error("Draft loop stopped because two consecutive rounds made no progress.");
       }
       if (iteration >= maxIterations) break;
+      await enforceBudget(gate.value.evaluation.issues);
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
         const beforeRevision = structuredClone(state.project);
         const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-draft-revision-result.json`);
+        const revisionSceneIndexes = draftStrategy?.strategyId === "widen-dirty-scope"
+          ? state.project.scenes.map((_, index) => index)
+          : gate.value.repairPlan.sceneIndexes;
         const revision = await runStage({
-          journal, name: "revise", attempt: nextAttempt(journal, "revise"), inputs: gate.value.repairPlan, timeoutMs: 210_000, signal,
-          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: gate.value.repairPlan.sceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue) => issue.message), ...gate.value.evaluation.revisionNotes]), resultPath: revisionResultPath, signal: stageSignal }),
+          journal, name: "revise", attempt: nextAttempt(journal, "revise"), inputs: { repairPlan: gate.value.repairPlan, strategy: draftStrategy }, timeoutMs: 210_000, signal,
+          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: revisionSceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue) => `${issue.message}\nevidence=${JSON.stringify(issue.evidence)}`), ...gate.value.evaluation.revisionNotes]), promptStrategy: draftStrategy?.promptStrategy, providerStrategy: draftStrategy?.providerStrategy, resultPath: revisionResultPath, signal: stageSignal }),
           describe: () => ({ outputs: { projectPath: state.story!.projectPath }, suggestedAction: "revise-scenes" }),
         });
         state.project = revision.value.project;
         const audit = createLoopAudit({ iteration, stage: "draft", before: beforeRevision, after: state.project, evaluation: gate.value.evaluation, durationMs: revision.result.durationMs, usage: revision.value.usage });
         current.audits = [...(current.audits ?? []), audit];
         await persistLoopAudit(journal, runDir, audit);
+        draftStrategy = undefined;
       } else if (gate.value.repairPlan.action === "regenerate-draft") {
         state.story = undefined;
         state.project = undefined;
         ignoreCache = true;
-        loopNotes = combineNotes([loopNotes, ...gate.value.evaluation.issues.map((issue) => issue.message)]);
+        loopNotes = combineNotes([
+          loopNotes,
+          `strategy=${draftStrategy?.strategyId ?? "default"}; prompt=${draftStrategy?.promptStrategy ?? "default"}`,
+          ...gate.value.evaluation.issues.map((issue) => `${issue.message}\nevidence=${JSON.stringify(issue.evidence)}`),
+        ]);
+        draftStrategy = undefined;
       } else throw new Error(`Draft gate requires ${gate.value.repairPlan.action}: ${gate.value.repairPlan.reason}`);
       iteration += 1;
       startStage = state.story ? "draft-gate" : "draft";
@@ -280,19 +336,23 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     let forceAudioRebuild = false;
     let audioCacheSalt: string | undefined;
     let audioRepairReason: string | undefined;
+    let audioProviderOverride: "openai" | "f5" | "local" | undefined;
+    let audioStrategy: LoopStrategyTrace | undefined;
     let audioRemuxRequired = false;
     let audioRetimeRequired = false;
     while ((!audioPassed || shouldRun("synthesize", startStage, forceStage) || shouldRun("audio-gate", startStage, forceStage)) && iteration <= maxIterations) {
+      await enforceBudget(state.iterations.at(-1)?.audio?.issues ?? []);
       const forcedIndexes = forceAudioSceneIndexes;
       const forcedRebuild = forceAudioRebuild;
       const previousSceneDurations = state.project.scenes.map((scene) => scene.duration);
       const synth: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
-        journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason }, timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 930_000), signal,
-        task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, signal: stageSignal }),
+        journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, strategy: audioStrategy }, timeoutMs: Number(process.env.HARNESS_SYNTHESIZE_TIMEOUT_MS ?? 930_000), signal,
+        task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, signal: stageSignal }),
         describe: (value) => ({
           outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "" },
           metrics: {
             duration: value.audio?.durationSeconds ?? 0,
+            forcedAudioRebuild: forcedRebuild,
             ...(value.audio?.metrics ?? {}),
             alignedCueCount: value.narrationSegments?.reduce((sum, segment) => sum + (segment.speechAlignment?.phrases.length ?? 0), 0) ?? 0,
             alignedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "forced").length ?? 0,
@@ -311,6 +371,7 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
       forceAudioRebuild = false;
       audioCacheSalt = undefined;
       audioRepairReason = undefined;
+      audioProviderOverride = undefined;
       const gate: { value: GateStageOutput; result: StageResult } = await runStage<GateStageOutput>({
         journal, name: "audio-gate", attempt: nextAttempt(journal, "audio-gate"), inputs: { project: state.project, targetSeconds }, timeoutMs: Number(process.env.HARNESS_AUDIO_GATE_TIMEOUT_MS ?? 360_000), signal,
         task: (stageSignal) => runAudioGateStage(state.project as VideoProject, targetSeconds, stageSignal),
@@ -328,17 +389,31 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         : gate.value.repairPlan.dirtyPlan;
       if (!state.iterations.includes(current)) state.iterations.push(current);
       await finalizePendingAudit(journal, runDir, state.iterations.filter((item) => item.iteration < iteration), "audio", gate.value.evaluation);
+      strategyTrajectory = finalizePendingStrategies(strategyTrajectory, "audio", gate.value.evaluation);
+      await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
       audioPassed = gate.value.evaluation.passed;
       if (audioPassed) break;
       const audioHistory = state.iterations.filter((item) => item.audio && item.audioProjectHash).map((item) => ({ projectHash: item.audioProjectHash, evaluation: item.audio! }));
-      if (hasRepeatedNoProgress(audioHistory)) throw new Error("Audio loop stopped because two consecutive rounds made no progress.");
+      if (hasRepeatedNoProgress(audioHistory)) {
+        const fallback = process.env.TTS_PROVIDER_FALLBACK;
+        audioStrategy = selectNextLoopStrategy({
+          stage: "audio", iteration, issues: gate.value.evaluation.issues, repairAction: gate.value.repairPlan.action,
+          affectedScenes: gate.value.repairPlan.audioSceneIndexes, trajectory: strategyTrajectory,
+          fallbackProviderId: fallback === "openai" || fallback === "f5" || fallback === "local" ? fallback : undefined,
+          scoreBefore: evaluationScore(gate.value.evaluation),
+        });
+        strategyTrajectory.push(audioStrategy);
+        await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
+        if (audioStrategy.strategyId === "human-review") throw new Error("Audio loop requires human confirmation after exhausting repair strategies.");
+        if (audioStrategy.strategyId === "alternate-provider" && (audioStrategy.providerId === "openai" || audioStrategy.providerId === "f5" || audioStrategy.providerId === "local")) audioProviderOverride = audioStrategy.providerId;
+      }
       if (iteration >= maxIterations) break;
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
         const beforeRevision = structuredClone(state.project);
         const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-audio-revision-result.json`);
         const revision = await runStage({
           journal, name: "revise", attempt: nextAttempt(journal, "revise"), inputs: gate.value.repairPlan, timeoutMs: 210_000, signal,
-          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: gate.value.repairPlan.sceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue: QualityIssue) => issue.message), ...gate.value.evaluation.revisionNotes]), resultPath: revisionResultPath, signal: stageSignal }),
+          task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: audioStrategy?.strategyId === "widen-dirty-scope" ? state.project!.scenes.map((_, index) => index) : gate.value.repairPlan.sceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue: QualityIssue) => `${issue.message}\nevidence=${JSON.stringify(issue.evidence)}`), ...gate.value.evaluation.revisionNotes]), promptStrategy: audioStrategy?.promptStrategy, providerStrategy: audioStrategy?.providerStrategy, resultPath: revisionResultPath, signal: stageSignal }),
           describe: () => ({ outputs: { projectPath: state.story!.projectPath }, suggestedAction: "revise-scenes" }),
         });
         state.project = revision.value.project;
@@ -347,11 +422,13 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         await persistLoopAudit(journal, runDir, audit);
       } else if (gate.value.repairPlan.action === "resynthesize-audio") {
         forceAudioRebuild = true;
-        forceAudioSceneIndexes = gate.value.repairPlan.audioSceneIndexes.length
+        forceAudioSceneIndexes = audioStrategy?.strategyId === "widen-dirty-scope"
+          ? state.project.scenes.map((_, index) => index)
+          : gate.value.repairPlan.audioSceneIndexes.length
           ? gate.value.repairPlan.audioSceneIndexes
           : state.project.scenes.map((_, index) => index);
-        audioRepairReason = gate.value.repairPlan.reason;
-        audioCacheSalt = `audio:${gate.value.repairPlan.reason}:${forceAudioSceneIndexes.join(",") || "all"}`;
+        audioRepairReason = `${gate.value.repairPlan.reason}; strategy=${audioStrategy?.strategyId ?? "default"}`;
+        audioCacheSalt = `audio:${audioRepairReason}:${forceAudioSceneIndexes.join(",") || "all"}`;
       } else {
         throw new Error(`Audio gate requires ${gate.value.repairPlan.action}: ${gate.value.repairPlan.reason}`);
       }
@@ -368,10 +445,12 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
     let pendingMuxRequired = audioRemuxRequired;
     let remuxedVideo = false;
     let lastRenderMetrics: Record<string, string | number | boolean> = {};
+    const videoEvidenceHistory: string[] = [];
     if (shouldRun("video-gate", startStage, forceStage) || !state.video) {
       for (let videoAttempt = 1; videoAttempt <= videoIterations; videoAttempt += 1) {
         const renderNeeded = remuxOnly || videoAttempt > 1 || shouldRun("render", startStage, forceStage) || !existsSync(state.story.outputPath);
         if (renderNeeded) {
+          await enforceBudget(state.video?.issues ?? []);
           const renderAttempt = nextAttempt(journal, "render");
           const renderResultPath = path.join(runDir, "render", `attempt-${renderAttempt}.json`);
           const render = await runStage({
@@ -414,13 +493,47 @@ export async function runVideoAgent(argv: string[], signal?: AbortSignal) {
         const evaluationPath = path.join(runDir, "evaluations", `video-attempt-${videoAttempt}.json`);
         await writeJsonAtomic(evaluationPath, state.video);
         await journal.setArtifacts({ videoEvaluation: evaluationPath });
+        strategyTrajectory = finalizePendingStrategies(strategyTrajectory, "video", gate.value.evaluation);
+        await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
+        videoEvidenceHistory.push(issueEvidenceSignature(gate.value.evaluation.issues));
         if (state.video.passed) break;
+        const repeatedVideoNoProgress = videoEvidenceHistory.length >= 2 && videoEvidenceHistory.at(-1) === videoEvidenceHistory.at(-2);
+        if (repeatedVideoNoProgress) {
+          const affectedScenes = gate.value.repairPlan.videoSceneIndexes.length
+            ? gate.value.repairPlan.videoSceneIndexes
+            : [...new Set(gate.value.evaluation.issues.map((issue) => issue.sceneIndex).filter((value): value is number => typeof value === "number"))];
+          const graph = state.story.htmlVideoGraphPath && existsSync(state.story.htmlVideoGraphPath)
+            ? await readJson<HtmlVideoContentGraph>(state.story.htmlVideoGraphPath).catch(() => undefined)
+            : undefined;
+          const templateSelections = graph?.nodes.filter((node) => !affectedScenes.length || affectedScenes.includes(node.sceneIndex)).map((node) => ({ sceneIndex: node.sceneIndex, templateId: node.templateId, variantId: node.variantId })) ?? [];
+          const strategy = selectNextLoopStrategy({ stage: "video", iteration: videoAttempt, issues: gate.value.evaluation.issues, repairAction: gate.value.repairPlan.action, affectedScenes, trajectory: strategyTrajectory, templateSelections, scoreBefore: evaluationScore(gate.value.evaluation) });
+          strategyTrajectory.push(strategy);
+          await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
+          if (strategy.strategyId === "human-review") break;
+          if (strategy.strategyId === "alternate-template-variant") {
+            let exclusions: Record<string, string[]> = {};
+            try { exclusions = JSON.parse(process.env.HTML_TEMPLATE_EXCLUSIONS ?? "{}") as Record<string, string[]>; } catch { exclusions = {}; }
+            for (const selection of templateSelections) exclusions[String(selection.sceneIndex)] = [...new Set([...(exclusions[String(selection.sceneIndex)] ?? []), `${selection.templateId}:${selection.variantId}`])];
+            process.env.HTML_TEMPLATE_EXCLUSIONS = JSON.stringify(exclusions);
+            forceSceneIndexes = affectedScenes.length ? affectedScenes : state.project.scenes.map((_, index) => index);
+            forceRender = false;
+            pendingMuxRequired = true;
+            remuxOnly = false;
+          } else if (strategy.strategyId === "widen-dirty-scope") {
+            forceSceneIndexes = state.project.scenes.map((_, index) => index);
+            forceRender = false;
+            pendingMuxRequired = true;
+            remuxOnly = false;
+          }
+        }
         if (!gate.value.repairPlan.retryable || videoAttempt === videoIterations) break;
-        forceSceneIndexes = gate.value.repairPlan.videoSceneIndexes.length ? gate.value.repairPlan.videoSceneIndexes : undefined;
-        forceRender = gate.value.repairPlan.forceVideoRebuild && !forceSceneIndexes?.length;
-        pendingMuxRequired = gate.value.repairPlan.muxRequired;
-        remuxOnly = pendingMuxRequired && engine === "html-video" && Boolean(silentVideoPath) && existsSync(silentVideoPath);
-        if (gate.value.repairPlan.action === "reconcat-video") remuxOnly = false;
+        if (!repeatedVideoNoProgress) {
+          forceSceneIndexes = gate.value.repairPlan.videoSceneIndexes.length ? gate.value.repairPlan.videoSceneIndexes : undefined;
+          forceRender = gate.value.repairPlan.forceVideoRebuild && !forceSceneIndexes?.length;
+          pendingMuxRequired = gate.value.repairPlan.muxRequired;
+          remuxOnly = pendingMuxRequired && engine === "html-video" && Boolean(silentVideoPath) && existsSync(silentVideoPath);
+          if (gate.value.repairPlan.action === "reconcat-video") remuxOnly = false;
+        }
       }
     }
 

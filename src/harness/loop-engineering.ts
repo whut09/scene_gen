@@ -62,6 +62,10 @@ export function issueSignature(issues: Array<Pick<QualityIssue, "code" | "sceneI
   return [...new Set(issues.map((issue) => `${issue.severity}:${issueKey(issue)}`))].sort().join("|");
 }
 
+export function issueEvidenceSignature(issues: Array<Pick<QualityIssue, "code" | "sceneIndex" | "evidence">>) {
+  return contentHash(issues.map((issue) => ({ code: issue.code, sceneIndex: issue.sceneIndex, evidence: issue.evidence })));
+}
+
 export function evaluationScore(evaluation: Pick<QualityEvaluation, "scores" | "metrics">) {
   if (typeof evaluation.metrics.scoreAverage === "number") return evaluation.metrics.scoreAverage;
   const values = Object.values(evaluation.scores ?? {});
@@ -157,5 +161,6 @@ export function hasRepeatedNoProgress(items: Array<{ projectHash?: string; evalu
   const [previous, current] = items.slice(-2);
   return Boolean(previous.projectHash && previous.projectHash === current.projectHash
     && issueSignature(previous.evaluation.issues) === issueSignature(current.evaluation.issues)
+    && issueEvidenceSignature(previous.evaluation.issues) === issueEvidenceSignature(current.evaluation.issues)
     && Math.abs(evaluationScore(previous.evaluation) - evaluationScore(current.evaluation)) < 0.5);
 }
