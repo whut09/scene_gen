@@ -77,6 +77,27 @@
     { "pattern": "價於|驾于", "replacement": "驾驭" },
     { "pattern": "代理案工程", "replacement": "代理按工程" },
     { "pattern": "50(?=年)", "replacement": "五十" },
-    { "pattern": "十六分之一", "replacement": "16分之一" }
+    { "pattern": "十六分之一", "replacement": "16分之一" },
+    { "pattern": "優庫|优库|優哭|优哭", "replacement": "优酷" },
+    { "pattern": "無欠|无欠|無倩|无倩|無切|无切", "replacement": "吴倩" },
+    { "pattern": "真任演員|真任演员|人言援", "replacement": "真人演员" },
+    { "pattern": "五京文娛|五京文娱|無經文語|无经文语", "replacement": "虎鲸文娱" },
+    { "pattern": "手席運營關|手席运营关|首席運營關鍵|首席运营关键", "replacement": "首席运营官" },
+    { "pattern": "不忙募迷信|不忙募民性|不忙碌迷信", "replacement": "不盲目迷信" },
+    { "pattern": "證以前所為有|证以前所为有", "replacement": "正以前所未有" },
+    { "pattern": "影像影視|影像影视", "replacement": "影响影视" },
+    { "pattern": "領感落地|领感落地", "replacement": "灵感落地" },
+    { "pattern": "視覺成先|视觉成先", "replacement": "视觉呈现" },
+    { "pattern": "分敬設計|分敬设计", "replacement": "分镜设计" },
+    { "pattern": "把東人|把东人", "replacement": "打动人" },
+    { "pattern": "畫面星期|画面星期", "replacement": "画面新奇" },
+    { "pattern": "航業|航业", "replacement": "行业" },
+    { "pattern": "飲食作品|饮食作品", "replacement": "影视作品" },
+    { "pattern": "課知與爆發|课知与爆发", "replacement": "克制与爆发" },
+    { "pattern": "總裁", "replacement": "总裁" },
+    { "pattern": "無法", "replacement": "无法" },
+    { "pattern": "從", "replacement": "从" },
+    { "pattern": "影視", "replacement": "影视" },
+    { "pattern": "設計", "replacement": "设计" }
   ]
 }

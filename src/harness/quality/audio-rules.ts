@@ -18,16 +18,24 @@ export interface AudioGateDependencies {
   pronunciationVerify?: (request: { sceneIndex: number; span: PronunciationSpan; audioPath: string; signal?: AbortSignal }) => Promise<PronunciationAssessmentResult>;
 }
 
+export function narrationRateMetrics(project: VideoProject) {
+  const segments = project.narrationSegments ?? [];
+  const narrationChars = segments.length
+    ? segments.reduce((sum, segment) => sum + (segment.ttsText ?? segment.text).replace(/\s+/g, "").length, 0)
+    : project.narration.replace(/\s+/g, "").length;
+  const segmentRates = segments.map((segment) => {
+    const segmentDuration = segment.durationSeconds ?? 0;
+    return segmentDuration > 0 ? (segment.ttsText ?? segment.text).replace(/\s+/g, "").length / segmentDuration : 0;
+  }).filter((value) => value > 0);
+  return { narrationChars, segmentRates };
+}
+
 export async function evaluateAudio(project: VideoProject, targetSeconds: number, signal?: AbortSignal, config: RuntimeConfig = getRuntimeConfig(), dependencies: AudioGateDependencies = {}): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
   const segments = project.narrationSegments ?? [];
   const duration = project.audio?.durationSeconds ?? 0;
-  const narrationChars = project.narration.replace(/\s+/g, "").length;
+  const { narrationChars, segmentRates } = narrationRateMetrics(project);
   const charsPerSecond = duration > 0 ? narrationChars / duration : 0;
-  const segmentRates = segments.map((segment) => {
-    const segmentDuration = segment.durationSeconds ?? 0;
-    return segmentDuration > 0 ? segment.text.replace(/\s+/g, "").length / segmentDuration : 0;
-  }).filter((value) => value > 0);
   const sortedRates = [...segmentRates].sort((left, right) => left - right);
   const medianSegmentRate = sortedRates.length
     ? sortedRates.length % 2 ? sortedRates[Math.floor(sortedRates.length / 2)] : (sortedRates[sortedRates.length / 2 - 1] + sortedRates[sortedRates.length / 2]) / 2

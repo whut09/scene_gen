@@ -48,6 +48,43 @@ async function fetchText(url: string, timeoutMs = 12000) {
   return await response.text();
 }
 
+async function fetchTextWithBrowser(url: string, timeoutMs = 30000) {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+  });
+  try {
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36",
+    });
+    const page = await context.newPage();
+    page.setDefaultNavigationTimeout(timeoutMs);
+    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+    if (response && !response.ok()) throw new Error(`${response.status()} ${response.statusText()}`);
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+    const html = await page.content();
+    if (html.length < 200) throw new Error("browser returned an empty webpage");
+    return html;
+  } finally {
+    await browser.close().catch(() => undefined);
+  }
+}
+
+async function fetchWebpageText(url: string) {
+  try {
+    return await fetchText(url);
+  } catch (directError) {
+    console.warn(`[webpage] direct fetch failed for ${url}; retrying with Playwright: ${(directError as Error).message}`);
+    try {
+      return await fetchTextWithBrowser(url);
+    } catch (browserError) {
+      throw new Error(`direct fetch failed: ${(directError as Error).message}; browser fallback failed: ${(browserError as Error).message}`);
+    }
+  }
+}
+
 function normalizePublishedAt(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const date = new Date(value.trim());
@@ -325,13 +362,14 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         items.push(githubItem);
         continue;
       }
-      const html = await fetchText(url);
+      const html = await fetchWebpageText(url);
       const dom = new JSDOM(html, { url });
       const article = new Readability(dom.window.document).parse();
       const title = compactText(article?.title ?? dom.window.document.title ?? url, 140);
       const content = compactText(article?.textContent ?? title, 4200);
       const summary = compactText(article?.excerpt ?? content ?? title, 360);
       const joined = `${title} ${summary}`;
+      const publishedAt = extractWebpagePublishedAt(dom.window.document) ?? new Date().toISOString();
       items.push({
         id: stableId("webpage", url, title),
         kind: "webpage",
@@ -340,8 +378,8 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         source: domainFromUrl(url),
         summary,
         content,
-        publishedAt: new Date().toISOString(),
-        score: scoreItem(joined, new Date().toISOString(), 1, config.keywords),
+        publishedAt,
+        score: scoreItem(joined, publishedAt, 1, config.keywords),
         tags: normalizeTags(joined, config.keywords),
         domain: domainFromUrl(url),
       });

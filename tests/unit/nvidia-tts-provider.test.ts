@@ -20,13 +20,13 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   assert.equal(identity.frontendVersion, "nvidia-magpie-direct-utf8-chunked-v7-speed");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, plan.synthesisText);
-  assert.equal(identity.speed, 1.22);
+  assert.equal(identity.speed, 1.25);
 });
 
 test("NVIDIA cache identity changes when narration speed changes", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const normal = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_SPEED: "1" }, "test");
-  const faster = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_SPEED: "1.22" }, "test");
+  const faster = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_SPEED: "1.25" }, "test");
   assert.notDeepEqual(nvidiaTtsCacheIdentity({ plan }, normal), nvidiaTtsCacheIdentity({ plan }, faster));
 });
 

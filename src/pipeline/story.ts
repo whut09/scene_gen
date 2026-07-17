@@ -1,9 +1,23 @@
 ﻿import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
 
+import { buildFactLedger } from "./fact-ledger";
+
 const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15"];
 
 function shortTitle(title: string, max = 34) {
   return title.length > max ? `${title.slice(0, max - 1)}...` : title;
+}
+
+function speechFriendlyText(text: string) {
+  return text
+    .replace(/\bAI\b/gi, "人工智能")
+    .replace(/\bCOO\b/gi, "首席运营官")
+    .replace(/HappyHorse/gi, "活动主办方")
+    .replace(/HorsePower/gi, "人工智能影像大赛");
+}
+
+function speechFriendlyTitle(title: string) {
+  return speechFriendlyText(title.replace(/^.{4,24}[？?](?=.{2,30}[：:])/u, ""));
 }
 
 function sourceLabel(item: HotItem) {
@@ -294,13 +308,24 @@ function createGeneralNewsProject(
   const isChipStory =
     /芯片|AI芯片|推理芯片|自研芯片|造芯|算力芯片/i.test(topicText) &&
     !/发布.*模型|推出.*模型|模型.*发布|模型.*上线/i.test(item.title);
-  const title = item.title;
+  const title = speechFriendlyTitle(item.title);
   const summary =
     item.summary && item.summary !== item.title
       ? item.summary
       : isChipStory
         ? "头部模型公司开始把竞争从模型能力，推进到底层算力和推理成本控制。"
         : "这条新闻的关键，是一个行业变量正在从表层事件变成结构性变化。";
+  const articleSentences = scrubAttribution(item.content ?? item.summary)
+    .split(/(?<=[。！？])/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 12)
+    .flatMap((sentence) => {
+      const characters = [...sentence];
+      return Array.from({ length: Math.ceil(characters.length / 58) }, (_, index) => characters.slice(index * 58, (index + 1) * 58).join(""));
+    });
+  const sentenceAt = (index: number) => articleSentences[index] ?? articleSentences[index % Math.max(1, articleSentences.length)] ?? summary;
+  const narrationAt = (start: number, count = 2) => Array.from({ length: count }, (_, offset) => sentenceAt(start + offset)).join("");
+  const coverSummary = compactSentence(summary, 72);
 
   const sections: Array<{ scene: VideoScene; narration: string }> = isChipStory
     ? [
@@ -386,57 +411,66 @@ function createGeneralNewsProject(
         {
           scene: {
             type: "title",
-            duration: 7,
+            duration: 12,
             kicker: "今日科技信号",
             headline: shortTitle(title, 42),
-            subhead: summary,
+            subhead: coverSummary,
             sources: ["事实", "影响", "边界"],
           },
-          narration: `这条新闻讲的是：${title}。`,
+          narration: `这条新闻讲的是：${title}。${coverSummary}`,
         },
         {
           scene: {
             type: "briefing_points",
-            duration: 18,
-            headline: "这条新闻真正说了什么",
+            duration: 20,
+            headline: compactSentence(sentenceAt(0), 30),
             source: "核心事实",
             title,
             summary,
             metrics: [
-              { label: "热度", value: String(Math.min(100, Math.max(12, item.score))) },
-              { label: "来源", value: item.kind },
+              { label: "核心观点", value: compactSentence(sentenceAt(1), 18) },
+              { label: "讨论范围", value: compactSentence(sentenceAt(2), 18) },
             ],
-            points: [summary, "要看它影响的是短期热度，还是长期成本、效率和产业结构。"],
+            points: [sentenceAt(1), sentenceAt(2), sentenceAt(3)],
           },
-          narration: summary,
+          narration: narrationAt(2, 2),
         },
         {
           scene: {
-            type: "flow",
-            duration: 18,
-            headline: "影响路径怎么拆",
-            steps: [
-              { label: "事实", detail: summary },
-              { label: "影响", detail: "观察它会改变成本、效率、产品体验还是竞争格局。" },
-              { label: "边界", detail: "单条新闻不能直接等于长期趋势，还要看后续验证。" },
+            type: "news_stack",
+            duration: 20,
+            headline: compactSentence(sentenceAt(4), 30),
+            items: [{ title, summary: narrationAt(4, 2), source: item.source, url: item.url, tags: item.tags }],
+          },
+          narration: narrationAt(4, 2),
+        },
+        {
+          scene: {
+            type: "timeline",
+            duration: 20,
+            headline: compactSentence(sentenceAt(6), 30),
+            events: [
+              { date: "活动背景", title: sentenceAt(6), source: item.source },
+              { date: "观点表达", title: sentenceAt(7), source: item.source },
+              { date: "行业实践", title: sentenceAt(8), source: item.source },
             ],
           },
-          narration: "看这类新闻，关键不是只复述标题，而是拆成事实、影响路径和后续验证。",
+          narration: narrationAt(6, 2),
         },
         {
           scene: {
             type: "outro",
-            duration: 14,
-            headline: "最后判断",
-            bullets: ["先看事实，再看影响路径，最后看后续验证。"],
+            duration: 18,
+            headline: compactSentence(sentenceAt(9), 30),
+            bullets: [sentenceAt(9), sentenceAt(10), sentenceAt(11)],
           },
-          narration: "如果它能改变成本、效率、用户体验或产业竞争格局，就值得单独做成视频继续观察。",
+          narration: narrationAt(9, 2),
         },
       ];
 
   const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 96));
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
-  return {
+  const project = {
     meta: {
       title,
       createdAt: new Date().toISOString(),
@@ -450,11 +484,24 @@ function createGeneralNewsProject(
     narrationSegments: sections.map((section, sceneIndex) => ({
       sceneIndex,
       text: scrubAttribution(section.narration),
+      ttsText: sceneIndex === 0 ? `这条新闻讲的是，${title}。` : speechFriendlyText(scrubAttribution(section.narration)),
     })),
     scenes,
     sources: [item],
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
+  const factLedger = buildFactLedger(project.sources);
+  const claimIdsForScene = (sceneIndex: number) => {
+    const selected = factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2).map((claim) => claim.id);
+    return selected.length ? selected : factLedger.claims.slice(0, 1).map((claim) => claim.id);
+  };
+  return {
+    ...project,
+    factLedger,
+    titleClaimIds: claimIdsForScene(0),
+    scenes: project.scenes.map((scene, sceneIndex) => ({ ...scene, claimIds: claimIdsForScene(sceneIndex) })) as VideoScene[],
+    narrationSegments: project.narrationSegments?.map((segment) => ({ ...segment, claimIds: claimIdsForScene(segment.sceneIndex) })),
+  };
 }
 
 export function createProject(
