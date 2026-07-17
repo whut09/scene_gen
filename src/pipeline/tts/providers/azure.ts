@@ -9,6 +9,15 @@ import { runExternalProcess } from "../../external-operation";
 import { ensureDir, readJson, writeJsonAtomic } from "../../utils";
 import { BoundedTaskQueue } from "../../bounded-task-queue";
 import { probeDuration } from "../process";
+import type { PronunciationPlan } from "../../pronunciation/schema";
+import {
+  AZURE_MANDARIN_PHONEME_VERSION,
+  AzureSsmlError,
+  azureSpokenFallbackText,
+  buildAzurePlainSsml,
+  buildAzurePronunciationSsml,
+  runAzureSsmlSelfTest,
+} from "./azure-ssml";
 
 export const AZURE_TTS_FRONTEND_VERSION = "scene-gen-azure-rest-v1";
 
@@ -24,6 +33,7 @@ export interface AzureTtsInput {
   displayText: string;
   synthesisText: string;
   ssml?: string;
+  pronunciationPlan?: PronunciationPlan;
   voice?: string;
   outputPath: string;
   rate?: string;
@@ -32,6 +42,7 @@ export interface AzureTtsInput {
   style?: string;
   role?: string;
   pronunciationPlanHash: string;
+  pronunciationStrategy?: "phoneme" | "spoken-fallback" | "plain";
   cacheSalt?: string;
   force?: boolean;
   signal?: AbortSignal;
@@ -201,6 +212,7 @@ function responseErrorType(status: number, body: string) {
   if (status === 429) return { errorType: "rate_limit", retryable: true };
   if (status >= 500) return { errorType: "server_error", retryable: true };
   if (status === 401 || status === 403) return { errorType: "authentication_error", retryable: false };
+  if (status === 400 && /phoneme|phonetic|alphabet|pronunciation/i.test(body)) return { errorType: "unsupported_phoneme", retryable: false };
   if (status === 400 && /ssml|xml|voice/i.test(body)) return { errorType: /voice/i.test(body) ? "unsupported_voice" : "invalid_ssml", retryable: false };
   return { errorType: "invalid_request", retryable: false };
 }
@@ -268,15 +280,20 @@ function resultFailure(input: AzureTtsInput, requestId: string, startedAt: numbe
 }
 
 async function synthesizeAzureSpeechInternal(input: AzureTtsInput, config: RuntimeConfig): Promise<AzureTtsResult> {
+  await runAzureSsmlSelfTest();
   const requestId = randomUUID();
   const startedAt = Date.now();
   const voice = input.voice ?? config.tts.azure.voice;
-  const ssml = normalizeAzureSsml(input.ssml ?? buildAzureSsml({ ...input, voice }, config));
+  let ssml: string;
   try {
+    ssml = normalizeAzureSsml(input.ssml ?? (input.pronunciationPlan
+      ? buildAzurePronunciationSsml(input.pronunciationPlan, { voice, rate: input.rate, pitch: input.pitch, volume: input.volume, style: input.style ?? config.tts.azure.style, role: input.role ?? config.tts.azure.role })
+      : buildAzureSsml({ ...input, voice }, config)));
     assertValidSsml(ssml);
   } catch (error) {
     const usage = await readAzureUsage(config);
-    throw new AzureTtsError(resultFailure(input, requestId, startedAt, 0, 0, voice, config, "invalid_ssml", false, (error as Error).message, undefined, usage.usedCharacters));
+    const errorType = error instanceof AzureSsmlError ? error.errorType : "invalid_ssml";
+    throw new AzureTtsError(resultFailure(input, requestId, startedAt, 0, 0, voice, config, errorType, false, (error as Error).message, undefined, usage.usedCharacters));
   }
   const apiKey = config.tts.azure.apiKey;
   if (!apiKey) {
@@ -375,13 +392,18 @@ export function synthesizeAzureSpeech(input: AzureTtsInput, config: RuntimeConfi
 
 export function azureCacheIdentity(input: AzureTtsInput, config: RuntimeConfig = getRuntimeConfig()) {
   const voice = input.voice ?? config.tts.azure.voice;
-  const ssml = normalizeAzureSsml(input.ssml ?? buildAzureSsml({ ...input, voice }, config));
+  const strategy = input.pronunciationStrategy ?? (input.pronunciationPlan ? "phoneme" : "plain");
+  const ssml = normalizeAzureSsml(input.ssml ?? (input.pronunciationPlan
+    ? buildAzurePronunciationSsml(input.pronunciationPlan, { voice, rate: input.rate, pitch: input.pitch, volume: input.volume, style: input.style ?? config.tts.azure.style, role: input.role ?? config.tts.azure.role })
+    : buildAzureSsml({ ...input, voice }, config)));
   return {
     provider: "azure",
     voice,
     outputFormat: config.tts.azure.outputFormat,
     normalizedSsml: ssml,
     pronunciationPlanHash: input.pronunciationPlanHash,
+    pronunciationStrategy: strategy,
+    azureMandarinPhonemeVersion: AZURE_MANDARIN_PHONEME_VERSION,
     rate: input.rate ?? "+0%",
     pitch: input.pitch ?? "+0Hz",
     volume: input.volume ?? "+0%",
@@ -436,7 +458,26 @@ async function azureTtsWithConfig(input: AzureTtsInput, config: RuntimeConfig) {
 }
 
 export function azureTts(input: AzureTtsInput, config: RuntimeConfig = getRuntimeConfig()) {
-  return runWithRuntimeConfig(config, () => azureTtsWithConfig(input, config));
+  return runWithRuntimeConfig(config, async () => {
+    try {
+      return await azureTtsWithConfig(input, config);
+    } catch (error) {
+      if (error instanceof AzureSsmlError) {
+        const usage = await readAzureUsage(config);
+        throw new AzureTtsError(resultFailure(input, randomUUID(), Date.now(), 0, 0, input.voice ?? config.tts.azure.voice, config, error.errorType, false, error.message, undefined, usage.usedCharacters));
+      }
+      if (!(error instanceof AzureTtsError) || error.result.errorType !== "unsupported_phoneme" || !input.pronunciationPlan) throw error;
+      const fallbackText = azureSpokenFallbackText(input.pronunciationPlan);
+      if (!fallbackText) throw error;
+      return azureTtsWithConfig({
+        ...input,
+        synthesisText: fallbackText,
+        ssml: buildAzurePlainSsml(fallbackText, { voice: input.voice ?? config.tts.azure.voice, rate: input.rate, pitch: input.pitch, volume: input.volume, style: input.style ?? config.tts.azure.style, role: input.role ?? config.tts.azure.role }),
+        pronunciationPlan: undefined,
+        pronunciationStrategy: "spoken-fallback",
+      }, config);
+    }
+  });
 }
 
 export async function inspectAzureVoice(config: RuntimeConfig = getRuntimeConfig(), signal?: AbortSignal) {

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { XMLValidator } from "fast-xml-parser";
 import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
-import { azurePronunciationSsml, cosyVoicePronunciationInput, edgePronunciationText, f5PronunciationInput, indexTtsPronunciationInput } from "../../src/pipeline/pronunciation/provider-adapters";
+import { cosyVoicePronunciationInput, edgePronunciationText, f5PronunciationInput, indexTtsPronunciationInput } from "../../src/pipeline/pronunciation/provider-adapters";
+import { buildAzurePronunciationSsml } from "../../src/pipeline/tts/providers/azure-ssml";
 import type { PronunciationSpan } from "../../src/pipeline/pronunciation/schema";
 
 test("manual pronunciation plan covers required Chinese polyphones", async () => {
@@ -65,8 +66,8 @@ test("plan hashes are stable and scene-local changes do not invalidate unrelated
 
 test("provider adapters preserve display text and escape SSML", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "A&B <重构>", semanticText: "A&B <重构>" });
-  const azure = azurePronunciationSsml(plan, { voice: "zh-CN-XiaoxiaoNeural" });
-  assert.match(azure, /<phoneme alphabet="sapi" ph="chong 2 gou 4">重构<\/phoneme>/);
+  const azure = buildAzurePronunciationSsml(plan, { voice: "zh-CN-XiaoxiaoNeural" });
+  assert.match(azure, /<phoneme alphabet="sapi" ph="chong 2 - gou 4">重构<\/phoneme>/);
   assert.match(azure, /A&amp;B &lt;/);
   assert.equal(XMLValidator.validate(azure), true);
   assert.equal(f5PronunciationInput(plan).pronunciationPlanHash, plan.planHash);

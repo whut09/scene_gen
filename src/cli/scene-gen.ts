@@ -12,6 +12,8 @@ import { clearMediaCache, inspectMediaCache, pruneMediaCache } from "../cache/ca
 import { createRuntimeConfig, restoreRuntimeConfig, runWithRuntimeConfig, runtimeConfigWithRunOverrides } from "../config/runtime-config";
 import { migrateRunArtifacts } from "../persistence/run-migration";
 import { readRunJournalFile } from "../harness/run-journal";
+import { compilePronunciationPlan } from "../pipeline/pronunciation/compiler";
+import { buildAzurePronunciationSsml } from "../pipeline/tts/providers/azure-ssml";
 
 const profileOption = { type: "string" as const, description: `Configuration profile (${builtInProfileNames.join(", ")} or config/profiles/<name>.json).` };
 const jsonOption = { type: "boolean" as const, description: "Print machine-readable JSON." };
@@ -103,6 +105,15 @@ const definitions: Record<string, CommandDefinition> = {
       "max-age-days": { type: "number", description: "Prune entries not accessed within this many days." },
       "max-size-gb": { type: "number", description: "Prune oldest entries until cache size is below this limit." },
       "dry-run": { type: "boolean", description: "Show prune results without deleting files." },
+      json: jsonOption,
+    },
+  },
+  pronunciation: {
+    summary: "Inspect a context-aware pronunciation plan and Azure SSML.",
+    positionals: [{ name: "action", required: true, description: "inspect." }],
+    options: {
+      text: { type: "string", required: true, description: "Chinese display text to inspect." },
+      profile: profileOption,
       json: jsonOption,
     },
   },
@@ -204,6 +215,26 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
           maxSizeBytes: parsed.options["max-size-gb"] === undefined ? undefined : Number(parsed.options["max-size-gb"]) * 1024 ** 3,
           dryRun: Boolean(parsed.options["dry-run"]),
         });
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "pronunciation") {
+    if (parsed.positionals[0] !== "inspect") throw new Error("Pronunciation action must be inspect.");
+    const runtimeConfig = await createRuntimeConfig(String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? "local-f5"));
+    const { plan, issues } = await compilePronunciationPlan({ displayText: String(parsed.options.text), domain: runtimeConfig.tts.pronunciation.domain, signal });
+    const ssml = buildAzurePronunciationSsml(plan, {
+      voice: runtimeConfig.tts.azure.voice,
+      style: runtimeConfig.tts.azure.style,
+      role: runtimeConfig.tts.azure.role,
+    });
+    const result = {
+      displayText: plan.displayText,
+      synthesisText: plan.synthesisText,
+      spans: plan.spans.map((span) => ({ phrase: span.phrase, pinyin: span.providerOverrides.azure?.pinyin ?? span.expectedPinyin, source: span.source, confidence: span.confidence })),
+      providerSsml: ssml,
+      planHash: plan.planHash,
+      issues,
+    };
     console.log(JSON.stringify(result, null, 2));
     return;
   }

@@ -8,6 +8,7 @@ import { buildRuntimeConfig, runtimeConfigSnapshot } from "../../src/config/runt
 import { runExternalProcess } from "../../src/pipeline/external-operation";
 import {
   AzureTtsError,
+  azureCacheKey,
   azureBillableCharacters,
   azureTts,
   inspectAzureVoice,
@@ -15,6 +16,9 @@ import {
   resetAzureProviderStateForTests,
   synthesizeAzureSpeech,
 } from "../../src/pipeline/tts/providers/azure";
+import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
+import { buildAzurePlainSsml } from "../../src/pipeline/tts/providers/azure-ssml";
+import { pronunciationPlanHash, type PronunciationPlan } from "../../src/pipeline/pronunciation/schema";
 
 function wavBuffer(durationSeconds = 0.08, sampleRate = 16_000) {
   const samples = Math.max(1, Math.floor(durationSeconds * sampleRate));
@@ -156,6 +160,93 @@ test("Azure TTS retries 429 but does not retry authentication errors", { concurr
   }
 });
 
+test("Azure TTS falls back only for unsupported phonemes and gives fallback a distinct cache key", { concurrency: false }, async () => {
+  resetAzureProviderStateForTests();
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-azure-fallback-"));
+  const bodies: string[] = [];
+  const server = await mockServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    bodies.push(body);
+    if (bodies.length === 1) {
+      response.statusCode = 400;
+      response.end("Unsupported phoneme alphabet for pronunciation");
+      return;
+    }
+    response.end(wavBuffer());
+  });
+  try {
+    const config = azureConfig(root, server.endpoint);
+    const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
+    const phonemeInput = { ...input(path.join(root, "fallback.wav"), 2, plan.displayText), pronunciationPlan: plan, pronunciationPlanHash: plan.planHash };
+    const fallbackText = "系统完成核心模块重新构建";
+    const fallbackInput = {
+      ...phonemeInput,
+      pronunciationPlan: undefined,
+      pronunciationStrategy: "spoken-fallback" as const,
+      synthesisText: fallbackText,
+      ssml: buildAzurePlainSsml(fallbackText, { voice: config.tts.azure.voice }),
+    };
+    assert.notEqual(azureCacheKey(phonemeInput, config), azureCacheKey(fallbackInput, config));
+    const result = await azureTts(phonemeInput, config);
+    assert.equal(result.reused, false);
+    assert.equal(bodies.length, 2);
+    assert.match(bodies[0], /ph="chong 2 - gou 4">重构/);
+    assert.doesNotMatch(bodies[1], /<phoneme/);
+    assert.match(bodies[1], /重新构建/);
+    assert.equal(plan.displayText, "系统完成核心模块重构");
+  } finally {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Azure TTS never uses spoken fallback for 401 and retries 429 with the original phoneme SSML", { concurrency: false }, async () => {
+  resetAzureProviderStateForTests();
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-azure-strategy-"));
+  const { plan } = await compilePronunciationPlan({ displayText: "重构" });
+  const unauthorizedBodies: string[] = [];
+  const unauthorized = await mockServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    unauthorizedBodies.push(body);
+    response.statusCode = 401;
+    response.end("unauthorized");
+  });
+  try {
+    const config = azureConfig(root, unauthorized.endpoint, { AZURE_TTS_MAX_RETRIES: "2" });
+    await assert.rejects(azureTts({ ...input(path.join(root, "unauthorized-phoneme.wav"), 3, plan.displayText), pronunciationPlan: plan, pronunciationPlanHash: plan.planHash }, config), (error: unknown) => error instanceof AzureTtsError && error.result.errorType === "authentication_error");
+    assert.equal(unauthorizedBodies.length, 1);
+    assert.match(unauthorizedBodies[0], /<phoneme/);
+  } finally {
+    await unauthorized.close();
+  }
+
+  resetAzureProviderStateForTests();
+  const retryBodies: string[] = [];
+  const rateLimited = await mockServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    retryBodies.push(body);
+    if (retryBodies.length === 1) {
+      response.statusCode = 429;
+      response.end("retry");
+      return;
+    }
+    response.end(wavBuffer());
+  });
+  try {
+    const config = azureConfig(root, rateLimited.endpoint, { AZURE_TTS_MAX_RETRIES: "1" });
+    await azureTts({ ...input(path.join(root, "retry-phoneme.wav"), 4, plan.displayText), pronunciationPlan: plan, pronunciationPlanHash: plan.planHash }, config);
+    assert.equal(retryBodies.length, 2);
+    assert.equal(retryBodies[0], retryBodies[1]);
+    assert.match(retryBodies[0], /<phoneme/);
+  } finally {
+    await rateLimited.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Azure TTS handles timeout, AbortSignal, and malformed SSML without leaking requests", { concurrency: false }, async () => {
   resetAzureProviderStateForTests();
   const root = await mkdtemp(path.join(tmpdir(), "scene-gen-azure-cancel-"));
@@ -174,6 +265,33 @@ test("Azure TTS handles timeout, AbortSignal, and malformed SSML without leaking
     const beforeMalformed = calls;
     await assert.rejects(synthesizeAzureSpeech({ ...input(path.join(root, "invalid.wav"), 2), ssml: "<speak>" }, timeoutConfig), (error: unknown) => error instanceof AzureTtsError && error.result.errorType === "invalid_ssml");
     assert.equal(calls, beforeMalformed);
+  } finally {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Azure TTS rejects overlapping pronunciation spans before sending HTTP", { concurrency: false }, async () => {
+  resetAzureProviderStateForTests();
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-azure-invalid-plan-"));
+  let calls = 0;
+  const server = await mockServer((_request, response) => {
+    calls += 1;
+    response.end(wavBuffer());
+  });
+  try {
+    const config = azureConfig(root, server.endpoint);
+    const { plan } = await compilePronunciationPlan({ displayText: "重构系统" });
+    const withoutHash = {
+      ...plan,
+      spans: [...plan.spans, { ...plan.spans[0], phrase: "构系", start: 1, end: 3, expectedPinyin: ["gou4", "xi4"] }],
+    };
+    const invalidPlan: PronunciationPlan = { ...withoutHash, planHash: pronunciationPlanHash(withoutHash) };
+    await assert.rejects(
+      azureTts({ ...input(path.join(root, "invalid-plan.wav"), 5, invalidPlan.displayText), pronunciationPlan: invalidPlan, pronunciationPlanHash: invalidPlan.planHash }, config),
+      (error: unknown) => error instanceof AzureTtsError && error.result.errorType === "pronunciation_plan_invalid",
+    );
+    assert.equal(calls, 0);
   } finally {
     await server.close();
     await rm(root, { recursive: true, force: true });

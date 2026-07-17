@@ -22,7 +22,6 @@ import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from 
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
-import { azurePronunciationSsml } from "./pronunciation/provider-adapters";
 import { f5PronunciationInput } from "./pronunciation/provider-adapters";
 import type { PronunciationPlan } from "./pronunciation/schema";
 export { prepareF5SynthesisText, removeLoneSurrogates } from "./tts/text-normalization";
@@ -320,7 +319,7 @@ async function synthesizeNarration(
       sceneIndex: options?.sceneIndex ?? 0,
       displayText: plan.displayText,
       synthesisText: plan.synthesisText,
-      ssml: azurePronunciationSsml(plan, { voice: getRuntimeConfig().tts.azure.voice, style: getRuntimeConfig().tts.azure.style, role: getRuntimeConfig().tts.azure.role }),
+      pronunciationPlan: plan,
       outputPath,
       pronunciationPlanHash: plan.planHash,
       force: options?.forceRebuild,

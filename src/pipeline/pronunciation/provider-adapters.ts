@@ -21,19 +21,6 @@ function replaceSpans(plan: PronunciationPlan, render: (span: PronunciationSpan)
   return result + escapeXml(plan.synthesisText.slice(cursor));
 }
 
-export function azurePronunciationSsml(plan: PronunciationPlan, options: { voice: string; rate?: string; pitch?: string; volume?: string; style?: string; role?: string }) {
-  const body = replaceSpans(plan, (span) => {
-    const pinyin = pinyinFor(span, "azure").flatMap((syllable) => {
-      const match = syllable.match(/^([a-zv]+)([1-5])$/i);
-      return match ? [match[1], match[2]] : [syllable];
-    }).join(" ");
-    return `<phoneme alphabet="sapi" ph="${escapeXml(pinyin)}">${escapeXml(span.phrase)}</phoneme>`;
-  });
-  const prosody = `<prosody rate="${escapeXml(options.rate ?? "+0%")}" pitch="${escapeXml(options.pitch ?? "+0Hz")}" volume="${escapeXml(options.volume ?? "+0%")}">${body}</prosody>`;
-  const styled = options.style ? `<mstts:express-as style="${escapeXml(options.style)}"${options.role ? ` role="${escapeXml(options.role)}"` : ""}>${prosody}</mstts:express-as>` : prosody;
-  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN"><voice name="${escapeXml(options.voice)}">${styled}</voice></speak>`;
-}
-
 export function f5PronunciationInput(plan: PronunciationPlan) {
   return { synthesisText: plan.synthesisText, phraseDictionary: Object.fromEntries(plan.spans.map((span) => [span.phrase, pinyinFor(span, "f5")])), pronunciationPlanHash: plan.planHash };
 }
