@@ -492,16 +492,30 @@ async function concatFrames(frames: RenderedFrame[], outputPath: string, signal?
 function resolveAudioPath(project: VideoProject) {
   const src = project.audio?.src;
   if (!src) return null;
+  if (src.startsWith("/generated/")) return fromRoot("public", src.slice(1));
   if (path.isAbsolute(src)) return src;
   return fromRoot("public", src.replace(/^\/+/, ""));
 }
 
+async function hasAudioStream(filePath: string) {
+  return new Promise<boolean>((resolve, reject) => {
+    const child = spawn("ffprobe", ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", filePath], { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("error", reject);
+    child.on("close", (code) => code === 0 ? resolve(stdout.trim() === "audio") : reject(new Error(`ffprobe exited ${code}: ${stderr}`)));
+  });
+}
+
 async function muxAudio(project: VideoProject, videoPath: string, outputPath: string, signal?: AbortSignal) {
   const audioPath = resolveAudioPath(project);
-  if (!audioPath || !existsSync(audioPath)) {
+  if (!audioPath || project.audio?.provider === "silent") {
     await ffmpeg(["-y", "-i", videoPath, "-c", "copy", "-movflags", "+faststart", outputPath], signal);
     return;
   }
+  if (!existsSync(audioPath)) throw new Error(`Narration audio is configured but missing: ${audioPath}`);
   const duration = String(project.meta.durationSeconds);
   await ffmpeg([
     "-y",
@@ -527,6 +541,7 @@ async function muxAudio(project: VideoProject, videoPath: string, outputPath: st
     "+faststart",
     outputPath,
   ], signal);
+  if (!await hasAudioStream(outputPath)) throw new Error(`Audio mux completed without an audio stream: ${outputPath}`);
 }
 
 export async function writeHtmlVideoContentGraph(project: VideoProject, graphPath: string) {
