@@ -73,11 +73,11 @@ npm.cmd run scene-gen -- run --url "https://example.com/news" --profile producti
 ```json
 {
   "NEWS_LLM_API_KEY": "你的 key",
-  "NEWS_LLM_BASE_URL": "https://你的 OpenAI 兼容接口/v1",
-  "QUALITY_LLM_API_KEY": "你的 key",
-  "QUALITY_LLM_BASE_URL": "https://你的 OpenAI 兼容接口/v1"
+  "NEWS_LLM_BASE_URL": "https://你的 OpenAI 兼容接口/v1"
 }
 ```
+
+质量 Judge 默认复用这组 NEWS LLM 凭据；只有需要单独的 Judge 服务时，才额外设置 `QUALITY_LLM_API_KEY` 和 `QUALITY_LLM_BASE_URL`。
 
 `config/news-llm.local.json`、`config/llm.local.json`、`.env` 和 `.env.local` 均不会提交。外部环境变量优先级最高，local 文件覆盖 example 文件；`xx`/`xxx` 占位不会进入运行时配置。
 
