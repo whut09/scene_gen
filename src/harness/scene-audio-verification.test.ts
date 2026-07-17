@@ -43,7 +43,7 @@ test("low confidence ASR is inconclusive and does not rebuild audio", () => {
   assert.deepEqual(dirtyPlanFromIssues(normalized, 3).audioSceneIndexes, []);
 });
 
-test("scene ASR checks entities and numbers without directly rebuilding TTS", () => {
+test("high-confidence entity, number, and semantic mismatch rebuilds only the affected scene", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [
     { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
@@ -54,9 +54,9 @@ test("scene ASR checks entities and numbers without directly rebuilding TTS", ()
   assert.ok(result.issues.some((item) => item.code === "audio_number_mismatch" && item.sceneIndex === 2));
   const normalized = result.issues.map((item) => normalizeQualityIssue("audio", item));
   const dirtyPlan = dirtyPlanFromIssues(normalized, 3);
-  assert.deepEqual(dirtyPlan.audioSceneIndexes, []);
-  assert.equal(dirtyPlan.concatAudio, false);
-  assert.equal(dirtyPlan.remux, false);
+  assert.deepEqual(dirtyPlan.audioSceneIndexes, [2]);
+  assert.equal(dirtyPlan.concatAudio, true);
+  assert.equal(dirtyPlan.remux, true);
 });
 
 test("extra ASR numbers do not fail when all expected numbers are present", () => {

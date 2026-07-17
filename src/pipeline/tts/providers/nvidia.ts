@@ -7,12 +7,12 @@ import { getOrCreateMediaCache } from "../../../cache/media-cache";
 import { loadTtsPronunciationLexicon } from "../../tts-pronunciation";
 import type { PronunciationPlan } from "../../pronunciation/schema";
 import { concatNarrationSegments } from "../postprocess";
-import { probeDuration } from "../process";
+import { probeDuration, run } from "../process";
 import type { AzureTtsResult } from "./azure";
 
 export interface NvidiaTtsResult { requestId: string; status: "succeeded"; outputPath: string; requestMs: number; synthesisText?: string }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-direct-utf8-chunked-v6-clarity-gated";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-direct-utf8-chunked-v7-speed";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {
@@ -50,6 +50,7 @@ export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSa
     voice: config.tts.nvidia.voice,
     language: config.tts.nvidia.language,
     sampleRateHz: config.tts.nvidia.sampleRateHz,
+    speed: config.tts.nvidia.speed,
     synthesisText: input.plan.synthesisText,
     pronunciationPlanHash: input.plan.planHash,
     frontendVersion: NVIDIA_TTS_FRONTEND_VERSION,
@@ -124,6 +125,7 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
       worker ??= new NvidiaWorker(config);
       const chunks = splitNvidiaSynthesisText(input.plan.synthesisText);
       const partPaths = chunks.map((_, index) => `${targetPath}.part-${String(index + 1).padStart(2, "0")}.wav`);
+      const naturalPath = `${targetPath}.natural.wav`;
       const partDurations: number[] = [];
       let requestMs = 0;
       try {
@@ -134,12 +136,14 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
           if (duration <= 0) throw new Error(`NVIDIA TTS chunk ${index + 1} is empty or invalid.`);
           partDurations.push(duration);
         }
-        if (partPaths.length === 1) await renamePart(partPaths[0], targetPath);
-        else await concatNarrationSegments(partPaths, partDurations, partDurations.map((_, index) => index === partDurations.length - 1 ? 0 : 0.12), targetPath);
+        if (partPaths.length === 1) await renamePart(partPaths[0], naturalPath);
+        else await concatNarrationSegments(partPaths, partDurations, partDurations.map((_, index) => index === partDurations.length - 1 ? 0 : 0.12), naturalPath);
+        if (config.tts.nvidia.speed === 1) await renamePart(naturalPath, targetPath);
+        else await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", naturalPath, "-filter:a", `atempo=${config.tts.nvidia.speed}`, "-c:a", "pcm_s16le", targetPath]);
         generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText: input.plan.synthesisText };
         return { requestMs, synthesisText: input.plan.synthesisText, chunkCount: chunks.length, voice: config.tts.nvidia.voice };
       } finally {
-        await Promise.all(partPaths.map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
+        await Promise.all([...partPaths, naturalPath].map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
       }
     },
   });
