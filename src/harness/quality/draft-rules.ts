@@ -42,8 +42,15 @@ function sceneVisibleText(scene: VideoScene) {
       return [scene.headline, ...scene.steps.flatMap((item) => [item.label, item.detail])].join(" ");
     case "outro":
       return [scene.headline, ...scene.bullets].join(" ");
+    case "web_screenshot_zoom":
+      return [scene.headline, ...scene.shots.map((shot) => shot.title)].join(" ");
+    case "news_stack":
+      return [scene.headline, ...scene.items.flatMap((item) => [item.title, item.summary])].join(" ");
+    case "timeline":
+      return [scene.headline, ...scene.events.flatMap((event) => [event.date, event.title])].join(" ");
+    case "github_pulse":
+      return [scene.headline, ...scene.repos.flatMap((repo) => [repo.repo, repo.title, repo.summary])].join(" ");
   }
-  return "";
 }
 
 function narrationLimits(scene: VideoScene) {
@@ -70,9 +77,13 @@ function visibleTokenCoverage(visibleText: string, narration: string) {
   return matched / tokens.size;
 }
 
-function extraNarrationNumbers(visibleText: string, narration: string) {
-  const visibleNumbers = new Set(visibleText.match(/\d+(?:\.\d+)?%?/g) ?? []);
-  return [...new Set(narration.match(/\d+(?:\.\d+)?%?/g) ?? [])].filter((value) => !visibleNumbers.has(value));
+function standaloneNumbers(text: string) {
+  return text.match(/(?<![A-Za-z])\d+(?:\.\d+)?%?(?![A-Za-z])/g) ?? [];
+}
+
+export function extraNarrationNumbers(visibleText: string, narration: string) {
+  const visibleNumbers = new Set(standaloneNumbers(visibleText));
+  return [...new Set(standaloneNumbers(narration))].filter((value) => !visibleNumbers.has(value));
 }
 function sceneShapeIssues(scene: VideoScene, index: number) {
   const issues: QualityIssueInput[] = [];

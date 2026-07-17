@@ -6,9 +6,11 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { createHtmlVideoCacheKey, hashHtmlAssetContent } from "../../src/html-video/render-html-video";
 import { evaluateDraft } from "../../src/harness/quality";
+import { extraNarrationNumbers } from "../../src/harness/quality/draft-rules";
 import { ensureTitleOpening } from "../../src/pipeline/llm";
 import { prepareF5SynthesisText } from "../../src/pipeline/tts";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
+import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
 
 test("number pronunciation converts common Chinese news formats", () => {
@@ -36,6 +38,22 @@ test("draft quality catches a narration that does not open with the title", asyn
   });
   const result = await evaluateDraft(project, 10, "");
   assert.equal(result.issues.some((issue) => issue.code === "title_not_spoken_first"), true);
+});
+
+test("draft number checks ignore model identifiers but keep factual numbers", () => {
+  assert.deepEqual(extraNarrationNumbers("K3 新模型", "K3 定价更低"), []);
+  assert.deepEqual(extraNarrationNumbers("K3 新模型", "K3 拥有 2.8 万亿参数"), ["2.8"]);
+  assert.deepEqual(extraNarrationNumbers("版本 v2.2", "版本 v2.2 已发布"), []);
+});
+
+test("web screenshot scenes expose their headline and evidence title to sync cues", () => {
+  const cues = syncCueCandidates({
+    type: "web_screenshot_zoom",
+    duration: 10,
+    headline: "Kimi K3面向四类复杂任务",
+    shots: [{ id: "shot", title: "美媒：中国K3大模型震惊AI界", source: "fixture", url: "https://example.com", src: "/shot.png", width: 1080, height: 1920 }],
+  });
+  assert.deepEqual(cues, ["KimiK3面向四类复杂任务", "美媒中国K3大模型震惊AI界"]);
 });
 
 test("template selection is deterministic and supports the scene", () => {

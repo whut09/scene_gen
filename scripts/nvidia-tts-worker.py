@@ -2,7 +2,11 @@ import argparse, json, os, sys, time, wave
 from pathlib import Path
 import grpc
 import riva.client
-from pypinyin import Style, lazy_pinyin, load_phrases_dict
+from pypinyin import load_phrases_dict
+
+sys.stdin.reconfigure(encoding="utf-8", errors="strict")
+sys.stdout.reconfigure(encoding="utf-8", errors="strict")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 def emit(payload): print(json.dumps(payload, ensure_ascii=False), flush=True)
 
@@ -22,14 +26,13 @@ def main():
         request = {}
         try:
             request = json.loads(line); request_id = request["requestId"]
-            clean_text = request["text"].encode("utf-8", "ignore").decode("utf-8")
-            pinyin_text = " ".join(lazy_pinyin(clean_text, style=Style.TONE, neutral_tone_with_five=False, errors=lambda value: list(value)))
+            synthesis_text = request["text"].encode("utf-8", "strict").decode("utf-8")
             request_started = time.perf_counter()
-            response = service.synthesize(pinyin_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate)
+            response = service.synthesize(synthesis_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate)
             output_path = Path(request["outputPath"]); output_path.parent.mkdir(parents=True, exist_ok=True)
             with wave.open(str(output_path), "wb") as output:
                 output.setnchannels(1); output.setsampwidth(2); output.setframerate(args.sample_rate); output.writeframes(response.audio)
-            emit({"type": "result", "requestId": request_id, "status": "succeeded", "outputPath": str(output_path), "requestMs": round((time.perf_counter() - request_started) * 1000), "pinyinText": pinyin_text})
+            emit({"type": "result", "requestId": request_id, "status": "succeeded", "outputPath": str(output_path), "requestMs": round((time.perf_counter() - request_started) * 1000), "synthesisText": synthesis_text})
         except grpc.RpcError as error:
             emit({"type": "result", "requestId": request.get("requestId", "unknown"), "status": "failed", "errorType": error.code().name.lower(), "retryable": error.code() in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.DEADLINE_EXCEEDED}, "error": str(error.details())})
         except Exception as error:

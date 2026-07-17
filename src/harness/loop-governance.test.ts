@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateLoopBudgetUsage, evaluateLoopBudget, finalizePendingStrategies, issueEvidenceSignature, selectNextLoopStrategy, type LoopStrategyTrace } from "./loop-governance";
 import { finalizeQualityEvaluation } from "./quality-protocol";
+import type { RunJournal } from "./run-journal";
 
 const issueCode = "scene_narration_mismatch";
 const evaluation = finalizeQualityEvaluation({ stage: "draft", issues: [{ severity: "error", code: issueCode, message: "same", evidence: { field: "headline" } }], revisionNotes: [], scores: { quality: 60 }, metrics: {} });
@@ -50,4 +51,32 @@ test("video no-progress starts with an alternate template and budget usage reads
   }, [{ cost: { totalTokens: 50, promptTokens: 30, completionTokens: 20, durationMs: 100 }, iteration: 1, stage: "draft", beforeHash: "a", afterHash: "b", issueSignatureBefore: "same", scoreBefore: 60, reasons: [], patch: [], resolvedIssues: [], newIssues: [], progress: "improved", dirtyPlan: { audioSceneIndexes: [], videoSceneIndexes: [], concatAudio: false, concatVideo: false, remux: false, fullRebuild: false, reasons: [] } }]);
   assert.equal(usage.llmTokens, 50);
   assert.equal(usage.ttsRebuilds, 2);
+});
+
+test("loop budget counts executed repair audits instead of repeated gate observations", () => {
+  const baseIssue = { stage: "audio" as const, severity: "warning" as const, issueClass: "soft" as const, evidence: {}, message: "inconclusive" };
+  const journal: RunJournal = {
+    specVersion: 2, runId: "run", url: "https://example.com", status: "running", createdAt: "now", updatedAt: "now",
+    config: { targetSeconds: 10, maxIterations: 4, engine: "html-video", qualityProfile: "balanced", runtimeProfile: "test", outputDir: "out", screenshotLimit: 0 },
+    artifacts: {}, migrationHistory: [], error: undefined,
+    stages: [{
+      name: "audio-gate", status: "succeeded", attempt: 1, inputHash: "x", durationMs: 10, outputs: {}, metrics: {}, suggestedAction: "check-environment",
+      issues: [
+        { ...baseIssue, code: "verification_inconclusive", repairAction: "none", retryable: false },
+        { ...baseIssue, code: "verification_inconclusive", repairAction: "none", retryable: false },
+        { ...baseIssue, severity: "error", issueClass: "environment", code: "asr_verification_failed", repairAction: "check-environment", retryable: true },
+        { ...baseIssue, severity: "error", issueClass: "environment", code: "asr_verification_failed", repairAction: "check-environment", retryable: true },
+      ],
+    }],
+  };
+  assert.deepEqual(calculateLoopBudgetUsage(journal, []).repairsByIssue, {});
+  const usage = calculateLoopBudgetUsage(journal, [{
+    iteration: 1, stage: "audio", beforeHash: "a", afterHash: "b", issueSignatureBefore: "x", reasons: [
+      { code: "verification_inconclusive", repairAction: "none" },
+      { code: "asr_verification_failed", repairAction: "check-environment" },
+      { code: "asr_verification_failed", repairAction: "check-environment" },
+    ], patch: [], resolvedIssues: [], newIssues: [], cost: { durationMs: 1, promptTokens: 0, completionTokens: 0, totalTokens: 0 }, progress: "improved",
+    dirtyPlan: { audioSceneIndexes: [], videoSceneIndexes: [], concatAudio: false, concatVideo: false, remux: false, fullRebuild: false, reasons: [] },
+  }]);
+  assert.deepEqual(usage.repairsByIssue, { asr_verification_failed: 1 });
 });

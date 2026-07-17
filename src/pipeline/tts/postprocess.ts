@@ -14,7 +14,7 @@ export async function concatNarrationSegments(
     const total = durations[index] + gaps[index];
     return `[${index}:a]aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=${gaps[index].toFixed(3)},atrim=duration=${total.toFixed(3)}[a${index}]`;
   });
-  filters.push(`${inputs.map((_, index) => `[a${index}]`).join("")}concat=n=${inputs.length}:v=0:a=1[out]`);
+  filters.push(`${inputs.map((_, index) => `[a${index}]`).join("")}concat=n=${inputs.length}:v=0:a=1,volume=-1dB[out]`);
   args.push(
     "-filter_complex",
     filters.join(";"),
@@ -83,4 +83,3 @@ export async function silentAudio(outputPath: string, duration: number) {
     outputPath,
   ]);
 }
-

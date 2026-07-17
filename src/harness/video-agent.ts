@@ -38,10 +38,10 @@ import {
   type IngestStageOutput,
   type IterationReport,
 } from "./video-stages";
-import { buildRuntimeConfig, runWithRuntimeConfig, runtimeConfigHash, runtimeConfigSnapshot, runtimeConfigWithRunOverrides, type RuntimeConfig } from "../config/runtime-config";
+import { buildRuntimeConfig, compatibleStoredRuntimeConfigSnapshotHashes, restoreRuntimeConfig, runWithRuntimeConfig, runtimeConfigHash, runtimeConfigSnapshot, runtimeConfigWithRunOverrides, type RuntimeConfig } from "../config/runtime-config";
 import { finalizePendingAudit, loadIterations, nextAttempt, persistLoopAudit, persistStrategyTrajectory, resolveRunDir, resumeStage, shouldRun, type AgentState } from "./agent/loop-support";
-import { initialDraftLoopState, shouldContinueDraftLoop } from "./agent/draft-loop";
-import { generatedAudioSceneIndexes } from "./agent/audio-loop";
+import { initialDraftLoopState, shouldContinueDraftLoop, shouldRevalidateDraftBeforeResume } from "./agent/draft-loop";
+import { generatedAudioSceneIndexes, shouldSynthesizeAudio } from "./agent/audio-loop";
 import { addTemplateExclusions, affectedVideoScenes } from "./agent/video-loop";
 import { publishAgentRun } from "./agent/publish";
 import { PronunciationAttemptLedger, phraseFingerprint, type PronunciationAttemptLedgerState, type PronunciationStrategy } from "../production/tts-routing";
@@ -72,7 +72,11 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     runDir = resolveRunDir(resumeValue);
     journal = await RunJournalStore.open(runDir);
     const snapshot = journal.snapshot();
-    if (snapshot.config.runtimeConfigHash && !overrideConfig && snapshot.config.runtimeConfigHash !== runtimeConfigHash(runtimeConfig)) {
+    const restoredConfigHash = runtimeConfigHash(runtimeConfig);
+    const compatibleStoredHashes = snapshot.config.runtimeConfig ? compatibleStoredRuntimeConfigSnapshotHashes(snapshot.config.runtimeConfig) : new Set<string>();
+    const originalBehaviorHash = snapshot.config.runtimeConfig ? runtimeConfigHash(restoreRuntimeConfig(snapshot.config.runtimeConfig)) : snapshot.config.runtimeConfigHash;
+    const storedHashValid = !snapshot.config.runtimeConfigHash || compatibleStoredHashes.has(snapshot.config.runtimeConfigHash);
+    if (!overrideConfig && (!storedHashValid || (originalBehaviorHash && restoredConfigHash !== originalBehaviorHash))) {
       throw new Error("Runtime config hash differs from the original run. Resume without overrides must restore run.config.runtimeConfig.");
     }
     if (overrideConfig || !snapshot.config.runtimeConfigHash) await journal.setRuntimeConfig(runtimeConfigSnapshot(runtimeConfig), runtimeConfigHash(runtimeConfig));
@@ -159,8 +163,10 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     let globalRewriteEscalated = Boolean(journal.snapshot().artifacts.noProgressEscalation);
     let draftStrategy: LoopStrategyTrace | undefined;
     let { draftPassed, iteration } = initialDraftLoopState(state.iterations);
+    const revalidateDraftBeforeResume = shouldRevalidateDraftBeforeResume({ resumeValue, explicitFromStage, draftPassed });
+    if (revalidateDraftBeforeResume) iteration = maxIterations;
 
-    while (shouldContinueDraftLoop({ draftPassed, draftStageRequested: shouldRun("draft", startStage, forceStage), draftGateRequested: shouldRun("draft-gate", startStage, forceStage), iteration, maxIterations })) {
+    while (shouldContinueDraftLoop({ draftPassed, draftStageRequested: shouldRun("draft", startStage, forceStage), draftGateRequested: shouldRun("draft-gate", startStage, forceStage) || revalidateDraftBeforeResume, iteration, maxIterations })) {
       if (!state.story || shouldRun("draft", startStage, forceStage)) {
         const draftStage = await runStage({
           journal, name: "draft", attempt: nextAttempt(journal, "draft"),
@@ -279,23 +285,25 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       const forcedIndexes = forceAudioSceneIndexes;
       const forcedRebuild = forceAudioRebuild;
       const previousSceneDurations = state.project.scenes.map((scene) => scene.duration);
-      const synth: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
-        journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, strategy: audioStrategy }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.synthesize, signal,
-        task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, pronunciationStrategy, signal: stageSignal }),
-        describe: (value) => ({
-          outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "", pronunciationPlans: value.audio?.pronunciationPlansPath ?? "" },
-          metrics: {
-            duration: value.audio?.durationSeconds ?? 0,
-            forcedAudioRebuild: forcedRebuild,
-            ...(value.audio?.metrics ?? {}),
-            ...pronunciationAttempts.metrics(),
-            alignedCueCount: value.narrationSegments?.reduce((sum, segment) => sum + (segment.speechAlignment?.phrases.length ?? 0), 0) ?? 0,
-            alignedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "forced").length ?? 0,
-            alignmentFailedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "failed").length ?? 0,
-          },
-        }),
-      });
-      state.project = synth.value;
+      if (shouldSynthesizeAudio({ hasAudio: Boolean(state.project.audio?.src), startStage, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes })) {
+        const synth: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
+          journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, strategy: audioStrategy }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.synthesize, signal,
+          task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, pronunciationStrategy, signal: stageSignal }),
+          describe: (value) => ({
+            outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "", pronunciationPlans: value.audio?.pronunciationPlansPath ?? "" },
+            metrics: {
+              duration: value.audio?.durationSeconds ?? 0,
+              forcedAudioRebuild: forcedRebuild,
+              ...(value.audio?.metrics ?? {}),
+              ...pronunciationAttempts.metrics(),
+              alignedCueCount: value.narrationSegments?.reduce((sum, segment) => sum + (segment.speechAlignment?.phrases.length ?? 0), 0) ?? 0,
+              alignedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "forced").length ?? 0,
+              alignmentFailedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "failed").length ?? 0,
+            },
+          }),
+        });
+        state.project = synth.value;
+      }
       if (forcedRebuild) {
         const generatedIndexes = generatedAudioSceneIndexes(state.project.audio?.metrics?.generatedAudioSceneIndexes);
         if (generatedIndexes.length === 0) throw new Error("resynthesize-audio did not rebuild any narration segment.");

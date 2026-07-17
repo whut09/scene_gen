@@ -42,7 +42,7 @@ export const runtimeConfigSchema = z.object({
     }).default({ domain: "software", g2pwEnabled: false, g2pwPython: process.platform === "win32" ? "python" : "python3", g2pwScript: "scripts/g2pw-worker.py", g2pwReadyTimeoutMs: 30_000, g2pwRequestTimeoutMs: 10_000, g2pwMinimumConfidence: 0.75 }),
   }),
   asr: z.object({
-    disabled: z.boolean(), provider: z.enum(["whisper", "sensevoice", "funasr", "mock"]).default("whisper"), python: z.string().optional(), model: z.string(), language: z.string(), titleCoverageMin: z.number().min(0).max(1),
+    disabled: z.boolean(), provider: z.enum(["whisper", "sensevoice", "funasr", "mock"]).default("whisper"), python: z.string().optional(), model: z.string(), language: z.string(), languageConfidenceMin: z.number().min(0).max(1).default(0.5), titleCoverageMin: z.number().min(0).max(1),
     pronunciation: z.object({
       provider: z.enum(["azure", "mock", "disabled"]), endpoint: z.string().url().optional(), region: z.string().optional(), apiKey: z.string().optional(), timeoutMs: positiveInteger,
       confidenceMin: z.number().min(0).max(1), monthlySecondsBudget: nonnegativeNumber, budgetWarningRatio: z.number().min(0).max(1), minimumAudioMs: positiveInteger,
@@ -131,7 +131,7 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
         budgetWarningRatio: Math.max(0, Math.min(1, numberValue(env, "AZURE_TTS_BUDGET_WARNING_RATIO", 0.8))), concurrency: Math.max(1, numberValue(env, "AZURE_TTS_CONCURRENCY", 2)),
         requestsPerMinute: Math.max(1, numberValue(env, "AZURE_TTS_REQUESTS_PER_MINUTE", 20)),
       },
-      nvidia: { apiKey: stringValue(env, "NVIDIA_API_KEY"), endpoint: stringValue(env, "NVIDIA_TTS_ENDPOINT", "grpc.nvcf.nvidia.com:443")!, functionId: stringValue(env, "NVIDIA_TTS_FUNCTION_ID", "877104f7-e885-42b9-8de8-f6e4c6303969")!, model: stringValue(env, "NVIDIA_TTS_MODEL", "magpie-tts-multilingual")!, voice: stringValue(env, "NVIDIA_TTS_VOICE", "Magpie-Multilingual.ZH-CN.HouZhen")!, language: stringValue(env, "NVIDIA_TTS_LANGUAGE", "zh-CN")!, sampleRateHz: numberValue(env, "NVIDIA_TTS_SAMPLE_RATE_HZ", 22050), concurrency: numberValue(env, "NVIDIA_TTS_CONCURRENCY", 1), timeoutMs: numberValue(env, "NVIDIA_TTS_TIMEOUT_MS", 180000), readyTimeoutMs: numberValue(env, "NVIDIA_TTS_READY_TIMEOUT_MS", 30000), python: stringValue(env, "NVIDIA_TTS_PYTHON", process.platform === "win32" ? "python" : "python3")!, workerScript: stringValue(env, "NVIDIA_TTS_WORKER_SCRIPT", fromRoot("scripts", "nvidia-tts-worker.py"))! },
+      nvidia: { apiKey: stringValue(env, "NVIDIA_API_KEY"), endpoint: stringValue(env, "NVIDIA_TTS_ENDPOINT", "grpc.nvcf.nvidia.com:443")!, functionId: stringValue(env, "NVIDIA_TTS_FUNCTION_ID", "877104f7-e885-42b9-8de8-f6e4c6303969")!, model: stringValue(env, "NVIDIA_TTS_MODEL", "magpie-tts-multilingual")!, voice: stringValue(env, "NVIDIA_TTS_VOICE", "Magpie-Multilingual.ZH-CN.Long.Neutral")!, language: stringValue(env, "NVIDIA_TTS_LANGUAGE", "zh-CN")!, sampleRateHz: numberValue(env, "NVIDIA_TTS_SAMPLE_RATE_HZ", 44100), concurrency: numberValue(env, "NVIDIA_TTS_CONCURRENCY", 1), timeoutMs: numberValue(env, "NVIDIA_TTS_TIMEOUT_MS", 180000), readyTimeoutMs: numberValue(env, "NVIDIA_TTS_READY_TIMEOUT_MS", 30000), python: stringValue(env, "NVIDIA_TTS_PYTHON", process.platform === "win32" ? "python" : "python3")!, workerScript: stringValue(env, "NVIDIA_TTS_WORKER_SCRIPT", fromRoot("scripts", "nvidia-tts-worker.py"))! },
       openai: { apiKey: stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY"), baseUrl: stringValue(env, "OPENAI_TTS_BASE_URL") ?? stringValue(env, "OPENAI_BASE_URL", "https://api.openai.com/v1")!, model: stringValue(env, "OPENAI_TTS_MODEL", "gpt-4o-mini-tts")!, voice: stringValue(env, "OPENAI_TTS_VOICE", "alloy")!, speed: numberValue(env, "OPENAI_TTS_SPEED", 1.12), concurrency: numberValue(env, "OPENAI_TTS_CONCURRENCY", 4), costPer1kChars: numberValue(env, "OPENAI_TTS_COST_PER_1K_CHARS", 0.015) },
       cloudflare: { accountId: stringValue(env, "CLOUDFLARE_ACCOUNT_ID"), apiToken: stringValue(env, "CLOUDFLARE_API_TOKEN"), model: stringValue(env, "CLOUDFLARE_TTS_MODEL", "@cf/myshell-ai/melotts")!, concurrency: Math.max(1, numberValue(env, "CLOUDFLARE_TTS_CONCURRENCY", 2)), dailyNeuronBudget: Math.max(0, numberValue(env, "CLOUDFLARE_DAILY_NEURON_BUDGET", 0)) },
       edge: { command: stringValue(env, "EDGE_TTS_COMMAND"), voice: stringValue(env, "EDGE_TTS_VOICE", "zh-CN-XiaoxiaoNeural")!, concurrency: Math.max(1, numberValue(env, "EDGE_TTS_CONCURRENCY", 2)) },
@@ -140,7 +140,7 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
       pronunciation: { domain: stringValue(env, "TTS_PRONUNCIATION_DOMAIN", "software")!, g2pwEnabled: booleanValue(env, "G2PW_ENABLED"), g2pwPython: stringValue(env, "G2PW_PYTHON", process.platform === "win32" ? "python" : "python3")!, g2pwScript: stringValue(env, "G2PW_WORKER_SCRIPT", "scripts/g2pw-worker.py")!, g2pwModelDir: stringValue(env, "G2PW_MODEL_DIR"), g2pwReadyTimeoutMs: numberValue(env, "G2PW_READY_TIMEOUT_MS", 30_000), g2pwRequestTimeoutMs: numberValue(env, "G2PW_REQUEST_TIMEOUT_MS", 10_000), g2pwMinimumConfidence: numberValue(env, "G2PW_MIN_CONFIDENCE", 0.75) },
     },
     asr: {
-      disabled: booleanValue(env, "ASR_DISABLED"), provider: ["sensevoice", "funasr", "mock"].includes(stringValue(env, "ASR_PROVIDER", "whisper")!) ? stringValue(env, "ASR_PROVIDER") as "sensevoice" | "funasr" | "mock" : "whisper", python: stringValue(env, "ASR_PYTHON"), model: stringValue(env, "ASR_MODEL", "openai/whisper-tiny")!, language: stringValue(env, "ASR_LANGUAGE", "chinese")!, titleCoverageMin: numberValue(env, "ASR_TITLE_COVERAGE_MIN", 0.58),
+      disabled: booleanValue(env, "ASR_DISABLED"), provider: ["sensevoice", "funasr", "mock"].includes(stringValue(env, "ASR_PROVIDER", "whisper")!) ? stringValue(env, "ASR_PROVIDER") as "sensevoice" | "funasr" | "mock" : "whisper", python: stringValue(env, "ASR_PYTHON"), model: stringValue(env, "ASR_MODEL", "openai/whisper-tiny")!, language: stringValue(env, "ASR_LANGUAGE", "chinese")!, languageConfidenceMin: numberValue(env, "ASR_LANGUAGE_CONFIDENCE_MIN", 0.5), titleCoverageMin: numberValue(env, "ASR_TITLE_COVERAGE_MIN", 0.58),
       pronunciation: {
         provider: stringValue(env, "PRONUNCIATION_VERIFIER_PROVIDER", "disabled") === "azure" ? "azure" : stringValue(env, "PRONUNCIATION_VERIFIER_PROVIDER") === "mock" ? "mock" : "disabled",
         endpoint: stringValue(env, "AZURE_PRONUNCIATION_ENDPOINT"), region: stringValue(env, "AZURE_PRONUNCIATION_REGION", stringValue(env, "AZURE_SPEECH_REGION")), apiKey: stringValue(env, "AZURE_PRONUNCIATION_KEY", stringValue(env, "AZURE_SPEECH_KEY")), timeoutMs: numberValue(env, "PRONUNCIATION_VERIFIER_TIMEOUT_MS", 45_000), confidenceMin: numberValue(env, "PRONUNCIATION_VERIFIER_CONFIDENCE_MIN", 0.7), monthlySecondsBudget: numberValue(env, "AZURE_PRONUNCIATION_MONTHLY_SECONDS_BUDGET", 0), budgetWarningRatio: numberValue(env, "AZURE_PRONUNCIATION_BUDGET_WARNING_RATIO", 0.8), minimumAudioMs: numberValue(env, "PRONUNCIATION_VERIFIER_MIN_AUDIO_MS", 300),
@@ -179,6 +179,16 @@ function stableValue(value: unknown): unknown {
 
 export function runtimeConfigHash(config: RuntimeConfig) {
   return createHash("sha256").update(JSON.stringify(stableValue(runtimeConfigSnapshot(config)))).digest("hex");
+}
+
+export function storedRuntimeConfigSnapshotHash(snapshot: unknown) {
+  return createHash("sha256").update(JSON.stringify(stableValue(snapshot))).digest("hex");
+}
+
+export function compatibleStoredRuntimeConfigSnapshotHashes(snapshot: RuntimeConfigSnapshot) {
+  const legacy = structuredClone(snapshot) as unknown as { asr: Record<string, unknown> };
+  delete legacy.asr.languageConfidenceMin;
+  return new Set([storedRuntimeConfigSnapshotHash(snapshot), storedRuntimeConfigSnapshotHash(legacy)]);
 }
 
 export function restoreRuntimeConfig(snapshot: unknown, env: NodeJS.ProcessEnv = process.env): RuntimeConfig {

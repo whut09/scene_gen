@@ -52,9 +52,10 @@ export async function inspectSceneDom(page: Page, input: {
       const configuredDuration = typeof configured?.duration === "number" ? configured.duration : 0;
       const iterations = typeof configured?.iterations === "number" ? configured.iterations : 1;
       return {
+        id: animation.id,
         target: animation.effect instanceof KeyframeEffect && animation.effect.target instanceof Element ? animation.effect.target : null,
         endTimeMs: typeof timing?.endTime === "number" && Number.isFinite(timing.endTime) ? timing.endTime : 0,
-        reveal: iterations <= 1 && configuredDuration > 0 && configuredDuration <= Math.min(2500, durationSec * 400),
+        reveal: !animation.id.startsWith("sg-sync-emphasis-") && iterations <= 1 && configuredDuration > 0 && configuredDuration <= Math.min(2500, durationSec * 400),
       };
     });
     for (const animation of animations) {

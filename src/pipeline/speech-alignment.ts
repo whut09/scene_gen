@@ -125,6 +125,8 @@ export function alignNarrationSegment(
       provider: "whisper",
       transcript: transcript.text,
       confidence: transcript.confidence ?? undefined,
+      detectedLanguage: transcript.detectedLanguage,
+      languageConfidence: transcript.languageConfidence,
       words,
       phrases,
       createdAt,

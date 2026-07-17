@@ -132,7 +132,7 @@ test("cloud pronunciation regression covers cache, repair, verification and quot
     await writeFile(cachedAudioPath, cachedAudio);
     const cachedProject = { ...singleSceneProject, audio: { ...singleSceneProject.audio!, src: cachedAudioPath } };
     let asrCalls = 0;
-    const transcribe = async () => { asrCalls += 1; return [{ sceneIndex: 2, text: plans[2].displayText, confidence: 0.99 }]; };
+    const transcribe = async () => { asrCalls += 1; return [{ sceneIndex: 2, text: plans[2].displayText, confidence: 0.99, detectedLanguage: "zh", languageConfidence: 0.99 }]; };
     await transcribeScenesCached({ project: cachedProject, config: runtimeConfig, provider: "mock", transcribe });
     await transcribeScenesCached({ project: cachedProject, config: runtimeConfig, provider: "mock", transcribe });
     assert.equal(asrCalls, 1);

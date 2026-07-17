@@ -81,7 +81,7 @@ export function syncCueCandidates(scene: VideoScene) {
     case "flow": values.push(...scene.steps.flatMap((step) => [step.label, step.detail])); break;
     case "outro": values.push(...scene.bullets, scene.headline); break;
     case "news_stack": values.push(...scene.items.map((item) => item.title)); break;
-    case "web_screenshot_zoom": values.push(...scene.shots.map((shot) => shot.title)); break;
+    case "web_screenshot_zoom": values.push(scene.headline, ...scene.shots.map((shot) => shot.title)); break;
     case "timeline": values.push(...scene.events.flatMap((event) => [event.date, event.title])); break;
     case "github_pulse": values.push(...scene.repos.flatMap((repo) => [repo.repo, repo.title])); break;
   }

@@ -15,8 +15,6 @@ export function pythonFromVenv(venv: string) {
 
 export function resolvePythonCommand(env: NodeJS.ProcessEnv = process.env) {
   if (env.ASR_PYTHON) return env.ASR_PYTHON;
-  if (env.F5_TTS_PYTHON) return env.F5_TTS_PYTHON;
-  if (env.F5_TTS_VENV) return pythonFromVenv(env.F5_TTS_VENV);
   return process.platform === "win32" ? "python" : "python3";
 }
 

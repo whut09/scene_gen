@@ -29,6 +29,8 @@ const transcript = {
   sceneIndex: 0,
   text: "持久化 Worker enables Cache reuse",
   confidence: 0.91,
+  detectedLanguage: "zh",
+  languageConfidence: 0.98,
   words: [
     { text: "持久化", startSeconds: 0.3, endSeconds: 0.8, confidence: 0.92 },
     { text: "Worker", startSeconds: 0.82, endSeconds: 1.3, confidence: 0.9 },

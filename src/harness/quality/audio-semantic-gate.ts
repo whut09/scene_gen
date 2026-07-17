@@ -9,10 +9,10 @@ import { speechNormalizationDictionaryHash } from "../speech-normalization";
 import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts, type AsrSceneTranscript } from "../scene-audio-verification";
 import { projectAudioPath } from "./audio-structural-gate";
 
-export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v1";
+export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v2-language-detection";
 export type AsrProviderId = "whisper" | "sensevoice" | "funasr" | "mock";
 
-const cachedAsrSchema = z.object({ version: z.literal(1), key: z.string().length(64), transcripts: z.array(z.object({ sceneIndex: z.number().int().nonnegative(), text: z.string(), confidence: z.number().nullable().optional(), words: z.array(z.object({ text: z.string(), startSeconds: z.number(), endSeconds: z.number(), confidence: z.number().nullable().optional() })).optional() })) }).strict();
+const cachedAsrSchema = z.object({ version: z.literal(1), key: z.string().length(64), transcripts: z.array(z.object({ sceneIndex: z.number().int().nonnegative(), text: z.string(), confidence: z.number().nullable().optional(), detectedLanguage: z.string().min(1), languageConfidence: z.number().min(0).max(1), words: z.array(z.object({ text: z.string(), startSeconds: z.number(), endSeconds: z.number(), confidence: z.number().nullable().optional() })).optional() })) }).strict();
 
 async function fileHash(filePath: string) {
   return createHash("sha256").update(await readFile(filePath)).digest("hex");
@@ -60,8 +60,16 @@ export async function runAudioSemanticGate(input: {
   signal?: AbortSignal;
 }) {
   const transcription = await transcribeScenesCached(input);
-  if (!transcription.transcripts) return { issues: [], results: [], titleTranscript: "", titleAudioCoverage: 0, metrics: { semanticVerifiedCount: 0, semanticAsrCacheHit: transcription.cacheHit, semanticAsrProvider: transcription.provider } };
-  const verification = verifySceneTranscripts(input.project, transcription.transcripts);
+  if (!transcription.transcripts?.length) {
+    const blocking = input.config.profile === "production" || input.config.quality.profile === "strict";
+    return {
+      issues: [{ severity: blocking ? "error" as const : "warning" as const, code: "asr_verification_failed", message: "Semantic ASR produced no transcript; spoken-language quality was not verified.", issueClass: "environment" as const, repairAction: "check-environment" as const, retryable: false, evidence: { verifier: transcription.provider, reason: "empty_transcript", requiredProfile: input.config.profile } }],
+      results: [], titleTranscript: "", titleAudioCoverage: 0, titleOpeningCoverage: 0,
+      metrics: { semanticVerifiedCount: 0, semanticAsrCacheHit: transcription.cacheHit, semanticAsrProvider: transcription.provider, semanticGateVersion: AUDIO_SEMANTIC_GATE_VERSION },
+    };
+  }
+  const expectedLanguage = /^(chinese|zh(?:-cn)?)$/i.test(input.config.asr.language) ? "zh" : input.config.asr.language;
+  const verification = verifySceneTranscripts(input.project, transcription.transcripts, { expectedLanguage, minimumLanguageConfidence: input.config.asr.languageConfidenceMin });
   const issues = verification.issues.filter((issue) => issue.code !== "audio_pronunciation_mismatch");
   return { ...verification, issues, metrics: { semanticVerifiedCount: verification.results.length, semanticAsrCacheHit: transcription.cacheHit, semanticAsrProvider: transcription.provider, semanticGateVersion: AUDIO_SEMANTIC_GATE_VERSION } };
 }

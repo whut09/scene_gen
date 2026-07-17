@@ -41,8 +41,8 @@ async function fixture(root: string, options: { riskOnSecond?: boolean } = {}) {
   return { project, audioPath };
 }
 
-function config(root: string, overrides: NodeJS.ProcessEnv = {}) {
-  return buildRuntimeConfig({ ...process.env, SCENE_GEN_CACHE_DIR: path.join(root, "cache"), ASR_PROVIDER: "mock", PRONUNCIATION_VERIFIER_PROVIDER: "mock", PRONUNCIATION_VERIFIER_CONFIDENCE_MIN: "0.7", QUALITY_MIN_DURATION_FACTOR: "0.5", QUALITY_MAX_DURATION_FACTOR: "2", ...overrides }, "test");
+function config(root: string, overrides: NodeJS.ProcessEnv = {}, profile = "test") {
+  return buildRuntimeConfig({ ...process.env, SCENE_GEN_CACHE_DIR: path.join(root, "cache"), ASR_PROVIDER: "mock", PRONUNCIATION_VERIFIER_PROVIDER: "mock", PRONUNCIATION_VERIFIER_CONFIDENCE_MIN: "0.7", QUALITY_MIN_DURATION_FACTOR: "0.5", QUALITY_MAX_DURATION_FACTOR: "2", ...overrides }, profile);
 }
 
 const goodProbe = async () => ({ readable: true, durationSeconds: 4, sampleRate: 16_000, channels: 1, silenceRatio: 0.05, peakDb: -3 });
@@ -56,6 +56,41 @@ test("semantic ASR transcript text never proves or disproves polyphone pronuncia
       { sceneIndex: 1, text: "系统完成重构", confidence: 0.95 },
     ] });
     assert.equal(result.issues.some((issue) => issue.code === "audio_pronunciation_mismatch"), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("title opening uses fuzzy opening coverage instead of exact ASR prefix", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-title-opening-"));
+  try {
+    const { project } = await fixture(root, { riskOnSecond: false });
+    project.meta.title = "低价大模型冲击人工智能市场";
+    project.narrationSegments![0].text = "低价大模型冲击人工智能市场，新闻正文开始。";
+    const evaluation = await evaluateAudio(project, 4, undefined, config(root, { ASR_TITLE_COVERAGE_MIN: "0.58" }), {
+      structuralProbe: goodProbe,
+      transcribe: async () => [
+        { sceneIndex: 0, text: "第一架大模型冲击人工智能市场新闻正文开始", confidence: 0.9 },
+        { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.9 },
+      ],
+      pronunciationVerify: async () => ({ status: "inconclusive", confidence: 0, verifier: "mock" }),
+    });
+    assert.equal(evaluation.issues.some((issue) => issue.code === "audio_title_opening_missing"), false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("production semantic gate blocks an empty ASR result", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-audio-empty-asr-"));
+  try {
+    const { project } = await fixture(root);
+    const result = await runAudioSemanticGate({
+      project,
+      config: config(root, { QUALITY_PROFILE: "strict" }, "production"),
+      provider: "mock",
+      transcribe: async () => [],
+    });
+    assert.equal(result.issues.length, 1);
+    assert.equal(result.issues[0]?.code, "asr_verification_failed");
+    assert.equal(result.issues[0]?.severity, "error");
+    assert.equal(result.metrics.semanticVerifiedCount, 0);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -89,12 +124,27 @@ test("low confidence or missing acoustic evidence is inconclusive and never dirt
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("audio evaluation preserves the strict runtime quality profile", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-audio-strict-profile-"));
+  try {
+    const { project } = await fixture(root);
+    const evaluation = await evaluateAudio(project, 4, undefined, config(root, { QUALITY_GATE_PROFILE: "strict" }, "production"), {
+      structuralProbe: goodProbe,
+      transcribe: async () => project.narrationSegments!.map((segment) => ({ sceneIndex: segment.sceneIndex, text: segment.text, confidence: 0.95 })),
+      pronunciationVerify: async () => ({ status: "inconclusive", confidence: 0, verifier: "mock" }),
+    });
+    assert.equal(evaluation.profile.name, "strict");
+    assert.equal(evaluation.profile.blockWarnings, true);
+    assert.equal(evaluation.passed, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("ASR cache runs the provider once for the same audio identity", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "scene-gen-asr-cache-"));
   try {
     const { project } = await fixture(root);
     let calls = 0;
-    const transcribe = async () => { calls += 1; return [{ sceneIndex: 0, text: "这是普通开场", confidence: 0.9 }, { sceneIndex: 1, text: "系统完成重构", confidence: 0.9 }]; };
+    const transcribe = async () => { calls += 1; return [{ sceneIndex: 0, text: "这是普通开场", confidence: 0.9, detectedLanguage: "zh", languageConfidence: 0.95 }, { sceneIndex: 1, text: "系统完成重构", confidence: 0.9, detectedLanguage: "zh", languageConfidence: 0.95 }]; };
     await transcribeScenesCached({ project, config: config(root), provider: "mock", transcribe });
     await transcribeScenesCached({ project, config: config(root), provider: "mock", transcribe });
     assert.equal(calls, 1);
@@ -137,13 +187,27 @@ test("semantic failure remains semantic and does not masquerade as pronunciation
     const { project } = await fixture(root);
     const evaluation = await evaluateAudio(project, 4, undefined, config(root), {
       structuralProbe: goodProbe,
-      transcribe: async () => [{ sceneIndex: 0, text: "错误内容", confidence: 0.95 }, { sceneIndex: 1, text: "完全无关", confidence: 0.95 }],
+      transcribe: async () => [{ sceneIndex: 0, text: "错误内容", confidence: 0.95, detectedLanguage: "zh", languageConfidence: 0.95 }, { sceneIndex: 1, text: "完全无关", confidence: 0.95, detectedLanguage: "zh", languageConfidence: 0.95 }],
       pronunciationVerify: async () => ({ status: "verified", actualPinyin: ["chong 2", "gou 4"], startMs: 0, endMs: 600, confidence: 0.95, verifier: "mock" }),
     });
     assert.ok(evaluation.issues.some((issue) => issue.code === "audio_semantic_mismatch"));
     assert.equal(evaluation.issues.some((issue) => issue.code === "audio_pronunciation_mismatch"), false);
     const semantic = evaluation.issues.find((issue) => issue.code === "audio_semantic_mismatch");
-    assert.equal(semantic?.repairAction, "retry-stage");
+    assert.equal(semantic?.repairAction, "resynthesize-audio");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("strict semantic gate rejects non-Chinese speech even when forced transcription returns Chinese text", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-language-mismatch-"));
+  try {
+    const { project } = await fixture(root);
+    const evaluation = await evaluateAudio(project, 4, undefined, config(root), {
+      structuralProbe: goodProbe,
+      transcribe: async () => project.narrationSegments!.map((segment) => ({ sceneIndex: segment.sceneIndex, text: segment.text, confidence: 0.95, detectedLanguage: "th", languageConfidence: 0.92 })),
+      pronunciationVerify: async () => ({ status: "inconclusive", confidence: 0, verifier: "mock" }),
+    });
+    assert.ok(evaluation.issues.some((issue) => issue.code === "audio_language_mismatch"));
+    assert.equal(evaluation.passed, false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

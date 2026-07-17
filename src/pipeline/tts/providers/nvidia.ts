@@ -1,13 +1,61 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
+import path from "node:path";
 import { getRuntimeConfig, type RuntimeConfig } from "../../../config/runtime-config";
 import { getOrCreateMediaCache } from "../../../cache/media-cache";
 import { loadTtsPronunciationLexicon } from "../../tts-pronunciation";
 import type { PronunciationPlan } from "../../pronunciation/schema";
+import { concatNarrationSegments } from "../postprocess";
 import { probeDuration } from "../process";
 import type { AzureTtsResult } from "./azure";
 
-export interface NvidiaTtsResult { requestId: string; status: "succeeded"; outputPath: string; requestMs: number; pinyinText?: string }
+export interface NvidiaTtsResult { requestId: string; status: "succeeded"; outputPath: string; requestMs: number; synthesisText?: string }
+
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-direct-utf8-chunked-v6-clarity-gated";
+export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
+
+export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {
+  const chunks: string[] = [];
+  const append = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const characters = [...trimmed];
+    if (characters.length <= maximumCharacters) {
+      chunks.push(trimmed);
+      return;
+    }
+    for (let index = 0; index < characters.length; index += maximumCharacters) {
+      chunks.push(characters.slice(index, index + maximumCharacters).join(""));
+    }
+  };
+  for (const sentence of text.split(/(?<=[。！？!?；;])/u)) {
+    if ([...sentence].length <= maximumCharacters) {
+      append(sentence);
+      continue;
+    }
+    for (const clause of sentence.split(/(?<=[，,、：:])/u)) append(clause);
+  }
+  return chunks;
+}
+
+export function encodeNvidiaWorkerRequest(input: { requestId: string; text: string; outputPath: string }) {
+  return Buffer.from(`${JSON.stringify(input)}\n`, "utf8");
+}
+
+export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSalt?: string }, config: RuntimeConfig) {
+  return {
+    provider: "nvidia",
+    model: config.tts.nvidia.model,
+    voice: config.tts.nvidia.voice,
+    language: config.tts.nvidia.language,
+    sampleRateHz: config.tts.nvidia.sampleRateHz,
+    synthesisText: input.plan.synthesisText,
+    pronunciationPlanHash: input.plan.planHash,
+    frontendVersion: NVIDIA_TTS_FRONTEND_VERSION,
+    cacheSalt: input.cacheSalt ?? "",
+  };
+}
 
 class NvidiaWorker {
   private child?: ChildProcessWithoutNullStreams;
@@ -19,7 +67,7 @@ class NvidiaWorker {
     if (this.ready) return this.ready;
     this.ready = new Promise<void>((resolve, reject) => {
       const cfg = this.config.tts.nvidia;
-      const child = spawn(cfg.python, [cfg.workerScript, "--endpoint", cfg.endpoint, "--function-id", cfg.functionId, "--voice", cfg.voice, "--language", cfg.language, "--sample-rate", String(cfg.sampleRateHz), "--lexicon", loadTtsPronunciationLexicon().filePath], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, NVIDIA_API_KEY: cfg.apiKey } });
+      const child = spawn(cfg.python, [cfg.workerScript, "--endpoint", cfg.endpoint, "--function-id", cfg.functionId, "--voice", cfg.voice, "--language", cfg.language, "--sample-rate", String(cfg.sampleRateHz), "--lexicon", loadTtsPronunciationLexicon().filePath], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8", NVIDIA_API_KEY: cfg.apiKey } });
       this.child = child;
       child.unref();
       (child.stdin as NodeJS.WritableStream & { unref?: () => void }).unref?.();
@@ -52,7 +100,7 @@ class NvidiaWorker {
     return new Promise<NvidiaTtsResult>((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(requestId); this.child?.kill(); reject(new Error("NVIDIA TTS request timeout.")); }, this.config.tts.nvidia.timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
-      this.child!.stdin.write(`${JSON.stringify({ requestId, text, outputPath })}\n`);
+      this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, outputPath }));
     });
   }
 }
@@ -61,12 +109,47 @@ let worker: NvidiaWorker | undefined;
 
 export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: string; force?: boolean; cacheSalt?: string; signal?: AbortSignal }, config = getRuntimeConfig()): Promise<{ reused: boolean; cacheKey: string; result: AzureTtsResult }> {
   if (!config.tts.nvidia.apiKey) throw new Error("NVIDIA_API_KEY is not configured.");
-  const identity = { provider: "nvidia", model: config.tts.nvidia.model, voice: config.tts.nvidia.voice, language: config.tts.nvidia.language, sampleRateHz: config.tts.nvidia.sampleRateHz, synthesisText: input.plan.synthesisText, pronunciationPlanHash: input.plan.planHash, frontendVersion: "nvidia-magpie-pinyin-v1", cacheSalt: input.cacheSalt ?? "" };
+  const identity = nvidiaTtsCacheIdentity(input, config);
   const cacheKey = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
   let generated: NvidiaTtsResult | undefined;
-  const cached = await getOrCreateMediaCache({ kind: "audio", cacheKey, extension: ".wav", targetPath: input.outputPath, identity, force: input.force, signal: input.signal, generate: async (targetPath) => { worker ??= new NvidiaWorker(config); generated = await worker.synthesize(input.plan.synthesisText, targetPath, input.signal); return { requestMs: generated.requestMs, pinyinText: generated.pinyinText, voice: config.tts.nvidia.voice }; } });
+  const cached = await getOrCreateMediaCache({
+    kind: "audio",
+    cacheKey,
+    extension: ".wav",
+    targetPath: input.outputPath,
+    identity,
+    force: input.force,
+    signal: input.signal,
+    generate: async (targetPath) => {
+      worker ??= new NvidiaWorker(config);
+      const chunks = splitNvidiaSynthesisText(input.plan.synthesisText);
+      const partPaths = chunks.map((_, index) => `${targetPath}.part-${String(index + 1).padStart(2, "0")}.wav`);
+      const partDurations: number[] = [];
+      let requestMs = 0;
+      try {
+        for (let index = 0; index < chunks.length; index += 1) {
+          const result = await worker.synthesize(chunks[index], partPaths[index], input.signal);
+          requestMs += result.requestMs;
+          const duration = await probeDuration(partPaths[index]);
+          if (duration <= 0) throw new Error(`NVIDIA TTS chunk ${index + 1} is empty or invalid.`);
+          partDurations.push(duration);
+        }
+        if (partPaths.length === 1) await renamePart(partPaths[0], targetPath);
+        else await concatNarrationSegments(partPaths, partDurations, partDurations.map((_, index) => index === partDurations.length - 1 ? 0 : 0.12), targetPath);
+        generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText: input.plan.synthesisText };
+        return { requestMs, synthesisText: input.plan.synthesisText, chunkCount: chunks.length, voice: config.tts.nvidia.voice };
+      } finally {
+        await Promise.all(partPaths.map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
+      }
+    },
+  });
   const raw = generated ?? { requestId: `cache-${cacheKey.slice(0, 12)}`, status: "succeeded" as const, outputPath: input.outputPath, requestMs: 0 };
   return { reused: !cached.generated, cacheKey, result: { requestId: raw.requestId, sceneIndex: 0, status: "succeeded", outputPath: input.outputPath, durationSeconds: await probeDuration(input.outputPath), requestMs: raw.requestMs, retryCount: 0, billedCharacters: [...input.plan.synthesisText].length, voice: config.tts.nvidia.voice, region: config.tts.nvidia.endpoint, retryable: false, providerRequestId: raw.requestId, budgetUsedCharacters: 0, budgetRemainingCharacters: Number.MAX_SAFE_INTEGER, budgetWarning: false } };
+}
+
+async function renamePart(partPath: string, targetPath: string) {
+  const { rename } = await import("node:fs/promises");
+  await rename(partPath, targetPath);
 }
 
 export async function inspectNvidiaTts(config = getRuntimeConfig()) { if (!config.tts.nvidia.apiKey) throw new Error("NVIDIA_API_KEY is not configured."); worker ??= new NvidiaWorker(config); await worker.start(); return { endpoint: config.tts.nvidia.endpoint, voice: config.tts.nvidia.voice }; }

@@ -55,6 +55,16 @@ def transcribe_whisper_with_confidence(recognizer, audio, language):
     inputs = recognizer.feature_extractor(samples, sampling_rate=sample_rate, return_tensors="pt")
     device = next(recognizer.model.parameters()).device
     input_features = inputs.input_features.to(device)
+    generation_config = recognizer.model.generation_config
+    decoder_input_ids = torch.ones((input_features.shape[0], 1), device=device, dtype=torch.long) * generation_config.decoder_start_token_id
+    with torch.no_grad():
+        language_logits = recognizer.model(input_features=input_features, decoder_input_ids=decoder_input_ids, use_cache=False).logits[:, -1]
+    language_ids = list(generation_config.lang_to_id.values())
+    language_probabilities = torch.softmax(language_logits[:, language_ids], dim=-1)
+    detected_index = int(language_probabilities.argmax(dim=-1)[0].item())
+    detected_language_id = language_ids[detected_index]
+    detected_language = recognizer.tokenizer.decode([detected_language_id]).replace("<|", "").replace("|>", "")
+    language_confidence = float(language_probabilities[0, detected_index].item())
     generated = recognizer.model.generate(
         input_features,
         language=language,
@@ -71,7 +81,12 @@ def transcribe_whisper_with_confidence(recognizer, audio, language):
     finite_scores = transition_scores[torch.isfinite(transition_scores)]
     confidence = math.exp(float(finite_scores.mean().item())) if finite_scores.numel() else None
     text = recognizer.tokenizer.batch_decode(generated.sequences, skip_special_tokens=True)[0].strip()
-    return {"text": text, "confidence": max(0.0, min(1.0, confidence)) if confidence is not None else None}
+    return {
+        "text": text,
+        "confidence": max(0.0, min(1.0, confidence)) if confidence is not None else None,
+        "detectedLanguage": detected_language,
+        "languageConfidence": max(0.0, min(1.0, language_confidence)),
+    }
 
 
 def main():
@@ -92,6 +107,8 @@ def main():
         device=device,
     )
     def transcribe(audio, include_words=False):
+        if getattr(recognizer.model.config, "model_type", "") == "whisper":
+            return transcribe_whisper_with_confidence(recognizer, audio, args.language)
         if include_words:
             try:
                 result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe"})
@@ -102,14 +119,6 @@ def main():
                 }
             except (TypeError, ValueError):
                 pass
-        if getattr(recognizer.model.config, "model_type", "") == "whisper":
-            try:
-                return transcribe_whisper_with_confidence(recognizer, audio, args.language)
-            except RuntimeError as error:
-                if "out of memory" in str(error).lower():
-                    raise
-            except (AttributeError, TypeError, ValueError):
-                pass
         try:
             result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe"})
         except (TypeError, ValueError):
@@ -117,7 +126,7 @@ def main():
         return {"text": result.get("text", "").strip(), "confidence": confidence_from_result(result)}
 
     if args.request_file:
-        with open(args.request_file, "r", encoding="utf-8") as handle:
+        with open(args.request_file, "r", encoding="utf-8-sig") as handle:
             request = json.load(handle)
         include_words = bool(request.get("wordTimestamps", False))
         segments = [{"sceneIndex": item["sceneIndex"], **transcribe(item["audio"], include_words)} for item in request.get("segments", [])]

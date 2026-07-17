@@ -14,6 +14,8 @@ const asrSceneTranscriptSchema = z.object({
   sceneIndex: z.number().int().nonnegative(),
   text: z.string(),
   confidence: z.number().min(0).max(1).nullable().optional(),
+  detectedLanguage: z.string().min(1).optional(),
+  languageConfidence: z.number().min(0).max(1).optional(),
   words: z.array(z.object({
     text: z.string(),
     startSeconds: z.number().nonnegative(),
@@ -54,11 +56,13 @@ function runCapture(command: string, args: string[], signal?: AbortSignal) {
 
 export function storedNarrationSceneTranscripts(project: VideoProject): AsrSceneTranscript[] | null {
   const segments = project.narrationSegments ?? [];
-  if (!segments.length || segments.some((segment) => !segment.speechAlignment?.transcript)) return null;
+  if (!segments.length || segments.some((segment) => !segment.speechAlignment?.transcript || !segment.speechAlignment.detectedLanguage || segment.speechAlignment.languageConfidence === undefined)) return null;
   return segments.map((segment) => ({
     sceneIndex: segment.sceneIndex,
     text: segment.speechAlignment!.transcript,
     confidence: segment.speechAlignment!.confidence,
+    detectedLanguage: segment.speechAlignment!.detectedLanguage,
+    languageConfidence: segment.speechAlignment!.languageConfidence,
     words: segment.speechAlignment!.words.map((word) => ({
       text: word.text,
       startSeconds: word.startMs / 1000,
@@ -121,17 +125,21 @@ function sequenceMetrics(expected: string, actual: string) {
 }
 
 function extractNumberUnits(text: string) {
-  const prepared = prepareF5SynthesisText(text);
-  return [...new Set(prepared.match(/(?:百分之[零一二三四五六七八九十百千万亿两点]+|v?[零一二三四五六七八九十百千万亿两点]+(?:点[零一二三四五六七八九十]+)+|第?[零一二三四五六七八九十百千万亿两点]+(?:个|项|位|名|次|年|月|日|秒|分钟|小时|倍|版|亿元|万元|美元|人民币)?)/gi) ?? [])]
-    .map(canonicalSpeechText)
+  const prepared = canonicalSpeechText(prepareF5SynthesisText(text));
+  return [...new Set(prepared.match(/(?:百分之[零一二三四五六七八九十百千万亿两点]+|v?[零一二三四五六七八九十百千万亿两点]+(?:点[零一二三四五六七八九十]+)+|第?[零一二三四五六七八九十百千万亿两点]+)/gi) ?? [])]
     .filter((value) => value.length > 1);
 }
 
 function expectedEntities(project: VideoProject, segment: NarrationSegment) {
   const claimIds = new Set(segment.claimIds ?? []);
-  const claimEntities = project.factLedger?.claims.filter((claim) => claimIds.has(claim.id)).flatMap((claim) => [claim.subject, /[a-zA-Z]|\d/.test(claim.value) ? claim.value : ""]) ?? [];
-  const textualEntities = segment.text.match(/[A-Za-z][A-Za-z0-9._+-]{1,}|[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+/g) ?? [];
-  return [...new Set([...claimEntities, ...textualEntities].map(canonicalSpeechText).filter((value) => value.length >= 2))];
+  const expectedText = canonicalSpeechText(prepareF5SynthesisText(segment.ttsText ?? segment.text));
+  const claimEntities = project.factLedger?.claims
+    .filter((claim) => claimIds.has(claim.id))
+    .flatMap((claim) => [claim.subject, /[a-zA-Z]|\d/.test(claim.value) ? claim.value : ""])
+    .map(canonicalSpeechText)
+    .filter((value) => value.length >= 2 && expectedText.includes(value)) ?? [];
+  const textualEntities = (segment.ttsText ?? segment.text).match(/[A-Za-z][A-Za-z0-9._+-]{1,}|[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+/g) ?? [];
+  return [...new Set([...claimEntities, ...textualEntities.map(canonicalSpeechText)].filter((value) => value.length >= 2))];
 }
 function bigramRecall(expected: string, actual: string) {
   if (expected.length < 2) return actual.includes(expected) ? 1 : 0;
@@ -145,7 +153,7 @@ function boundaryRecall(expected: string, actual: string, edge: "start" | "end")
     .map((length) => bigramRecall(edge === "start" ? expected.slice(0, length) : expected.slice(-length), actual)), 0);
 }
 
-export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[]) {
+export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[], options: { expectedLanguage?: string; minimumLanguageConfidence?: number } = {}) {
   const issues: QualityIssueInput[] = [];
   const results: Array<Record<string, string | number | boolean>> = [];
   const transcriptMap = new Map(transcripts.map((transcript) => [transcript.sceneIndex, transcript]));
@@ -165,6 +173,9 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const expectedText = canonicalSpeechText(prepareF5SynthesisText(segment.ttsText ?? segment.text));
     const actualText = canonicalSpeechText(transcript.text);
     const confidence = transcript.confidence ?? undefined;
+    const expectedLanguage = options.expectedLanguage?.toLowerCase();
+    const detectedLanguage = transcript.detectedLanguage?.toLowerCase();
+    const languageConfidence = transcript.languageConfidence;
     const sequence = sequenceMetrics(expectedText, actualText);
     const entities = expectedEntities(project, segment);
     const matchedEntities = entities.filter((entity) => actualText.includes(entity));
@@ -172,20 +183,33 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const expectedNumbers = extractNumberUnits(segment.ttsText ?? segment.text);
     const actualNumbers = extractNumberUnits(transcript.text);
     const numberAccuracy = expectedNumbers.filter((value) => actualNumbers.includes(value)).length / Math.max(1, expectedNumbers.length);
-    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)) });
+    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, detectedLanguage: detectedLanguage ?? "unknown", languageConfidence: languageConfidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)) });
 
-    if (confidence !== undefined && confidence < minimumConfidence) {
+    if (expectedLanguage && (!detectedLanguage || languageConfidence === undefined)) {
+      issues.push({ severity: "error", code: "asr_verification_failed", message: `第 ${segment.sceneIndex + 1} 屏缺少独立语言检测结果，不能确认语音为中文。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "check-environment", retryable: false, evidence: { transcript: transcript.text, reason: "missing_language_detection", expectedLanguage } });
+      continue;
+    }
+    if (expectedLanguage && (detectedLanguage !== expectedLanguage || languageConfidence! < (options.minimumLanguageConfidence ?? 0.5))) {
+      issues.push({ severity: "error", code: "audio_language_mismatch", message: `第 ${segment.sceneIndex + 1} 屏语音语言检测未达到中文要求。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { transcript: transcript.text, expectedLanguage, detectedLanguage: detectedLanguage ?? "unknown", languageConfidence: languageConfidence ?? 0, minimumLanguageConfidence: options.minimumLanguageConfidence ?? 0.5 } });
+      continue;
+    }
+
+    if (confidence === undefined) {
+      issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 未提供置信度，未触发内容重建。`, sceneIndex: segment.sceneIndex, issueClass: "soft", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, reason: "missing_confidence" } });
+      continue;
+    }
+    if (confidence < minimumConfidence) {
       issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 置信度 ${(confidence * 100).toFixed(1)}% 过低，未触发内容重建。`, sceneIndex: segment.sceneIndex, issueClass: "soft", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, asrConfidence: confidence, minimumConfidence } });
       continue;
     }
     if (entities.length && entityRecall < minimumEntityRecall) {
       issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏产品名、人名或关键实体不完整。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedEntities: entities, matchedEntities, transcript: transcript.text, entityRecall: Number(entityRecall.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
-    if (expectedNumbers.length && (numberAccuracy < 1 || actualNumbers.some((value) => !expectedNumbers.includes(value)))) {
+    if (expectedNumbers.length && numberAccuracy < 1) {
       issues.push({ severity: "error", code: "audio_number_mismatch", message: `第 ${segment.sceneIndex + 1} 屏数字、单位或版本号与旁白不一致。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedNumbers, transcriptNumbers: actualNumbers, transcript: transcript.text, numberAccuracy: Number(numberAccuracy.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
     if (sequence.coverage < minimumCoverage || sequence.precision < minimumPrecision) {
-      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `第 ${segment.sceneIndex + 1} 屏存在漏字、多字或语义覆盖不足。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
+      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `第 ${segment.sceneIndex + 1} 屏存在漏字、多字或语义覆盖不足。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
     const currentStart = expectedText.slice(0, 18);
     const currentEnd = expectedText.slice(-18);
@@ -202,6 +226,9 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     }
   }
   const firstTranscript = transcriptMap.get(0)?.text ?? "";
-  const titleAudioCoverage = firstTranscript ? bigramRecall(canonicalSpeechText(project.meta.title), canonicalSpeechText(firstTranscript)) : 0;
-  return { issues, results, titleTranscript: firstTranscript, titleAudioCoverage };
+  const expectedTitle = canonicalSpeechText(project.meta.title);
+  const actualOpening = canonicalSpeechText(firstTranscript).slice(0, Math.max(expectedTitle.length + 8, 18));
+  const titleAudioCoverage = firstTranscript ? bigramRecall(expectedTitle, canonicalSpeechText(firstTranscript)) : 0;
+  const titleOpeningCoverage = firstTranscript ? bigramRecall(expectedTitle, actualOpening) : 0;
+  return { issues, results, titleTranscript: firstTranscript, titleAudioCoverage, titleOpeningCoverage };
 }

@@ -59,6 +59,22 @@ test("scene ASR checks entities and numbers without directly rebuilding TTS", ()
   assert.equal(dirtyPlan.remux, false);
 });
 
+test("extra ASR numbers do not fail when all expected numbers are present", () => {
+  const project = projectFixture();
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: `${project.narrationSegments![0].text} 第一屏`, confidence: 0.95 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_number_mismatch" && item.sceneIndex === 0), false);
+});
+
+test("missing ASR confidence is inconclusive instead of a semantic failure", () => {
+  const project = projectFixture();
+  const result = verifySceneTranscripts(project, project.narrationSegments!.map((segment) => ({ sceneIndex: segment.sceneIndex, text: segment.text, confidence: null })));
+  assert.equal(result.issues.every((item) => item.code === "verification_inconclusive"), true);
+});
+
 test("scene ASR detects omitted and inserted narration tokens", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [

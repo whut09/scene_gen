@@ -277,6 +277,7 @@ export async function evaluateVideo(
   return finalizeQualityEvaluation({
     stage: "video",
     issues,
+    profile: { name: config.quality.profile, blockWarnings: config.quality.profile === "strict", blockingWarningCodes: [...config.quality.blockingWarningCodes] },
     revisionNotes: [],
     metrics: {
       duration,
@@ -303,4 +304,3 @@ export async function evaluateVideo(
     },
   });
 }
-

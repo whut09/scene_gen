@@ -1,4 +1,5 @@
 import type { IterationReport } from "../video-stages";
+import { stageIndex, type VideoStageName } from "../stage-types";
 
 export function initialDraftLoopState(iterations: IterationReport[]) {
   const draftPassed = iterations.at(-1)?.draft?.passed ?? false;
@@ -8,4 +9,8 @@ export function initialDraftLoopState(iterations: IterationReport[]) {
 
 export function shouldContinueDraftLoop(input: { draftPassed: boolean; draftStageRequested: boolean; draftGateRequested: boolean; iteration: number; maxIterations: number }) {
   return (!input.draftPassed || input.draftStageRequested || input.draftGateRequested) && input.iteration <= input.maxIterations;
+}
+
+export function shouldRevalidateDraftBeforeResume(input: { resumeValue?: string; explicitFromStage?: VideoStageName; draftPassed: boolean }) {
+  return Boolean(input.resumeValue && input.explicitFromStage && !input.draftPassed && stageIndex(input.explicitFromStage) > stageIndex("draft-gate"));
 }

@@ -193,6 +193,8 @@ export interface NarrationSpeechAlignment {
   provider: "whisper";
   transcript: string;
   confidence?: number;
+  detectedLanguage?: string;
+  languageConfidence?: number;
   words: SpeechWordTiming[];
   phrases: SpeechPhraseTiming[];
   createdAt: string;

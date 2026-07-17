@@ -414,7 +414,7 @@ async function pronunciationPlanFor(text: string, segment?: NarrationSegment, si
     domain: config.domain,
     g2pw: config.g2pwEnabled ? g2pwClient : undefined,
     g2pwMinimumConfidence: config.g2pwMinimumConfidence,
-    pypinyinFallback: async (value) => (await pypinyinClient!.pypinyin(value, { signal })).map((prediction) => ({ phrase: prediction.phrase, start: prediction.start, end: prediction.end, expectedPinyin: prediction.pinyin, source: "pypinyin", confidence: prediction.confidence, risk: "medium", providerOverrides: {} })),
+    pypinyinFallback: async (value) => (await pypinyinClient!.pypinyin(value, { signal })).map((prediction) => ({ phrase: prediction.phrase, start: prediction.start, end: prediction.end, expectedPinyin: prediction.pinyin, source: "pypinyin", confidence: prediction.confidence, risk: "low", providerOverrides: {} })),
     signal,
   });
 }

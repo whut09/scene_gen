@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  compatibleStoredRuntimeConfigSnapshotHashes,
   buildRuntimeConfig,
   restoreRuntimeConfig,
   runtimeConfigHash,
   runtimeConfigProcessEnv,
   runtimeConfigSnapshot,
   runtimeConfigWithRunOverrides,
+  storedRuntimeConfigSnapshotHash,
 } from "./runtime-config";
 
 function testEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -71,6 +73,13 @@ test("legacy runtime snapshots default new ASR verification fields", () => {
   const restored = restoreRuntimeConfig(legacy, testEnv());
   assert.equal(restored.asr.provider, "whisper");
   assert.equal(restored.asr.pronunciation.provider, "disabled");
+});
+
+test("legacy runtime snapshot hashes remain resume-compatible after adding language detection", () => {
+  const current = runtimeConfigSnapshot(buildRuntimeConfig(testEnv()));
+  const legacy = structuredClone(current) as unknown as { asr: Record<string, unknown> };
+  delete legacy.asr.languageConfidenceMin;
+  assert.equal(compatibleStoredRuntimeConfigSnapshotHashes(current).has(storedRuntimeConfigSnapshotHash(legacy)), true);
 });
 
 test("subprocess config propagation is validated and independent of ambient env", () => {

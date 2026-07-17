@@ -74,6 +74,7 @@ export const issueRegistry = {
   audio_segment_cross_talk: define("environment", "retry-stage", true),
   verification_inconclusive: define("environment", "retry-stage", true),
   asr_verification_failed: define("environment", "check-environment", false),
+  audio_language_mismatch: define("hard", "resynthesize-audio", true),
   judge_unavailable: define("environment", "check-environment", false),
   judge_partially_measured: define("soft", "none", false),
   judge_unstable: define("environment", "check-environment", false),

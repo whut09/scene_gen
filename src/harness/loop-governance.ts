@@ -156,9 +156,14 @@ export function resolveLoopBudgetLimits(args: Record<string, string | boolean>):
 export function calculateLoopBudgetUsage(journal: RunJournal, audits: LoopAudit[]): LoopBudgetUsage {
   const repairsByIssue: Record<string, number> = {};
   let estimatedCost = 0;
+  for (const audit of audits) {
+    const repairedCodes = new Set(audit.reasons
+      .filter((reason) => reason.repairAction !== "none")
+      .map((reason) => reason.code));
+    for (const code of repairedCodes) repairsByIssue[code] = (repairsByIssue[code] ?? 0) + 1;
+  }
   for (const stage of journal.stages) {
     if (stage.status !== "succeeded") continue;
-    for (const issue of stage.issues) repairsByIssue[issue.code] = (repairsByIssue[issue.code] ?? 0) + (stage.suggestedAction === "none" ? 0 : 1);
     const selected = stage.repairDecision ? stage.repairCandidates?.[stage.repairDecision.selectedCandidateIndex] : undefined;
     estimatedCost += selected?.estimatedCost ?? 0;
   }

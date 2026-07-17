@@ -202,11 +202,13 @@ export async function installSyncCueAnimations(page: Page, syncCues: HtmlVideoCo
         { opacity: 0.35, transform: "translateY(8px)" },
         { opacity: 1, transform: "translateY(0)" },
       ], { delay: item.startMs, duration: 260, fill: "both", easing: "ease-out" });
+      reveal.id = "sg-sync-emphasis-reveal";
       const highlight = target.animate([
         { filter: "brightness(1)", textShadow: "none" },
         { filter: item.emphasis === "primary" ? "brightness(1.18)" : "brightness(1.08)", textShadow: "0 0 18px rgba(80,210,255,.45)" },
         { filter: "brightness(1)", textShadow: "none" },
       ], { delay: item.startMs, duration: Math.max(400, item.endMs - item.startMs + 300), fill: "both", easing: "ease-in-out" });
+      highlight.id = "sg-sync-emphasis-highlight";
       reveal.pause();
       highlight.pause();
       animations.push(reveal, highlight);

@@ -95,3 +95,19 @@ test("global audio failures request a full audio rebuild", () => {
   assert.deepEqual(plan.audioSceneIndexes, []);
   assert.equal(plan.muxRequired, true);
 });
+
+test("high-confidence semantic mismatch requests scene-scoped audio regeneration", () => {
+  const plan = planRepair("audio", [{
+    severity: "error",
+    code: "audio_semantic_mismatch",
+    sceneIndex: 3,
+    issueClass: "hard",
+    repairAction: "resynthesize-audio",
+    retryable: true,
+    evidence: { asrConfidence: 0.82, tokenCoverage: 0.71, tokenPrecision: 0.76 },
+  }], undefined, 5);
+  assert.equal(plan.action, "resynthesize-audio");
+  assert.deepEqual(plan.audioSceneIndexes, [3]);
+  assert.equal(plan.dirtyPlan.concatAudio, true);
+  assert.equal(plan.muxRequired, true);
+});
