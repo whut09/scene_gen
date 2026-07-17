@@ -146,7 +146,8 @@ export async function runSynthesizeStage(input: {
   cacheSalt?: string;
   reason?: string;
   forceAudioRebuild?: boolean;
-  provider?: "azure" | "openai" | "f5" | "local";
+  provider?: import("../pipeline/tts").TtsProvider;
+  pronunciationStrategy?: import("../production/tts-routing").PronunciationStrategy;
   signal: AbortSignal;
 }) {
   const args = [
@@ -159,6 +160,7 @@ export async function runSynthesizeStage(input: {
   if (input.cacheSalt) args.push("--cache-salt", input.cacheSalt);
   if (input.reason) args.push("--reason", input.reason);
   if (input.provider) args.push("--provider", input.provider);
+  if (input.pronunciationStrategy) args.push("--pronunciation-strategy", input.pronunciationStrategy);
   await runScript("src/pipeline/synthesize-story.ts", args, input.signal, {
     timeoutMs: getRuntimeConfig().retry.stageTimeoutMs.synthesize,
     retries: 1,

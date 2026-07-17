@@ -50,8 +50,8 @@ export function projectLoopHash(project: VideoProject) {
   return contentHash({ meta: project.meta, scenes: project.scenes, narration: project.narration, narrationSegments: project.narrationSegments });
 }
 
-export function audioLoopHash(project: VideoProject, audioGenerationKey = "default") {
-  return contentHash({ projectHash: projectLoopHash(project), audioGenerationKey });
+export function audioLoopHash(project: VideoProject, audioGenerationKey = "default", identity: Record<string, unknown> = {}) {
+  return contentHash({ projectHash: projectLoopHash(project), audioGenerationKey, ...identity });
 }
 
 export function issueKey(issue: Pick<QualityIssue, "code" | "sceneIndex">) {

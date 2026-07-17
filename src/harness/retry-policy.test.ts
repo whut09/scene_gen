@@ -79,6 +79,14 @@ test("pronunciation mismatches request scene-scoped audio regeneration", () => {
   assert.deepEqual(plan.audioSceneIndexes, [2]);
   assert.equal(plan.muxRequired, true);
   assert.equal(plan.dirtyPlan.concatAudio, true);
+  assert.equal(plan.pronunciationStrategy, "switch-tts-provider");
+});
+
+test("inconclusive pronunciation retries the verifier instead of TTS", () => {
+  const plan = planRepair("audio", [{ severity: "error", code: "verification_inconclusive", sceneIndex: 2, evidence: { verifier: "azure", reason: "low confidence" } }]);
+  assert.equal(plan.action, "retry-stage");
+  assert.equal(plan.pronunciationStrategy, "retry-verifier");
+  assert.deepEqual(plan.audioSceneIndexes, []);
 });
 
 test("global audio failures request a full audio rebuild", () => {

@@ -12,6 +12,24 @@ export type VisualSource =
 
 export type ProviderCapability = "programmatic" | "browser" | "stock-video" | "image" | "video" | "tts" | "music" | "alignment" | "llm";
 
+export type PronunciationControlLevel = "none" | "fallback-only" | "lexicon" | "explicit-phoneme";
+export type FreeQuotaType = "none" | "monthly-characters" | "daily-neurons" | "credits" | "local";
+
+export interface TtsProviderCapabilities {
+  supportsExplicitPhoneme: boolean;
+  supportsCustomLexicon: boolean;
+  supportsVoiceClone: boolean;
+  supportsSsml: boolean;
+  supportsStreaming: boolean;
+  supportsCommercialUse: boolean;
+  pronunciationControlLevel: PronunciationControlLevel;
+  freeQuotaType: FreeQuotaType;
+  freeQuotaRemaining?: number;
+  estimatedLatency: number;
+  estimatedCost: number;
+  unofficial?: boolean;
+}
+
 export interface ProviderCandidateDecision {
   providerId: string;
   enabled: boolean;
@@ -44,6 +62,7 @@ export interface ProviderDescriptor {
   reason?: string;
   health: import("./provider-stats").ProviderHealth;
   stats: import("./provider-stats").ProviderStats;
+  ttsCapabilities?: TtsProviderCapabilities;
 }
 
 export interface VisualPlan {
@@ -117,6 +136,13 @@ export interface ProductionReport {
     templateHistorySamples: number;
     unhealthyProviders: string[];
     degradedProviders: string[];
+    selectedTtsProvider?: string;
+    pronunciationStrategy?: string;
+    quotaConsumed: number;
+    quotaRemaining?: number;
+    providerSwitchCount: number;
+    verifierRetryCount: number;
+    avoidedTtsRegenerationCount: number;
   };
 }
 

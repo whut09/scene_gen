@@ -44,6 +44,7 @@ import { initialDraftLoopState, shouldContinueDraftLoop } from "./agent/draft-lo
 import { generatedAudioSceneIndexes } from "./agent/audio-loop";
 import { addTemplateExclusions, affectedVideoScenes } from "./agent/video-loop";
 import { publishAgentRun } from "./agent/publish";
+import { PronunciationAttemptLedger, phraseFingerprint, type PronunciationAttemptLedgerState, type PronunciationStrategy } from "../production/tts-routing";
 
 
 async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undefined, runtimeConfig: RuntimeConfig) {
@@ -265,7 +266,11 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     let forceAudioRebuild = false;
     let audioCacheSalt: string | undefined;
     let audioRepairReason: string | undefined;
-    let audioProviderOverride: "azure" | "openai" | "f5" | "local" | undefined;
+    let audioProviderOverride: import("../pipeline/tts").TtsProvider | undefined;
+    let pronunciationStrategy: PronunciationStrategy | undefined;
+    const pronunciationAttemptsPath = path.join(runDir, "loop", "pronunciation-attempts.json");
+    const pronunciationAttemptState = await readJson<PronunciationAttemptLedgerState>(pronunciationAttemptsPath).catch(() => undefined);
+    const pronunciationAttempts = new PronunciationAttemptLedger(pronunciationAttemptState);
     let audioStrategy: LoopStrategyTrace | undefined;
     let audioRemuxRequired = false;
     let audioRetimeRequired = false;
@@ -276,13 +281,14 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       const previousSceneDurations = state.project.scenes.map((scene) => scene.duration);
       const synth: { value: VideoProject; result: StageResult } = await runStage<VideoProject>({
         journal, name: "synthesize", attempt: nextAttempt(journal, "synthesize"), inputs: { project: state.project, targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, strategy: audioStrategy }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.synthesize, signal,
-        task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, signal: stageSignal }),
+        task: (stageSignal) => runSynthesizeStage({ projectPath: state.story!.projectPath, basename: narrationBasename(runId, state.project!), targetSeconds, forceAudioRebuild: forcedRebuild, forceSceneIndexes: forcedIndexes, cacheSalt: audioCacheSalt, reason: audioRepairReason, provider: audioProviderOverride, pronunciationStrategy, signal: stageSignal }),
         describe: (value) => ({
           outputs: { projectPath: state.story!.projectPath, audio: value.audio?.src ?? "", pronunciationPlans: value.audio?.pronunciationPlansPath ?? "" },
           metrics: {
             duration: value.audio?.durationSeconds ?? 0,
             forcedAudioRebuild: forcedRebuild,
             ...(value.audio?.metrics ?? {}),
+            ...pronunciationAttempts.metrics(),
             alignedCueCount: value.narrationSegments?.reduce((sum, segment) => sum + (segment.speechAlignment?.phrases.length ?? 0), 0) ?? 0,
             alignedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "forced").length ?? 0,
             alignmentFailedSceneCount: value.narrationSegments?.filter((segment) => segment.speechAlignment?.status === "failed").length ?? 0,
@@ -301,12 +307,20 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       audioCacheSalt = undefined;
       audioRepairReason = undefined;
       audioProviderOverride = undefined;
+      pronunciationStrategy = undefined;
       const gate: { value: GateStageOutput; result: StageResult } = await runStage<GateStageOutput>({
         journal, name: "audio-gate", attempt: nextAttempt(journal, "audio-gate"), inputs: { project: state.project, targetSeconds }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.audioGate, signal,
         task: (stageSignal) => runAudioGateStage(state.project as VideoProject, targetSeconds, stageSignal),
         describe: (value) => ({ issues: value.evaluation.issues, metrics: { ...value.evaluation.metrics, passed: value.evaluation.passed }, suggestedAction: value.repairPlan.action, dirtyPlan: value.repairPlan.dirtyPlan, repairCandidates: value.repairPlan.candidates, repairDecision: value.repairPlan.decision }),
       });
-      gate.value.evaluation.metrics.projectHash = audioLoopHash(state.project, state.project.audio?.metrics?.audioGenerationKey);
+      gate.value.evaluation.metrics.projectHash = audioLoopHash(state.project, state.project.audio?.metrics?.audioGenerationKey, {
+        provider: state.project.audio?.provider,
+        strategy: state.project.audio?.metrics?.pronunciationStrategy,
+        pronunciationPlanHash: state.project.narrationSegments?.map((segment) => segment.pronunciationPlan?.planHash ?? "").join(","),
+        audioHash: state.project.audio?.metrics?.audioGenerationKey,
+        verifier: runtimeConfig.asr.pronunciation.provider,
+        evidence: issueEvidenceSignature(gate.value.evaluation.issues),
+      });
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-audio.json`);
       await writeJsonAtomic(evaluationPath, gate.value.evaluation);
       await journal.setArtifacts({ [`iteration${iteration}Audio`]: evaluationPath });
@@ -334,9 +348,18 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         strategyTrajectory.push(audioStrategy);
         await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
         if (audioStrategy.strategyId === "human-review") throw new Error("Audio loop requires human confirmation after exhausting repair strategies.");
-        if (audioStrategy.strategyId === "alternate-provider" && (audioStrategy.providerId === "azure" || audioStrategy.providerId === "openai" || audioStrategy.providerId === "f5" || audioStrategy.providerId === "local")) audioProviderOverride = audioStrategy.providerId;
+        if (audioStrategy.strategyId === "alternate-provider" && (audioStrategy.providerId === "azure" || audioStrategy.providerId === "cloudflare-melotts" || audioStrategy.providerId === "edge" || audioStrategy.providerId === "openai" || audioStrategy.providerId === "f5" || audioStrategy.providerId === "local" || audioStrategy.providerId === "mock")) audioProviderOverride = audioStrategy.providerId;
       }
       if (iteration >= maxIterations) break;
+      pronunciationStrategy = gate.value.repairPlan.pronunciationStrategy;
+      if (pronunciationStrategy === "retry-verifier") {
+        const targetScenes = gate.value.evaluation.issues.filter((issue) => issue.code === "verification_inconclusive").map((issue) => issue.sceneIndex ?? 0);
+        if (!targetScenes.every((sceneIndex) => pronunciationAttempts.claimVerification(sceneIndex))) throw new Error("Pronunciation verifier retry budget exhausted; switch verifier or request manual confirmation.");
+        await writeJsonAtomic(pronunciationAttemptsPath, pronunciationAttempts.snapshot());
+        iteration += 1;
+        startStage = "audio-gate";
+        continue;
+      }
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
         const beforeRevision = structuredClone(state.project);
         const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-audio-revision-result.json`);
@@ -358,6 +381,22 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
           : state.project.scenes.map((_, index) => index);
         audioRepairReason = `${gate.value.repairPlan.reason}; strategy=${audioStrategy?.strategyId ?? "default"}`;
         audioCacheSalt = `audio:${audioRepairReason}:${forceAudioSceneIndexes.join(",") || "all"}`;
+        const mismatchIssues = gate.value.evaluation.issues.filter((issue) => issue.code === "audio_pronunciation_mismatch");
+        const currentProvider = state.project.audio?.provider;
+        const nextProvider = pronunciationStrategy === "switch-tts-provider" ? currentProvider === "azure" ? "f5" : "azure" : audioProviderOverride ?? runtimeConfig.tts.provider;
+        const planHashes = mismatchIssues.map((issue) => String(issue.evidence.pronunciationPlanHash ?? "unknown"));
+        const claimed = forceAudioSceneIndexes.every((sceneIndex) => pronunciationAttempts.claim(sceneIndex, {
+          phraseFingerprint: phraseFingerprint(mismatchIssues.filter((issue) => issue.sceneIndex === sceneIndex).map((issue) => String(issue.evidence.phrase ?? issue.code))),
+          provider: nextProvider,
+          pronunciationStrategy: pronunciationStrategy ?? "switch-tts-provider",
+          pronunciationPlanHash: planHashes.join(",") || "unknown",
+        }));
+        if (!claimed) throw new Error("Duplicate pronunciation synthesis strategy was blocked; manual confirmation or a different provider is required.");
+        if (pronunciationStrategy === "switch-tts-provider") {
+          audioProviderOverride = nextProvider;
+          if (!pronunciationAttempts.claimProviderSwitch(forceAudioSceneIndexes[0] ?? 0)) pronunciationStrategy = "use-spoken-fallback";
+        }
+        await writeJsonAtomic(pronunciationAttemptsPath, pronunciationAttempts.snapshot());
       } else {
         throw new Error(`Audio gate requires ${gate.value.repairPlan.action}: ${gate.value.repairPlan.reason}`);
       }

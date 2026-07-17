@@ -72,7 +72,7 @@ test("profile weighting favors latency for preview and reliability for productio
     await writeFile(filePath, records.map((record) => JSON.stringify(record)).join("\n") + "\n", "utf8");
     const preview = selectProviderWithAudit("tts", ["openai-tts", "f5", "local-tts"], { profile: "fast-preview", language: "zh-CN", domain: "software" });
     const production = selectProviderWithAudit("tts", ["f5", "openai-tts", "local-tts"], { profile: "production", language: "zh-CN", domain: "software", highRiskTerms: true });
-    assert.equal(preview.selected?.id, "openai-tts");
+    assert.equal(preview.selected?.id, "openai");
     assert.equal(production.selected?.id, "f5");
     assert.ok(production.audit.candidates.every((candidate) => candidate.reasons.length > 0));
     assert.ok(production.audit.candidates.find((candidate) => candidate.providerId === "f5")!.reasons.some((reason) => reason.startsWith("pronunciation")));
@@ -100,7 +100,7 @@ test("unhealthy APIs are eliminated and F5 memory pressure is penalized", { conc
     ];
     await writeFile(filePath, records.map((record) => JSON.stringify(record)).join("\n") + "\n", "utf8");
     const ranked = rankProviders("tts", ["openai-tts", "f5"], { profile: "production" });
-    assert.equal(ranked.find((candidate) => candidate.providerId === "openai-tts")?.eliminated, true);
+    assert.equal(ranked.find((candidate) => candidate.providerId === "openai")?.eliminated, true);
     const pressured = rankProviders("tts", ["f5", "openai-tts"], { profile: "production", memoryPressure: true });
     assert.ok(pressured.find((candidate) => candidate.providerId === "f5")!.reasons.some((reason) => reason.includes("GPU memory pressure")));
   } finally {

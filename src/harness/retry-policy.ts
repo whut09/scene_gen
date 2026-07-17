@@ -9,6 +9,7 @@ import {
   type RepairDecision,
   type RepairPolicyWeights,
 } from "./repair-candidate";
+import { pronunciationStrategySchema, type PronunciationStrategy } from "../production/tts-routing";
 
 export interface RepairPlan {
   action: SuggestedAction;
@@ -23,6 +24,13 @@ export interface RepairPlan {
   dirtyPlan: DirtyPlan;
   candidates: RepairCandidate[];
   decision: RepairDecision;
+  pronunciationStrategy?: PronunciationStrategy;
+}
+
+function pronunciationStrategyFor(issues: QualityIssue[]): PronunciationStrategy | undefined {
+  if (issues.some((issue) => issue.code === "verification_inconclusive")) return "retry-verifier";
+  if (issues.some((issue) => issue.code === "audio_pronunciation_mismatch")) return "switch-tts-provider";
+  return undefined;
 }
 
 const defaultWeights: RepairPolicyWeights = { costWeight: 0.28, latencyWeight: 0.18, riskWeight: 0.24 };
@@ -187,6 +195,7 @@ export function planRepair(
       forceAudioRebuild: false, forceVideoRebuild: false, retryable: false, reason: "No blocking issues.", dirtyPlan: emptyDirtyPlan(),
       candidates: [candidate],
       decision: repairDecisionSchema.parse({ selectedAction: "none", selectedCandidateIndex: 0, weights, objective: "expectedSuccess*evidenceConfidence-cost-latency-risk-scope", reason: "No blocking issues." }),
+      pronunciationStrategy: undefined,
     };
   }
 
@@ -220,5 +229,6 @@ export function planRepair(
     dirtyPlan,
     candidates,
     decision: repairDecisionSchema.parse({ selectedAction: action, selectedCandidateIndex: 0, weights, objective: "expectedSuccess*evidenceConfidence-cost-latency-risk-scope", reason }),
+    pronunciationStrategy: pronunciationStrategySchema.optional().parse(pronunciationStrategyFor(errors)),
   };
 }

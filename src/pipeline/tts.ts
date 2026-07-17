@@ -1,21 +1,24 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { NarrationSegment, VideoProject } from "./types";
 import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
 import { createF5NarrationCacheMetadata } from "./tts-cache";
-import { findTtsPronunciations, loadTtsPronunciationLexicon } from "./tts-pronunciation";
+import { loadTtsPronunciationLexicon } from "./tts-pronunciation";
 import { BoundedTaskQueue, mapWithConcurrency } from "./bounded-task-queue";
 import { F5WorkerPool, resolveF5WorkerDevices } from "./f5-worker-pool";
 import { getOrCreateMediaCache } from "../cache/media-cache";
-import { selectProviderWithAudit } from "../production/provider-registry";
 import { recordProviderOutcome } from "../production/provider-stats";
 import type { ProviderSelectionAudit } from "../production/types";
+import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-routing";
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
+import { cloudflareMeloTts } from "./tts/providers/cloudflare-melotts";
+import { edgeTts } from "./tts/providers/edge";
+import { mockTts } from "./tts/providers/mock";
 import { probeDuration, run } from "./tts/process";
 import { prepareF5SynthesisText } from "./tts/text-normalization";
 import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from "./tts/segmentation";
@@ -23,14 +26,14 @@ import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } fr
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
 import { f5PronunciationInput } from "./pronunciation/provider-adapters";
-import type { PronunciationPlan } from "./pronunciation/schema";
+import { pronunciationPlanHash, type PronunciationPlan } from "./pronunciation/schema";
 export { prepareF5SynthesisText, removeLoneSurrogates } from "./tts/text-normalization";
 
 const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。";
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
 const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|浼|棰|勭/g;
 
-type TtsProvider = "azure" | "openai" | "f5" | "local";
+export type TtsProvider = "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock";
 const F5_FRONTEND_VERSION = "scene-gen-pypinyin-lexicon-v1";
 let warnedDeprecatedF5Cli = false;
 let g2pwClient: G2pwWorkerClient | undefined;
@@ -201,7 +204,10 @@ function positiveInteger(value: unknown, fallback: number) {
 function providerConcurrency(provider: TtsProvider, f5Runtime?: F5Runtime) {
   if (provider === "f5") return f5Runtime?.pool.concurrency ?? 1;
   if (provider === "azure") return getRuntimeConfig().tts.azure.concurrency;
+  if (provider === "cloudflare-melotts") return getRuntimeConfig().tts.cloudflare.concurrency;
+  if (provider === "edge") return getRuntimeConfig().tts.edge.concurrency;
   if (provider === "openai") return getRuntimeConfig().tts.openai.concurrency;
+  if (provider === "mock") return 4;
   return getRuntimeConfig().tts.local.concurrency;
 }
 
@@ -234,13 +240,12 @@ async function f5TtsWorker(
 }
 
 function ttsProviderId(provider: TtsProvider) {
-  return provider === "azure" ? "azure-speech" : provider === "openai" ? "openai-tts" : provider === "f5" ? "f5" : "local-tts";
+  return provider === "local" ? "windows" : provider;
 }
 
 function providerFromId(providerId?: string): TtsProvider {
-  if (providerId === "azure-speech") return "azure";
-  if (providerId === "f5") return "f5";
-  if (providerId === "openai-tts") return "openai";
+  if (providerId === "windows") return "local";
+  if (providerId === "azure" || providerId === "cloudflare-melotts" || providerId === "edge" || providerId === "openai" || providerId === "f5" || providerId === "mock") return providerId;
   return "local";
 }
 
@@ -250,32 +255,18 @@ function ttsDomain(project: VideoProject) {
   return source?.domain ?? source?.tags?.[0] ?? "general";
 }
 
-function resolveTtsProvider(project: VideoProject, explicit?: TtsProvider) {
+async function resolveTtsProvider(project: VideoProject, plan: PronunciationPlan, explicit?: TtsProvider) {
   const runtime = getRuntimeConfig();
-  const configuredProvider = explicit ?? runtime.tts.provider;
-  const profilePreference = runtime.profile === "azure-free"
-    ? ["azure-speech", "openai-tts", "f5", "local-tts"]
-    : runtime.profile === "local-f5"
-      ? ["f5", "azure-speech", "openai-tts", "local-tts"]
-    : runtime.profile === "production" || runtime.profile === "openai-tts"
-      ? ["openai-tts", "azure-speech", "f5", "local-tts"]
-      : ["openai-tts", "azure-speech", "f5", "local-tts"];
-  const preferred = configuredProvider
-    ? [ttsProviderId(configuredProvider), ...profilePreference.filter((providerId) => providerId !== ttsProviderId(configuredProvider))]
-    : profilePreference;
-  const result = selectProviderWithAudit("tts", preferred, {
-    language: "zh-CN",
+  const routed = await routeTtsProvider({
+    profile: runtime.profile,
+    plan,
     domain: ttsDomain(project),
     device: runtime.tts.f5.device,
-    highRiskTerms: findTtsPronunciations(project.narration).length > 0,
     memoryPressure: runtime.tts.f5.gpuMemoryPressure,
+    explicitProvider: ttsProviderId(explicit ?? runtime.tts.provider),
   });
-  if (explicit) {
-    result.audit.selectedProviderId = ttsProviderId(explicit);
-    result.audit.candidates.find((candidate) => candidate.providerId === ttsProviderId(explicit))?.reasons.unshift("explicit provider option");
-    return { provider: explicit, audit: result.audit };
-  }
-  return { provider: providerFromId(result.selected?.id), audit: result.audit };
+  if (!routed.selectedProvider) throw new Error("No TTS provider satisfies pronunciation capability and free-quota constraints; manual confirmation is required.");
+  return { provider: providerFromId(routed.selectedProvider), audit: routed.audit, routing: routed };
 }
 
 function providerErrorType(error: unknown) {
@@ -305,7 +296,7 @@ async function recordTtsProviderResult(input: { provider: TtsProvider; project: 
 }
 
 function providerExtension(provider: TtsProvider) {
-  return provider === "openai" ? "mp3" : "wav";
+  return provider === "openai" || provider === "cloudflare-melotts" || provider === "edge" ? "mp3" : "wav";
 }
 
 async function synthesizeNarration(
@@ -329,6 +320,11 @@ async function synthesizeNarration(
   }
   if (provider === "openai") {
     await openAiTts(plan.synthesisText, outputPath);
+  } else if (provider === "cloudflare-melotts") {
+    await cloudflareMeloTts(plan.synthesisText, outputPath, options?.signal);
+  } else if (provider === "edge") {
+    if (plan.spans.some((span) => span.risk === "high" && !span.spokenFallback)) throw new Error("Edge TTS cannot synthesize high-risk pronunciation without a spoken fallback.");
+    await edgeTts(plan.spans.some((span) => span.risk === "high") ? plan.spans.reduce((text, span) => span.spokenFallback ? text.replace(span.phrase, span.spokenFallback) : text, plan.synthesisText) : plan.synthesisText, outputPath);
   } else if (provider === "f5") {
     if (getRuntimeConfig().tts.f5.workerMode === "cli") {
       await f5TtsCli(plan.synthesisText, outputPath, options?.f5Speed);
@@ -336,8 +332,10 @@ async function synthesizeNarration(
       if (!options?.f5Runtime) throw new Error("Persistent F5 worker runtime is unavailable.");
       await f5TtsWorker(plan, outputPath, options.sceneIndex ?? 0, options.f5Runtime, options.f5Speed, options.signal);
     }
-  } else {
+  } else if (provider === "local") {
     await windowsTts(plan.synthesisText, outputPath);
+  } else {
+    await mockTts(plan.synthesisText, outputPath);
   }
   return { reused: false as const };
 }
@@ -474,6 +472,8 @@ async function attachSegmentedNarration(
   signal?: AbortSignal,
   forceSceneIndexes: number[] = [],
   cacheSalt?: string,
+  previousProvider?: TtsProvider,
+  pronunciationStrategy?: PronunciationStrategy,
 ) {
   const segments = [...(project.narrationSegments ?? [])].sort((a, b) => a.sceneIndex - b.sceneIndex);
   const uniformF5Speed = String(getRuntimeConfig().tts.f5.uniformSpeed);
@@ -496,9 +496,22 @@ async function attachSegmentedNarration(
     );
     const synthesisText = narrationSynthesisText(segment);
     const pronunciation = await pronunciationPlanFor(synthesisText, segment, signal);
-    const plan = pronunciation.plan;
+    let plan = pronunciation.plan;
     const forceRebuild = forcedScenes.has(index);
     const effectiveCacheSalt = forceRebuild ? cacheSalt : existingSceneCacheSalts[String(index)];
+    if (forceRebuild && pronunciationStrategy === "use-spoken-fallback") {
+      const synthesisTextWithFallback = plan.spans.reduce((text, span) => span.spokenFallback ? text.replace(span.phrase, span.spokenFallback) : text, plan.synthesisText);
+      const base = { ...plan, synthesisText: synthesisTextWithFallback };
+      plan = { ...base, planHash: pronunciationPlanHash({ displayText: base.displayText, semanticText: base.semanticText, synthesisText: base.synthesisText, spans: base.spans, frontendVersion: base.frontendVersion }) };
+    }
+    if (!forceRebuild && previousProvider && previousProvider !== provider) {
+      const previousPath = path.join(generatedDir, `${basename}-scene-${String(index + 1).padStart(2, "0")}.${providerExtension(previousProvider)}`);
+      if (existsSync(previousPath)) {
+        if (path.resolve(previousPath) !== path.resolve(segmentPath)) await copyFile(previousPath, segmentPath);
+        const duration = await probeDuration(segmentPath);
+        if (duration > 0) return { segmentPath, duration, cacheHitCount: 1, cacheMissCount: 0, generated: false, sceneIndex: index, cacheSalt: effectiveCacheSalt, pronunciationPlan: plan, pronunciationIssues: pronunciation.issues, pronunciationIssueCount: pronunciation.issues.length };
+      }
+    }
     if (provider === "f5" && index === 0) {
       const titleResult = await synthesizeF5TitleScene(project, synthesisText, segmentPath, index, f5Runtime, forceRebuild, effectiveCacheSalt, signal);
       const duration = await probeDuration(segmentPath);
@@ -645,6 +658,7 @@ export interface AttachNarrationAudioOptions {
   forceAudioRebuild?: boolean;
   cacheSalt?: string;
   reason?: string;
+  pronunciationStrategy?: PronunciationStrategy;
 }
 
 export async function attachNarrationAudio(project: VideoProject, basename = "narration", options: AttachNarrationAudioOptions = {}) {
@@ -652,7 +666,8 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
   const startedAt = Date.now();
   const generatedDir = options.generatedDir ?? fromRoot("public", "generated");
   await ensureDir(generatedDir);
-  const selection = resolveTtsProvider(project, options.provider);
+  const projectPronunciation = await pronunciationPlanFor(project.narration, undefined, options.signal);
+  const selection = await resolveTtsProvider(project, projectPronunciation.plan, options.provider);
   const provider = selection.provider;
   const allSceneIndexes = project.scenes.map((_, index) => index);
   const forceSceneIndexes = options.forceAudioRebuild
@@ -669,10 +684,10 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       f5Runtime = await createF5Runtime(limitToSingleWorker);
     }
     if (project.narrationSegments?.length) {
-      const attached = await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal, forceSceneIndexes, cacheSalt);
+      const attached = await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal, forceSceneIndexes, cacheSalt, project.audio?.provider === "silent" ? undefined : project.audio?.provider, options.pronunciationStrategy);
       const result = {
         ...attached,
-        audio: attached.audio ? { ...attached.audio, metrics: { ...attached.audio.metrics!, providerSelection: JSON.stringify(selection.audit) } } : attached.audio,
+        audio: attached.audio ? { ...attached.audio, metrics: { ...attached.audio.metrics!, providerSelection: JSON.stringify(selection.audit), selectedProvider: provider, providerCandidates: JSON.stringify(selection.routing.candidates), pronunciationStrategy: options.pronunciationStrategy ?? selection.routing.pronunciationStrategy, quotaConsumed: selection.routing.quota?.consumed ?? 0, quotaRemaining: selection.routing.quota?.remaining ?? -1, providerSwitchCount: project.audio?.provider && project.audio.provider !== provider ? 1 : 0, avoidedTtsRegenerationCount: project.audio?.provider && project.audio.provider !== provider ? Math.max(0, project.scenes.length - forceSceneIndexes.length) : 0 } } : attached.audio,
       } satisfies VideoProject;
       if ((result.audio?.metrics?.generatedSceneCount ?? 0) > 0) {
         await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: result.audio?.metrics?.retryCount ?? Math.max(0, (result.audio?.metrics?.workerStartCount ?? 1) - 1), billedCharacters: result.audio?.metrics?.billedCharacters });
@@ -686,7 +701,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     const effectiveCacheSalt = forceRebuild ? cacheSalt : project.audio?.sceneCacheSalts?.["0"];
     let reused = false;
     let azureResult: AzureTtsResult | undefined;
-    const pronunciation = await pronunciationPlanFor(project.narration, undefined, options.signal);
+    const pronunciation = projectPronunciation;
     if (provider === "f5") {
       ({ reused } = await synthesizeF5WithGlobalCache({
         plan: pronunciation.plan,
@@ -722,6 +737,11 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       concatenatedAudio: false,
       audioGenerationKey: audioGenerationKey(effectiveCacheSalt ? { ...(project.audio?.sceneCacheSalts ?? {}), "0": effectiveCacheSalt } : project.audio?.sceneCacheSalts ?? {}),
       providerSelection: JSON.stringify(selection.audit),
+      selectedProvider: provider,
+      providerCandidates: JSON.stringify(selection.routing.candidates),
+      pronunciationStrategy: selection.routing.pronunciationStrategy,
+      quotaConsumed: selection.routing.quota?.consumed ?? 0,
+      quotaRemaining: selection.routing.quota?.remaining ?? -1,
       requestMs: azureResult?.requestMs,
       retryCount: azureResult?.retryCount,
       billedCharacters: azureResult?.billedCharacters,

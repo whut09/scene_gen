@@ -4,7 +4,7 @@
   "env": {
     "QUALITY_LLM_DISABLED": "1",
     "ASR_DISABLED": "1",
-    "TTS_PROVIDER": "local",
+    "TTS_PROVIDER": "mock",
     "VIDEO_RENDER_ENGINE": "remotion",
     "HTML_RENDER_CONCURRENCY": "1",
     "HTML_RENDER_PRESET": "ultrafast",

@@ -33,6 +33,13 @@ export const productionReportSchema = z.object({
     templateHistorySamples: z.number().int().nonnegative(),
     unhealthyProviders: z.array(z.string()),
     degradedProviders: z.array(z.string()),
+    selectedTtsProvider: z.string().optional(),
+    pronunciationStrategy: z.string().optional(),
+    quotaConsumed: z.number().nonnegative().default(0),
+    quotaRemaining: z.number().optional(),
+    providerSwitchCount: z.number().int().nonnegative().default(0),
+    verifierRetryCount: z.number().int().nonnegative().default(0),
+    avoidedTtsRegenerationCount: z.number().int().nonnegative().default(0),
   }),
 }).passthrough();
 
@@ -102,6 +109,13 @@ export function buildProductionReport(project: VideoProject, renderEngine = "htm
       templateHistorySamples: decisions.reduce((sum, decision) => sum + decision.templateSelection.history.samples, 0),
       unhealthyProviders: providers.filter((provider) => provider.health === "unhealthy").map((provider) => provider.id),
       degradedProviders: providers.filter((provider) => provider.health === "degraded").map((provider) => provider.id),
+      selectedTtsProvider: project.audio?.metrics?.selectedProvider ?? project.audio?.provider,
+      pronunciationStrategy: project.audio?.metrics?.pronunciationStrategy,
+      quotaConsumed: project.audio?.metrics?.quotaConsumed ?? 0,
+      quotaRemaining: project.audio?.metrics?.quotaRemaining !== undefined && project.audio.metrics.quotaRemaining >= 0 ? project.audio.metrics.quotaRemaining : undefined,
+      providerSwitchCount: project.audio?.metrics?.providerSwitchCount ?? 0,
+      verifierRetryCount: project.audio?.metrics?.verifierRetryCount ?? 0,
+      avoidedTtsRegenerationCount: project.audio?.metrics?.avoidedTtsRegenerationCount ?? 0,
     },
   };
 }

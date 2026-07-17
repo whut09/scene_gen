@@ -20,8 +20,8 @@ export const runtimeConfigSchema = z.object({
     revisionFallbackModel: z.string().optional(),
   }),
   tts: z.object({
-    provider: z.enum(["azure", "openai", "f5", "local"]),
-    providerFallback: z.enum(["azure", "openai", "f5", "local"]).optional(),
+    provider: z.enum(["azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]),
+    providerFallback: z.enum(["azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]).optional(),
     failFast: z.boolean(), durationPolicy: z.enum(["natural", "fit"]), fitTarget: z.boolean(), forceRebuild: z.boolean(),
     fetchTimeoutMs: positiveInteger, minTempo: positiveNumber, maxTempo: positiveNumber, preprocessConcurrency: positiveInteger, ffmpegConcurrency: positiveInteger,
     azure: z.object({
@@ -30,6 +30,8 @@ export const runtimeConfigSchema = z.object({
       monthlyCharacterBudget: positiveInteger, budgetWarningRatio: z.number().min(0).max(1), concurrency: positiveInteger, requestsPerMinute: positiveInteger,
     }).default({ voice: "zh-CN-XiaoxiaoNeural", outputFormat: "riff-24khz-16bit-mono-pcm", timeoutMs: 120_000, maxRetries: 2, monthlyCharacterBudget: 500_000, budgetWarningRatio: 0.8, concurrency: 2, requestsPerMinute: 20 }),
     openai: z.object({ apiKey: z.string().optional(), baseUrl: z.string(), model: z.string(), voice: z.string(), speed: positiveNumber, concurrency: positiveInteger, costPer1kChars: nonnegativeNumber }),
+    cloudflare: z.object({ accountId: z.string().optional(), apiToken: z.string().optional(), model: z.string(), concurrency: positiveInteger, dailyNeuronBudget: nonnegativeNumber }).default({ model: "@cf/myshell-ai/melotts", concurrency: 2, dailyNeuronBudget: 0 }),
+    edge: z.object({ command: z.string().optional(), voice: z.string(), concurrency: positiveInteger }).default({ voice: "zh-CN-XiaoxiaoNeural", concurrency: 2 }),
     f5: z.object({ python: z.string().min(1).default(process.platform === "win32" ? "python" : "python3"), model: z.string(), device: z.string(), refAudio: z.string().optional(), refText: z.string(), speed: positiveNumber, uniformSpeed: positiveNumber, nfeStep: positiveInteger, seed: z.number().int(), hfOffline: z.boolean(), workerMode: z.enum(["worker", "cli"]), workerScript: z.string().optional(), workerReadyTimeoutMs: positiveInteger, workerRequestTimeoutMs: positiveInteger, workerMaxRestarts: z.number().int().nonnegative(), gpuMemoryPressure: z.boolean() }),
     local: z.object({ concurrency: positiveInteger }),
     pronunciation: z.object({
@@ -79,8 +81,8 @@ function booleanValue(env: NodeJS.ProcessEnv, key: string, fallback = false) {
   return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
-function providerValue(value: string | undefined, fallback: "azure" | "openai" | "f5" | "local") {
-  return value === "azure" || value === "openai" || value === "f5" || value === "local" ? value : fallback;
+function providerValue(value: string | undefined, fallback: "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock") {
+  return value === "azure" || value === "cloudflare-melotts" || value === "edge" || value === "openai" || value === "f5" || value === "local" || value === "mock" ? value : fallback;
 }
 
 function parseTemplateExclusions(value: string | undefined) {
@@ -129,6 +131,8 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
         requestsPerMinute: Math.max(1, numberValue(env, "AZURE_TTS_REQUESTS_PER_MINUTE", 20)),
       },
       openai: { apiKey: stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY"), baseUrl: stringValue(env, "OPENAI_TTS_BASE_URL") ?? stringValue(env, "OPENAI_BASE_URL", "https://api.openai.com/v1")!, model: stringValue(env, "OPENAI_TTS_MODEL", "gpt-4o-mini-tts")!, voice: stringValue(env, "OPENAI_TTS_VOICE", "alloy")!, speed: numberValue(env, "OPENAI_TTS_SPEED", 1.12), concurrency: numberValue(env, "OPENAI_TTS_CONCURRENCY", 4), costPer1kChars: numberValue(env, "OPENAI_TTS_COST_PER_1K_CHARS", 0.015) },
+      cloudflare: { accountId: stringValue(env, "CLOUDFLARE_ACCOUNT_ID"), apiToken: stringValue(env, "CLOUDFLARE_API_TOKEN"), model: stringValue(env, "CLOUDFLARE_TTS_MODEL", "@cf/myshell-ai/melotts")!, concurrency: Math.max(1, numberValue(env, "CLOUDFLARE_TTS_CONCURRENCY", 2)), dailyNeuronBudget: Math.max(0, numberValue(env, "CLOUDFLARE_DAILY_NEURON_BUDGET", 0)) },
+      edge: { command: stringValue(env, "EDGE_TTS_COMMAND"), voice: stringValue(env, "EDGE_TTS_VOICE", "zh-CN-XiaoxiaoNeural")!, concurrency: Math.max(1, numberValue(env, "EDGE_TTS_CONCURRENCY", 2)) },
       f5: { python: resolveF5PythonCommand(env), model: stringValue(env, "F5_TTS_MODEL", "F5TTS_v1_Base")!, device: stringValue(env, "F5_TTS_DEVICE", "cuda")!, refAudio: stringValue(env, "F5_TTS_REF_AUDIO") ?? (resolveF5ReferenceAudio(env) || undefined), refText: stringValue(env, "F5_TTS_REF_TEXT", "")!, speed: numberValue(env, "F5_TTS_SPEED", 1.12), uniformSpeed: numberValue(env, "F5_TTS_UNIFORM_SPEED", 1.25), nfeStep: numberValue(env, "F5_TTS_NFE_STEP", 16), seed: numberValue(env, "F5_TTS_SEED", -1), hfOffline: booleanValue(env, "F5_TTS_HF_OFFLINE", true), workerMode: stringValue(env, "F5_TTS_WORKER_MODE", "worker") === "cli" ? "cli" : "worker", workerScript: stringValue(env, "F5_TTS_WORKER_SCRIPT"), workerReadyTimeoutMs: numberValue(env, "F5_TTS_WORKER_READY_TIMEOUT_MS", 120_000), workerRequestTimeoutMs: numberValue(env, "F5_TTS_WORKER_REQUEST_TIMEOUT_MS", 600_000), workerMaxRestarts: numberValue(env, "F5_TTS_WORKER_MAX_RESTARTS", 1), gpuMemoryPressure: booleanValue(env, "F5_GPU_MEMORY_PRESSURE") },
       local: { concurrency: numberValue(env, "LOCAL_TTS_CONCURRENCY", 1) },
       pronunciation: { domain: stringValue(env, "TTS_PRONUNCIATION_DOMAIN", "software")!, g2pwEnabled: booleanValue(env, "G2PW_ENABLED"), g2pwPython: stringValue(env, "G2PW_PYTHON", process.platform === "win32" ? "python" : "python3")!, g2pwScript: stringValue(env, "G2PW_WORKER_SCRIPT", "scripts/g2pw-worker.py")!, g2pwModelDir: stringValue(env, "G2PW_MODEL_DIR"), g2pwReadyTimeoutMs: numberValue(env, "G2PW_READY_TIMEOUT_MS", 30_000), g2pwRequestTimeoutMs: numberValue(env, "G2PW_REQUEST_TIMEOUT_MS", 10_000), g2pwMinimumConfidence: numberValue(env, "G2PW_MIN_CONFIDENCE", 0.75) },
@@ -159,6 +163,7 @@ export function runtimeConfigSnapshot(config: RuntimeConfig): RuntimeConfigSnaps
   snapshot.llm.quality.apiKey = undefined;
   snapshot.tts.azure.apiKey = undefined;
   snapshot.tts.openai.apiKey = undefined;
+  snapshot.tts.cloudflare.apiToken = undefined;
   snapshot.asr.pronunciation.apiKey = undefined;
   return runtimeConfigSchema.parse(snapshot);
 }
@@ -180,6 +185,8 @@ export function restoreRuntimeConfig(snapshot: unknown, env: NodeJS.ProcessEnv =
   restored.llm.quality.apiKey = stringValue(env, "QUALITY_LLM_API_KEY") ?? stringValue(env, "NEWS_LLM_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
   restored.tts.azure.apiKey = stringValue(env, "AZURE_SPEECH_KEY");
   restored.tts.openai.apiKey = stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
+  restored.tts.cloudflare.apiToken = stringValue(env, "CLOUDFLARE_API_TOKEN");
+  restored.tts.cloudflare.accountId = stringValue(env, "CLOUDFLARE_ACCOUNT_ID") ?? restored.tts.cloudflare.accountId;
   restored.asr.pronunciation.apiKey = stringValue(env, "AZURE_PRONUNCIATION_KEY") ?? stringValue(env, "AZURE_SPEECH_KEY");
   return deepFreeze(runtimeConfigSchema.parse(restored)) as RuntimeConfig;
 }

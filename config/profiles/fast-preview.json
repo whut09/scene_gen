@@ -2,7 +2,8 @@
   "name": "fast-preview",
   "description": "Fast local preview with fewer loop and video-gate attempts.",
   "env": {
-    "TTS_PROVIDER": "openai",
+    "TTS_PROVIDER": "cloudflare-melotts",
+    "CLOUDFLARE_DAILY_NEURON_BUDGET": "10000",
     "VIDEO_RENDER_ENGINE": "remotion",
     "HTML_RENDER_CONCURRENCY": "3",
     "HTML_RENDER_PRESET": "ultrafast",

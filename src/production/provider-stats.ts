@@ -58,6 +58,13 @@ const providerOutcomeSchema = z.object({
 
 export type ProviderOutcome = z.infer<typeof providerOutcomeSchema>;
 
+export function canonicalProviderId(providerId: string) {
+  if (providerId === "azure-speech") return "azure";
+  if (providerId === "openai-tts") return "openai";
+  if (providerId === "local-tts") return "windows";
+  return providerId;
+}
+
 export function providerOutcomeFilePath() {
   return process.env.PROVIDER_OUTCOME_FILE
     ? path.resolve(process.env.PROVIDER_OUTCOME_FILE)
@@ -70,7 +77,7 @@ export function readProviderOutcomes() {
   return readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean).flatMap((line) => {
     try {
       const parsed = providerOutcomeSchema.safeParse(JSON.parse(line));
-      return parsed.success ? [parsed.data] : [];
+      return parsed.success ? [{ ...parsed.data, providerId: canonicalProviderId(parsed.data.providerId) }] : [];
     } catch {
       return [];
     }
@@ -79,7 +86,7 @@ export function readProviderOutcomes() {
 
 export async function recordProviderOutcome(outcome: Omit<ProviderOutcome, "version" | "createdAt"> & Partial<Pick<ProviderOutcome, "version" | "createdAt">>) {
   if (process.env.PROVIDER_HISTORY_DISABLED === "1") return { recorded: false, filePath: providerOutcomeFilePath() };
-  const parsed = providerOutcomeSchema.parse({ version: 1, createdAt: new Date().toISOString(), ...outcome });
+  const parsed = providerOutcomeSchema.parse({ version: 1, createdAt: new Date().toISOString(), ...outcome, providerId: canonicalProviderId(outcome.providerId) });
   const filePath = providerOutcomeFilePath();
   await mkdir(path.dirname(filePath), { recursive: true });
   await appendFile(filePath, `${JSON.stringify(parsed)}\n`, "utf8");
@@ -106,7 +113,8 @@ export function calculateProviderStats(
   allOutcomes = readProviderOutcomes(),
 ): ProviderStats {
   const windowSize = Math.max(10, Number(process.env.PROVIDER_STATS_WINDOW ?? 100));
-  const outcomes = allOutcomes.filter((outcome) => outcome.providerId === providerId).slice(-windowSize);
+  const canonicalId = canonicalProviderId(providerId);
+  const outcomes = allOutcomes.filter((outcome) => canonicalProviderId(outcome.providerId) === canonicalId).slice(-windowSize);
   const samples = outcomes.length;
   const qualityOutcomes = contextQualityOutcomes(outcomes, context).filter((outcome) => outcome.qualityScore !== undefined);
   const successRate = samples ? (outcomes.filter((outcome) => outcome.success).length + priors.quality * 4) / (samples + 4) : priors.quality;

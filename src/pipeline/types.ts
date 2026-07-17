@@ -216,7 +216,7 @@ export interface VideoProject {
   audio?: {
     src: string;
     durationSeconds: number;
-    provider: "azure" | "openai" | "local" | "f5" | "silent";
+    provider: "azure" | "cloudflare-melotts" | "edge" | "openai" | "local" | "f5" | "mock" | "silent";
     metrics?: {
       workerStartCount: number;
       workerStartupMs: number;
@@ -242,6 +242,14 @@ export interface VideoProject {
       budgetWarning?: boolean;
       pronunciationPlanCount?: number;
       pronunciationUncertainCount?: number;
+      selectedProvider?: string;
+      providerCandidates?: string;
+      pronunciationStrategy?: string;
+      quotaConsumed?: number;
+      quotaRemaining?: number;
+      providerSwitchCount?: number;
+      verifierRetryCount?: number;
+      avoidedTtsRegenerationCount?: number;
     };
     sceneCacheSalts?: Record<string, string>;
     pronunciationPlansPath?: string;

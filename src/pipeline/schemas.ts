@@ -200,7 +200,7 @@ export const videoProjectSchema = z.object({
   audio: z.object({
     src: z.string(),
     durationSeconds: z.number().positive(),
-    provider: z.enum(["azure", "openai", "local", "f5", "silent"]),
+    provider: z.enum(["azure", "cloudflare-melotts", "edge", "openai", "local", "f5", "mock", "silent"]),
     metrics: z.object({
       workerStartCount: z.number().int().nonnegative(),
       workerStartupMs: z.number().nonnegative(),
