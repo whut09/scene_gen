@@ -116,6 +116,15 @@ export async function routeTtsProvider(input: { profile: string; plan: Pronuncia
   const defaults = preferredProviders(input.profile, highRisk);
   const preferred = input.explicitProvider ? [input.explicitProvider, ...defaults.filter((provider) => provider !== input.explicitProvider)] : defaults;
   const result = selectProviderWithAudit("tts", preferred, { profile: input.profile, language: "zh-CN", domain: input.domain, device: input.device, highRiskTerms: highRisk, memoryPressure: input.memoryPressure });
+  if (input.explicitProvider) {
+    for (const candidate of result.audit.candidates) {
+      if (candidate.providerId !== input.explicitProvider && !candidate.eliminated) {
+        candidate.eliminated = true;
+        candidate.reasons.push(`explicit provider ${input.explicitProvider} requested`);
+      }
+    }
+    result.audit.candidates.find((candidate) => candidate.providerId === input.explicitProvider)?.reasons.unshift("explicit provider option");
+  }
   if (input.profile === "production" && highRisk) {
     for (const candidate of result.audit.candidates) {
       if (!["azure", "f5"].includes(candidate.providerId) && !candidate.eliminated) {

@@ -73,3 +73,11 @@ test("attempt ledger prevents repeated F5 strategy and enforces scene budgets", 
   assert.equal(ledger.claimVerification(2), false);
   assert.equal(ledger.metrics().avoidedTtsRegenerationCount, 2);
 });
+
+test("explicit F5 selection is not replaced by ci-offline mock", { concurrency: false }, async () => {
+  await withRoutingEnv({ SCENE_GEN_PROFILE: "ci-offline", TTS_PROVIDER: "mock", F5_TTS_PYTHON: "python" }, async () => {
+    const routed = await routeTtsProvider({ profile: "ci-offline", plan: plan("系统完成重构", true), explicitProvider: "f5" });
+    assert.equal(routed.selectedProvider, "f5");
+    assert.equal(routed.candidates.find((candidate) => candidate.providerId === "mock")?.eliminated, true);
+  });
+});
