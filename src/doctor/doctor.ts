@@ -15,6 +15,7 @@ import { listProviders } from "../production/provider-registry";
 import { providerOutcomeFilePath, readProviderOutcomes } from "../production/provider-stats";
 import { inspectFeedbackStore } from "../harness/feedback-store";
 import { inspectAzureVoice, readAzureUsage } from "../pipeline/tts/providers/azure";
+import { providerQuotaStatus } from "../production/provider-quota";
 
 export type DoctorStatus = "pass" | "warn" | "fail";
 export interface DoctorCheck { id: string; status: DoctorStatus; required: boolean; summary: string; details?: string }
@@ -106,6 +107,44 @@ function pronunciationLexiconCheck(required: boolean): DoctorCheck {
   }
 }
 
+function g2pwCheck(config: RuntimeConfig): DoctorCheck {
+  const scriptPath = path.resolve(config.tts.pronunciation.g2pwScript);
+  const enabled = config.tts.pronunciation.g2pwEnabled;
+  const ready = existsSync(scriptPath) && (!enabled || Boolean(config.tts.pronunciation.g2pwModelDir));
+  return {
+    id: "g2pw-worker",
+    status: ready ? "pass" : enabled ? "fail" : "warn",
+    required: enabled,
+    summary: enabled ? ready ? "G2PW worker configuration is ready" : "G2PW worker configuration is incomplete" : "G2PW worker is disabled",
+    details: `${scriptPath}; model=${config.tts.pronunciation.g2pwModelDir ?? "not configured"}`,
+  };
+}
+
+async function speechVerificationChecks(config: RuntimeConfig): Promise<DoctorCheck[]> {
+  const asrReady = config.asr.disabled || config.asr.provider === "mock" || Boolean(config.asr.python);
+  const verifier = config.asr.pronunciation;
+  const verifierReady = verifier.provider === "disabled" || verifier.provider === "mock" || Boolean(verifier.apiKey && (verifier.region || verifier.endpoint));
+  const providerIds = listProviders({ profile: config.profile, language: "zh-CN" }).filter((provider) => provider.capability === "tts" && provider.enabled).map((provider) => provider.id);
+  const quota = await providerQuotaStatus("azure", config);
+  return [{
+    id: "asr-provider", status: asrReady ? "pass" : "warn", required: false,
+    summary: config.asr.disabled ? "Semantic ASR is disabled" : `Semantic ASR provider: ${config.asr.provider}`,
+    details: config.asr.model,
+  }, {
+    id: "pronunciation-verifier", status: verifierReady ? "pass" : "warn", required: false,
+    summary: verifier.provider === "disabled" ? "Pronunciation verifier is disabled" : `Pronunciation verifier: ${verifier.provider}`,
+    details: verifier.provider === "azure" ? `budget=${verifier.monthlySecondsBudget}s` : undefined,
+  }, {
+    id: "tts-fallback-chain", status: providerIds.length ? "pass" : "fail", required: true,
+    summary: providerIds.length ? `Available TTS chain: ${providerIds.join(" -> ")}` : "No TTS provider is available",
+    details: "Production high-risk pronunciation excludes unofficial Edge TTS.",
+  }, {
+    id: "tts-cost-hard-limit", status: quota.hardLimitReached ? "warn" : "pass", required: false,
+    summary: quota.hardLimitReached ? "Azure free character hard limit reached" : `Azure hard limit active; ${quota.remaining ?? 0} characters remain`,
+    details: "Paid cloud usage requires explicit opt-in; routing falls back when the hard limit is reached.",
+  }];
+}
+
 function htmlConcurrencyCheck(config: RuntimeConfig): DoctorCheck {
   const requested = config.rendering.html.concurrency;
   const budget = resolveHtmlRenderBudgetFromConfig(5, config);
@@ -189,6 +228,7 @@ export async function runDoctor(profile: ConfigProfile, config: RuntimeConfig): 
   checks.push(await templateLearningCheck(config));
   checks.push(await providerHistoryCheck());
   checks.push(...await azureSpeechChecks(config));
+  checks.push(...await speechVerificationChecks(config));
   const feedback = await inspectFeedbackStore();
   checks.push({ id: "feedback", status: feedback.invalidLines > 0 || feedback.quarantineCount > 0 ? "warn" : "pass", required: false, summary: `${feedback.total} entries; ${feedback.quarantineCount} quarantined lines`, details: feedback.quarantineCount ? feedback.quarantinePath : feedback.filePath });
   if (config.rendering.ocr.enabled) checks.push(await commandCheck("video-ocr", config.rendering.ocr.command, ["--version"], true));
@@ -205,6 +245,7 @@ export async function runDoctor(profile: ConfigProfile, config: RuntimeConfig): 
   const workerScript = path.resolve(config.tts.f5.workerScript ?? fromRoot("scripts", "f5-worker.py"));
   checks.push(await commandCheck("f5-worker", f5Python, [workerScript, "--help"], profile.doctor.requireF5));
   checks.push(pronunciationLexiconCheck(profile.doctor.requireF5));
+  checks.push(g2pwCheck(config));
   const whisperModel = config.asr.model;
   const whisperImport = await commandCheck("whisper", config.asr.python ?? resolvePythonCommand({}), ["-c", "import transformers; print(transformers.__version__)"], profile.doctor.requireWhisper);
   const whisperCache = existsSync(huggingFaceCachePath(whisperModel, config));

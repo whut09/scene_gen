@@ -5,6 +5,11 @@
 ```powershell
 python -m pip install -r requirements-test.txt
 npm.cmd run test:pronunciation
+npm.cmd run test:azure-tts
+npm.cmd run test:pronunciation-plan
+npm.cmd run test:audio-verifier
+npm.cmd run test:cloud-routing
+npm.cmd run test:tts-incremental
 ```
 
 该测试不加载 F5 模型，也不需要 GPU。它会让真实 pypinyin 前端加载 `config/tts/zh-CN.json`，验证“重构”为 `chong2 gou4`，同时检查长句上下文、spoken fallback 和 F5 缓存 key。`config/asr/` 只负责 ASR 转写规范化；`config/tts/` 才控制合成前端发音。缓存使用当前文本命中的词典条目 hash，因此修改目标短语只使相关分段 WAV 失效。
@@ -52,9 +57,11 @@ npm exec -- playwright install chromium
 
 `tests/unit/provider-stats.test.ts` 使用隔离历史验证 ProviderStats 的成功率、P50/P95、timeout、重试、实际成本和发音准确率；同时验证 fast-preview/production 的不同权重、连续失败主动淘汰、F5 显存压力惩罚，以及 outcome Schema 校验。
 
+云语音回归全部使用 mock，不会调用真实收费 API。`test:azure-tts` 覆盖 Azure REST、SSML、429/401/timeout、AbortSignal、字符预算和并发；`test:pronunciation-plan` 覆盖人工词典、G2PW、pypinyin、最长匹配与 SAPI 适配；`test:audio-verifier` 明确区分 semantic ASR 和 pronunciation verifier；`test:cloud-routing` 覆盖高风险路由、quota fallback、Edge production 禁用与防重复 ledger；`test:tts-incremental` 验证五屏 cold/warm、单 scene 修复、inconclusive、相同 audio hash 去重和 Azure hard limit。
+
 视觉质量离线测试使用 FFmpeg 生成纯色帧和测试图，验证亮度范围与边缘密度能够区分空白画面；Playwright fixture 验证 DOM audit 能发现安全区、低对比度、小字号、裁切、动画过晚和结论停留不足。Golden test 还要求正式标题模板不存在 error 级视觉审计问题。OCR 默认关闭，因此 CI 不需要安装 Tesseract。
 
-GitHub Actions 使用 Node.js 20，并执行：
+GitHub Actions 使用 Linux/Windows 与 Node.js 20/22 矩阵，并执行 `npm run test:ci`，其中包括：
 
 1. TypeScript 类型检查。
 2. 核心单元测试。

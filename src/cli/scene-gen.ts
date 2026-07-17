@@ -14,6 +14,12 @@ import { migrateRunArtifacts } from "../persistence/run-migration";
 import { readRunJournalFile } from "../harness/run-journal";
 import { compilePronunciationPlan } from "../pipeline/pronunciation/compiler";
 import { buildAzurePronunciationSsml } from "../pipeline/tts/providers/azure-ssml";
+import { azureTts } from "../pipeline/tts/providers/azure";
+import { listProviders } from "../production/provider-registry";
+import { providerQuotaStatus } from "../production/provider-quota";
+import { RunJournalStore } from "../harness/run-journal";
+import { readProject } from "../harness/video-stages";
+import { runAudioPronunciationGate } from "../harness/quality/audio-pronunciation-gate";
 
 const profileOption = { type: "string" as const, description: `Configuration profile (${builtInProfileNames.join(", ")} or config/profiles/<name>.json).` };
 const jsonOption = { type: "boolean" as const, description: "Print machine-readable JSON." };
@@ -113,6 +119,27 @@ const definitions: Record<string, CommandDefinition> = {
     positionals: [{ name: "action", required: true, description: "inspect." }],
     options: {
       text: { type: "string", required: true, description: "Chinese display text to inspect." },
+      profile: profileOption,
+      json: jsonOption,
+    },
+  },
+  tts: {
+    summary: "Inspect TTS providers, quota, or run an explicit provider smoke test.",
+    positionals: [{ name: "action", required: true, description: "providers, quota or smoke." }],
+    options: {
+      provider: { type: "string", choices: ["azure", "cloudflare-melotts", "edge", "f5", "openai", "windows", "mock"], description: "Provider for quota or smoke." },
+      text: { type: "string", description: "Text for the smoke synthesis." },
+      output: { type: "string", description: "WAV output path for the smoke synthesis." },
+      profile: profileOption,
+      json: jsonOption,
+    },
+  },
+  audio: {
+    summary: "Verify pronunciation evidence for a scene in an existing run.",
+    positionals: [{ name: "action", required: true, description: "verify." }],
+    options: {
+      run: { type: "string", required: true, description: "Run id or run directory." },
+      scene: { type: "number", required: true, description: "Zero-based scene index." },
       profile: profileOption,
       json: jsonOption,
     },
@@ -236,6 +263,51 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
       issues,
     };
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "tts") {
+    const action = parsed.positionals[0];
+    if (!new Set(["providers", "quota", "smoke"]).has(action)) throw new Error("TTS action must be providers, quota or smoke.");
+    const profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? "local-f5");
+    const runtimeConfig = await createRuntimeConfig(profileName);
+    if (action === "providers") {
+      const providers = await Promise.all(listProviders({ profile: profileName, language: "zh-CN" }).filter((provider) => provider.capability === "tts").map(async (provider) => ({
+        id: provider.id, name: provider.name, enabled: provider.enabled, health: provider.health, local: provider.local,
+        capabilities: provider.ttsCapabilities, quota: await providerQuotaStatus(provider.id, runtimeConfig),
+      })));
+      console.log(JSON.stringify(providers, null, 2));
+      return;
+    }
+    const provider = String(parsed.options.provider ?? runtimeConfig.tts.provider);
+    if (action === "quota") {
+      console.log(JSON.stringify(await providerQuotaStatus(provider, runtimeConfig), null, 2));
+      return;
+    }
+    if (provider !== "azure") throw new Error("The smoke command currently supports --provider azure only.");
+    const text = String(parsed.options.text ?? "系统完成核心模块重构");
+    const { plan, issues } = await compilePronunciationPlan({ displayText: text, domain: runtimeConfig.tts.pronunciation.domain, signal });
+    const outputPath = path.resolve(String(parsed.options.output ?? fromRoot("dist", "smoke", "azure-tts.wav")));
+    const synthesized = await azureTts({ sceneIndex: 0, displayText: plan.displayText, synthesisText: plan.synthesisText, pronunciationPlan: plan, pronunciationPlanHash: plan.planHash, outputPath, signal }, runtimeConfig);
+    console.log(JSON.stringify({ provider, outputPath, planHash: plan.planHash, issues, ...synthesized }, null, 2));
+    return;
+  }
+  if (command === "audio") {
+    if (parsed.positionals[0] !== "verify") throw new Error("Audio action must be verify.");
+    assertNonNegative("scene", parsed.options.scene, true);
+    const direct = path.resolve(String(parsed.options.run));
+    const runDir = existsSync(path.join(direct, "run.json")) ? direct : fromRoot("dist", "runs", String(parsed.options.run));
+    const journal = await RunJournalStore.open(runDir);
+    const snapshot = journal.snapshot();
+    const projectPath = snapshot.artifacts.projectPath;
+    if (!projectPath) throw new Error(`Run '${snapshot.runId}' does not have a projectPath artifact.`);
+    const sceneIndex = Number(parsed.options.scene);
+    const project = await readProject(projectPath);
+    const segment = project.narrationSegments?.find((item) => item.sceneIndex === sceneIndex);
+    if (!segment) throw new Error(`Scene ${sceneIndex} does not have a narration segment.`);
+    const scopedProject = { ...project, narrationSegments: [segment] };
+    const runtimeConfig = parsed.options.profile ? await createRuntimeConfig(String(parsed.options.profile)) : snapshot.config.runtimeConfig ? restoreRuntimeConfig(snapshot.config.runtimeConfig) : await createRuntimeConfig(snapshot.config.runtimeProfile);
+    const result = await runAudioPronunciationGate({ project: scopedProject, config: runtimeConfig, signal });
+    console.log(JSON.stringify({ runId: snapshot.runId, sceneIndex, ...result }, null, 2));
     return;
   }
   if (command === "migrate") {

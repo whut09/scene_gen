@@ -26,7 +26,7 @@ Linux/macOS 将 `npm.cmd` 换成 `npm`，复制配置使用 `cp .env.example .en
 安装依赖后也可通过本地 bin 使用 `npm exec -- scene-gen doctor`。正式 CLI 提供：
 
 ```text
-scene-gen doctor|plan|run|resume|migrate|check|feedback|cache
+scene-gen doctor|plan|run|resume|migrate|check|feedback|cache|pronunciation|tts|audio
 ```
 
 持久化文件使用逐版本迁移 reader。旧 run 在 resume 时会先备份 `run.json.vN.bak` 再自动升级；也可显式执行 `scene-gen migrate <run-id>`，同时迁移 manifest 引用的 ContentGraph 和 production report。格式版本、缓存 identity 版本和新增迁移步骤见 [`docs/PERSISTENCE_MIGRATIONS.md`](docs/PERSISTENCE_MIGRATIONS.md)。
@@ -47,6 +47,20 @@ scene-gen doctor|plan|run|resume|migrate|check|feedback|cache
 profile 文件位于 `config/profiles/`。环境变量中的显式配置优先于 profile 默认值。Windows 本机路径不要提交到通用配置；可复制 `config/profiles/windows-local-f5.example.json` 为 `windows-local-f5.local.json`，修改路径后使用 `--profile windows-local-f5.local`。`*.local.json` 已被 Git 忽略。
 
 Azure 免费 profile 使用 REST API，不引入 Azure SDK。设置 `AZURE_SPEECH_KEY` 和 `AZURE_SPEECH_REGION` 后运行 `scene-gen doctor --profile azure-free`，doctor 会检查配置、voices endpoint、指定 voice、当前月度字符用量和输出目录。默认 voice 为 `zh-CN-XiaoxiaoNeural`，输出为可直接进入现有 FFmpeg 流程的 `riff-24khz-16bit-mono-pcm`。`AZURE_TTS_MONTHLY_CHARACTER_BUDGET=500000` 是硬限制，达到上限后不会继续调用 Azure；中文汉字按两个预算字符估算，使用量保存在 `dist/cache/metadata/azure-tts-usage.json`。API key 会从 runtime config snapshot、run journal 和公开错误信息中移除。
+
+常用云语音诊断命令：
+
+```powershell
+npm.cmd run scene-gen -- tts providers --profile production
+npm.cmd run scene-gen -- tts quota --provider azure --profile azure-free
+npm.cmd run scene-gen -- tts smoke --provider azure --profile azure-free
+npm.cmd run scene-gen -- pronunciation inspect --text "系统完成核心模块重构" --profile azure-free
+npm.cmd run scene-gen -- audio verify --run <run-id> --scene 2
+```
+
+Azure F0 支持正式 Neural TTS 和显式 SAPI 拼音，适合 production 高风险多音字；Cloudflare MeloTTS 可用于低成本 preview，但不提供同等级显式音素控制；Edge TTS 是非官方接口，只允许 preview，不进入 production 默认链；F5 和 Windows 属于本地 fallback。所有云 provider 都受 hard limit 控制，未显式允许付费时不会越过免费预算。
+
+`PronunciationPlan` 将 `displayText`、`semanticText`、`synthesisText` 和发音 span 分离。字幕继续显示“重构”，Azure SSML 使用 `chong 2 - gou 4`，只有 provider 明确不支持 phoneme 时才允许把合成文本降级为“重新构建”。semantic ASR 负责内容、实体、数字和串屏；pronunciation verifier 负责音素证据，两者不可互相替代。
 
 ## 一键生成
 
@@ -430,6 +444,22 @@ npm.cmd run scene-gen -- cache clear
 Active runs register references in `dist/runs/<run-id>/cache-refs.json`; prune never removes entries referenced by a running journal. Quality gates emit a structured `DirtyPlan`, so pronunciation failures rebuild only the affected audio scene plus audio concat/remux, blank or static frames rebuild only the affected video scene plus video concat/remux, and stream drift starts with remux only.
 
 ## 增量性能验证与排障
+
+云语音专项回归命令：
+
+```powershell
+npm.cmd run test:azure-tts
+npm.cmd run test:pronunciation-plan
+npm.cmd run test:audio-verifier
+npm.cmd run test:cloud-routing
+npm.cmd run test:tts-incremental
+```
+
+`tests/integration/cloud-pronunciation-quality.test.ts` 使用固定五屏项目和 mock Azure，覆盖“重构、重复、重要、重量、函数重载、重载运输、银行、行走”、产品名、数字和版本号。cold run 只发出五次 Azure 请求；warm run 的 Azure、ASR 和音素 verifier 均不重复调用；scene 2 的 `zhong4 gou4` 证据只触发单屏音频重建、concat audio 和 remux；inconclusive 只重试 verifier；相同 F5 策略由 attempt ledger 拦截；Azure hard quota 用尽时不产生付费请求并切换 fallback。
+
+如果“重构”仍读错，依次检查：`pronunciation inspect` 是否输出 `chong2 gou4`、Azure SSML 是否包含 `chong 2 - gou 4`、audio cache key 是否使用最新 `planHash`、`tts quota` 是否导致 provider fallback，以及 `audio verify` 是否返回具有 `actualPinyin` 的声学证据。仅有 Whisper 汉字“重构”不能证明读音正确或错误。
+
+确认没有重复生成时，检查 run report 中的 `ttsRequestCount`、`asrRequestCount`、`pronunciationVerificationCount`、`avoidedTtsRegenerationCount` 和 `cacheHitRatio`。warm run 应为零云请求；局部修复应只有目标 scene 一次 TTS 请求，且 video scene 录制次数为零。
 
 正式的多音字、`text`/`ttsText`、持久化 F5 worker、单 GPU 并发、HTML scene 并发、局部音视频修复、内容寻址缓存、Windows/Linux 差异和故障排查文档见 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)。
 
