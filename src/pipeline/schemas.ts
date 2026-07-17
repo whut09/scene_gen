@@ -4,6 +4,7 @@ import { issueCodeSchema, issueEvidenceSchema, issueSeveritySchema } from "../ha
 import { repairActionSchema } from "../harness/repair-candidate";
 
 const sourceKindSchema = z.enum(["rss", "github", "hackernews", "webpage", "seed"]);
+const contentTypeSchema = z.enum(["news", "technical-article", "repository"]);
 
 export const hotItemSchema = z.object({
   id: z.string().min(1),
@@ -14,6 +15,7 @@ export const hotItemSchema = z.object({
   summary: z.string(),
   content: z.string().optional(),
   publishedAt: z.string().optional(),
+  contentType: contentTypeSchema.optional(),
   score: z.number(),
   tags: z.array(z.string()),
   domain: z.string().optional(),

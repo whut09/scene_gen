@@ -153,16 +153,17 @@ function boundaryRecall(expected: string, actual: string, edge: "start" | "end")
     .map((length) => bigramRecall(edge === "start" ? expected.slice(0, length) : expected.slice(-length), actual)), 0);
 }
 
-export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[], options: { expectedLanguage?: string; minimumLanguageConfidence?: number } = {}) {
+export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[], options: { expectedLanguage?: string; minimumLanguageConfidence?: number; minimumConfidence?: number } = {}) {
   const issues: QualityIssueInput[] = [];
   const results: Array<Record<string, string | number | boolean>> = [];
   const transcriptMap = new Map(transcripts.map((transcript) => [transcript.sceneIndex, transcript]));
   const segments = project.narrationSegments ?? [];
-  const minimumConfidence = Number(process.env.ASR_SCENE_CONFIDENCE_MIN ?? 0.65);
+  const minimumConfidence = options.minimumConfidence ?? Number(process.env.ASR_SCENE_CONFIDENCE_MIN ?? 0.65);
   const minimumCoverage = Number(process.env.ASR_SCENE_TOKEN_COVERAGE_MIN ?? 0.78);
   const minimumPrecision = Number(process.env.ASR_SCENE_TOKEN_PRECISION_MIN ?? 0.75);
   const minimumEntityRecall = Number(process.env.ASR_ENTITY_RECALL_MIN ?? 0.8);
   const boundaryLeakMinimum = Number(process.env.ASR_BOUNDARY_LEAK_MIN ?? 0.55);
+  const endingRecallMinimum = Number(process.env.ASR_ENDING_RECALL_MIN ?? 0.62);
 
   for (const segment of segments) {
     const transcript = transcriptMap.get(segment.sceneIndex);
@@ -183,7 +184,8 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const expectedNumbers = extractNumberUnits(segment.ttsText ?? segment.text);
     const actualNumbers = extractNumberUnits(transcript.text);
     const numberAccuracy = expectedNumbers.filter((value) => actualNumbers.includes(value)).length / Math.max(1, expectedNumbers.length);
-    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, detectedLanguage: detectedLanguage ?? "unknown", languageConfidence: languageConfidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)) });
+    const endingRecall = boundaryRecall(expectedText, actualText, "end");
+    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, detectedLanguage: detectedLanguage ?? "unknown", languageConfidence: languageConfidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)), endingRecall: Number(endingRecall.toFixed(3)) });
 
     if (expectedLanguage && (!detectedLanguage || languageConfidence === undefined)) {
       issues.push({ severity: "error", code: "asr_verification_failed", message: `第 ${segment.sceneIndex + 1} 屏缺少独立语言检测结果，不能确认语音为中文。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "check-environment", retryable: false, evidence: { transcript: transcript.text, reason: "missing_language_detection", expectedLanguage } });
@@ -208,8 +210,13 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     if (expectedNumbers.length && numberAccuracy < 1) {
       issues.push({ severity: "error", code: "audio_number_mismatch", message: `第 ${segment.sceneIndex + 1} 屏数字、单位或版本号与旁白不一致。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedNumbers, transcriptNumbers: actualNumbers, transcript: transcript.text, numberAccuracy: Number(numberAccuracy.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
-    if (sequence.coverage < minimumCoverage || sequence.precision < minimumPrecision) {
+    const semanticMismatch = sequence.coverage < minimumCoverage || sequence.precision < minimumPrecision;
+    if (semanticMismatch) {
       issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `第 ${segment.sceneIndex + 1} 屏存在漏字、多字或语义覆盖不足。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
+    }
+    const isFinalSegment = segment.sceneIndex === segments.at(-1)?.sceneIndex;
+    if (isFinalSegment && !semanticMismatch && expectedText.length >= 12 && endingRecall < endingRecallMinimum) {
+      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `Scene ${segment.sceneIndex + 1} narration ending is incomplete.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, endingRecall: Number(endingRecall.toFixed(3)), endingRecallMinimum, expectedTail: expectedText.slice(-18), actualTail: actualText.slice(-18), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider"] } });
     }
     const currentStart = expectedText.slice(0, 18);
     const currentEnd = expectedText.slice(-18);

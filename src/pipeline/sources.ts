@@ -4,6 +4,9 @@ import { Readability } from "@mozilla/readability";
 import type { HotItem, SourceConfig } from "./types";
 import { compactText, daysAgo, domainFromUrl, stableId } from "./utils";
 import { fetchWithRetry } from "./external-operation";
+import { classifyWebpageContent } from "./content-type";
+
+export { classifyWebpageContent } from "./content-type";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -14,6 +17,7 @@ const seedItems: HotItem[] = [
   {
     id: "seed_agent_workflow",
     kind: "seed",
+    contentType: "news",
     title: "Agent 工作流正在从演示走向生产",
     url: "https://example.com/agent-workflow",
     source: "Seed Signal",
@@ -26,6 +30,7 @@ const seedItems: HotItem[] = [
   {
     id: "seed_benchmark",
     kind: "seed",
+    contentType: "news",
     title: "模型竞争进入能力细分阶段",
     url: "https://example.com/model-benchmark",
     source: "Seed Signal",
@@ -89,6 +94,42 @@ function normalizePublishedAt(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return undefined;
   const date = new Date(value.trim());
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function fallbackArticleText(document: Document) {
+  const clone = document.cloneNode(true) as Document;
+  clone.querySelectorAll("script,style,noscript,svg,nav,footer").forEach((node) => node.remove());
+  return clone.querySelector("article,main,[role='main'],.article-content,.content")?.textContent
+    ?? clone.body?.textContent
+    ?? "";
+}
+
+export function createWebpageDom(html: string, url: string) {
+  try {
+    return new JSDOM(html, { url });
+  } catch (error) {
+    console.warn(`[webpage] DOM parse failed for ${url}; retrying without page styles: ${(error as Error).message}`);
+    const sanitized = html
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/\sstyle=(?:"[^"]*"|'[^']*')/gi, "");
+    return new JSDOM(sanitized, { url });
+  }
+}
+
+export function extractReadableWebpage(document: Document, url: string) {
+  let article: ReturnType<Readability["parse"]> = null;
+  try {
+    article = new Readability(document.cloneNode(true) as Document).parse();
+  } catch (error) {
+    console.warn(`[webpage] readability failed for ${url}; using DOM fallback: ${(error as Error).message}`);
+  }
+  const rawTitle = compactText(article?.title ?? document.title ?? url, 140);
+  const title = /cloud\.tencent\.com\/developer\/article\//i.test(url)
+    ? rawTitle.replace(/[-_|]\s*\u817e\u8baf\u4e91\u5f00\u53d1\u8005\u793e\u533a\s*[-_|]\s*\u817e\u8baf\u4e91\s*$/u, "").trim()
+    : rawTitle;
+  const content = compactText(article?.textContent ?? fallbackArticleText(document) ?? title, 4200);
+  const summary = compactText(article?.excerpt ?? content ?? title, 360);
+  return { title, content, summary };
 }
 
 function findJsonLdPublishedAt(value: unknown): string | undefined {
@@ -171,6 +212,7 @@ export async function collectRss(config: SourceConfig): Promise<HotItem[]> {
           items.push({
             id: stableId(feed.name, title, url),
             kind: "rss",
+            contentType: "news",
             title,
             url,
             source: feed.name,
@@ -210,6 +252,7 @@ export async function collectGitHub(config: SourceConfig): Promise<HotItem[]> {
           items.push({
             id: stableId("github", target.repo, release.tag_name),
             kind: "github",
+            contentType: "repository",
             title,
             url: release.html_url,
             source: "GitHub Release",
@@ -258,6 +301,7 @@ export async function collectHackerNews(config: SourceConfig): Promise<HotItem[]
           items.push({
             id: stableId("hn", hit.objectID),
             kind: "hackernews",
+            contentType: "news",
             title,
             url: hit.url ?? `https://news.ycombinator.com/item?id=${hit.objectID}`,
             source: "Hacker News",
@@ -332,6 +376,7 @@ async function collectGithubRepository(url: string, config: SourceConfig): Promi
   return {
     id: stableId("github", url, repo.full_name || target.fullName),
     kind: "github",
+    contentType: "repository",
     title: (repo.name || target.repo) + "：" + description,
     url,
     source: "GitHub",
@@ -363,16 +408,14 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         continue;
       }
       const html = await fetchWebpageText(url);
-      const dom = new JSDOM(html, { url });
-      const article = new Readability(dom.window.document).parse();
-      const title = compactText(article?.title ?? dom.window.document.title ?? url, 140);
-      const content = compactText(article?.textContent ?? title, 4200);
-      const summary = compactText(article?.excerpt ?? content ?? title, 360);
+      const dom = createWebpageDom(html, url);
+      const { title, content, summary } = extractReadableWebpage(dom.window.document, url);
       const joined = `${title} ${summary}`;
       const publishedAt = extractWebpagePublishedAt(dom.window.document) ?? new Date().toISOString();
       items.push({
         id: stableId("webpage", url, title),
         kind: "webpage",
+        contentType: classifyWebpageContent(url, title, content),
         title,
         url,
         source: domainFromUrl(url),

@@ -1,4 +1,5 @@
 export type SourceKind = "rss" | "github" | "hackernews" | "webpage" | "seed";
+export type ContentType = "news" | "technical-article" | "repository";
 
 export interface HotItem {
   id: string;
@@ -9,6 +10,7 @@ export interface HotItem {
   summary: string;
   content?: string;
   publishedAt?: string;
+  contentType?: ContentType;
   score: number;
   tags: string[];
   domain?: string;

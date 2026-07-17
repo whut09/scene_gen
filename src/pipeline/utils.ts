@@ -41,7 +41,7 @@ export function loadDotEnv() {
 
   function setEnv(key: string, value: string, overrideLocal: boolean) {
     const normalized = value.replace(/^['"]|['"]$/g, "");
-    if (!normalized || normalized === "xxx") return;
+    if (!normalized || normalized === "xx" || normalized === "xxx") return;
     if (externalKeys.has(key) && !loadedKeys.has(key)) return;
     if (!overrideLocal && process.env[key]) return;
     process.env[key] = normalized;

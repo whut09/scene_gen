@@ -128,6 +128,7 @@ export async function evaluateDraft(
   const templateIds = templateGraph.nodes.map((node) => node.templateId);
   const compositionIds = templateGraph.nodes.map((node) => node.templateId + ":" + node.variantId);
   const uniqueTemplateCount = new Set(templateIds).size;
+  const uniqueCompositionCount = new Set(compositionIds).size;
   const adjacentTemplateRepeats = templateIds.filter((id, index) => index > 0 && id === templateIds[index - 1]).length;
   const templateCategoryCount = new Set(templateIds.map((id) => getTemplateById(id)?.category).filter(Boolean)).size;
   const averageTemplateScore = templateGraph.nodes.length
@@ -146,7 +147,7 @@ export async function evaluateDraft(
     }
   }
 
-  if (project.scenes.length >= 5 && uniqueTemplateCount < 3) {
+  if (project.scenes.length >= 5 && uniqueTemplateCount < 3 && uniqueCompositionCount < 3) {
     issues.push({ severity: "error", code: "template_diversity_low", message: `五屏视频只使用了 ${uniqueTemplateCount} 种模板，至少需要 3 种构图。` });
   }
   if (adjacentTemplateRepeats > 0) {

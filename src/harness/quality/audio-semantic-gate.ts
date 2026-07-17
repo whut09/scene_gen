@@ -69,7 +69,9 @@ export async function runAudioSemanticGate(input: {
     };
   }
   const expectedLanguage = /^(chinese|zh(?:-cn)?)$/i.test(input.config.asr.language) ? "zh" : input.config.asr.language;
-  const verification = verifySceneTranscripts(input.project, transcription.transcripts, { expectedLanguage, minimumLanguageConfidence: input.config.asr.languageConfidenceMin });
+  const configuredMinimumConfidence = Number(process.env.ASR_SCENE_CONFIDENCE_MIN ?? 0.65);
+  const minimumConfidence = input.config.profile === "production" ? Math.max(0.8, configuredMinimumConfidence) : configuredMinimumConfidence;
+  const verification = verifySceneTranscripts(input.project, transcription.transcripts, { expectedLanguage, minimumLanguageConfidence: input.config.asr.languageConfidenceMin, minimumConfidence });
   const issues = verification.issues.filter((issue) => issue.code !== "audio_pronunciation_mismatch");
   return { ...verification, issues, metrics: { semanticVerifiedCount: verification.results.length, semanticAsrCacheHit: transcription.cacheHit, semanticAsrProvider: transcription.provider, semanticGateVersion: AUDIO_SEMANTIC_GATE_VERSION } };
 }

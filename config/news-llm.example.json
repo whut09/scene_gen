@@ -1,8 +1,8 @@
 {
-  "NEWS_LLM_API_KEY": "xxx",
-  "NEWS_LLM_BASE_URL": "xxx",
-  "NEWS_LLM_MODEL": "xxx",
-  "QUALITY_LLM_API_KEY": "xxx",
-  "QUALITY_LLM_BASE_URL": "xxx",
-  "QUALITY_LLM_MODEL": "xxx"
+  "NEWS_LLM_API_KEY": "xx",
+  "NEWS_LLM_BASE_URL": "xx",
+  "NEWS_LLM_MODEL": "qwen/qwen3-next-80b-a3b-instruct",
+  "QUALITY_LLM_API_KEY": "xx",
+  "QUALITY_LLM_BASE_URL": "xx",
+  "QUALITY_LLM_MODEL": "qwen/qwen3-next-80b-a3b-instruct"
 }

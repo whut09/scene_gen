@@ -12,7 +12,7 @@ import { attachNarrationAudio } from "./tts";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson, writeJsonAtomic } from "./utils";
 import { generationResultSchema, readStoryManifest, type StoryManifestItem, writeStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
-import { ensureNewsDateNarration } from "./news-date";
+import { ensureNewsDateNarration, ensureTitleSpokenFirst } from "./news-date";
 
 loadDotEnv();
 
@@ -190,6 +190,7 @@ for (const [index, item] of items.entries()) {
   });
   project = scrubProject(project) as VideoProject;
   project = ensureNewsDateNarration(project);
+  project = ensureTitleSpokenFirst(project);
   project.assets = assets;
   if (!skipTts) {
     project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);

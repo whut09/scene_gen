@@ -6,6 +6,8 @@ import { chromium } from "playwright";
 import { createFixtureProject } from "../fixtures/project";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { inspectSceneDom } from "../../src/html-video/visual-audit";
+import { getTemplateById } from "../../src/templates/template-registry";
+import type { VideoScene } from "../../src/pipeline/types";
 
 test("selected title template screenshot stays visible, bounded, and non-blank", { timeout: 120_000 }, async () => {
   const project = createFixtureProject();
@@ -80,6 +82,38 @@ test("selected title template screenshot stays visible, bounded, and non-blank",
     assert.equal(screenshot.length > 25_000, true, `Screenshot is suspiciously small: ${screenshot.length}`);
     assert.equal(pixels.colorRange > 80 && pixels.uniqueColors > 12, true, JSON.stringify(pixels));
     assert.deepEqual(visualAudit.issues.filter((issue) => issue.severity === "error"), [], JSON.stringify(visualAudit.issues));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("decision flow keeps long headlines clear of the first card", { timeout: 120_000 }, async () => {
+  const project = createFixtureProject();
+  const scene: VideoScene = {
+    type: "flow",
+    duration: 18,
+    headline: "\u5434\u5029\u6307\u51fa\uff0cAI\u6b63\u4ee5\u524d\u6240\u672a\u6709\u7684\u901f\u5ea6\u5f71\u54cd\u5f71\u89c6\u884c\u4e1a\uff0c\u4ece\u7075\u611f\u843d\u5730\u3001\u89c6\u89c9\u5448\u73b0\u5230\u5206\u955c\u8bbe\u8ba1\u3001\u540e\u671f\u5236\u4f5c",
+    steps: [
+      { label: "\u6d3b\u52a8\u80cc\u666f", detail: "\u4eba\u5de5\u667a\u80fd\u6b63\u5728\u91cd\u5851\u5f71\u89c6\u521b\u4f5c\u6d41\u7a0b\u3002" },
+      { label: "\u89c2\u70b9\u8868\u8fbe", detail: "\u6280\u672f\u8fdb\u6b65\u4e0d\u4ee3\u8868\u53d6\u4ee3\u4eba\u7684\u5224\u65ad\u3002" },
+      { label: "\u884c\u4e1a\u5b9e\u8df5", detail: "\u5de5\u5177\u9700\u8981\u670d\u52a1\u4e8e\u53ef\u63a7\u7684\u5236\u4f5c\u6d41\u7a0b\u3002" },
+    ],
+  };
+  const template = getTemplateById("decision-flow");
+  assert.ok(template);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: project.meta.width, height: project.meta.height } });
+    await page.setContent(template.renderHtml({ project, scene, sceneIndex: 0, width: project.meta.width, height: project.meta.height, variantId: "agent-branch" }), { waitUntil: "load" });
+    await page.evaluate(() => document.fonts.ready);
+    const bounds = await page.evaluate(() => {
+      const title = document.querySelector(".df-main h1")?.getBoundingClientRect();
+      const firstCard = document.querySelector(".df-node")?.getBoundingClientRect();
+      return { titleBottom: title?.bottom ?? 0, firstCardTop: firstCard?.top ?? 0 };
+    });
+    const audit = await inspectSceneDom(page, { sceneIndex: 0, width: project.meta.width, height: project.meta.height, durationSec: scene.duration, headline: scene.headline });
+    assert.equal(bounds.firstCardTop > bounds.titleBottom + 12, true, JSON.stringify(bounds));
+    assert.deepEqual(audit.issues.filter((issue) => issue.code === "element_overlap" && issue.severity === "error"), [], JSON.stringify(audit.issues));
   } finally {
     await browser.close();
   }

@@ -12,7 +12,7 @@ import type { AzureTtsResult } from "./azure";
 
 export interface NvidiaTtsResult { requestId: string; status: "succeeded"; outputPath: string; requestMs: number; synthesisText?: string }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-direct-utf8-chunked-v7-speed";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-direct-utf8-chunked-v8-score-ratio";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {

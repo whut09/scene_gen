@@ -1,6 +1,7 @@
 ﻿import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
 
 import { buildFactLedger } from "./fact-ledger";
+import { contentTypeForItem } from "./content-type";
 
 const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15"];
 
@@ -18,6 +19,32 @@ function speechFriendlyText(text: string) {
 
 function speechFriendlyTitle(title: string) {
   return speechFriendlyText(title.replace(/^.{4,24}[？?](?=.{2,30}[：:])/u, ""));
+}
+
+const danglingClauseEnding = /(?:\u6b63\u662f\u56e0\u4e3a|\u56e0\u4e3a|\u4f46\u662f|\u800c\u4e14|\u4ee5\u53ca|\u5e76\u4e14|\u4ece\u800c|\u6240\u4ee5|\u5305\u62ec|\u4f8b\u5982)[\uff0c,:\s]*$/u;
+
+export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72) {
+  const clauses = scrubAttribution(text).match(/[^\uff0c\uff1b\uff1a\u3002\uff01\uff1f]+[\uff0c\uff1b\uff1a\u3002\uff01\uff1f]?/gu) ?? [];
+  const chunks: string[] = [];
+  let current = "";
+  for (const rawClause of clauses) {
+    const clause = rawClause.trim();
+    if (!clause) continue;
+    if (current && [...current, ...clause].length > maxCharacters && !danglingClauseEnding.test(current)) {
+      chunks.push(current);
+      current = clause;
+    } else {
+      current += clause;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks
+    .map((chunk) => chunk.trim())
+    .map((chunk) => {
+      const complete = danglingClauseEnding.test(chunk) ? chunk.replace(danglingClauseEnding, "") : chunk;
+      return /[\u3002\uff01\uff1f\uff1b]$/u.test(complete) ? complete : `${complete.replace(/[\uff0c\uff1a]+$/u, "")}\u3002`;
+    })
+    .filter((chunk) => chunk.length >= 12);
 }
 
 function sourceLabel(item: HotItem) {
@@ -305,6 +332,7 @@ function createGeneralNewsProject(
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
   const topicText = `${item.title} ${item.summary}`;
+  const isTechnicalArticle = contentTypeForItem(item) === "technical-article";
   const isChipStory =
     /芯片|AI芯片|推理芯片|自研芯片|造芯|算力芯片/i.test(topicText) &&
     !/发布.*模型|推出.*模型|模型.*发布|模型.*上线/i.test(item.title);
@@ -315,19 +343,81 @@ function createGeneralNewsProject(
       : isChipStory
         ? "头部模型公司开始把竞争从模型能力，推进到底层算力和推理成本控制。"
         : "这条新闻的关键，是一个行业变量正在从表层事件变成结构性变化。";
-  const articleSentences = scrubAttribution(item.content ?? item.summary)
-    .split(/(?<=[。！？])/u)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length >= 12)
-    .flatMap((sentence) => {
-      const characters = [...sentence];
-      return Array.from({ length: Math.ceil(characters.length / 58) }, (_, index) => characters.slice(index * 58, (index + 1) * 58).join(""));
-    });
+  const articleSentences = splitArticleIntoSemanticChunks(item.content ?? item.summary);
   const sentenceAt = (index: number) => articleSentences[index] ?? articleSentences[index % Math.max(1, articleSentences.length)] ?? summary;
   const narrationAt = (start: number, count = 2) => Array.from({ length: count }, (_, offset) => sentenceAt(start + offset)).join("");
   const coverSummary = compactSentence(summary, 72);
 
-  const sections: Array<{ scene: VideoScene; narration: string }> = isChipStory
+  const sections: Array<{ scene: VideoScene; narration: string }> = isTechnicalArticle
+    ? [
+        {
+          scene: {
+            type: "title",
+            duration: 12,
+            kicker: "TECH / EXPLAINER",
+            headline: shortTitle(title, 42),
+            subhead: coverSummary,
+            sources: ["\u95ee\u9898", "\u65b9\u6cd5", "\u8fb9\u754c"],
+          },
+          narration: `\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f\uff1a${title}\u3002${coverSummary}`,
+        },
+        {
+          scene: {
+            type: "briefing_points",
+            duration: 19,
+            headline: "\u5148\u660e\u786e\u95ee\u9898\u548c\u5047\u8bbe",
+            source: "\u95ee\u9898\u5b9a\u4e49",
+            title,
+            summary: sentenceAt(0),
+            metrics: [
+              { label: "\u76ee\u6807", value: compactSentence(sentenceAt(1), 18) },
+              { label: "\u8f93\u5165", value: compactSentence(sentenceAt(2), 18) },
+            ],
+            points: [sentenceAt(0), sentenceAt(1), sentenceAt(2)],
+          },
+          narration: narrationAt(0, 2),
+        },
+        {
+          scene: {
+            type: "flow",
+            duration: 20,
+            headline: "\u4ece\u6570\u636e\u5230\u8ba1\u7b97\u7ed3\u679c",
+            steps: [
+              { label: "\u62c6\u5206\u53d8\u91cf", detail: sentenceAt(2) },
+              { label: "\u5efa\u7acb\u5047\u8bbe", detail: sentenceAt(3) },
+              { label: "\u6267\u884c\u8ba1\u7b97", detail: sentenceAt(4) },
+              { label: "\u6821\u9a8c\u7ed3\u679c", detail: sentenceAt(5) },
+            ],
+          },
+          narration: narrationAt(2, 2),
+        },
+        {
+          scene: {
+            type: "briefing_points",
+            duration: 19,
+            headline: "\u5173\u952e\u63a8\u5bfc\u4e0e\u5b9e\u73b0\u7ec6\u8282",
+            source: "\u6280\u672f\u8def\u5f84",
+            title: compactSentence(sentenceAt(6), 32),
+            summary: sentenceAt(7),
+            metrics: [
+              { label: "\u8ba1\u7b97", value: compactSentence(sentenceAt(6), 18) },
+              { label: "\u9a8c\u8bc1", value: compactSentence(sentenceAt(7), 18) },
+            ],
+            points: [sentenceAt(6), sentenceAt(7), sentenceAt(8)],
+          },
+          narration: narrationAt(6, 2),
+        },
+        {
+          scene: {
+            type: "outro",
+            duration: 17,
+            headline: "\u7ed3\u8bba\u6210\u7acb\u7684\u8fb9\u754c",
+            bullets: [sentenceAt(9), sentenceAt(10), sentenceAt(11)],
+          },
+          narration: narrationAt(9, 2),
+        },
+      ]
+    : isChipStory
     ? [
         {
           scene: {
@@ -484,7 +574,9 @@ function createGeneralNewsProject(
     narrationSegments: sections.map((section, sceneIndex) => ({
       sceneIndex,
       text: scrubAttribution(section.narration),
-      ttsText: sceneIndex === 0 ? `这条新闻讲的是，${title}。` : speechFriendlyText(scrubAttribution(section.narration)),
+      ttsText: sceneIndex === 0
+        ? isTechnicalArticle ? `\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f\uff0c${title}\u3002` : `\u8fd9\u6761\u65b0\u95fb\u8bb2\u7684\u662f\uff0c${title}\u3002`
+        : speechFriendlyText(scrubAttribution(section.narration)),
     })),
     scenes,
     sources: [item],

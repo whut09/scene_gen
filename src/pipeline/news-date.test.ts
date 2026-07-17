@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ensureNewsDateNarration, projectNewsDate } from "./news-date";
+import { ensureNewsDateNarration, ensureTitleSpokenFirst, isTechnicalArticleProject, projectNewsDate } from "./news-date";
 import type { VideoProject } from "./types";
 
 function project(kind: "webpage" | "github"): VideoProject {
@@ -24,4 +24,34 @@ test("GitHub projects do not receive a news date narration", () => {
   const input = project("github");
   assert.equal(projectNewsDate(input), "");
   assert.equal(ensureNewsDateNarration(input).narrationSegments?.[0]?.text, "中文新闻标题示例。正文内容。");
+});
+
+test("Tencent Cloud developer articles never receive a news date", () => {
+  const input = project("webpage");
+  input.sources[0] = {
+    ...input.sources[0],
+    url: "https://cloud.tencent.com/developer/article/2710377",
+    contentType: "technical-article",
+    publishedAt: "2026-07-17T04:26:11.000Z",
+  };
+  assert.equal(isTechnicalArticleProject(input), true);
+  assert.equal(projectNewsDate(input), "");
+  assert.equal(ensureNewsDateNarration(input).narrationSegments?.[0]?.text, input.narrationSegments?.[0]?.text);
+});
+
+test("technical article narration starts with the title without adding a date", () => {
+  const input = project("webpage");
+  input.sources[0] = { ...input.sources[0], contentType: "technical-article" };
+  input.narrationSegments![0] = { sceneIndex: 0, text: "\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u89e3\u91ca\u8ba1\u7b97\u65b9\u6cd5\u3002" };
+  const output = ensureTitleSpokenFirst(input);
+  assert.equal(output.narrationSegments?.[0]?.text.startsWith(input.meta.title), true);
+  assert.equal(output.narrationSegments?.[0]?.text.includes("\u65b0\u95fb\u65e5\u671f"), false);
+});
+
+test("title-first policy removes an early duplicate title", () => {
+  const input = project("webpage");
+  input.sources[0] = { ...input.sources[0], contentType: "technical-article" };
+  input.narrationSegments![0] = { sceneIndex: 0, text: `\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f\uff1a${input.meta.title}\u3002\u540e\u7eed\u89e3\u91ca\u8ba1\u7b97\u65b9\u6cd5\u3002` };
+  const output = ensureTitleSpokenFirst(input);
+  assert.equal(output.narrationSegments?.[0]?.text, `${input.meta.title}\u3002\u540e\u7eed\u89e3\u91ca\u8ba1\u7b97\u65b9\u6cd5\u3002`);
 });

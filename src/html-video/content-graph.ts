@@ -107,7 +107,7 @@ function sourceEvidence(scene: VideoScene, project: VideoProject) {
   const sources = claims.length
     ? project.sources.filter((source) => claims.some((claim) => claim.sourceId === source.id))
     : project.sources;
-  const sourceText = (claims.length ? claims.map((claim) => claim.evidenceText) : sources.flatMap((source) => [source.title, source.summary, source.content, source.metrics ? JSON.stringify(source.metrics) : ""]))
+  const sourceText = [...claims.map((claim) => claim.evidenceText), ...sources.flatMap((source) => [source.title, source.summary, source.content, source.metrics ? JSON.stringify(source.metrics) : ""])]
     .filter(Boolean).join(" ").replace(/,/g, "").replace(/％/g, "%");
   const sceneText = sceneEvidenceText(scene);
   const numbers = normalizedNumbers(sceneText);
