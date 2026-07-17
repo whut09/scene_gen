@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { runExternalProcess } from "../pipeline/external-operation";
-import { findTtsPronunciations } from "../pipeline/tts-pronunciation";
 import { prepareF5SynthesisText } from "../pipeline/tts";
 import type { NarrationSegment, VideoProject } from "../pipeline/types";
 import { fromRoot } from "../pipeline/utils";
@@ -134,11 +133,6 @@ function expectedEntities(project: VideoProject, segment: NarrationSegment) {
   const textualEntities = segment.text.match(/[A-Za-z][A-Za-z0-9._+-]{1,}|[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+/g) ?? [];
   return [...new Set([...claimEntities, ...textualEntities].map(canonicalSpeechText).filter((value) => value.length >= 2))];
 }
-
-function phrasePresent(actual: string, phrase: string, fallback: string) {
-  return actual.includes(canonicalSpeechText(phrase)) || actual.includes(canonicalSpeechText(fallback));
-}
-
 function bigramRecall(expected: string, actual: string) {
   if (expected.length < 2) return actual.includes(expected) ? 1 : 0;
   const bigrams = Array.from({ length: expected.length - 1 }, (_, index) => expected.slice(index, index + 2));
@@ -178,28 +172,20 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const expectedNumbers = extractNumberUnits(segment.ttsText ?? segment.text);
     const actualNumbers = extractNumberUnits(transcript.text);
     const numberAccuracy = expectedNumbers.filter((value) => actualNumbers.includes(value)).length / Math.max(1, expectedNumbers.length);
-    const pronunciations = findTtsPronunciations(segment.ttsText ?? segment.text);
-    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)), pronunciationPhraseCount: pronunciations.length });
+    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)) });
 
     if (confidence !== undefined && confidence < minimumConfidence) {
       issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 置信度 ${(confidence * 100).toFixed(1)}% 过低，未触发内容重建。`, sceneIndex: segment.sceneIndex, issueClass: "soft", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, asrConfidence: confidence, minimumConfidence } });
       continue;
     }
-    for (const pronunciation of pronunciations) {
-      if (phrasePresent(actualText, pronunciation.phrase, pronunciation.spokenFallback)) continue;
-      const expectedWithoutPhrase = expectedText.replace(canonicalSpeechText(pronunciation.phrase), "");
-      if (sequenceMetrics(expectedWithoutPhrase, actualText).coverage >= minimumCoverage) {
-        issues.push({ severity: "error", code: "audio_pronunciation_mismatch", message: `第 ${segment.sceneIndex + 1} 屏词语“${pronunciation.phrase}”的实际发音或转写不匹配。`, sceneIndex: segment.sceneIndex, evidence: { phrase: pronunciation.phrase, expected: pronunciation.pinyin.join(" "), transcript: transcript.text, asrConfidence: confidence ?? "unknown" } });
-      }
-    }
     if (entities.length && entityRecall < minimumEntityRecall) {
-      issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏产品名、人名或关键实体不完整。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { expectedEntities: entities, matchedEntities, transcript: transcript.text, entityRecall: Number(entityRecall.toFixed(3)), asrConfidence: confidence ?? "unknown" } });
+      issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏产品名、人名或关键实体不完整。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedEntities: entities, matchedEntities, transcript: transcript.text, entityRecall: Number(entityRecall.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
     if (expectedNumbers.length && (numberAccuracy < 1 || actualNumbers.some((value) => !expectedNumbers.includes(value)))) {
-      issues.push({ severity: "error", code: "audio_number_mismatch", message: `第 ${segment.sceneIndex + 1} 屏数字、单位或版本号与旁白不一致。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { expectedNumbers, transcriptNumbers: actualNumbers, transcript: transcript.text, numberAccuracy: Number(numberAccuracy.toFixed(3)), asrConfidence: confidence ?? "unknown" } });
+      issues.push({ severity: "error", code: "audio_number_mismatch", message: `第 ${segment.sceneIndex + 1} 屏数字、单位或版本号与旁白不一致。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedNumbers, transcriptNumbers: actualNumbers, transcript: transcript.text, numberAccuracy: Number(numberAccuracy.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
     if (sequence.coverage < minimumCoverage || sequence.precision < minimumPrecision) {
-      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `第 ${segment.sceneIndex + 1} 屏存在漏字、多字或语义覆盖不足。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown" } });
+      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `第 ${segment.sceneIndex + 1} 屏存在漏字、多字或语义覆盖不足。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
     const currentStart = expectedText.slice(0, 18);
     const currentEnd = expectedText.slice(-18);
@@ -212,7 +198,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const previousLeak = previousExpected ? boundaryRecall(previousExpected, actualStart, "end") : 0;
     const nextLeak = nextExpected ? boundaryRecall(nextExpected, actualEnd, "start") : 0;
     if ((previousLeak >= boundaryLeakMinimum && previousLeak > bigramRecall(currentStart, actualStart) + 0.15) || (nextLeak >= boundaryLeakMinimum && nextLeak > bigramRecall(currentEnd, actualEnd) + 0.15)) {
-      issues.push({ severity: "error", code: "audio_segment_cross_talk", message: `第 ${segment.sceneIndex + 1} 屏音频疑似包含相邻场景旁白。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { transcript: transcript.text, previousLeak: Number(previousLeak.toFixed(3)), nextLeak: Number(nextLeak.toFixed(3)), asrConfidence: confidence ?? "unknown" } });
+      issues.push({ severity: "error", code: "audio_segment_cross_talk", message: `第 ${segment.sceneIndex + 1} 屏音频疑似包含相邻场景旁白。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { transcript: transcript.text, previousLeak: Number(previousLeak.toFixed(3)), nextLeak: Number(nextLeak.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
   }
   const firstTranscript = transcriptMap.get(0)?.text ?? "";

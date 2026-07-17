@@ -38,7 +38,13 @@ export const runtimeConfigSchema = z.object({
       g2pwMinimumConfidence: z.number().min(0).max(1),
     }).default({ domain: "software", g2pwEnabled: false, g2pwPython: process.platform === "win32" ? "python" : "python3", g2pwScript: "scripts/g2pw-worker.py", g2pwReadyTimeoutMs: 30_000, g2pwRequestTimeoutMs: 10_000, g2pwMinimumConfidence: 0.75 }),
   }),
-  asr: z.object({ disabled: z.boolean(), python: z.string().optional(), model: z.string(), language: z.string(), titleCoverageMin: z.number().min(0).max(1) }),
+  asr: z.object({
+    disabled: z.boolean(), provider: z.enum(["whisper", "sensevoice", "funasr", "mock"]).default("whisper"), python: z.string().optional(), model: z.string(), language: z.string(), titleCoverageMin: z.number().min(0).max(1),
+    pronunciation: z.object({
+      provider: z.enum(["azure", "mock", "disabled"]), endpoint: z.string().url().optional(), region: z.string().optional(), apiKey: z.string().optional(), timeoutMs: positiveInteger,
+      confidenceMin: z.number().min(0).max(1), monthlySecondsBudget: nonnegativeNumber, budgetWarningRatio: z.number().min(0).max(1), minimumAudioMs: positiveInteger,
+    }).default({ provider: "disabled", timeoutMs: 45_000, confidenceMin: 0.7, monthlySecondsBudget: 0, budgetWarningRatio: 0.8, minimumAudioMs: 300 }),
+  }),
   rendering: z.object({
     engine: z.enum(["remotion", "html-video"]), outputDir: z.string().min(1), screenshotLimit: z.number().int().nonnegative(), motionSceneThreshold: nonnegativeNumber, processTimeoutMs: positiveInteger,
     html: z.object({ concurrency: positiveInteger, memoryPerJobMb: positiveInteger, preset: z.enum(["ultrafast", "veryfast", "medium"]), sceneTimeoutMs: positiveInteger, syncCueCacheBucketMs: positiveInteger }).default({ concurrency: 2, memoryPerJobMb: 1536, preset: "veryfast", sceneTimeoutMs: 300_000, syncCueCacheBucketMs: 120 }),
@@ -127,7 +133,13 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
       local: { concurrency: numberValue(env, "LOCAL_TTS_CONCURRENCY", 1) },
       pronunciation: { domain: stringValue(env, "TTS_PRONUNCIATION_DOMAIN", "software")!, g2pwEnabled: booleanValue(env, "G2PW_ENABLED"), g2pwPython: stringValue(env, "G2PW_PYTHON", process.platform === "win32" ? "python" : "python3")!, g2pwScript: stringValue(env, "G2PW_WORKER_SCRIPT", "scripts/g2pw-worker.py")!, g2pwModelDir: stringValue(env, "G2PW_MODEL_DIR"), g2pwReadyTimeoutMs: numberValue(env, "G2PW_READY_TIMEOUT_MS", 30_000), g2pwRequestTimeoutMs: numberValue(env, "G2PW_REQUEST_TIMEOUT_MS", 10_000), g2pwMinimumConfidence: numberValue(env, "G2PW_MIN_CONFIDENCE", 0.75) },
     },
-    asr: { disabled: booleanValue(env, "ASR_DISABLED"), python: stringValue(env, "ASR_PYTHON"), model: stringValue(env, "ASR_MODEL", "openai/whisper-tiny")!, language: stringValue(env, "ASR_LANGUAGE", "chinese")!, titleCoverageMin: numberValue(env, "ASR_TITLE_COVERAGE_MIN", 0.58) },
+    asr: {
+      disabled: booleanValue(env, "ASR_DISABLED"), provider: ["sensevoice", "funasr", "mock"].includes(stringValue(env, "ASR_PROVIDER", "whisper")!) ? stringValue(env, "ASR_PROVIDER") as "sensevoice" | "funasr" | "mock" : "whisper", python: stringValue(env, "ASR_PYTHON"), model: stringValue(env, "ASR_MODEL", "openai/whisper-tiny")!, language: stringValue(env, "ASR_LANGUAGE", "chinese")!, titleCoverageMin: numberValue(env, "ASR_TITLE_COVERAGE_MIN", 0.58),
+      pronunciation: {
+        provider: stringValue(env, "PRONUNCIATION_VERIFIER_PROVIDER", "disabled") === "azure" ? "azure" : stringValue(env, "PRONUNCIATION_VERIFIER_PROVIDER") === "mock" ? "mock" : "disabled",
+        endpoint: stringValue(env, "AZURE_PRONUNCIATION_ENDPOINT"), region: stringValue(env, "AZURE_PRONUNCIATION_REGION", stringValue(env, "AZURE_SPEECH_REGION")), apiKey: stringValue(env, "AZURE_PRONUNCIATION_KEY", stringValue(env, "AZURE_SPEECH_KEY")), timeoutMs: numberValue(env, "PRONUNCIATION_VERIFIER_TIMEOUT_MS", 45_000), confidenceMin: numberValue(env, "PRONUNCIATION_VERIFIER_CONFIDENCE_MIN", 0.7), monthlySecondsBudget: numberValue(env, "AZURE_PRONUNCIATION_MONTHLY_SECONDS_BUDGET", 0), budgetWarningRatio: numberValue(env, "AZURE_PRONUNCIATION_BUDGET_WARNING_RATIO", 0.8), minimumAudioMs: numberValue(env, "PRONUNCIATION_VERIFIER_MIN_AUDIO_MS", 300),
+      },
+    },
     rendering: { engine: stringValue(env, "VIDEO_RENDER_ENGINE", "html-video") === "remotion" ? "remotion" : "html-video", outputDir: path.resolve(stringValue(env, "VIDEO_OUTPUT_DIR", defaultOutputDir())!), screenshotLimit: numberValue(env, "SCREENSHOT_LIMIT", 0), motionSceneThreshold: numberValue(env, "MOTION_SCENE_THRESHOLD", 0.0005), processTimeoutMs: numberValue(env, "QUALITY_PROCESS_TIMEOUT_MS", 300_000), html: { concurrency: numberValue(env, "HTML_RENDER_CONCURRENCY", 2), memoryPerJobMb: numberValue(env, "HTML_RENDER_MEMORY_PER_JOB_MB", 1536), preset: stringValue(env, "HTML_RENDER_PRESET") === "ultrafast" || stringValue(env, "HTML_RENDER_PRESET") === "medium" ? stringValue(env, "HTML_RENDER_PRESET") : "veryfast", sceneTimeoutMs: numberValue(env, "HTML_RENDER_SCENE_TIMEOUT_MS", 300_000), syncCueCacheBucketMs: numberValue(env, "HTML_SYNC_CUE_CACHE_BUCKET_MS", 120) }, visual: { blankLumaRangeMin: numberValue(env, "VIDEO_BLANK_LUMA_RANGE_MIN", 8), blankEdgeDensityMin: numberValue(env, "VIDEO_BLANK_EDGE_DENSITY_MIN", 0.006) }, templateLearning: { disabled: booleanValue(env, "TEMPLATE_LEARNING_DISABLED"), explorationRate: numberValue(env, "TEMPLATE_EXPLORATION_RATE", 0.07) }, ocr: { enabled: booleanValue(env, "VIDEO_OCR_ENABLED"), command: stringValue(env, "VIDEO_OCR_COMMAND", "tesseract")!, language: stringValue(env, "VIDEO_OCR_LANGUAGE", "chi_sim+eng")!, keyTextMin: numberValue(env, "VIDEO_OCR_KEY_TEXT_MIN", 0.45) }, htmlTemplateExclusions: parseTemplateExclusions(stringValue(env, "HTML_TEMPLATE_EXCLUSIONS")) },
     quality: { profile: qualityProfile, blockingWarningCodes: (stringValue(env, "QUALITY_BLOCKING_WARNING_CODES", "") ?? "").split(",").map((item) => item.trim()).filter(Boolean), minDurationFactor: numberValue(env, "QUALITY_MIN_DURATION_FACTOR", 0.7), maxDurationFactor: numberValue(env, "QUALITY_MAX_DURATION_FACTOR", 1.65), minCharsPerSecond: numberValue(env, "QUALITY_MIN_CHARS_PER_SECOND", 6.3), maxCharsPerSecond: numberValue(env, "QUALITY_MAX_CHARS_PER_SECOND", 11.5), maxSegmentSpeedRatio: numberValue(env, "QUALITY_MAX_SEGMENT_SPEED_RATIO", 1.35), maxSegmentSpeedCv: numberValue(env, "QUALITY_MAX_SEGMENT_SPEED_CV", 0.16) },
     cache: { rootDir: path.resolve(stringValue(env, "SCENE_GEN_CACHE_DIR", fromRoot("dist", "cache"))!), huggingFaceHome: path.resolve(stringValue(env, "HF_HOME", path.join(env.USERPROFILE ?? env.HOME ?? fromRoot("dist"), ".cache", "huggingface"))!), huggingFaceOffline: booleanValue(env, "HF_HUB_OFFLINE"), lockTimeoutMs: numberValue(env, "MEDIA_CACHE_LOCK_TIMEOUT_MS", 600_000), staleLockMs: numberValue(env, "MEDIA_CACHE_STALE_LOCK_MS", 900_000) },
@@ -147,6 +159,7 @@ export function runtimeConfigSnapshot(config: RuntimeConfig): RuntimeConfigSnaps
   snapshot.llm.quality.apiKey = undefined;
   snapshot.tts.azure.apiKey = undefined;
   snapshot.tts.openai.apiKey = undefined;
+  snapshot.asr.pronunciation.apiKey = undefined;
   return runtimeConfigSchema.parse(snapshot);
 }
 
@@ -167,6 +180,7 @@ export function restoreRuntimeConfig(snapshot: unknown, env: NodeJS.ProcessEnv =
   restored.llm.quality.apiKey = stringValue(env, "QUALITY_LLM_API_KEY") ?? stringValue(env, "NEWS_LLM_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
   restored.tts.azure.apiKey = stringValue(env, "AZURE_SPEECH_KEY");
   restored.tts.openai.apiKey = stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
+  restored.asr.pronunciation.apiKey = stringValue(env, "AZURE_PRONUNCIATION_KEY") ?? stringValue(env, "AZURE_SPEECH_KEY");
   return deepFreeze(runtimeConfigSchema.parse(restored)) as RuntimeConfig;
 }
 

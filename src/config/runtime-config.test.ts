@@ -47,6 +47,7 @@ test("runtime config snapshots redact secrets and hash only behavior", () => {
   assert.equal(snapshot.llm.quality.apiKey, undefined);
   assert.equal(snapshot.tts.azure.apiKey, undefined);
   assert.equal(snapshot.tts.openai.apiKey, undefined);
+  assert.equal(snapshot.asr.pronunciation.apiKey, undefined);
   assert.equal(runtimeConfigHash(first), runtimeConfigHash(second));
   assert.notEqual(runtimeConfigHash(first), runtimeConfigHash(runtimeConfigWithRunOverrides(first, { screenshotLimit: 2 })));
 });
@@ -60,6 +61,16 @@ test("restoring a snapshot preserves behavior and reloads current secrets", () =
   assert.equal(restored.llm.quality.apiKey, "new-quality");
   assert.equal(restored.tts.azure.apiKey, "new-azure");
   assert.equal(restored.tts.openai.apiKey, "new-tts");
+  assert.equal(restored.asr.pronunciation.apiKey, "new-azure");
+});
+
+test("legacy runtime snapshots default new ASR verification fields", () => {
+  const legacy = runtimeConfigSnapshot(buildRuntimeConfig(testEnv())) as unknown as { asr: Record<string, unknown> };
+  delete legacy.asr.provider;
+  delete legacy.asr.pronunciation;
+  const restored = restoreRuntimeConfig(legacy, testEnv());
+  assert.equal(restored.asr.provider, "whisper");
+  assert.equal(restored.asr.pronunciation.provider, "disabled");
 });
 
 test("subprocess config propagation is validated and independent of ambient env", () => {

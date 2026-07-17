@@ -21,18 +21,15 @@ function projectFixture(): VideoProject {
   };
 }
 
-test("scene ASR detects a pronunciation dictionary phrase mismatch", () => {
+test("scene ASR never infers pronunciation from Chinese transcript text", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [
     { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
-    { sceneIndex: 1, text: "系统完成核心模块中构并输出结果。", confidence: 0.91 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.91 },
     { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
   ]);
-  const issue = result.issues.find((item) => item.code === "audio_pronunciation_mismatch");
-  assert.equal(issue?.sceneIndex, 1);
-  assert.deepEqual(issue?.evidence, { phrase: "重构", expected: "chong2 gou4", transcript: "系统完成核心模块中构并输出结果。", asrConfidence: 0.91 });
+  assert.equal(result.issues.some((item) => item.code === "audio_pronunciation_mismatch"), false);
 });
-
 test("low confidence ASR is inconclusive and does not rebuild audio", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [
@@ -46,7 +43,7 @@ test("low confidence ASR is inconclusive and does not rebuild audio", () => {
   assert.deepEqual(dirtyPlanFromIssues(normalized, 3).audioSceneIndexes, []);
 });
 
-test("scene ASR checks entities, numbers and minimum dirty routing", () => {
+test("scene ASR checks entities and numbers without directly rebuilding TTS", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [
     { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
@@ -57,9 +54,9 @@ test("scene ASR checks entities, numbers and minimum dirty routing", () => {
   assert.ok(result.issues.some((item) => item.code === "audio_number_mismatch" && item.sceneIndex === 2));
   const normalized = result.issues.map((item) => normalizeQualityIssue("audio", item));
   const dirtyPlan = dirtyPlanFromIssues(normalized, 3);
-  assert.deepEqual(dirtyPlan.audioSceneIndexes, [2]);
-  assert.equal(dirtyPlan.concatAudio, true);
-  assert.equal(dirtyPlan.remux, true);
+  assert.deepEqual(dirtyPlan.audioSceneIndexes, []);
+  assert.equal(dirtyPlan.concatAudio, false);
+  assert.equal(dirtyPlan.remux, false);
 });
 
 test("scene ASR detects omitted and inserted narration tokens", () => {

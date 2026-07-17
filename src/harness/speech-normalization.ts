@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { fromRoot } from "../pipeline/utils";
 
@@ -20,6 +21,14 @@ function loadDictionary(name: string): SpeechDictionary {
 
 export function loadedSpeechPackages() {
   return ["base", ...(process.env.ASR_DOMAIN_PACKAGES ?? "scene-gen").split(",").map((item) => item.trim()).filter(Boolean)];
+}
+
+export function speechNormalizationDictionaryHash() {
+  const hash = createHash("sha256");
+  for (const packageName of loadedSpeechPackages()) {
+    hash.update(packageName).update("\0").update(readFileSync(fromRoot("config", "asr", `${packageName}.json`))).update("\0");
+  }
+  return hash.digest("hex");
 }
 
 export function canonicalSpeechText(text: string) {
