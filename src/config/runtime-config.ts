@@ -20,8 +20,8 @@ export const runtimeConfigSchema = z.object({
     revisionFallbackModel: z.string().optional(),
   }),
   tts: z.object({
-    provider: z.enum(["azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]),
-    providerFallback: z.enum(["azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]).optional(),
+    provider: z.enum(["nvidia", "azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]),
+    providerFallback: z.enum(["nvidia", "azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]).optional(),
     failFast: z.boolean(), durationPolicy: z.enum(["natural", "fit"]), fitTarget: z.boolean(), forceRebuild: z.boolean(),
     fetchTimeoutMs: positiveInteger, minTempo: positiveNumber, maxTempo: positiveNumber, preprocessConcurrency: positiveInteger, ffmpegConcurrency: positiveInteger,
     azure: z.object({
@@ -29,6 +29,7 @@ export const runtimeConfigSchema = z.object({
       style: z.string().optional(), role: z.string().optional(), timeoutMs: positiveInteger, maxRetries: z.number().int().nonnegative(),
       monthlyCharacterBudget: positiveInteger, budgetWarningRatio: z.number().min(0).max(1), concurrency: positiveInteger, requestsPerMinute: positiveInteger,
     }).default({ voice: "zh-CN-XiaoxiaoNeural", outputFormat: "riff-24khz-16bit-mono-pcm", timeoutMs: 120_000, maxRetries: 2, monthlyCharacterBudget: 500_000, budgetWarningRatio: 0.8, concurrency: 2, requestsPerMinute: 20 }),
+    nvidia: z.object({ apiKey: z.string().optional(), endpoint: z.string().min(1), functionId: z.string().uuid(), model: z.string().min(1), voice: z.string().min(1), language: z.string().min(1), sampleRateHz: positiveInteger, concurrency: positiveInteger, timeoutMs: positiveInteger, readyTimeoutMs: positiveInteger, python: z.string().min(1), workerScript: z.string().min(1) }),
     openai: z.object({ apiKey: z.string().optional(), baseUrl: z.string(), model: z.string(), voice: z.string(), speed: positiveNumber, concurrency: positiveInteger, costPer1kChars: nonnegativeNumber }),
     cloudflare: z.object({ accountId: z.string().optional(), apiToken: z.string().optional(), model: z.string(), concurrency: positiveInteger, dailyNeuronBudget: nonnegativeNumber }).default({ model: "@cf/myshell-ai/melotts", concurrency: 2, dailyNeuronBudget: 0 }),
     edge: z.object({ command: z.string().optional(), voice: z.string(), concurrency: positiveInteger }).default({ voice: "zh-CN-XiaoxiaoNeural", concurrency: 2 }),
@@ -81,8 +82,8 @@ function booleanValue(env: NodeJS.ProcessEnv, key: string, fallback = false) {
   return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
-function providerValue(value: string | undefined, fallback: "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock") {
-  return value === "azure" || value === "cloudflare-melotts" || value === "edge" || value === "openai" || value === "f5" || value === "local" || value === "mock" ? value : fallback;
+function providerValue(value: string | undefined, fallback: "nvidia" | "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock") {
+  return value === "nvidia" || value === "azure" || value === "cloudflare-melotts" || value === "edge" || value === "openai" || value === "f5" || value === "local" || value === "mock" ? value : fallback;
 }
 
 function parseTemplateExclusions(value: string | undefined) {
@@ -130,6 +131,7 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
         budgetWarningRatio: Math.max(0, Math.min(1, numberValue(env, "AZURE_TTS_BUDGET_WARNING_RATIO", 0.8))), concurrency: Math.max(1, numberValue(env, "AZURE_TTS_CONCURRENCY", 2)),
         requestsPerMinute: Math.max(1, numberValue(env, "AZURE_TTS_REQUESTS_PER_MINUTE", 20)),
       },
+      nvidia: { apiKey: stringValue(env, "NVIDIA_API_KEY"), endpoint: stringValue(env, "NVIDIA_TTS_ENDPOINT", "grpc.nvcf.nvidia.com:443")!, functionId: stringValue(env, "NVIDIA_TTS_FUNCTION_ID", "877104f7-e885-42b9-8de8-f6e4c6303969")!, model: stringValue(env, "NVIDIA_TTS_MODEL", "magpie-tts-multilingual")!, voice: stringValue(env, "NVIDIA_TTS_VOICE", "Magpie-Multilingual.ZH-CN.HouZhen")!, language: stringValue(env, "NVIDIA_TTS_LANGUAGE", "zh-CN")!, sampleRateHz: numberValue(env, "NVIDIA_TTS_SAMPLE_RATE_HZ", 22050), concurrency: numberValue(env, "NVIDIA_TTS_CONCURRENCY", 1), timeoutMs: numberValue(env, "NVIDIA_TTS_TIMEOUT_MS", 180000), readyTimeoutMs: numberValue(env, "NVIDIA_TTS_READY_TIMEOUT_MS", 30000), python: stringValue(env, "NVIDIA_TTS_PYTHON", process.platform === "win32" ? "python" : "python3")!, workerScript: stringValue(env, "NVIDIA_TTS_WORKER_SCRIPT", fromRoot("scripts", "nvidia-tts-worker.py"))! },
       openai: { apiKey: stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY"), baseUrl: stringValue(env, "OPENAI_TTS_BASE_URL") ?? stringValue(env, "OPENAI_BASE_URL", "https://api.openai.com/v1")!, model: stringValue(env, "OPENAI_TTS_MODEL", "gpt-4o-mini-tts")!, voice: stringValue(env, "OPENAI_TTS_VOICE", "alloy")!, speed: numberValue(env, "OPENAI_TTS_SPEED", 1.12), concurrency: numberValue(env, "OPENAI_TTS_CONCURRENCY", 4), costPer1kChars: numberValue(env, "OPENAI_TTS_COST_PER_1K_CHARS", 0.015) },
       cloudflare: { accountId: stringValue(env, "CLOUDFLARE_ACCOUNT_ID"), apiToken: stringValue(env, "CLOUDFLARE_API_TOKEN"), model: stringValue(env, "CLOUDFLARE_TTS_MODEL", "@cf/myshell-ai/melotts")!, concurrency: Math.max(1, numberValue(env, "CLOUDFLARE_TTS_CONCURRENCY", 2)), dailyNeuronBudget: Math.max(0, numberValue(env, "CLOUDFLARE_DAILY_NEURON_BUDGET", 0)) },
       edge: { command: stringValue(env, "EDGE_TTS_COMMAND"), voice: stringValue(env, "EDGE_TTS_VOICE", "zh-CN-XiaoxiaoNeural")!, concurrency: Math.max(1, numberValue(env, "EDGE_TTS_CONCURRENCY", 2)) },
@@ -162,6 +164,7 @@ export function runtimeConfigSnapshot(config: RuntimeConfig): RuntimeConfigSnaps
   snapshot.llm.news.apiKey = undefined;
   snapshot.llm.quality.apiKey = undefined;
   snapshot.tts.azure.apiKey = undefined;
+  snapshot.tts.nvidia.apiKey = undefined;
   snapshot.tts.openai.apiKey = undefined;
   snapshot.tts.cloudflare.apiToken = undefined;
   snapshot.asr.pronunciation.apiKey = undefined;
@@ -184,6 +187,7 @@ export function restoreRuntimeConfig(snapshot: unknown, env: NodeJS.ProcessEnv =
   restored.llm.news.apiKey = stringValue(env, "NEWS_LLM_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
   restored.llm.quality.apiKey = stringValue(env, "QUALITY_LLM_API_KEY") ?? stringValue(env, "NEWS_LLM_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
   restored.tts.azure.apiKey = stringValue(env, "AZURE_SPEECH_KEY");
+  restored.tts.nvidia.apiKey = stringValue(env, "NVIDIA_API_KEY");
   restored.tts.openai.apiKey = stringValue(env, "OPENAI_TTS_API_KEY") ?? stringValue(env, "OPENAI_API_KEY");
   restored.tts.cloudflare.apiToken = stringValue(env, "CLOUDFLARE_API_TOKEN");
   restored.tts.cloudflare.accountId = stringValue(env, "CLOUDFLARE_ACCOUNT_ID") ?? restored.tts.cloudflare.accountId;

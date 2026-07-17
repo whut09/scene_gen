@@ -14,6 +14,7 @@ import type { ProviderSelectionAudit } from "../production/types";
 import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-routing";
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
+import { nvidiaTts } from "./tts/providers/nvidia";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
 import { cloudflareMeloTts } from "./tts/providers/cloudflare-melotts";
@@ -33,7 +34,7 @@ const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
 const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|浼|棰|勭/g;
 
-export type TtsProvider = "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock";
+export type TtsProvider = "nvidia" | "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock";
 const F5_FRONTEND_VERSION = "scene-gen-pypinyin-lexicon-v1";
 let warnedDeprecatedF5Cli = false;
 let g2pwClient: G2pwWorkerClient | undefined;
@@ -203,6 +204,7 @@ function positiveInteger(value: unknown, fallback: number) {
 
 function providerConcurrency(provider: TtsProvider, f5Runtime?: F5Runtime) {
   if (provider === "f5") return f5Runtime?.pool.concurrency ?? 1;
+  if (provider === "nvidia") return getRuntimeConfig().tts.nvidia.concurrency;
   if (provider === "azure") return getRuntimeConfig().tts.azure.concurrency;
   if (provider === "cloudflare-melotts") return getRuntimeConfig().tts.cloudflare.concurrency;
   if (provider === "edge") return getRuntimeConfig().tts.edge.concurrency;
@@ -245,7 +247,7 @@ function ttsProviderId(provider: TtsProvider) {
 
 function providerFromId(providerId?: string): TtsProvider {
   if (providerId === "windows") return "local";
-  if (providerId === "azure" || providerId === "cloudflare-melotts" || providerId === "edge" || providerId === "openai" || providerId === "f5" || providerId === "mock") return providerId;
+  if (providerId === "nvidia" || providerId === "azure" || providerId === "cloudflare-melotts" || providerId === "edge" || providerId === "openai" || providerId === "f5" || providerId === "mock") return providerId;
   return "local";
 }
 
@@ -305,6 +307,7 @@ async function synthesizeNarration(
   outputPath: string,
   options?: { f5Speed?: string; sceneIndex?: number; f5Runtime?: F5Runtime; signal?: AbortSignal; forceRebuild?: boolean; cacheSalt?: string },
 ): Promise<{ reused: boolean; result?: AzureTtsResult; cacheKey?: string }> {
+  if (provider === "nvidia") return nvidiaTts({ plan, outputPath, force: options?.forceRebuild, cacheSalt: options?.cacheSalt, signal: options?.signal });
   if (provider === "azure") {
     return azureTts({
       sceneIndex: options?.sceneIndex ?? 0,

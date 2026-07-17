@@ -2,7 +2,7 @@
   "name": "production",
   "description": "Strict quality gates, HTML rendering and fail-fast production settings.",
   "env": {
-    "TTS_PROVIDER": "azure",
+    "TTS_PROVIDER": "nvidia",
     "OPENAI_TTS_CONCURRENCY": "4",
     "TTS_PREPROCESS_CONCURRENCY": "4",
     "TTS_FFMPEG_CONCURRENCY": "2",

@@ -216,7 +216,7 @@ export interface VideoProject {
   audio?: {
     src: string;
     durationSeconds: number;
-    provider: "azure" | "cloudflare-melotts" | "edge" | "openai" | "local" | "f5" | "mock" | "silent";
+    provider: "nvidia" | "azure" | "cloudflare-melotts" | "edge" | "openai" | "local" | "f5" | "mock" | "silent";
     metrics?: {
       workerStartCount: number;
       workerStartupMs: number;

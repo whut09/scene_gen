@@ -1,1 +1,2 @@
 pypinyin==0.55.0
+nvidia-riva-client==2.26.0

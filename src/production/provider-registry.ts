@@ -23,6 +23,7 @@ function configured(...keys: string[]) {
 }
 
 function definitions(): ProviderDefinition[] { return [
+  { id: "nvidia", name: "NVIDIA Magpie Multilingual TTS", capability: "tts", enabled: configured("NVIDIA_API_KEY"), local: false, priorQuality: 0.95, priorCost: 0, priorLatency: 0.32, priorPronunciationAccuracy: 0.98, supportsPortrait: true, commercialUse: true, reason: "Requires NVIDIA_API_KEY", ttsCapabilities: { supportsExplicitPhoneme: true, supportsCustomLexicon: true, supportsVoiceClone: false, supportsSsml: false, supportsStreaming: true, supportsCommercialUse: true, pronunciationControlLevel: "explicit-phoneme", freeQuotaType: "credits", estimatedLatency: 0.32, estimatedCost: 0 } },
   { id: "html-video", name: "HTML Video", capability: "programmatic", enabled: true, local: true, priorQuality: 0.9, priorCost: 0, priorLatency: 0.35, supportsPortrait: true, commercialUse: true },
   { id: "remotion", name: "Remotion", capability: "programmatic", enabled: true, local: true, priorQuality: 0.84, priorCost: 0, priorLatency: 0.25, supportsPortrait: true, commercialUse: true },
   { id: "playwright", name: "Playwright", capability: "browser", enabled: true, local: true, priorQuality: 0.86, priorCost: 0, priorLatency: 0.4, supportsPortrait: true, commercialUse: true },

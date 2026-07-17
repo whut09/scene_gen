@@ -1,0 +1,15 @@
+{
+  "name": "nvidia-api",
+  "description": "NVIDIA Build Magpie multilingual TTS with explicit Mandarin pinyin frontend.",
+  "env": {
+    "TTS_PROVIDER": "nvidia",
+    "TTS_PROVIDER_FALLBACK": "f5",
+    "TTS_FAIL_FAST": "1",
+    "NVIDIA_TTS_CONCURRENCY": "1",
+    "VIDEO_RENDER_ENGINE": "html-video",
+    "HTML_RENDER_CONCURRENCY": "2",
+    "HTML_RENDER_PRESET": "veryfast",
+    "QUALITY_GATE_PROFILE": "balanced"
+  },
+  "doctor": { "requireApi": true, "requireBrowser": true }
+}
