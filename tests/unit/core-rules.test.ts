@@ -13,6 +13,8 @@ import { narrationSynthesisText } from "../../src/pipeline/tts/segmentation";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
+import { scrubAttribution } from "../../src/pipeline/story";
+import { provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 
 test("number pronunciation converts common Chinese news formats", () => {
   const text = prepareF5SynthesisText("2026年增长12.5%，覆盖1000+用户，版本4.0");
@@ -122,4 +124,21 @@ test("HTML video asset fingerprints use file content instead of path or mtime", 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("published video filename is derived from the Chinese homepage title", () => {
+  assert.equal(videoFileNameFromTitle("英伟达发布新一代检索模型"), "英伟达发布新一代检索模型.mp4");
+  assert.equal(titleBasedVideoPath("E:/output/news-qbitai-v2.mp4", "数字员工正式进入企业流程"), path.join("E:/output", "数字员工正式进入企业流程.mp4"));
+  assert.equal(provisionalVideoFileName("OpenRouter", "cached-project"), "openrouter.mp4");
+  assert.throws(() => videoFileNameFromTitle("OpenRouter"), /Chinese characters/);
+});
+
+test("news source websites are scrubbed and blocked by the draft gate", async () => {
+  assert.equal(scrubAttribution("据IT之家消息，模型今天正式发布。"), "模型今天正式发布。");
+  assert.equal(scrubAttribution("这是来自IT之家的报道。"), "这是。");
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], url: "https://www.ithome.com/0/978/453.htm", contentType: "news" };
+  project.narration = `${project.narration} 来自IT之家的报道。`;
+  const result = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "source_attribution_exposed"), true);
 });

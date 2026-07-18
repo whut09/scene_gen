@@ -13,6 +13,7 @@ import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson, writeJso
 import { generationResultSchema, readStoryManifest, type StoryManifestItem, writeStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
 import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
+import { provisionalVideoFileName } from "./output-naming";
 
 loadDotEnv();
 
@@ -77,7 +78,7 @@ if (urls.length === 1 && !args["ignore-cache"]) {
     const projectPath = runDir ? path.join(projectsDir, `${slug}.json`) : cached.projectPath;
     const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
     const productionReportPath = path.join(htmlVideoDir, slug, "production-report.json");
-    const outputPath = path.join(outputDir, `${slug}.mp4`);
+    const outputPath = path.join(outputDir, provisionalVideoFileName(cached.project.meta.title, slug));
     if (runDir) await writeJson(projectPath, videoProjectSchema.parse(cached.project));
     await writeHtmlVideoContentGraph(cached.project, htmlVideoGraphPath);
     await writeJson(productionReportPath, buildProductionReport(cached.project, "html-video"));
@@ -208,7 +209,7 @@ for (const [index, item] of items.entries()) {
   const projectPath = path.join(projectsDir, `${slug}.json`);
   const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
   const productionReportPath = path.join(htmlVideoDir, slug, "production-report.json");
-  const outputPath = path.join(outputDir, `${slug}.mp4`);
+  const outputPath = path.join(outputDir, provisionalVideoFileName(project.meta.title, slug));
   await writeJson(projectPath, videoProjectSchema.parse(project));
   await writeHtmlVideoContentGraph(project, htmlVideoGraphPath);
   await writeJson(productionReportPath, buildProductionReport(project, "html-video"));

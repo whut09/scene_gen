@@ -5,6 +5,7 @@ import { bundleRemotion, renderProject } from "./render-core";
 import { fromRoot, loadDotEnv, parseArgs, readJson, writeJsonAtomic } from "./utils";
 import { readStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
+import { titleBasedVideoPath } from "./output-naming";
 
 loadDotEnv();
 
@@ -35,8 +36,9 @@ process.once("SIGTERM", cancel);
 try {
   for (const story of stories) {
     const project = videoProjectSchema.parse(await readJson<unknown>(story.projectPath)) as VideoProject;
+    const titledOutputPath = titleBasedVideoPath(story.outputPath, project.meta.title);
     if (engine === "html-video") {
-      const outputPath = overwrite ? story.outputPath : story.outputPath.replace(/\.mp4$/i, ".html-video.mp4");
+      const outputPath = overwrite ? titledOutputPath : titledOutputPath.replace(/\.mp4$/i, ".html-video.mp4");
       const result = await renderHtmlVideoProject(project, outputPath, {
         workDir: story.htmlVideoGraphPath ? path.dirname(story.htmlVideoGraphPath) : undefined,
         forceSceneIndexes: forceRender ? project.scenes.map((_, index) => index) : forceSceneIndexes,
@@ -45,8 +47,8 @@ try {
       });
       renderResults.push({ outputPath, visualAuditPath: result.visualAuditPath, metrics: result.metrics });
     } else {
-      await renderProject(project, story.outputPath, serveUrl as string);
-      renderResults.push({ outputPath: story.outputPath });
+      await renderProject(project, titledOutputPath, serveUrl as string);
+      renderResults.push({ outputPath: titledOutputPath });
     }
   }
 } catch (error) {

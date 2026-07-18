@@ -7,6 +7,7 @@ import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate } from "../../pipeline/news-date";
+import { containsForbiddenSourceAttribution } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
 import { getRuntimeConfig, type RuntimeConfig } from "../../config/runtime-config";
@@ -206,6 +207,11 @@ export async function evaluateDraft(
     revisionNotes.push(`将总旁白压缩到 ${maximumChars} 字以内。`);
   }
   const firstNarration = project.narrationSegments?.[0]?.text ?? "";
+  const publicProjectText = [project.meta.title, project.narration, ...project.scenes.map(sceneVisibleText)].join(" ");
+  if (isNewsProject(project) && containsForbiddenSourceAttribution(publicProjectText)) {
+    issues.push({ severity: "error", code: "source_attribution_exposed", message: "新闻画面或旁白不得出现网站、媒体或文章来源署名。" });
+    revisionNotes.push("删除 IT之家、量子位、36氪、TechWeb 等网站来源文字，只保留事实内容。 ");
+  }
   if (!normalizeText(firstNarration).startsWith(normalizeText(project.meta.title))) {
     issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。", sceneIndex: 0 });
     revisionNotes.push("将新闻标题逐字放在第一段旁白的第一句话，念完标题后再进入正文。 ");
