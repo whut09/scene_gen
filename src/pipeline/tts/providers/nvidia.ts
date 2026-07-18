@@ -26,8 +26,8 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-siwei-mandarin-normalization-v10";
-export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-siwei-clean-boundaries-v11";
+export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 180;
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {
   const chunks: string[] = [];
@@ -153,7 +153,19 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
       try {
         for (let index = 0; index < chunks.length; index += 1) {
           const customDictionary = nvidiaPronunciationDictionary(input.plan, chunks[index]);
-          const result = await worker.synthesize(chunks[index], partPaths[index], customDictionary, input.signal);
+          let result: NvidiaTtsResult | undefined;
+          let lastError: Error | undefined;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              result = await worker.synthesize(chunks[index], partPaths[index], customDictionary, input.signal);
+              break;
+            } catch (error) {
+              lastError = error as Error;
+              if (!/unavailable|resource_exhausted|deadline_exceeded|stream removed|timeout/i.test(lastError.message) || attempt === 2) throw lastError;
+              await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** attempt) + Math.floor(Math.random() * 250)));
+            }
+          }
+          if (!result) throw lastError ?? new Error("NVIDIA TTS request failed without a result.");
           const missingHighRiskPhrase = input.plan.spans.find((span) =>
             (span.risk === "medium" || span.risk === "high") &&
             chunks[index].includes(span.phrase) &&

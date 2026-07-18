@@ -9,7 +9,7 @@ import { speechNormalizationDictionaryHash } from "../speech-normalization";
 import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts, type AsrSceneTranscript } from "../scene-audio-verification";
 import { projectAudioPath } from "./audio-structural-gate";
 
-export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v3-verifier-routing";
+export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v4-resampled-word-timestamps";
 export type AsrProviderId = "whisper" | "sensevoice" | "funasr" | "mock";
 
 const cachedAsrSchema = z.object({ version: z.literal(1), key: z.string().length(64), transcripts: z.array(z.object({ sceneIndex: z.number().int().nonnegative(), text: z.string(), confidence: z.number().nullable().optional(), detectedLanguage: z.string().min(1), languageConfidence: z.number().min(0).max(1), words: z.array(z.object({ text: z.string(), startSeconds: z.number(), endSeconds: z.number(), confidence: z.number().nullable().optional() })).optional() })) }).strict();
@@ -72,7 +72,10 @@ export async function runAudioSemanticGate(input: {
   const configuredMinimumConfidence = Number(process.env.ASR_SCENE_CONFIDENCE_MIN ?? 0.65);
   const minimumConfidence = input.config.profile === "production" ? Math.max(0.8, configuredMinimumConfidence) : configuredMinimumConfidence;
   const verification = verifySceneTranscripts(input.project, transcription.transcripts, { expectedLanguage, minimumLanguageConfidence: input.config.asr.languageConfidenceMin, minimumConfidence });
-  const issues = verification.issues
+  const alignmentIssues = input.config.profile === "production"
+    ? transcription.transcripts.filter((item) => !item.words?.length).map((item) => ({ severity: "error" as const, code: "speech_alignment_unavailable" as const, message: `Scene ${item.sceneIndex + 1} lacks word timestamps, so audio/visual synchronization cannot be verified.`, sceneIndex: item.sceneIndex, issueClass: "environment" as const, repairAction: "retry-stage" as const, retryable: true, evidence: { verifier: transcription.provider, transcript: item.text, reason: "missing_word_timestamps" } }))
+    : [];
+  const issues = [...verification.issues, ...alignmentIssues]
     .filter((issue) => issue.code !== "audio_pronunciation_mismatch")
     .map((issue) => input.config.quality.profile === "lenient" && issue.code === "audio_semantic_mismatch"
       ? {

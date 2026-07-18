@@ -219,7 +219,7 @@ export async function evaluateVideo(
 
   await mkdir(reportDir, { recursive: true });
   const effectiveSceneDurations = sceneDurations.length ? sceneDurations : [duration];
-  const frameMetrics: Array<{ sceneIndex: number; position: string; sampleTime: number; framePath: string; sizeBytes: number; lumaAverage: number; lumaRange: number; edgeDensity: number; blank: boolean }> = [];
+  const frameMetrics: Array<{ sceneIndex: number; position: string; sampleTime: number; framePath: string; sizeBytes: number; lumaAverage: number; lumaRange: number; edgeDensity: number; blank: boolean; crop?: { width: number; height: number; x: number; y: number } }> = [];
   let sceneStart = 0;
   for (const [sceneIndex, sceneDuration] of effectiveSceneDurations.entries()) {
     const startOffset = Math.min(Math.max(0.6, sceneDuration * 0.15), Math.max(0.05, sceneDuration * 0.3));
@@ -245,6 +245,10 @@ export async function evaluateVideo(
     ], signal);
       const visual = await analyzeFrameVisual(framePath, signal);
       frameMetrics.push({ sceneIndex, position: sample.position, sampleTime, framePath, ...visual });
+      const contentInset = visual.crop && (visual.crop.width < (video?.width ?? 0) * 0.94 || visual.crop.height < (video?.height ?? 0) * 0.94);
+      if (contentInset) {
+        issues.push({ severity: "error", code: "frame_content_inset", message: `第 ${sceneIndex + 1} 屏${sample.position}画面存在明显黑边、画布内缩或内容缺块。`, sceneIndex, repairAction: "rerender-scenes", retryable: true, evidence: { position: sample.position, sampleTime: Number(sampleTime.toFixed(3)), cropWidth: visual.crop!.width, cropHeight: visual.crop!.height, cropX: visual.crop!.x, cropY: visual.crop!.y, expectedWidth: video?.width ?? 0, expectedHeight: video?.height ?? 0 } });
+      }
       if (visual.blank) {
         issues.push({ severity: "error", code: "blank_frame", message: `第 ${sceneIndex + 1} 屏${sample.position}抽帧可能为空白。`, sceneIndex, evidence: { position: sample.position, sampleTime: Number(sampleTime.toFixed(3)), sizeBytes: visual.sizeBytes, lumaRange: visual.lumaRange, edgeDensity: visual.edgeDensity } });
       } else if (visual.lumaRange < 14 && visual.edgeDensity < 0.012) {

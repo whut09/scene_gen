@@ -12,7 +12,7 @@ import { attachNarrationAudio } from "./tts";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson, writeJsonAtomic } from "./utils";
 import { generationResultSchema, readStoryManifest, type StoryManifestItem, writeStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
-import { ensureNewsDateNarration, ensureTitleSpokenFirst } from "./news-date";
+import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
 
 loadDotEnv();
 
@@ -189,6 +189,7 @@ for (const [index, item] of items.entries()) {
     editorialNotes,
   });
   project = scrubProject(project) as VideoProject;
+  project = normalizeProjectDatePrecision(project);
   project = ensureNewsDateNarration(project);
   project = ensureTitleSpokenFirst(project);
   project.assets = assets;

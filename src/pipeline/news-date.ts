@@ -15,7 +15,8 @@ export function projectNewsDate(project: VideoProject) {
   if (!isNewsProject(project)) return "";
   const publishedAt = project.sources[0]?.publishedAt;
   if (!publishedAt) return "";
-  const date = new Date(publishedAt);
+  const chineseDate = publishedAt.match(/^(20\d{2})年(\d{1,2})月(\d{1,2})日$/);
+  const date = chineseDate ? new Date(Date.UTC(Number(chineseDate[1]), Number(chineseDate[2]) - 1, Number(chineseDate[3]))) : new Date(publishedAt);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -27,6 +28,30 @@ export function projectNewsDate(project: VideoProject) {
 
 function compact(value: string) {
   return value.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "");
+}
+
+
+function normalizeDateString(value: string, technical: boolean) {
+  let normalized = value
+    .replace(/(20\d{2})-(\d{2})-(\d{2})[T\s]\d{2}:\d{2}:\d{2}(?:[.]\d+)?Z?/g, (_, year, month, day) => `${year}年${Number(month)}月${Number(day)}日`)
+    .replace(/(20\d{2})年(\d{1,2})月(\d{1,2})日\s*\d{1,2}[:：]\d{2}(?::\d{2})?/g, '$1年$2月$3日')
+    .replace(/(发布于\s*20\d{2}年\d{1,2}月\d{1,2}日)(?:\s*发布于\s*20\d{2}年\d{1,2}月\d{1,2}日)+/g, '$1');
+  if (technical) normalized = normalized
+    .replace(/新闻日期[:：]\s*20\d{2}年\d{1,2}月\d{1,2}日[。；;，,]?/g, '')
+    .replace(/(?:发布于|发表于|发布时间|更新时间)[:：]?\s*20\d{2}年\d{1,2}月\d{1,2}日[。；;，,]?/g, '')
+    .replace(/于\s*20\d{2}年\d{1,2}月\d{1,2}日\s*发布/g, '');
+  return normalized.replace(/\s{2,}/g, ' ').trim();
+}
+
+export function normalizeProjectDatePrecision(project: VideoProject): VideoProject {
+  const technical = isTechnicalArticleProject(project);
+  const visit = (value: unknown): unknown => {
+    if (typeof value === 'string') return normalizeDateString(value, technical);
+    if (Array.isArray(value)) return value.map(visit);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, visit(item)]));
+    return value;
+  };
+  return visit(project) as VideoProject;
 }
 
 export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {

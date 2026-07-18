@@ -130,3 +130,13 @@ test("final scene ASR detects a truncated ending even when overall coverage is h
   assert.ok(issue);
   assert.equal(typeof issue.evidence?.endingRecall, "number");
 });
+
+
+test("scene ASR blocks unexpected synthesized prefixes and repeated phrases", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "给人工智能发工号并纳入组织流程" }];
+  project.meta.title = "给人工智能发工号";
+  const result = verifySceneTranscripts(project, [{ sceneIndex: 0, text: "两给人工智能发工号号号并纳入组织流程", confidence: 0.92, detectedLanguage: "zh", languageConfidence: 0.99 }], { expectedLanguage: "zh", minimumConfidence: 0.65 });
+  assert.ok(result.issues.some((item) => item.code === "audio_scene_opening_artifact"));
+  assert.ok(result.issues.some((item) => item.code === "audio_repeated_phrase"));
+});

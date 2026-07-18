@@ -17,7 +17,7 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-siwei-mandarin-normalization-v10");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-siwei-clean-boundaries-v11");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, plan.synthesisText);
   assert.equal(identity.speed, 1.25);

@@ -409,7 +409,7 @@ async function pronunciationPlanFor(text: string, segment?: NarrationSegment, si
   return compilePronunciationPlan({
     displayText: segment?.text ?? text,
     semanticText: segment?.text ?? text,
-    synthesisText: segment?.ttsText ?? text,
+    synthesisText: prepareF5SynthesisText(segment?.ttsText ?? text),
     overrides: segment?.pronunciationOverrides,
     domain: config.domain,
     g2pw: config.g2pwEnabled ? g2pwClient : undefined,

@@ -111,5 +111,5 @@ export function prepareF5SynthesisText(text: string) {
   if (/\d/.test(pronounceable)) {
     throw new Error(`TTS number normalization left Arabic digits: ${pronounceable.match(/\d+/g)?.join(", ")}`);
   }
-  return /^[。！？!?]/.test(pronounceable) ? pronounceable : `。${pronounceable}`;
+  return pronounceable;
 }

@@ -153,6 +153,19 @@ function boundaryRecall(expected: string, actual: string, edge: "start" | "end")
     .map((length) => bigramRecall(edge === "start" ? expected.slice(0, length) : expected.slice(-length), actual)), 0);
 }
 
+function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
+  for (let width = 1; width <= 6; width += 1) {
+    for (let index = 0; index + width * 3 <= actualText.length; index += 1) {
+      const phrase = actualText.slice(index, index + width);
+      if (!phrase || /^[\p{P}\p{S}\s_]+$/u.test(phrase)) continue;
+      let repeats = 1;
+      while (actualText.slice(index + repeats * width, index + (repeats + 1) * width) === phrase) repeats += 1;
+      if (repeats >= 3 && !expectedText.includes(phrase.repeat(repeats))) return { phrase, repeats, index };
+    }
+  }
+  return undefined;
+}
+
 export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[], options: { expectedLanguage?: string; minimumLanguageConfidence?: number; minimumConfidence?: number } = {}) {
   const issues: QualityIssueInput[] = [];
   const results: Array<Record<string, string | number | boolean>> = [];
@@ -174,6 +187,17 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const expectedText = canonicalSpeechText(prepareF5SynthesisText(segment.ttsText ?? segment.text));
     const actualText = canonicalSpeechText(transcript.text);
     const confidence = transcript.confidence ?? undefined;
+    const expectedAnchor = expectedText.slice(0, Math.min(8, expectedText.length));
+    const openingWindow = actualText.slice(0, expectedAnchor.length + 8);
+    const anchorOffset = expectedAnchor.length >= 3 ? openingWindow.indexOf(expectedAnchor) : 0;
+    const openingCoverage = boundaryRecall(expectedText, openingWindow, "start");
+    if (typeof confidence === "number" && confidence >= Math.min(minimumConfidence, 0.68) && anchorOffset > 0) {
+      issues.push({ severity: "error", code: "audio_scene_opening_artifact", message: `第 ${segment.sceneIndex + 1} 屏音频开头包含额外发音、漏读或变音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedPrefix: expectedAnchor, actualPrefix: openingWindow, anchorOffset, openingCoverage: Number(openingCoverage.toFixed(3)), asrConfidence: confidence } });
+    }
+    const repeatedPhrase = unexpectedRepeatedPhrase(expectedText, actualText);
+    if (typeof confidence === "number" && confidence >= Math.min(minimumConfidence, 0.68) && repeatedPhrase) {
+      issues.push({ severity: "error", code: "audio_repeated_phrase", message: `第 ${segment.sceneIndex + 1} 屏检测到旁白异常连续重复。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, repeatedPhrase: repeatedPhrase.phrase, repeatCount: repeatedPhrase.repeats, characterOffset: repeatedPhrase.index, asrConfidence: confidence } });
+    }
     const expectedLanguage = options.expectedLanguage?.toLowerCase();
     const detectedLanguage = transcript.detectedLanguage?.toLowerCase();
     const languageConfidence = transcript.languageConfidence;

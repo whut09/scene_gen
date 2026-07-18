@@ -214,7 +214,7 @@ export async function evaluateDraft(
   if (isNewsProject(project) && !publicationDate) {
     issues.push({ severity: "error", code: "news_date_missing", message: "新闻项目缺少可展示的发布日期。" });
     revisionNotes.push("为新闻来源补充 publishedAt，并在首页显著展示新闻日期。 ");
-  } else if (publicationDate && !normalizeText(firstNarration).includes(normalizeText(publicationDate))) {
+  } else if (isNewsProject(project) && publicationDate && !normalizeText(firstNarration).includes(normalizeText(publicationDate))) {
     issues.push({ severity: "error", code: "news_date_not_spoken", message: "第一段旁白没有播报首页展示的新闻日期。", sceneIndex: 0 });
     revisionNotes.push("标题播报完成后，紧接着播报新闻日期。 ");
   }

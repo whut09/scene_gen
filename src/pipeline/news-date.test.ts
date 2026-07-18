@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ensureNewsDateNarration, ensureTitleSpokenFirst, isTechnicalArticleProject, projectNewsDate } from "./news-date";
+import { ensureNewsDateNarration, ensureTitleSpokenFirst, isTechnicalArticleProject, normalizeProjectDatePrecision, projectNewsDate } from "./news-date";
 import type { VideoProject } from "./types";
 
 function project(kind: "webpage" | "github"): VideoProject {
@@ -54,4 +54,18 @@ test("title-first policy removes an early duplicate title", () => {
   input.narrationSegments![0] = { sceneIndex: 0, text: `\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f\uff1a${input.meta.title}\u3002\u540e\u7eed\u89e3\u91ca\u8ba1\u7b97\u65b9\u6cd5\u3002` };
   const output = ensureTitleSpokenFirst(input);
   assert.equal(output.narrationSegments?.[0]?.text, `${input.meta.title}\u3002\u540e\u7eed\u89e3\u91ca\u8ba1\u7b97\u65b9\u6cd5\u3002`);
+});
+
+
+test("technical article removes publication metadata and exact timestamps", () => {
+  const input = project("webpage");
+  input.sources[0] = { ...input.sources[0], url: "https://cloud.tencent.com/developer/article/2709808", contentType: "technical-article" };
+  input.narrationSegments![0] = { sceneIndex: 0, text: "技术正文。新闻日期：2026年7月18日。发布于2026-07-15 14:53:43。" };
+  const titleScene = input.scenes[0];
+  if (titleScene.type !== "title") throw new Error("Expected title scene fixture.");
+  input.scenes[0] = { ...titleScene, subhead: "技术正文发布于2026-07-15T14:53:43.427Z" };
+  const output = normalizeProjectDatePrecision(input);
+  assert.equal(output.narrationSegments?.[0]?.text.includes("新闻日期"), false);
+  assert.equal(output.narrationSegments?.[0]?.text.includes("14:53"), false);
+  assert.equal((output.scenes[0] as { subhead: string }).subhead.includes("发布于"), false);
 });

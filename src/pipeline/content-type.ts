@@ -1,5 +1,7 @@
 import type { ContentType, HotItem } from "./types";
 
+const knownNewsUrlPatterns = [/ithome\.com\//i, /36kr\.com\/p\//i, /qbitai\.com\/\d{4}\/\d{2}\//i];
+
 const technicalArticleUrlPatterns = [
   /cloud\.tencent\.com\/developer\/article\//i,
   /developer\.aliyun\.com\/article\//i,
@@ -15,6 +17,7 @@ const technicalArticleCues = /\u6559\u7a0b|\u5b9e\u6218|\u6e90\u7801|\u4ee3\u780
 
 export function classifyWebpageContent(url: string, title = "", content = ""): ContentType {
   if (/github\.com\//i.test(url)) return "repository";
+  if (knownNewsUrlPatterns.some((pattern) => pattern.test(url))) return "news";
   if (technicalArticleUrlPatterns.some((pattern) => pattern.test(url))) return "technical-article";
   const sample = `${title} ${content}`.slice(0, 2400);
   const cueCount = [...sample.matchAll(new RegExp(technicalArticleCues.source, "gu"))].length;
@@ -22,6 +25,7 @@ export function classifyWebpageContent(url: string, title = "", content = ""): C
 }
 
 export function contentTypeForItem(item: HotItem): ContentType {
+  if (knownNewsUrlPatterns.some((pattern) => pattern.test(item.url))) return "news";
   if (item.contentType) return item.contentType;
   if (item.kind === "github") return "repository";
   if (item.kind === "webpage") return classifyWebpageContent(item.url, item.title, `${item.summary} ${item.content ?? ""}`);

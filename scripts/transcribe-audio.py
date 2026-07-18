@@ -44,7 +44,16 @@ def words_from_result(result):
     return words
 
 
-def transcribe_whisper_with_confidence(recognizer, audio, language):
+def resample_audio(samples, source_rate, target_rate):
+    if source_rate == target_rate or samples.size == 0:
+        return samples
+    target_length = max(1, round(samples.size * target_rate / source_rate))
+    source_positions = np.linspace(0.0, 1.0, num=samples.size, endpoint=False)
+    target_positions = np.linspace(0.0, 1.0, num=target_length, endpoint=False)
+    return np.interp(target_positions, source_positions, samples).astype(np.float32)
+
+
+def transcribe_whisper_with_confidence(recognizer, audio, language, include_words=False):
     with wave.open(audio, "rb") as handle:
         sample_rate = handle.getframerate()
         channels = handle.getnchannels()
@@ -52,7 +61,9 @@ def transcribe_whisper_with_confidence(recognizer, audio, language):
     if channels > 1:
         samples = samples.reshape(-1, channels).mean(axis=1)
     samples /= 32768.0
-    inputs = recognizer.feature_extractor(samples, sampling_rate=sample_rate, return_tensors="pt")
+    target_rate = int(getattr(recognizer.feature_extractor, "sampling_rate", 16000))
+    samples = resample_audio(samples, sample_rate, target_rate)
+    inputs = recognizer.feature_extractor(samples, sampling_rate=target_rate, return_tensors="pt")
     device = next(recognizer.model.parameters()).device
     input_features = inputs.input_features.to(device)
     generation_config = recognizer.model.generation_config
@@ -81,12 +92,22 @@ def transcribe_whisper_with_confidence(recognizer, audio, language):
     finite_scores = transition_scores[torch.isfinite(transition_scores)]
     confidence = math.exp(float(finite_scores.mean().item())) if finite_scores.numel() else None
     text = recognizer.tokenizer.batch_decode(generated.sequences, skip_special_tokens=True)[0].strip()
-    return {
+    result = {
         "text": text,
         "confidence": max(0.0, min(1.0, confidence)) if confidence is not None else None,
         "detectedLanguage": detected_language,
         "languageConfidence": max(0.0, min(1.0, language_confidence)),
     }
+    if include_words:
+        timestamped = recognizer(
+            {"array": samples, "sampling_rate": target_rate},
+            return_timestamps="word",
+            generate_kwargs={"language": language, "task": "transcribe"},
+        )
+        result["words"] = words_from_result(timestamped)
+        if timestamped.get("text"):
+            result["text"] = timestamped["text"].strip()
+    return result
 
 
 def main():
@@ -108,7 +129,7 @@ def main():
     )
     def transcribe(audio, include_words=False):
         if getattr(recognizer.model.config, "model_type", "") == "whisper":
-            return transcribe_whisper_with_confidence(recognizer, audio, args.language)
+            return transcribe_whisper_with_confidence(recognizer, audio, args.language, include_words)
         if include_words:
             try:
                 result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe"})

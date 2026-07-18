@@ -21,6 +21,7 @@ test("Chinese pronunciation lexicon defines required polyphones", () => {
   assert.deepEqual(entries.get("重启")?.pinyin, ["chong2", "qi3"]);
   assert.deepEqual(entries.get("重试")?.pinyin, ["chong2", "shi4"]);
   assert.deepEqual(entries.get("重载运输")?.pinyin, ["zhong4", "zai4", "yun4", "shu1"]);
+  assert.deepEqual(entries.get("检索增强生成")?.pinyin, ["jian3", "suo3", "zeng1", "qiang2", "sheng1", "cheng2"]);
   assert.equal(loaded.hash.length, 64);
   const changed = JSON.stringify({
     ...loaded.lexicon,

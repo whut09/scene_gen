@@ -25,7 +25,7 @@ test("number pronunciation converts common Chinese news formats", () => {
 
 test("cloud narration normalizes a leading AI acronym without changing display text", () => {
   const segment = { sceneIndex: 0, text: "AI 圈又在造新词。" };
-  assert.equal(narrationSynthesisText(segment), "。人工智能 圈又在造新词。");
+  assert.equal(narrationSynthesisText(segment), "人工智能 圈又在造新词。");
   assert.equal(segment.text, "AI 圈又在造新词。");
 });
 
