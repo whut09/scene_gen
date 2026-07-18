@@ -7,6 +7,7 @@ import { addTemplateExclusions, affectedVideoScenes } from "./video-loop";
 test("agent loop helpers isolate stage decisions", () => {
   assert.deepEqual(initialDraftLoopState([]), { draftPassed: false, iteration: 1 });
   assert.equal(shouldContinueDraftLoop({ draftPassed: true, draftStageRequested: false, draftGateRequested: false, iteration: 1, maxIterations: 3 }), false);
+  assert.equal(shouldContinueDraftLoop({ draftPassed: false, draftStageRequested: false, draftGateRequested: true, iteration: 3, maxIterations: 2, forced: true }), true);
   assert.equal(shouldRevalidateDraftBeforeResume({ resumeValue: "run", explicitFromStage: "synthesize", draftPassed: false }), true);
   assert.equal(shouldRevalidateDraftBeforeResume({ resumeValue: "run", explicitFromStage: "publish", draftPassed: true }), false);
   assert.deepEqual(generatedAudioSceneIndexes("1,3"), [1, 3]);

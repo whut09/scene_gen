@@ -10,9 +10,23 @@ import { concatNarrationSegments } from "../postprocess";
 import { probeDuration, run } from "../process";
 import type { AzureTtsResult } from "./azure";
 
-export interface NvidiaTtsResult { requestId: string; status: "succeeded"; outputPath: string; requestMs: number; synthesisText?: string }
+export interface NvidiaTtsResult {
+  requestId: string;
+  status: "succeeded";
+  outputPath: string;
+  requestMs: number;
+  synthesisText?: string;
+  appliedPronunciationPhrases?: string[];
+}
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-direct-utf8-chunked-v8-score-ratio";
+export interface NvidiaWorkerRequest {
+  requestId: string;
+  text: string;
+  outputPath: string;
+  customDictionary?: Record<string, string>;
+}
+
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-siwei-custom-dictionary-v9";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {
@@ -39,8 +53,16 @@ export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDI
   return chunks;
 }
 
-export function encodeNvidiaWorkerRequest(input: { requestId: string; text: string; outputPath: string }) {
+export function encodeNvidiaWorkerRequest(input: NvidiaWorkerRequest) {
   return Buffer.from(`${JSON.stringify(input)}\n`, "utf8");
+}
+
+export function nvidiaPronunciationDictionary(plan: PronunciationPlan, text = plan.synthesisText) {
+  return Object.fromEntries(
+    plan.spans
+      .filter((span) => (span.risk === "medium" || span.risk === "high") && text.includes(span.phrase))
+      .map((span) => [span.phrase, span.expectedPinyin.join(" ")]),
+  );
 }
 
 export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSalt?: string }, config: RuntimeConfig) {
@@ -94,14 +116,14 @@ class NvidiaWorker {
     });
     return this.ready;
   }
-  async synthesize(text: string, outputPath: string, signal?: AbortSignal) {
+  async synthesize(text: string, outputPath: string, customDictionary?: Record<string, string>, signal?: AbortSignal) {
     await this.start();
     if (signal?.aborted) throw signal.reason;
     const requestId = randomUUID();
     return new Promise<NvidiaTtsResult>((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(requestId); this.child?.kill(); reject(new Error("NVIDIA TTS request timeout.")); }, this.config.tts.nvidia.timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
-      this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, outputPath }));
+      this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, outputPath, customDictionary }));
     });
   }
 }
@@ -130,7 +152,14 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
       let requestMs = 0;
       try {
         for (let index = 0; index < chunks.length; index += 1) {
-          const result = await worker.synthesize(chunks[index], partPaths[index], input.signal);
+          const customDictionary = nvidiaPronunciationDictionary(input.plan, chunks[index]);
+          const result = await worker.synthesize(chunks[index], partPaths[index], customDictionary, input.signal);
+          const missingHighRiskPhrase = input.plan.spans.find((span) =>
+            (span.risk === "medium" || span.risk === "high") &&
+            chunks[index].includes(span.phrase) &&
+            !Object.hasOwn(customDictionary, span.phrase),
+          );
+          if (missingHighRiskPhrase) throw new Error(`NVIDIA pronunciation dictionary omitted phrase: ${missingHighRiskPhrase.phrase}`);
           requestMs += result.requestMs;
           const duration = await probeDuration(partPaths[index]);
           if (duration <= 0) throw new Error(`NVIDIA TTS chunk ${index + 1} is empty or invalid.`);
@@ -140,8 +169,8 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
         else await concatNarrationSegments(partPaths, partDurations, partDurations.map((_, index) => index === partDurations.length - 1 ? 0 : 0.12), naturalPath);
         if (config.tts.nvidia.speed === 1) await renamePart(naturalPath, targetPath);
         else await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", naturalPath, "-filter:a", `atempo=${config.tts.nvidia.speed}`, "-c:a", "pcm_s16le", targetPath]);
-        generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText: input.plan.synthesisText };
-        return { requestMs, synthesisText: input.plan.synthesisText, chunkCount: chunks.length, voice: config.tts.nvidia.voice };
+        generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText: input.plan.synthesisText, appliedPronunciationPhrases: Object.keys(nvidiaPronunciationDictionary(input.plan)) };
+        return { requestMs, synthesisText: input.plan.synthesisText, chunkCount: chunks.length, voice: config.tts.nvidia.voice, appliedPronunciationPhrases: generated.appliedPronunciationPhrases };
       } finally {
         await Promise.all([...partPaths, naturalPath].map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
       }

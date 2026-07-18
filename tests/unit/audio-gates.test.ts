@@ -193,7 +193,25 @@ test("semantic failure remains semantic and does not masquerade as pronunciation
     assert.ok(evaluation.issues.some((issue) => issue.code === "audio_semantic_mismatch"));
     assert.equal(evaluation.issues.some((issue) => issue.code === "audio_pronunciation_mismatch"), false);
     const semantic = evaluation.issues.find((issue) => issue.code === "audio_semantic_mismatch");
-    assert.equal(semantic?.repairAction, "resynthesize-audio");
+    assert.equal(semantic?.repairAction, "retry-stage");
+    assert.equal(semantic?.issueClass, "environment");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("lenient audio gate marks ASR-only semantic disagreement inconclusive without TTS rebuild", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-semantic-lenient-"));
+  try {
+    const { project } = await fixture(root);
+    const runtime = config(root, { QUALITY_GATE_PROFILE: "lenient" });
+    const evaluation = await evaluateAudio(project, 4, undefined, runtime, {
+      structuralProbe: goodProbe,
+      transcribe: async () => [{ sceneIndex: 0, text: "错误内容", confidence: 0.95, detectedLanguage: "zh", languageConfidence: 0.95 }, { sceneIndex: 1, text: "完全无关", confidence: 0.95, detectedLanguage: "zh", languageConfidence: 0.95 }],
+      pronunciationVerify: async () => ({ status: "inconclusive", confidence: 0, verifier: "mock" }),
+    });
+    const issue = evaluation.issues.find((item) => item.code === "verification_inconclusive" && item.evidence.reason === "semantic_asr_disagreement");
+    assert.equal(issue?.severity, "warning");
+    assert.equal(issue?.repairAction, "retry-stage");
+    assert.equal(evaluation.issues.some((item) => item.repairAction === "resynthesize-audio"), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

@@ -212,11 +212,11 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     }
     const semanticMismatch = sequence.coverage < minimumCoverage || sequence.precision < minimumPrecision;
     if (semanticMismatch) {
-      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `第 ${segment.sceneIndex + 1} 屏存在漏字、多字或语义覆盖不足。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
+      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `第 ${segment.sceneIndex + 1} 屏 ASR 转写与旁白语义覆盖不足，需要重试或切换验证器。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
     const isFinalSegment = segment.sceneIndex === segments.at(-1)?.sceneIndex;
     if (isFinalSegment && !semanticMismatch && expectedText.length >= 12 && endingRecall < endingRecallMinimum) {
-      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `Scene ${segment.sceneIndex + 1} narration ending is incomplete.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, endingRecall: Number(endingRecall.toFixed(3)), endingRecallMinimum, expectedTail: expectedText.slice(-18), actualTail: actualText.slice(-18), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider"] } });
+      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `Scene ${segment.sceneIndex + 1} narration ending could not be confirmed by ASR.`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { transcript: transcript.text, endingRecall: Number(endingRecall.toFixed(3)), endingRecallMinimum, expectedTail: expectedText.slice(-18), actualTail: actualText.slice(-18), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider"] } });
     }
     const currentStart = expectedText.slice(0, 18);
     const currentEnd = expectedText.slice(-18);

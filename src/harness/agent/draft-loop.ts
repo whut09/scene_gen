@@ -7,8 +7,8 @@ export function initialDraftLoopState(iterations: IterationReport[]) {
   return { draftPassed, iteration };
 }
 
-export function shouldContinueDraftLoop(input: { draftPassed: boolean; draftStageRequested: boolean; draftGateRequested: boolean; iteration: number; maxIterations: number }) {
-  return (!input.draftPassed || input.draftStageRequested || input.draftGateRequested) && input.iteration <= input.maxIterations;
+export function shouldContinueDraftLoop(input: { draftPassed: boolean; draftStageRequested: boolean; draftGateRequested: boolean; iteration: number; maxIterations: number; forced?: boolean }) {
+  return Boolean(input.forced) || ((!input.draftPassed || input.draftStageRequested || input.draftGateRequested) && input.iteration <= input.maxIterations);
 }
 
 export function shouldRevalidateDraftBeforeResume(input: { resumeValue?: string; explicitFromStage?: VideoStageName; draftPassed: boolean }) {

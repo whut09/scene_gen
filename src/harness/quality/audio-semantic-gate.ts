@@ -9,7 +9,7 @@ import { speechNormalizationDictionaryHash } from "../speech-normalization";
 import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts, type AsrSceneTranscript } from "../scene-audio-verification";
 import { projectAudioPath } from "./audio-structural-gate";
 
-export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v2-language-detection";
+export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v3-verifier-routing";
 export type AsrProviderId = "whisper" | "sensevoice" | "funasr" | "mock";
 
 const cachedAsrSchema = z.object({ version: z.literal(1), key: z.string().length(64), transcripts: z.array(z.object({ sceneIndex: z.number().int().nonnegative(), text: z.string(), confidence: z.number().nullable().optional(), detectedLanguage: z.string().min(1), languageConfidence: z.number().min(0).max(1), words: z.array(z.object({ text: z.string(), startSeconds: z.number(), endSeconds: z.number(), confidence: z.number().nullable().optional() })).optional() })) }).strict();
@@ -72,6 +72,18 @@ export async function runAudioSemanticGate(input: {
   const configuredMinimumConfidence = Number(process.env.ASR_SCENE_CONFIDENCE_MIN ?? 0.65);
   const minimumConfidence = input.config.profile === "production" ? Math.max(0.8, configuredMinimumConfidence) : configuredMinimumConfidence;
   const verification = verifySceneTranscripts(input.project, transcription.transcripts, { expectedLanguage, minimumLanguageConfidence: input.config.asr.languageConfidenceMin, minimumConfidence });
-  const issues = verification.issues.filter((issue) => issue.code !== "audio_pronunciation_mismatch");
+  const issues = verification.issues
+    .filter((issue) => issue.code !== "audio_pronunciation_mismatch")
+    .map((issue) => input.config.quality.profile === "lenient" && issue.code === "audio_semantic_mismatch"
+      ? {
+          ...issue,
+          severity: "warning" as const,
+          code: "verification_inconclusive",
+          message: `Scene ${(issue.sceneIndex ?? 0) + 1} semantic ASR disagreed with the narration, but no acoustic evidence proves a TTS defect.`,
+          issueClass: "soft" as const,
+          repairAction: "retry-stage" as const,
+          evidence: { ...issue.evidence, originalCode: issue.code, verifier: transcription.provider, reason: "semantic_asr_disagreement" },
+        }
+      : issue);
   return { ...verification, issues, metrics: { semanticVerifiedCount: verification.results.length, semanticAsrCacheHit: transcription.cacheHit, semanticAsrProvider: transcription.provider, semanticGateVersion: AUDIO_SEMANTIC_GATE_VERSION } };
 }

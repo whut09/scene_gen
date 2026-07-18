@@ -23,6 +23,10 @@ test("repair policy routes content, environment and render failures separately",
   assert.equal(planRepair("draft", [{ severity: "error", code: "title_not_chinese_summary", message: "title" }]).action, "regenerate-draft");
   assert.equal(planRepair("video", [{ severity: "warning", code: "scene_motion_too_static", message: "static", sceneIndex: 1 }], loadQualityProfile("balanced")).action, "none");
   assert.equal(planRepair("video", [{ severity: "warning", code: "scene_motion_too_static", message: "static", sceneIndex: 1 }], loadQualityProfile("strict")).action, "switch-template");
+  const clipped = planRepair("video", [{ severity: "error", code: "content_clipped", message: "clipped", sceneIndex: 4 }]);
+  assert.equal(clipped.action, "switch-template");
+  assert.equal(clipped.retryable, true);
+  assert.deepEqual(clipped.videoSceneIndexes, [4]);
 });
 
 test("duration drift uses evidence instead of attempt-only escalation", () => {

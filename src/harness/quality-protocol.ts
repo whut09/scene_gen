@@ -72,7 +72,7 @@ export function repairActionForIssue(issue: Pick<QualityIssueInput, "code">, _st
 }
 
 export function actionIsRetryable(action: RepairAction) {
-  return !["none", "check-environment", "stop", "switch-template"].includes(action);
+  return !["none", "check-environment", "stop"].includes(action);
 }
 
 export function loadQualityProfile(value = process.env.QUALITY_GATE_PROFILE): QualityProfile {

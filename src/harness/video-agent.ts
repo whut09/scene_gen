@@ -166,7 +166,9 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     const revalidateDraftBeforeResume = shouldRevalidateDraftBeforeResume({ resumeValue, explicitFromStage, draftPassed });
     if (revalidateDraftBeforeResume) iteration = maxIterations;
 
-    while (shouldContinueDraftLoop({ draftPassed, draftStageRequested: shouldRun("draft", startStage, forceStage), draftGateRequested: shouldRun("draft-gate", startStage, forceStage) || revalidateDraftBeforeResume, iteration, maxIterations })) {
+    let forcedDraftLoopPending = forceStage === "draft" || forceStage === "draft-gate";
+    while (shouldContinueDraftLoop({ draftPassed, draftStageRequested: shouldRun("draft", startStage, forceStage), draftGateRequested: shouldRun("draft-gate", startStage, forceStage) || revalidateDraftBeforeResume, iteration, maxIterations, forced: forcedDraftLoopPending })) {
+      forcedDraftLoopPending = false;
       if (!state.story || shouldRun("draft", startStage, forceStage)) {
         const draftStage = await runStage({
           journal, name: "draft", attempt: nextAttempt(journal, "draft"),
@@ -505,6 +507,15 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
           pendingMuxRequired = gate.value.repairPlan.muxRequired;
           remuxOnly = pendingMuxRequired && engine === "html-video" && Boolean(silentVideoPath) && existsSync(silentVideoPath);
           if (gate.value.repairPlan.action === "reconcat-video") remuxOnly = false;
+          if (gate.value.repairPlan.action === "switch-template" && forceSceneIndexes?.length) {
+            const graph = state.story.htmlVideoGraphPath && existsSync(state.story.htmlVideoGraphPath)
+              ? await readHtmlVideoContentGraphFile(state.story.htmlVideoGraphPath).then((result) => result.value).catch(() => undefined)
+              : undefined;
+            addTemplateExclusions(templateExclusions, graph?.nodes
+              .filter((node) => forceSceneIndexes!.includes(node.sceneIndex))
+              .map((node) => ({ sceneIndex: node.sceneIndex, templateId: node.templateId, variantId: node.variantId })) ?? []);
+            remuxOnly = false;
+          }
         }
       }
     }

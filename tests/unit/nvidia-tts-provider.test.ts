@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRuntimeConfig } from "../../src/config/runtime-config";
 import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
-import { encodeNvidiaWorkerRequest, NVIDIA_TTS_FRONTEND_VERSION, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
+import { encodeNvidiaWorkerRequest, NVIDIA_TTS_FRONTEND_VERSION, nvidiaPronunciationDictionary, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
 
 test("NVIDIA worker requests preserve Mandarin text as UTF-8", () => {
   const input = { requestId: "request-1", text: "系统完成核心模块重构，这项更新非常重要。", outputPath: "output.wav" };
@@ -17,7 +17,7 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-direct-utf8-chunked-v8-score-ratio");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-siwei-custom-dictionary-v9");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, plan.synthesisText);
   assert.equal(identity.speed, 1.25);
@@ -36,4 +36,32 @@ test("NVIDIA synthesis splits long Mandarin at punctuation within the safe limit
   assert.equal(chunks.join(""), text);
   assert.equal(chunks.length > 1, true);
   assert.equal(chunks.every((chunk) => [...chunk].length <= 32), true);
+});
+
+test("NVIDIA pronunciation dictionary carries tone-number pinyin for risky phrases", async () => {
+  const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构，重复测试非常重要。" });
+  assert.deepEqual(nvidiaPronunciationDictionary(plan), {
+    重构: "chong2 gou4",
+    重复: "chong2 fu4",
+    重要: "zhong4 yao4",
+  });
+  assert.deepEqual(nvidiaPronunciationDictionary(plan, "重复测试非常重要。"), {
+    重复: "chong2 fu4",
+    重要: "zhong4 yao4",
+  });
+});
+
+test("NVIDIA worker request serializes the custom pronunciation dictionary", () => {
+  const input = {
+    requestId: "request-tone",
+    text: "系统完成重构。",
+    outputPath: "output.wav",
+    customDictionary: { 重构: "chong2 gou4" },
+  };
+  assert.deepEqual(JSON.parse(encodeNvidiaWorkerRequest(input).toString("utf8")), input);
+});
+
+test("NVIDIA defaults to the native Mandarin Siwei voice", () => {
+  const config = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only" }, "test");
+  assert.equal(config.tts.nvidia.voice, "Magpie-Multilingual.ZH-CN.Siwei");
 });

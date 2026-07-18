@@ -1,5 +1,5 @@
 import type { QualityIssue, QualityIssueInput, QualityProfile, QualityStage } from "./quality-protocol";
-import { normalizeQualityIssue } from "./quality-protocol";
+import { actionIsRetryable, normalizeQualityIssue } from "./quality-protocol";
 import type { SuggestedAction } from "./stage-types";
 import { dirtyPlanFromIssues, emptyDirtyPlan, mergeDirtyPlans, type DirtyPlan } from "./dirty-plan";
 import {
@@ -224,7 +224,7 @@ export function planRepair(
     muxRequired: dirtyPlan.remux,
     forceAudioRebuild: dirtyPlan.concatAudio,
     forceVideoRebuild: dirtyPlan.fullRebuild,
-    retryable: !["check-environment", "stop", "switch-template", "none"].includes(action),
+    retryable: actionIsRetryable(action),
     reason,
     dirtyPlan,
     candidates,

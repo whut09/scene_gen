@@ -51,6 +51,8 @@ npm exec -- playwright install chromium
 
 逐场景语音语义验证的单元测试使用固定 ASR transcript，不加载 Whisper。测试覆盖多音字、实体、数字与版本号、漏字多字、相邻场景串段以及低置信度 `verification_inconclusive`。真实 audio gate 会先用 FFmpeg 按 `narrationSegments` 切分 WAV，再让一个 Whisper 实例批量转写所有场景，避免每屏重复加载模型。
 
+`tests/unit/nvidia-tts-provider.test.ts` 验证默认普通话声线为 `Magpie-Multilingual.ZH-CN.Siwei`、worker JSON Lines 请求保留 UTF-8 中文，并把 PronunciationPlan 中的 `chong2 gou4` 等 tone-number 拼音写入 Riva `custom_dictionary`。`tests/unit/audio-gates.test.ts` 还验证 Whisper 字符分歧不会被当作声调错误或直接触发 TTS 重建；只有专用音素验证器的声学证据可以判定四声 mismatch。
+
 `tests/unit/speech-alignment.test.ts` 使用固定 word timestamp fixture 验证短语跨 Whisper word chunk 的时间映射、场景相对时间到整段旁白绝对时间的换算、低置信度回退、audio gate 转写复用、production report 覆盖率、HTML `data-sg-sync-*` 标记和动画启动状态，以及 cue 时间变化导致对应视频场景 cache key 失效。该测试不加载 Whisper 或 GPU；HTML 绑定测试只启动本地 Playwright Chromium。
 
 `tests/unit/template-learning.test.ts` 使用隔离的 JSONL 历史验证模板规则分保持稳定、历史高通过率能够重排候选、blank/overflow/static 失败会显著降权、禁用学习后退回纯规则分、探索率保持在配置上限内，以及发布阶段能记录场景质量、渲染耗时和缓存命中证据。

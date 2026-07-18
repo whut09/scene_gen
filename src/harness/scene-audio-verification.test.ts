@@ -49,7 +49,7 @@ test("explicit production confidence threshold overrides a lower environment val
   assert.equal(result.issues.every((item) => item.code === "verification_inconclusive"), true);
 });
 
-test("high-confidence entity, number, and semantic mismatch rebuilds only the affected scene", () => {
+test("high-confidence ASR disagreement retries verification without dirtying TTS", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [
     { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
@@ -60,9 +60,10 @@ test("high-confidence entity, number, and semantic mismatch rebuilds only the af
   assert.ok(result.issues.some((item) => item.code === "audio_number_mismatch" && item.sceneIndex === 2));
   const normalized = result.issues.map((item) => normalizeQualityIssue("audio", item));
   const dirtyPlan = dirtyPlanFromIssues(normalized, 3);
-  assert.deepEqual(dirtyPlan.audioSceneIndexes, [2]);
-  assert.equal(dirtyPlan.concatAudio, true);
-  assert.equal(dirtyPlan.remux, true);
+  assert.deepEqual(dirtyPlan.audioSceneIndexes, []);
+  assert.equal(dirtyPlan.concatAudio, false);
+  assert.equal(dirtyPlan.remux, false);
+  assert.equal(result.issues.filter((item) => item.sceneIndex === 2).every((item) => item.repairAction === "retry-stage"), true);
 });
 
 test("extra ASR numbers do not fail when all expected numbers are present", () => {
