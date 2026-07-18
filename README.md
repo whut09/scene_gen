@@ -486,3 +486,22 @@ npm.cmd run benchmark:media
 ```
 
 `test:incremental` 使用固定五屏、mock F5 和 mock HTML recorder 验证 cold run、warm run、scene 2 音频修复、scene 3 空白帧修复、仅 remux，以及发音词典定向失效。`benchmark:media` 才输出本机真实耗时；CI 不使用不稳定的严格耗时断言。
+
+## 本次音频与模板修复说明
+
+- `TTS_LEADING_SILENCE_SECONDS` 默认是 `1.2` 秒：片头先保留短静音，避免 NVIDIA Riva 首个汉字被截断；可在本地 `.env.local` 调整为 `1.0`～`2.0`，不改变字幕时间线之外的正文内容。
+- NVIDIA 合成前仅对语音文本把 `AI` 规范化为“人工智能”，展示文本、字幕和文章原文仍保留 `AI`。该前端版本变化会自动使旧音频缓存失效。
+- 首屏 ASR 不再把低置信度的开头差异直接判为 TTS 错误；`audio_opening_mismatch` 会优先重试验证器、切换 ASR 或注入热词，避免同一音频无效重建。
+- 编辑统计卡片对长文本启用分级字号、换行和安全溢出检查；视觉审计现在同时检查文本自身和父容器的裁切，发现 `content_clipped` 后才进入模板修复。
+- 新闻 fallback 项目仍会运行 draft 事实门禁；如果 LLM 不可用，媒体文件可以成功生成，但报告中的事实、限定词或高风险谓词问题必须人工处理，不能把“媒体生成成功”当成“内容审核通过”。
+
+### 排查开头漏读
+
+1. 先执行 `scene-gen check --run <run-id>`，确认音频流存在并查看 `audio_opening_mismatch` 证据。
+2. 若只涉及首词漏读，优先保留片头静音并重跑验证，不要立刻全量重合成。
+3. 只有验证器提供明确声学证据时，才对目标 scene 执行局部音频重建。
+4. 修改 NVIDIA 前端规范化或发音规则后，确认新的 `frontendVersion` 已进入缓存 key。
+
+### 排查画面缺块或文字裁切
+
+使用 `scene-gen check --run <run-id>` 查看 `content_clipped`、`blank_frame` 和 sceneIndex；修复后只强制重渲染对应 scene。不要删除全局缓存，除非模板版本或全局 CSS 确实发生变化。

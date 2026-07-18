@@ -26,7 +26,7 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-siwei-custom-dictionary-v9";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-siwei-mandarin-normalization-v10";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {

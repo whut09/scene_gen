@@ -9,6 +9,7 @@ import { evaluateDraft } from "../../src/harness/quality";
 import { extraNarrationNumbers } from "../../src/harness/quality/draft-rules";
 import { ensureTitleOpening } from "../../src/pipeline/llm";
 import { prepareF5SynthesisText } from "../../src/pipeline/tts";
+import { narrationSynthesisText } from "../../src/pipeline/tts/segmentation";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
@@ -20,6 +21,12 @@ test("number pronunciation converts common Chinese news formats", () => {
   assert.match(text, /百分之十二点五/);
   assert.match(text, /一千以上用户/);
   assert.match(text, /四点零/);
+});
+
+test("cloud narration normalizes a leading AI acronym without changing display text", () => {
+  const segment = { sceneIndex: 0, text: "AI 圈又在造新词。" };
+  assert.equal(narrationSynthesisText(segment), "。人工智能 圈又在造新词。");
+  assert.equal(segment.text, "AI 圈又在造新词。");
 });
 
 test("title opening is inserted once and remains idempotent", () => {

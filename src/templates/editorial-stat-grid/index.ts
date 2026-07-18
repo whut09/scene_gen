@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const editorialStatGridTemplate: HtmlTemplateDefinition = {
   id: "editorial-stat-grid",
-  version: "1.2.1",
+  version: "1.2.2",
   name: "Editorial Stat Grid",
   description: "Asymmetric magazine layout that turns facts, metrics and points into a strong vertical composition.",
   engine: "html-video",
@@ -33,9 +33,11 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
   renderHtml: ({ scene, width, height, variantId }) => {
     let body = '';
     if (scene.type === "briefing_points") {
-      const metrics = scene.metrics.slice(0, 3).map((metric, index) =>
-        '<article class="es-metric es-metric-' + index + '"><span>' + escapeHtml(metric.label) + '</span><strong>' + escapeHtml(metric.value) + '</strong></article>'
-      ).join('');
+      const metrics = scene.metrics.slice(0, 3).map((metric, index) => {
+        const length = [...metric.value].length;
+        const density = length >= 14 ? ' es-metric-xlong' : length >= 9 ? ' es-metric-long' : '';
+        return '<article class="es-metric es-metric-' + index + density + '"><span>' + escapeHtml(metric.label) + '</span><strong>' + escapeHtml(metric.value) + '</strong></article>';
+      }).join('');
       const points = scene.points.slice(0, 4).map((point, index) =>
         '<li style="animation-delay:' + pacedDelay(index, scene.points.length, scene.duration) + 's"><b>' + String(index + 1).padStart(2, "0") + '</b><span>' + escapeHtml(point) + '</span></li>'
       ).join('');
@@ -63,7 +65,7 @@ export const editorialStatGridTemplate: HtmlTemplateDefinition = {
       '.es-metrics{display:grid;grid-template-columns:1.15fr .85fr;grid-template-rows:repeat(2,150px);gap:14px;margin-top:18px}' +
       '.es-metric{padding:24px;background:#0b5bd3;color:white;display:flex;flex-direction:column;justify-content:space-between;animation:hv-rise .55s .16s both}' +
       '.es-metric-0{grid-row:span 2;background:#082f75}.es-metric-1{background:#c83f3a}.es-metric-2{background:#087a67}' +
-      '.es-metric span{font-size:23px;font-weight:800}.es-metric strong{font-size:54px;line-height:1;font-weight:950}' +
+      '.es-metric span{font-size:23px;font-weight:800}.es-metric strong{font-size:48px;line-height:1.06;font-weight:950;overflow-wrap:anywhere}.es-metric:not(.es-metric-0){padding:18px 20px}.es-metric:not(.es-metric-0) strong{font-size:34px;line-height:1.08}.es-metric-long strong{font-size:32px}.es-metric-xlong strong{font-size:27px;line-height:1.12}' +
       '.es-points{list-style:none;padding:0;margin:20px 0 0;display:grid;gap:12px}' +
       '.es-points li{display:grid;grid-template-columns:72px 1fr;gap:18px;align-items:center;padding:20px 24px;background:rgba(255,255,255,.72);color:#153f59;animation:hv-rise .5s both}' +
       '.es-points b{font-size:22px;color:#ff5f5f}.es-points span{font-size:27px;line-height:1.38;font-weight:750}' +

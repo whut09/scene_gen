@@ -94,3 +94,9 @@ npm.cmd run benchmark:media
 6. 修改“重构”词典条目只使包含该短语的音频失效，其他音频和全部视频继续命中缓存。
 
 稳定测试只断言调用次数、worker 最大并发、dirty set、输出完整性和 warm run 任务数更少。`benchmark:media` 将本机耗时写入 `test-results/benchmark/media/media-report.json`，字段包括 cold/warm、模型加载、音频生成、视频生成、concat、mux、缓存命中率和局部重生成场景。
+
+## 本次回归重点
+
+`npm run test:pronunciation` 覆盖中文多音字、NVIDIA 语音前端规范化、缓存失效和首屏文本规则；`npm run test:offline` 覆盖音频/视频 gate、局部修复和 HTML 渲染；`npm run test:golden` 覆盖长指标卡的安全区、溢出和裁切。
+
+运行失败排查：先查看 `dist/runs/<run-id>/run.json` 和最终报告中的 `leadingSilenceSeconds`、`audio_opening_mismatch`、`content_clipped`，再使用 `--force-stage` 或 scene 级 dirty plan，避免无依据地重建全部媒体。

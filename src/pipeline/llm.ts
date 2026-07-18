@@ -29,6 +29,10 @@ function normalizeOpeningText(text: string) {
   return text.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "").replace(/正式/g, "").toLowerCase();
 }
 
+function normalizeTitleIdentity(text: string) {
+  return normalizeOpeningText(text).replace(/人工智能/g, "ai");
+}
+
 export function ensureTitleOpening(title: string, narration: string) {
   const spokenTitle = title.replace(/\s+/g, " ").trim().replace(/[。！？!?]+$/, "");
   const spokenNarration = narration.replace(/\s+/g, " ").trim();
@@ -151,6 +155,16 @@ export function normalizeDirectedStoryPayload(value: unknown, selectedPlan: Stor
           return bar;
         });
       }
+      if (Array.isArray(section.metrics)) {
+        section.metrics = section.metrics.map((metric, metricIndex) => {
+          if (typeof metric === "string") return { label: `要点 ${metricIndex + 1}`, value: metric };
+          if (!metric || typeof metric !== "object" || Array.isArray(metric)) return metric;
+          const normalizedMetric = { ...(metric as Record<string, unknown>) };
+          if (typeof normalizedMetric.label !== "string") normalizedMetric.label = `要点 ${metricIndex + 1}`;
+          if (typeof normalizedMetric.value !== "string") normalizedMetric.value = String(normalizedMetric.value ?? "");
+          return normalizedMetric;
+        });
+      }
       return section;
     });
   }
@@ -175,7 +189,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory, s
   const groundText = sourceGroundingTransform(project);
   const ledger = project.factLedger ?? buildFactLedger(project.sources);
   const titleClaimIds = directed.titleClaimIds ?? [];
-  if (directed.title?.trim() !== selectedPlan.title.trim()) throw new Error("Expanded title deviated from the selected story plan.");
+  if (normalizeTitleIdentity(directed.title ?? "") !== normalizeTitleIdentity(selectedPlan.title)) throw new Error("Expanded title deviated from the selected story plan.");
   if (titleClaimIds.some((claimId) => !selectedPlan.titleClaimIds.includes(claimId))) throw new Error("Expanded title referenced facts outside the selected story plan.");
   sections.forEach((section, index) => {
     if ((section.claimIds ?? []).some((claimId) => !selectedPlan.scenes[index].claimIds.includes(claimId))) {

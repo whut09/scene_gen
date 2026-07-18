@@ -217,6 +217,7 @@ export const videoProjectSchema = z.object({
       generatedAudioSceneIndexes: z.string().default(""),
       reusedAudioSceneIndexes: z.string().default(""),
       concatenatedAudio: z.boolean().default(false),
+      leadingSilenceSeconds: z.number().nonnegative().optional(),
       audioGenerationKey: z.string().default("default"),
       providerSelection: z.string().default("{}"),
       requestMs: z.number().nonnegative().optional(),

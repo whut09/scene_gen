@@ -30,6 +30,18 @@ test("scene ASR never infers pronunciation from Chinese transcript text", () => 
   ]);
   assert.equal(result.issues.some((item) => item.code === "audio_pronunciation_mismatch"), false);
 });
+
+test("scene ASR blocks a confident first-word omission", () => {
+  const project = projectFixture();
+  project.meta.title = "AI 圈又在造新词";
+  project.narrationSegments![0].text = "AI 圈又在造新词，系统进入验证阶段。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "圈又在造新词，系统进入验证阶段。", confidence: 0.82 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.ok(result.issues.some((item) => item.code === "audio_opening_mismatch" && item.sceneIndex === 0));
+});
 test("low confidence ASR is inconclusive and does not rebuild audio", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [

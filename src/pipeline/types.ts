@@ -235,6 +235,7 @@ export interface VideoProject {
       generatedAudioSceneIndexes: string;
       reusedAudioSceneIndexes: string;
       concatenatedAudio: boolean;
+      leadingSilenceSeconds?: number;
       audioGenerationKey: string;
       providerSelection: string;
       requestMs?: number;

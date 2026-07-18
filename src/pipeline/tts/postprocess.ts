@@ -7,6 +7,7 @@ export async function concatNarrationSegments(
   durations: number[],
   gaps: number[],
   outputPath: string,
+  leadingSilenceSeconds = 0,
 ) {
   const args = ["-y"];
   for (const input of inputs) args.push("-i", input);
@@ -14,7 +15,9 @@ export async function concatNarrationSegments(
     const total = durations[index] + gaps[index];
     return `[${index}:a]aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=${gaps[index].toFixed(3)},atrim=duration=${total.toFixed(3)}[a${index}]`;
   });
-  filters.push(`${inputs.map((_, index) => `[a${index}]`).join("")}concat=n=${inputs.length}:v=0:a=1,volume=-1dB[out]`);
+  const delayMs = Math.round(Math.max(0, leadingSilenceSeconds) * 1000);
+  const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : "";
+  filters.push(`${inputs.map((_, index) => `[a${index}]`).join("")}concat=n=${inputs.length}:v=0:a=1${delay},volume=-1dB[out]`);
   args.push(
     "-filter_complex",
     filters.join(";"),

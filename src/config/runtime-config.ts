@@ -22,7 +22,7 @@ export const runtimeConfigSchema = z.object({
   tts: z.object({
     provider: z.enum(["nvidia", "azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]),
     providerFallback: z.enum(["nvidia", "azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]).optional(),
-    failFast: z.boolean(), durationPolicy: z.enum(["natural", "fit"]), fitTarget: z.boolean(), forceRebuild: z.boolean(),
+    failFast: z.boolean(), durationPolicy: z.enum(["natural", "fit"]), fitTarget: z.boolean(), forceRebuild: z.boolean(), leadingSilenceSeconds: z.number().finite().min(0).max(3).default(1.2),
     fetchTimeoutMs: positiveInteger, minTempo: positiveNumber, maxTempo: positiveNumber, preprocessConcurrency: positiveInteger, ffmpegConcurrency: positiveInteger,
     azure: z.object({
       endpoint: z.string().url().optional(), region: z.string().optional(), apiKey: z.string().optional(), voice: z.string().min(1), outputFormat: z.string().min(1),
@@ -122,7 +122,7 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
     tts: {
       provider: providerValue(stringValue(env, "TTS_PROVIDER"), profile === "local-f5" ? "f5" : "openai"),
       providerFallback: stringValue(env, "TTS_PROVIDER_FALLBACK") ? providerValue(stringValue(env, "TTS_PROVIDER_FALLBACK"), "local") : undefined,
-      failFast: booleanValue(env, "TTS_FAIL_FAST"), durationPolicy: stringValue(env, "TTS_DURATION_POLICY", "natural") === "fit" ? "fit" : "natural", fitTarget: stringValue(env, "TTS_FIT_TARGET") !== "0", forceRebuild: booleanValue(env, "TTS_FORCE_REBUILD"), fetchTimeoutMs: numberValue(env, "TTS_FETCH_TIMEOUT_MS", 180_000), minTempo: numberValue(env, "TTS_MIN_TEMPO", 0.9), maxTempo: numberValue(env, "TTS_MAX_TEMPO", 1.22), preprocessConcurrency: numberValue(env, "TTS_PREPROCESS_CONCURRENCY", 4), ffmpegConcurrency: numberValue(env, "TTS_FFMPEG_CONCURRENCY", 2),
+      failFast: booleanValue(env, "TTS_FAIL_FAST"), durationPolicy: stringValue(env, "TTS_DURATION_POLICY", "natural") === "fit" ? "fit" : "natural", fitTarget: stringValue(env, "TTS_FIT_TARGET") !== "0", forceRebuild: booleanValue(env, "TTS_FORCE_REBUILD"), leadingSilenceSeconds: numberValue(env, "TTS_LEADING_SILENCE_SECONDS", 1.2), fetchTimeoutMs: numberValue(env, "TTS_FETCH_TIMEOUT_MS", 180_000), minTempo: numberValue(env, "TTS_MIN_TEMPO", 0.9), maxTempo: numberValue(env, "TTS_MAX_TEMPO", 1.22), preprocessConcurrency: numberValue(env, "TTS_PREPROCESS_CONCURRENCY", 4), ffmpegConcurrency: numberValue(env, "TTS_FFMPEG_CONCURRENCY", 2),
       azure: {
         endpoint: stringValue(env, "AZURE_SPEECH_ENDPOINT"), region: stringValue(env, "AZURE_SPEECH_REGION"), apiKey: stringValue(env, "AZURE_SPEECH_KEY"),
         voice: stringValue(env, "AZURE_TTS_VOICE", "zh-CN-XiaoxiaoNeural")!, outputFormat: stringValue(env, "AZURE_TTS_OUTPUT_FORMAT", "riff-24khz-16bit-mono-pcm")!,

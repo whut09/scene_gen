@@ -118,3 +118,29 @@ test("decision flow keeps long headlines clear of the first card", { timeout: 12
     await browser.close();
   }
 });
+
+test("editorial stat grid keeps long metric values inside their cards", { timeout: 120_000 }, async () => {
+  const project = createFixtureProject();
+  const scene: VideoScene = {
+    type: "briefing_points",
+    duration: 18,
+    headline: "长时间自动运行会放大风险",
+    source: "工程边界",
+    title: "速度越快，越需要约束和证据",
+    summary: "错误、权限、成本和审查压力会随循环持续累积。",
+    points: ["早期错误可能污染后续判断", "权限过大会扩大失败影响范围", "生成速度可能超过人工审查速度"],
+    metrics: [{ label: "成本", value: "令牌与工具调用持续累积" }, { label: "瓶颈", value: "人工审查能力有限" }],
+  };
+  const template = getTemplateById("editorial-stat-grid");
+  assert.ok(template);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: project.meta.width, height: project.meta.height } });
+    await page.setContent(template.renderHtml({ project, scene, sceneIndex: 0, width: project.meta.width, height: project.meta.height, variantId: "stat-grid" }), { waitUntil: "load" });
+    await page.evaluate(() => document.fonts.ready);
+    const audit = await inspectSceneDom(page, { sceneIndex: 0, width: project.meta.width, height: project.meta.height, durationSec: scene.duration, headline: scene.headline });
+    assert.deepEqual(audit.issues.filter((issue) => issue.code === "content_clipped"), [], JSON.stringify(audit.issues));
+  } finally {
+    await browser.close();
+  }
+});

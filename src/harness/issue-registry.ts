@@ -75,6 +75,7 @@ export const issueRegistry = {
   verification_inconclusive: define("environment", "retry-stage", true),
   asr_verification_failed: define("environment", "check-environment", false),
   audio_language_mismatch: define("hard", "resynthesize-audio", true),
+  audio_opening_mismatch: define("environment", "retry-stage", true),
   judge_unavailable: define("environment", "check-environment", false),
   judge_partially_measured: define("soft", "none", false),
   judge_unstable: define("environment", "check-environment", false),

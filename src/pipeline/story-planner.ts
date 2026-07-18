@@ -31,6 +31,36 @@ export function storyPlanFingerprint(candidate: StoryPlanCandidate) {
   return createHash("sha256").update(JSON.stringify({ angle: compact(candidate.angle), visuals: candidate.scenes.map((scene) => scene.visual), focuses: candidate.scenes.map((scene) => compact(scene.focus)) })).digest("hex");
 }
 
+function normalizeStoryPlanVisual(value: unknown) {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase().replace(/[-_ ]/g, "");
+  if (normalized === "title" || normalized === "headline" || normalized === "titlecard") return "title";
+  if (normalized === "briefing" || normalized === "briefingpoints" || normalized === "brief") return "briefing";
+  if (normalized === "chart" || normalized === "datachart" || normalized === "datavisual") return "chart";
+  if (normalized === "flow" || normalized === "decisionflow" || normalized === "workflow") return "flow";
+  if (normalized === "outro" || normalized === "conclusion" || normalized === "takeaway") return "outro";
+  return value;
+}
+
+function normalizeStoryPlanPayload(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const payload = value as { candidates?: unknown };
+  if (!Array.isArray(payload.candidates)) return value;
+  return {
+    ...payload,
+    candidates: payload.candidates.map((candidate) => {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return candidate;
+      const item = candidate as { scenes?: unknown };
+      return {
+        ...candidate,
+        scenes: Array.isArray(item.scenes)
+          ? item.scenes.map((scene, index) => scene && typeof scene === "object" && !Array.isArray(scene) ? { ...scene, visual: ["title", "briefing", "chart", "flow", "outro"][index] ?? normalizeStoryPlanVisual((scene as { visual?: unknown }).visual) } : scene)
+          : item.scenes,
+      };
+    }),
+  };
+}
+
 function historyScore(fingerprint: string, history: HistoryEntry[]) {
   const matching = history.filter((entry) => entry.fingerprint === fingerprint);
   const successes = matching.filter((entry) => entry.succeeded).length;
@@ -133,7 +163,7 @@ export async function planStoryCandidates(input: {
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { total_tokens?: number } };
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new Error("Story planning returned no content.");
-    const candidates = storyPlanResponseSchema.parse(JSON.parse(content)).candidates;
+    const candidates = storyPlanResponseSchema.parse(normalizeStoryPlanPayload(JSON.parse(content))).candidates;
     if (candidates.length !== requestedCandidates) throw new Error(`Story planning returned ${candidates.length}/${requestedCandidates} candidates.`);
     const rankings = rankStoryPlanCandidates(candidates, input.project.factLedger, input.targetSeconds, await readHistory());
     const selected = rankings.find((ranking) => ranking.rejectedReasons.length === 0);

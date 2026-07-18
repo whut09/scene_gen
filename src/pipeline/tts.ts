@@ -570,16 +570,17 @@ async function attachSegmentedNarration(
   const durations = results.map((result) => result.duration);
 
   const gaps = durations.map((_, index) => (index === durations.length - 1 ? 0.8 : 0.28));
-  const totalGapSeconds = gaps.reduce((sum, gap) => sum + gap, 0);
+  const leadingSilenceSeconds = getRuntimeConfig().tts.leadingSilenceSeconds;
+  const totalGapSeconds = gaps.reduce((sum, gap) => sum + gap, leadingSilenceSeconds);
   const fitted = await fitNarrationSegmentsToTarget(segmentPaths, durations, project.meta.durationSeconds, totalGapSeconds);
   const playbackPaths = fitted.paths;
   const playbackDurations = fitted.durations;
   const outputPath = path.join(generatedDir, `${basename}.wav`);
-  await concatNarrationSegments(playbackPaths, playbackDurations, gaps, outputPath);
+  await concatNarrationSegments(playbackPaths, playbackDurations, gaps, outputPath, leadingSilenceSeconds);
 
   let audioStartSeconds = 0;
   const alignedSegments = segments.map((segment, index) => {
-    const durationSeconds = playbackDurations[index] + gaps[index];
+    const durationSeconds = playbackDurations[index] + gaps[index] + (index === 0 ? leadingSilenceSeconds : 0);
     const aligned = {
       ...segment,
       pronunciationPlan: results[index].pronunciationPlan,
@@ -618,6 +619,7 @@ async function attachSegmentedNarration(
     generatedAudioSceneIndexes: generatedAudioSceneIndexes.join(","),
     reusedAudioSceneIndexes: reusedAudioSceneIndexes.join(","),
     concatenatedAudio: true,
+    leadingSilenceSeconds,
     audioGenerationKey: audioGenerationKey(sceneCacheSalts),
     requestMs: results.reduce((sum, result) => sum + (result.azureResult?.requestMs ?? 0), 0),
     retryCount: results.reduce((sum, result) => sum + (result.azureResult?.retryCount ?? 0), 0),

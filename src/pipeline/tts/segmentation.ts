@@ -1,7 +1,8 @@
 import type { NarrationSegment } from "../types";
+import { prepareF5SynthesisText } from "./text-normalization";
 
 export function narrationSynthesisText(segment: NarrationSegment) {
-  return segment.ttsText?.trim() || segment.text;
+  return prepareF5SynthesisText(segment.ttsText?.trim() || segment.text);
 }
 
 export function audioGenerationKey(sceneCacheSalts: Record<string, string>) {
@@ -26,4 +27,3 @@ export function splitTitleNarration(title: string, narration: string) {
   }
   return { titleText: trimmedNarration, bodyText: "" };
 }
-

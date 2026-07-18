@@ -122,6 +122,22 @@ export async function inspectSceneDom(page: Page, input: {
       const horizontalOverflow = element.scrollWidth - element.clientWidth;
       const verticalOverflow = element.scrollHeight - element.clientHeight;
       if (horizontalOverflow > Math.max(4, fontSize * 0.15) || verticalOverflow > Math.max(4, fontSize * 0.2)) issues.push({ code: "content_clipped", severity: "error", message: `文本存在裁切或溢出：${text.slice(0, 40)}`, evidence: { text: text.slice(0, 80), scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight } });
+      let clippingAncestor = element.parentElement;
+      while (clippingAncestor && clippingAncestor !== document.body) {
+        const ancestorStyle = getComputedStyle(clippingAncestor);
+        const clipsX = [ancestorStyle.overflow, ancestorStyle.overflowX].some((value) => value === "hidden" || value === "clip");
+        const clipsY = [ancestorStyle.overflow, ancestorStyle.overflowY].some((value) => value === "hidden" || value === "clip");
+        if (clipsX || clipsY) {
+          const ancestorRect = clippingAncestor.getBoundingClientRect();
+          const clippedX = clipsX && (rect.left < ancestorRect.left - 2 || rect.right > ancestorRect.right + 2);
+          const clippedY = clipsY && (rect.top < ancestorRect.top - 2 || rect.bottom > ancestorRect.bottom + 2);
+          if (clippedX || clippedY) {
+            issues.push({ code: "content_clipped", severity: "error", message: `文本被父容器裁切：${text.slice(0, 40)}`, evidence: { text: text.slice(0, 80), ancestorClass: typeof clippingAncestor.className === "string" ? clippingAncestor.className : "", childLeft: Math.round(rect.left), childTop: Math.round(rect.top), childRight: Math.round(rect.right), childBottom: Math.round(rect.bottom), ancestorLeft: Math.round(ancestorRect.left), ancestorTop: Math.round(ancestorRect.top), ancestorRight: Math.round(ancestorRect.right), ancestorBottom: Math.round(ancestorRect.bottom) } });
+            break;
+          }
+        }
+        clippingAncestor = clippingAncestor.parentElement;
+      }
       const foreground = parseColor(style.color);
       const background = effectiveBackground(element);
       if (foreground && background) {
