@@ -13,7 +13,7 @@ import { narrationSynthesisText } from "../../src/pipeline/tts/segmentation";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
-import { scrubAttribution } from "../../src/pipeline/story";
+import { scrubAttribution, scrubGithubReference } from "../../src/pipeline/story";
 import { provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 
 test("number pronunciation converts common Chinese news formats", () => {
@@ -143,4 +143,13 @@ test("news source websites are scrubbed and blocked by the draft gate", async ()
   project.narration = `${project.narration} 来自IT之家的报道。`;
   const result = await evaluateDraft(project, project.meta.durationSeconds, "");
   assert.equal(result.issues.some((issue) => issue.code === "source_attribution_exposed"), true);
+});
+
+test("repository videos hide hosting platforms and repository addresses", async () => {
+  assert.equal(scrubGithubReference("GitHub 仓库：https://github.com/HKUDS/DeepTutor，地址 HKUDS/DeepTutor", ["HKUDS/DeepTutor"]), "开源项目 仓库：开源项目，地址 DeepTutor");
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "HKUDS/DeepTutor", url: "https://github.com/HKUDS/DeepTutor" };
+  project.narration = `${project.narration} 项目托管在 GitHub，仓库地址是 HKUDS/DeepTutor。`;
+  const result = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "external_platform_reference_exposed"), true);
 });

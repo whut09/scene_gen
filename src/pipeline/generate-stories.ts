@@ -5,7 +5,7 @@ import { buildProductionReport } from "../production/production-report";
 import { collectGithubAssets } from "../production/github-assets";
 import type { SourceConfig, VideoProject } from "./types";
 import { collectHotItems, collectWebpage } from "./sources";
-import { createStoryProject, scrubAttribution } from "./story";
+import { createStoryProject, scrubAttribution, scrubGithubReference } from "./story";
 import { improveWithOpenAI } from "./llm";
 import { captureWebScreenshots } from "./screenshots";
 import { attachNarrationAudio } from "./tts";
@@ -74,20 +74,22 @@ const htmlVideoDir = runDir ? path.join(runDir, "html-video") : fromRoot("public
 if (urls.length === 1 && !args["ignore-cache"]) {
   const cached = await findGithubCache(urls[0]);
   if (cached) {
-    const slug = `01-${slugify(cached.project.meta.title, cached.project.sources[0]?.id ?? "story")}`;
+    const cachedRepositories = cached.project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
+    const cachedProject = scrubProject(cached.project, "", cachedRepositories) as VideoProject;
+    const slug = `01-${slugify(cachedProject.meta.title, cachedProject.sources[0]?.id ?? "story")}`;
     const projectPath = runDir ? path.join(projectsDir, `${slug}.json`) : cached.projectPath;
     const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
     const productionReportPath = path.join(htmlVideoDir, slug, "production-report.json");
-    const outputPath = path.join(outputDir, provisionalVideoFileName(cached.project.meta.title, slug));
-    if (runDir) await writeJson(projectPath, videoProjectSchema.parse(cached.project));
-    await writeHtmlVideoContentGraph(cached.project, htmlVideoGraphPath);
-    await writeJson(productionReportPath, buildProductionReport(cached.project, "html-video"));
+    const outputPath = path.join(outputDir, provisionalVideoFileName(cachedProject.meta.title, slug));
+    if (runDir) await writeJson(projectPath, videoProjectSchema.parse(cachedProject));
+    await writeHtmlVideoContentGraph(cachedProject, htmlVideoGraphPath);
+    await writeJson(productionReportPath, buildProductionReport(cachedProject, "html-video"));
     const story: StoryManifestItem = {
       index: 1,
-      title: cached.project.meta.title,
-      source: cached.project.sources[0]?.source ?? "核心事实",
-      sourceUrl: cached.project.sources[0]?.url,
-      score: cached.project.sources[0]?.score ?? cached.manifestItem?.score ?? 0,
+      title: cachedProject.meta.title,
+      source: cachedProject.sources[0]?.source ?? "核心事实",
+      sourceUrl: cachedProject.sources[0]?.url,
+      score: cachedProject.sources[0]?.score ?? cached.manifestItem?.score ?? 0,
       projectPath,
       htmlVideoGraphPath,
       productionReportPath,
@@ -153,17 +155,17 @@ function fitProjectDuration(project: VideoProject, seconds: number) {
   } satisfies VideoProject;
 }
 
-function scrubProject(value: unknown, key = ""): unknown {
+function scrubProject(value: unknown, key = "", repositoryAddresses: string[] = []): unknown {
   if (typeof value === "string") {
     if (["url", "src"].includes(key)) return value;
     if (key === "headline") {
-      return value.split(/\r?\n/).map((line) => scrubAttribution(line)).join("\n");
+      return value.split(/\r?\n/).map((line) => scrubGithubReference(scrubAttribution(line), repositoryAddresses)).join("\n");
     }
-    return scrubAttribution(value);
+    return scrubGithubReference(scrubAttribution(value), repositoryAddresses);
   }
-  if (Array.isArray(value)) return value.map((child) => scrubProject(child, key));
+  if (Array.isArray(value)) return value.map((child) => scrubProject(child, key, repositoryAddresses));
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, childKey === "factLedger" ? child : scrubProject(child, childKey)]));
+    return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, childKey === "factLedger" || childKey === "sources" ? child : scrubProject(child, childKey, repositoryAddresses)]));
   }
   return value;
 }
@@ -189,7 +191,8 @@ for (const [index, item] of items.entries()) {
     forbidAttribution: true,
     editorialNotes,
   });
-  project = scrubProject(project) as VideoProject;
+  const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
+  project = scrubProject(project, "", repositoryAddresses) as VideoProject;
   project = normalizeProjectDatePrecision(project);
   project = ensureNewsDateNarration(project);
   project = ensureTitleSpokenFirst(project);

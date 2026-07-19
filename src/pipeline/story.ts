@@ -48,17 +48,34 @@ export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72)
 }
 
 function sourceLabel(item: HotItem) {
-  if (item.repo) return item.repo;
+  if (item.repo) return item.repo.split("/").filter(Boolean).at(-1) ?? "开源项目";
   return item.source || item.domain || "AI Signal";
 }
 
 function displaySource(item: HotItem) {
-  if (item.kind === "github" && item.repo) return item.repo;
+  if (item.kind === "github") return "项目资料";
   if (item.kind === "hackernews") return "社区讨论";
   return "核心事实";
 }
 
 const forbiddenSourceAttribution = /(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
+const forbiddenGithubPlatformReference = /(?:https?:\/\/)?(?:www\.)?github\.com(?:\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)?|\bgithub(?:\s+release)?\b/gi;
+
+export function containsForbiddenGithubReference(text: string, repositoryAddresses: string[] = []) {
+  forbiddenGithubPlatformReference.lastIndex = 0;
+  if (forbiddenGithubPlatformReference.test(text)) return true;
+  return repositoryAddresses.some((address) => address && text.toLowerCase().includes(address.toLowerCase()));
+}
+
+export function scrubGithubReference(text: string, repositoryAddresses: string[] = []) {
+  let result = text.replace(forbiddenGithubPlatformReference, "开源项目");
+  for (const address of repositoryAddresses) {
+    if (!address) continue;
+    const projectName = address.split("/").filter(Boolean).at(-1) ?? "开源项目";
+    result = result.replace(new RegExp(address.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), projectName);
+  }
+  return result.replace(/开源项目(?:\s*开源项目)+/g, "开源项目").replace(/\s+/g, " ").trim();
+}
 
 export function containsForbiddenSourceAttribution(text: string) {
   forbiddenSourceAttribution.lastIndex = 0;
@@ -661,9 +678,9 @@ export function createProject(
       ? {
           type: "github_pulse",
           duration: 9,
-          headline: "GitHub 释放的产品信号",
+          headline: "开源项目释放的产品信号",
           repos: githubItems.map((item) => ({
-            repo: item.repo ?? sourceLabel(item),
+            repo: sourceLabel(item),
             title: shortTitle(item.title, 36),
             summary: shortTitle(item.summary, 70),
             score: item.score,
@@ -674,7 +691,7 @@ export function createProject(
           duration: 9,
           headline: "程序化视频流水线",
           steps: [
-            { label: "Hotspot", detail: "RSS / GitHub / Webpage" },
+            { label: "Hotspot", detail: "公开资讯与项目资料" },
             { label: "Script", detail: "LLM 生成镜头脚本" },
             { label: "Scene JSON", detail: "组件化画面协议" },
             { label: "Render", detail: "Remotion + TTS + FFmpeg" },

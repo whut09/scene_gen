@@ -7,7 +7,7 @@ import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate } from "../../pipeline/news-date";
-import { containsForbiddenSourceAttribution } from "../../pipeline/story";
+import { containsForbiddenGithubReference, containsForbiddenSourceAttribution } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
 import { getRuntimeConfig, type RuntimeConfig } from "../../config/runtime-config";
@@ -211,6 +211,11 @@ export async function evaluateDraft(
   if (isNewsProject(project) && containsForbiddenSourceAttribution(publicProjectText)) {
     issues.push({ severity: "error", code: "source_attribution_exposed", message: "新闻画面或旁白不得出现网站、媒体或文章来源署名。" });
     revisionNotes.push("删除 IT之家、量子位、36氪、TechWeb 等网站来源文字，只保留事实内容。 ");
+  }
+  const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
+  if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(publicProjectText, repositoryAddresses)) {
+    issues.push({ severity: "error", code: "external_platform_reference_exposed", message: "开源项目视频不得展示或播报第三方代码托管平台名称、域名或仓库地址。" });
+    revisionNotes.push("删除平台名称、平台域名和 owner/repository 地址，只保留项目名称与功能事实。 ");
   }
   if (!normalizeText(firstNarration).startsWith(normalizeText(project.meta.title))) {
     issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。", sceneIndex: 0 });

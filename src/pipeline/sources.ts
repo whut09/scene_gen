@@ -351,6 +351,20 @@ async function collectGithubRepository(url: string, config: SourceConfig): Promi
   if (!target) return null;
   const headers = { "user-agent": "scene-gen/0.1 video research bot", accept: "application/vnd.github+json" };
   const repoResponse = await fetchWithRetry("https://api.github.com/repos/" + target.fullName, { headers }, { label: "github-repository" });
+  if (!repoResponse.ok && [403, 429].includes(repoResponse.status)) {
+    const readmeResponse = await fetchWithRetry(`https://raw.githubusercontent.com/${target.fullName}/HEAD/README.md`, { headers: { "user-agent": headers["user-agent"] } }, { label: "github-readme-fallback" });
+    if (!readmeResponse.ok) throw new Error("Repository README fallback " + readmeResponse.status + " " + readmeResponse.statusText);
+    const readme = await readmeResponse.text();
+    const description = cleanGithubDescription(compactText(readme.replace(/[#*`<>!\[\]()]/g, " "), 260), target.repo);
+    const joined = [description, readme].join(" ");
+    return {
+      id: stableId("github", url, target.fullName), kind: "github", contentType: "repository",
+      title: `${target.repo}：${description}`, url, source: "项目资料", summary: description,
+      content: compactText(readme, 12000), publishedAt: new Date().toISOString(),
+      score: scoreItem(joined, undefined, 1, config.keywords), tags: normalizeTags(joined, config.keywords).slice(0, 8),
+      repo: target.fullName, metrics: { stars: 0, forks: 0, issues: 0, language: "Unknown", license: "Unknown", branch: "HEAD" },
+    };
+  }
   if (!repoResponse.ok) throw new Error("GitHub API " + repoResponse.status + " " + repoResponse.statusText);
   const repo = await repoResponse.json() as {
     full_name?: string; name?: string; description?: string; stargazers_count?: number; forks_count?: number;
