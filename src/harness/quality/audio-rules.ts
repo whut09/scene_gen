@@ -2,6 +2,7 @@ import type { RuntimeConfig } from "../../config/runtime-config";
 import { getRuntimeConfig } from "../../config/runtime-config";
 import type { VideoProject } from "../../pipeline/types";
 import { prepareF5SynthesisText } from "../../pipeline/tts";
+import { pronounceYearDigits } from "../../pipeline/tts/text-normalization";
 import { canonicalSpeechText } from "../speech-normalization";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput } from "../quality-protocol";
 import { runAudioPronunciationGate } from "./audio-pronunciation-gate";
@@ -30,8 +31,25 @@ export function narrationRateMetrics(project: VideoProject) {
   return { narrationChars, segmentRates };
 }
 
+export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] {
+  const issues: QualityIssueInput[] = [];
+  for (const segment of project.narrationSegments ?? []) {
+    const synthesisInput = segment.ttsText?.trim() || segment.text;
+    const prepared = prepareF5SynthesisText(synthesisInput);
+    if (/\bAI\b/i.test(segment.text) && !/\bAI\b/i.test(synthesisInput) && synthesisInput.includes("人工智能")) {
+      issues.push({ severity: "error", code: "tts_ai_expanded", message: `第 ${segment.sceneIndex + 1} 屏把 AI 扩写成了“人工智能”，应保持 AI 字母读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { displayText: segment.text, synthesisText: synthesisInput } });
+    }
+    for (const year of segment.text.match(/(?<!\d)(?:19|20)\d{2}(?!\d)/g) ?? []) {
+      const expected = pronounceYearDigits(year);
+      if (!prepared.includes(expected)) issues.push({ severity: "error", code: "tts_year_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏年份 ${year} 必须逐位读作 ${expected}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { year, expected, synthesisText: prepared } });
+    }
+  }
+  return issues;
+}
+
 export async function evaluateAudio(project: VideoProject, targetSeconds: number, signal?: AbortSignal, config: RuntimeConfig = getRuntimeConfig(), dependencies: AudioGateDependencies = {}): Promise<QualityEvaluation> {
   const issues: QualityIssueInput[] = [];
+  issues.push(...ttsConventionIssues(project));
   const segments = project.narrationSegments ?? [];
   const duration = project.audio?.durationSeconds ?? 0;
   const { narrationChars, segmentRates } = narrationRateMetrics(project);

@@ -11,7 +11,7 @@ import { normalizeQualityIssue } from "../../src/harness/quality-protocol";
 import { runAudioPronunciationGate } from "../../src/harness/quality/audio-pronunciation-gate";
 import { runAudioSemanticGate, transcribeScenesCached } from "../../src/harness/quality/audio-semantic-gate";
 import { runAudioStructuralGate } from "../../src/harness/quality/audio-structural-gate";
-import { evaluateAudio } from "../../src/harness/quality/audio-rules";
+import { evaluateAudio, ttsConventionIssues } from "../../src/harness/quality/audio-rules";
 
 function wavBuffer(durationSeconds = 2, sampleRate = 16_000) {
   const samples = Math.max(1, Math.floor(durationSeconds * sampleRate));
@@ -237,4 +237,23 @@ test("structural gate checks sample rate, channels, silence, clipping and timeli
     const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: async () => ({ readable: true, durationSeconds: 4, sampleRate: 8_000, channels: 2, silenceRatio: 0.99, peakDb: 0 }) });
     assert.ok(["audio_format_invalid", "audio_silence_excessive", "audio_clipping", "audio_scene_drift"].every((code) => result.issues.some((issue) => issue.code === code)));
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("TTS convention gate keeps AI and reads four-digit years digit by digit", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-tts-conventions-"));
+  try {
+    const { project } = await fixture(root);
+    project.narrationSegments![0].text = "AI \u4ea7\u54c1\u5c06\u57282026\u5e74\u66f4\u65b0\u3002";
+    project.narrationSegments![0].ttsText = "\u4eba\u5de5\u667a\u80fd\u4ea7\u54c1\u5c06\u5728\u4e24\u5343\u96f6\u4e8c\u5341\u516d\u5e74\u66f4\u65b0\u3002";
+
+    const invalidIssues = ttsConventionIssues(project);
+    assert.ok(invalidIssues.some((issue) => issue.code === "tts_ai_expanded" && issue.sceneIndex === 0));
+    assert.ok(invalidIssues.some((issue) => issue.code === "tts_year_pronunciation_invalid" && issue.sceneIndex === 0));
+
+    project.narrationSegments![0].ttsText = "AI \u4ea7\u54c1\u5c06\u5728\u4e8c\u96f6\u4e8c\u516d\u5e74\u66f4\u65b0\u3002";
+    const validIssues = ttsConventionIssues(project);
+    assert.equal(validIssues.some((issue) => issue.code === "tts_ai_expanded" || issue.code === "tts_year_pronunciation_invalid"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

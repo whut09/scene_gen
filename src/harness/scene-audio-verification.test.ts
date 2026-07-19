@@ -31,7 +31,7 @@ test("scene ASR never infers pronunciation from Chinese transcript text", () => 
   assert.equal(result.issues.some((item) => item.code === "audio_pronunciation_mismatch"), false);
 });
 
-test("AI entity verification accepts the synthesized Mandarin form", () => {
+test("AI entity verification rejects expansion to the Mandarin semantic form", () => {
   const project = projectFixture();
   project.narrationSegments![2].text = "AI 系统完成验证。";
   project.narrationSegments![2].claimIds = [];
@@ -40,7 +40,7 @@ test("AI entity verification accepts the synthesized Mandarin form", () => {
     { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
     { sceneIndex: 2, text: "人工智能系统完成验证。", confidence: 0.95 },
   ]);
-  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 2), false);
+  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 2), true);
 });
 
 test("scene ASR blocks a confident first-word omission", () => {

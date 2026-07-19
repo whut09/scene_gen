@@ -9,6 +9,10 @@ function pronounceDigits(value: string) {
   return [...value].map((digit) => CHINESE_DIGITS[digit] ?? digit).join("");
 }
 
+export function pronounceYearDigits(value: string) {
+  return /^(?:19|20)\d{2}$/.test(value) ? pronounceDigits(value) : value;
+}
+
 function chineseSection(value: number) {
   const units = ["千", "百", "十", ""];
   const divisors = [1000, 100, 10, 1];
@@ -74,7 +78,6 @@ export function removeLoneSurrogates(text: string) {
 
 export function prepareF5SynthesisText(text: string) {
   const trimmed = applyTtsSpokenFallbacks(removeLoneSurrogates(text)).trim();
-  const startsWithLatin = /^[A-Za-z0-9]/.test(trimmed);
   const pronounceable = trimmed
     .replace(/^曝/u, "爆料称：")
     .replace(/重置/g, "重新设置")
@@ -83,7 +86,6 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/MoneyPrinterTurbo/gi, "Money Printer Turbo")
     .replace(/awesome-llm-apps/gi, "这个项目")
     .replace(/\bRAG\b/gi, "检索增强生成")
-    .replace(/\bAI\b/g, "人工智能")
     .replace(/K2[.]7 Code HighSpeed/gi, "K二点七代码高速版")
     .replace(/K2[.]7 Code/gi, "K二点七代码")
     .replace(/Kimi Code CLI/gi, "Kimi代码命令行工具")
@@ -106,7 +108,7 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/(\d+)\s*[:\uff1a]\s*(\d+)/g, (_, left: string, right: string) => `${numberToChinese(left)}\u6bd4${numberToChinese(right)}`)
     .replace(/(\d+(?:[.]\d+)?)\s*%/g, (_, value: string) => `百分之${numberToChinese(value)}`)
     .replace(/(\d+)\+(?=\D|$)/g, (_, value: string) => `${numberToChinese(value)}以上`)
-    .replace(/(?<!\d)(\d{4})(?=年)/g, (_, value: string) => pronounceDigits(value))
+    .replace(/(?<!\d)((?:19|20)\d{2})(?!\d)/g, (_, value: string) => pronounceYearDigits(value))
     .replace(/\d+(?:[.]\d+)?/g, (value) => numberToChinese(value));
   if (/\d/.test(pronounceable)) {
     throw new Error(`TTS number normalization left Arabic digits: ${pronounceable.match(/\d+/g)?.join(", ")}`);

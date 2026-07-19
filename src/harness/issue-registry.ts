@@ -63,6 +63,8 @@ export const issueRegistry = {
   segment_speed_uneven: define("hard", "revise-scenes", true),
   segment_speed_variance: define("hard", "revise-scenes", true),
   tts_arabic_digits: define("hard", "revise-scenes", true),
+  tts_ai_expanded: define("hard", "resynthesize-audio", true),
+  tts_year_pronunciation_invalid: define("hard", "resynthesize-audio", true),
   audio_missing: define("hard", "resynthesize-audio", true),
   segment_timing_missing: define("hard", "resynthesize-audio", true),
   audio_scene_drift: define("hard", "resynthesize-audio", true),

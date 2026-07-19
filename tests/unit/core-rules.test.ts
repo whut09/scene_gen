@@ -17,17 +17,18 @@ import { scrubAttribution, scrubGithubReference } from "../../src/pipeline/story
 import { provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 
 test("number pronunciation converts common Chinese news formats", () => {
-  const text = prepareF5SynthesisText("2026年增长12.5%，覆盖1000+用户，版本4.0");
+  const text = prepareF5SynthesisText("2026年发布，版本编号2026，增长12.5%，覆盖1000+用户，版本4.0");
   assert.equal(/\d/.test(text), false);
   assert.match(text, /二零二六年/);
+  assert.equal((text.match(/二零二六/g) ?? []).length, 2);
   assert.match(text, /百分之十二点五/);
   assert.match(text, /一千以上用户/);
   assert.match(text, /四点零/);
 });
 
-test("cloud narration normalizes a leading AI acronym without changing display text", () => {
+test("cloud narration keeps a leading AI acronym without expanding it", () => {
   const segment = { sceneIndex: 0, text: "AI 圈又在造新词。" };
-  assert.equal(narrationSynthesisText(segment), "人工智能 圈又在造新词。");
+  assert.equal(narrationSynthesisText(segment), "AI 圈又在造新词。");
   assert.equal(segment.text, "AI 圈又在造新词。");
 });
 
