@@ -136,6 +136,8 @@ test("published video filename is derived from the Chinese homepage title", () =
 test("news source websites are scrubbed and blocked by the draft gate", async () => {
   assert.equal(scrubAttribution("据IT之家消息，模型今天正式发布。"), "模型今天正式发布。");
   assert.equal(scrubAttribution("这是来自IT之家的报道。"), "这是。");
+  assert.equal(scrubAttribution("潮新闻客户端 记者 李稀“零基础月入过万”"), "“零基础月入过万”");
+  assert.equal(scrubAttribution("图源：网络截图 烧钱的真相"), "烧钱的真相");
   const project = createFixtureProject();
   project.sources[0] = { ...project.sources[0], url: "https://www.ithome.com/0/978/453.htm", contentType: "news" };
   project.narration = `${project.narration} 来自IT之家的报道。`;

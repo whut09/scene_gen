@@ -139,7 +139,7 @@ function expectedEntities(project: VideoProject, segment: NarrationSegment) {
     .map(canonicalSpeechText)
     .filter((value) => value.length >= 2 && expectedText.includes(value)) ?? [];
   const textualEntities = (segment.ttsText ?? segment.text).match(/[A-Za-z][A-Za-z0-9._+-]{1,}|[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+/g) ?? [];
-  return [...new Set([...claimEntities, ...textualEntities.map(canonicalSpeechText)].filter((value) => value.length >= 2))];
+  return [...new Set([...claimEntities, ...textualEntities.map((value) => canonicalSpeechText(prepareF5SynthesisText(value)))].filter((value) => value.length >= 2))];
 }
 function bigramRecall(expected: string, actual: string) {
   if (expected.length < 2) return actual.includes(expected) ? 1 : 0;
