@@ -26,22 +26,33 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-siwei-clean-boundaries-v11";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-packed-boundaries-v13";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 180;
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {
   const chunks: string[] = [];
+  let pending = "";
+  const flush = () => {
+    if (pending.trim()) chunks.push(pending.trim());
+    pending = "";
+  };
   const append = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
     const characters = [...trimmed];
-    if (characters.length <= maximumCharacters) {
-      chunks.push(trimmed);
+    if (characters.length > maximumCharacters) {
+      flush();
+      for (let index = 0; index < characters.length; index += maximumCharacters) {
+        chunks.push(characters.slice(index, index + maximumCharacters).join(""));
+      }
       return;
     }
-    for (let index = 0; index < characters.length; index += maximumCharacters) {
-      chunks.push(characters.slice(index, index + maximumCharacters).join(""));
+    if ([...pending, ...characters].length <= maximumCharacters) {
+      pending += trimmed;
+      return;
     }
+    flush();
+    pending = trimmed;
   };
   for (const sentence of text.split(/(?<=[。！？!?；;])/u)) {
     if ([...sentence].length <= maximumCharacters) {
@@ -50,6 +61,7 @@ export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDI
     }
     for (const clause of sentence.split(/(?<=[，,、：:])/u)) append(clause);
   }
+  flush();
   return chunks;
 }
 
@@ -177,8 +189,14 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
           if (duration <= 0) throw new Error(`NVIDIA TTS chunk ${index + 1} is empty or invalid.`);
           partDurations.push(duration);
         }
-        if (partPaths.length === 1) await renamePart(partPaths[0], naturalPath);
-        else await concatNarrationSegments(partPaths, partDurations, partDurations.map((_, index) => index === partDurations.length - 1 ? 0 : 0.12), naturalPath);
+        if (partPaths.length === 1) await normalizeNvidiaPart(partPaths[0], naturalPath);
+        else {
+          const normalizedPaths = partPaths.map((partPath) => `${partPath}.normalized.wav`);
+          for (let index = 0; index < partPaths.length; index += 1) await normalizeNvidiaPart(partPaths[index], normalizedPaths[index]);
+          const normalizedDurations = await Promise.all(normalizedPaths.map(probeDuration));
+          await concatNarrationSegments(normalizedPaths, normalizedDurations, normalizedDurations.map((_, index) => index === normalizedDurations.length - 1 ? 0 : 0.06), naturalPath);
+          await Promise.all(normalizedPaths.map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
+        }
         if (config.tts.nvidia.speed === 1) await renamePart(naturalPath, targetPath);
         else await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", naturalPath, "-filter:a", `atempo=${config.tts.nvidia.speed}`, "-c:a", "pcm_s16le", targetPath]);
         generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText: input.plan.synthesisText, appliedPronunciationPhrases: Object.keys(nvidiaPronunciationDictionary(input.plan)) };
@@ -195,6 +213,14 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
 async function renamePart(partPath: string, targetPath: string) {
   const { rename } = await import("node:fs/promises");
   await rename(partPath, targetPath);
+}
+
+async function normalizeNvidiaPart(partPath: string, targetPath: string) {
+  await run("ffmpeg", [
+    "-y", "-hide_banner", "-loglevel", "error", "-i", partPath,
+    "-af", "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB:stop_periods=1:stop_duration=0.04:stop_threshold=-52dB,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse",
+    "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", targetPath,
+  ]);
 }
 
 export async function inspectNvidiaTts(config = getRuntimeConfig()) { if (!config.tts.nvidia.apiKey) throw new Error("NVIDIA_API_KEY is not configured."); worker ??= new NvidiaWorker(config); await worker.start(); return { endpoint: config.tts.nvidia.endpoint, voice: config.tts.nvidia.voice }; }

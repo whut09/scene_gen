@@ -336,7 +336,7 @@ async function synthesizeNarration(
       await f5TtsWorker(plan, outputPath, options.sceneIndex ?? 0, options.f5Runtime, options.f5Speed, options.signal);
     }
   } else if (provider === "local") {
-    await windowsTts(plan.synthesisText, outputPath);
+    await windowsTts(plan.synthesisText, outputPath, getRuntimeConfig().tts.local.voice, getRuntimeConfig().tts.local.rate);
   } else {
     await mockTts(plan.synthesisText, outputPath);
   }
@@ -585,6 +585,9 @@ async function attachSegmentedNarration(
       ...segment,
       ttsText: results[index].pronunciationPlan.synthesisText,
       pronunciationPlan: results[index].pronunciationPlan,
+      ttsProvider: provider,
+      ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : undefined),
+      ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",
       audioStartSeconds,
       durationSeconds,
     };
@@ -631,6 +634,9 @@ async function attachSegmentedNarration(
     budgetWarning: results.some((result) => result.azureResult?.budgetWarning),
     pronunciationPlanCount: results.length,
     pronunciationUncertainCount: results.reduce((sum, result) => sum + result.pronunciationIssueCount, 0),
+    ttsVoice: [...new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean))].join(","),
+    ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",
+    ttsSceneVoiceConsistency: new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean)).size <= 1,
   };
   if (metrics.budgetRemainingCharacters === Number.MAX_SAFE_INTEGER) delete metrics.budgetRemainingCharacters;
 
@@ -781,7 +787,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     if (provider !== "local") {
       const fallbackLocalPath = path.join(generatedDir, `${basename}.wav`);
       try {
-        await windowsTts(project.narration, fallbackLocalPath);
+        await windowsTts(project.narration, fallbackLocalPath, getRuntimeConfig().tts.local.voice, getRuntimeConfig().tts.local.rate);
         const fileSize = await stat(fallbackLocalPath).then((file) => file.size).catch(() => 0);
         const duration = await probeDuration(fallbackLocalPath);
         if (fileSize > 0 && duration > 0) {

@@ -25,9 +25,9 @@ test("general news fallback creates five grounded scenes", () => {
   assert.equal(project.narrationSegments?.every((segment) => (segment.claimIds?.length ?? 0) > 0), true);
   assert.equal([...project.narration].length >= 360, true);
   assert.equal(project.meta.title.includes("演员会被取代吗"), false);
-  assert.equal(project.meta.title.includes("人工智能"), true);
-  assert.equal(project.narrationSegments?.every((segment) => !segment.ttsText?.includes("AI")), true);
-  assert.equal(project.narrationSegments?.[0].ttsText, `这条新闻讲的是，${project.meta.title}。`);
+  assert.equal(project.meta.title.includes("AI"), true);
+  assert.equal(project.narrationSegments?.some((segment) => segment.ttsText?.includes("AI")), true);
+  assert.equal(project.narrationSegments?.[0].ttsText?.includes("这条新闻讲的是"), false);
 });
 
 test("semantic article chunks never end with a dangling conjunction", () => {
@@ -58,5 +58,5 @@ test("technical article fallback uses explainer structure without news wording",
   assert.equal(project.scenes[0].kicker, "TECH / EXPLAINER");
   assert.equal(project.narration.includes("\u65b0\u95fb\u65e5\u671f"), false);
   assert.equal(project.narration.includes("\u8fd9\u6761\u65b0\u95fb"), false);
-  assert.match(project.narrationSegments?.[0]?.ttsText ?? "", /^\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0/);
+  assert.equal(project.narrationSegments?.[0]?.ttsText?.includes("\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f"), false);
 });

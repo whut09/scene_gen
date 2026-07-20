@@ -6,7 +6,7 @@ import type { VideoProject } from "../../pipeline/types";
 import { fromRoot } from "../../pipeline/utils";
 import type { QualityIssueInput } from "../quality-protocol";
 
-export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v1";
+export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v2";
 
 export interface AudioStructuralProbe {
   readable: boolean;
@@ -73,6 +73,12 @@ export async function runAudioStructuralGate(input: {
   if (probe.channels > 1) issues.push({ severity: "error", code: "audio_format_invalid", message: `Audio must be mono, received ${probe.channels} channels.`, evidence: { channels: probe.channels } });
   if ((probe.silenceRatio ?? 0) > 0.92) issues.push({ severity: "error", code: "audio_silence_excessive", message: "Audio is predominantly silent.", evidence: { silenceRatio: probe.silenceRatio! } });
   if ((probe.peakDb ?? -3) >= -0.1) issues.push({ severity: "error", code: "audio_clipping", message: "Audio peak indicates clipping.", evidence: { peakDb: probe.peakDb! } });
+  const segmentVoices = (project.narrationSegments ?? []).map((segment) => segment.ttsVoice).filter((voice): voice is string => Boolean(voice));
+  const segmentLanguages = (project.narrationSegments ?? []).map((segment) => segment.ttsLanguage).filter((language): language is string => Boolean(language));
+  const uniqueVoices = [...new Set(segmentVoices)];
+  const uniqueLanguages = [...new Set(segmentLanguages.map((language) => language.toLowerCase()))];
+  if (uniqueVoices.length > 1) issues.push({ severity: "error", code: "audio_voice_inconsistent", message: "Narration scenes use different voices.", evidence: { voices: uniqueVoices } });
+  if (uniqueLanguages.length > 1 || uniqueLanguages.some((language) => language !== "zh-cn" && language !== "zh" && language !== "chinese")) issues.push({ severity: "error", code: "audio_language_inconsistent", message: "Narration scenes use inconsistent or non-Mandarin languages.", evidence: { languages: uniqueLanguages } });
   let cursor = 0;
   for (const [index, scene] of project.scenes.entries()) {
     const segment = project.narrationSegments?.[index];
@@ -85,5 +91,5 @@ export async function runAudioStructuralGate(input: {
     cursor += scene.duration;
   }
   const passed = !issues.some((issue) => issue.severity === "error");
-  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
+  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
 }

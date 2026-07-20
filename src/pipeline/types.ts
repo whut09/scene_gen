@@ -172,6 +172,9 @@ export interface NarrationSegment {
   audioStartSeconds?: number;
   durationSeconds?: number;
   speechAlignment?: NarrationSpeechAlignment;
+  ttsProvider?: string;
+  ttsVoice?: string;
+  ttsLanguage?: string;
 }
 
 export interface SpeechWordTiming {
@@ -255,6 +258,9 @@ export interface VideoProject {
       providerSwitchCount?: number;
       verifierRetryCount?: number;
       avoidedTtsRegenerationCount?: number;
+      ttsVoice?: string;
+      ttsLanguage?: string;
+      ttsSceneVoiceConsistency?: boolean;
     };
     sceneCacheSalts?: Record<string, string>;
     pronunciationPlansPath?: string;

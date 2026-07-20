@@ -215,6 +215,21 @@ test("lenient audio gate marks ASR-only semantic disagreement inconclusive witho
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("lenient audio gate also treats entity and number ASR disagreements as inconclusive", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-semantic-entity-lenient-"));
+  try {
+    const { project } = await fixture(root, { riskOnSecond: false });
+    project.narrationSegments![0].text = "AI model version 19.9";
+    const evaluation = await evaluateAudio(project, 4, undefined, config(root, { QUALITY_GATE_PROFILE: "lenient", ASR_SCENE_CONFIDENCE_MIN: "0.65" }), {
+      structuralProbe: goodProbe,
+      transcribe: async () => [{ sceneIndex: 0, text: "unrelated words", confidence: 0.9, detectedLanguage: "zh", languageConfidence: 0.95 }, { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95, detectedLanguage: "zh", languageConfidence: 0.95 }],
+      pronunciationVerify: async () => ({ status: "inconclusive", confidence: 0, verifier: "mock" }),
+    });
+    assert.equal(evaluation.issues.some((issue) => issue.code === "audio_entity_mismatch" || issue.code === "audio_number_mismatch"), false);
+    assert.ok(evaluation.issues.some((issue) => issue.code === "verification_inconclusive"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("strict semantic gate rejects non-Chinese speech even when forced transcription returns Chinese text", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "scene-gen-language-mismatch-"));
   try {
@@ -236,6 +251,21 @@ test("structural gate checks sample rate, channels, silence, clipping and timeli
     project.narrationSegments![1].audioStartSeconds = 3;
     const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: async () => ({ readable: true, durationSeconds: 4, sampleRate: 8_000, channels: 2, silenceRatio: 0.99, peakDb: 0 }) });
     assert.ok(["audio_format_invalid", "audio_silence_excessive", "audio_clipping", "audio_scene_drift"].every((code) => result.issues.some((issue) => issue.code === code)));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("structural gate rejects mixed voices and languages", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-voice-consistency-"));
+  try {
+    const { project } = await fixture(root);
+    project.narrationSegments = project.narrationSegments!.map((segment, index) => ({
+      ...segment,
+      ttsVoice: index === 0 ? "Mandarin-A" : "Mandarin-B",
+      ttsLanguage: index === 0 ? "zh-CN" : "yue-CN",
+    }));
+    const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: goodProbe });
+    assert.ok(result.issues.some((issue) => issue.code === "audio_voice_inconsistent"));
+    assert.ok(result.issues.some((issue) => issue.code === "audio_language_inconsistent"));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

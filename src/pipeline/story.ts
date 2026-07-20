@@ -22,6 +22,10 @@ function speechFriendlyTitle(title: string) {
 
 const danglingClauseEnding = /(?:\u6b63\u662f\u56e0\u4e3a|\u56e0\u4e3a|\u4f46\u662f|\u800c\u4e14|\u4ee5\u53ca|\u5e76\u4e14|\u4ece\u800c|\u6240\u4ee5|\u5305\u62ec|\u4f8b\u5982)[\uff0c,:\s]*$/u;
 
+function removeNarrationLead(value: string) {
+  return value.replace(/^(?:\u8fd9\u6761\u65b0\u95fb\u8bb2\u7684\u662f|\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f)[\uff1a:,\uff0c\s]*/u, "").trim();
+}
+
 export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72) {
   const clauses = scrubAttribution(text).match(/[^\uff0c\uff1b\uff1a\u3002\uff01\uff1f]+[\uff0c\uff1b\uff1a\u3002\uff01\uff1f]?/gu) ?? [];
   const chunks: string[] = [];
@@ -350,7 +354,7 @@ export function createStoryProject(
       durationSeconds,
       sourceCount: 1,
     },
-    narration: sections.map((section) => scrubAttribution(section.narration)).join("\n"),
+    narration: sections.map((section) => removeNarrationLead(scrubAttribution(section.narration))).join("\n"),
     narrationSegments: sections.map((section, sceneIndex) => ({
       sceneIndex,
       text: scrubAttribution(section.narration),
@@ -607,10 +611,8 @@ function createGeneralNewsProject(
     narration: sections.map((section) => scrubAttribution(section.narration)).join("\n"),
     narrationSegments: sections.map((section, sceneIndex) => ({
       sceneIndex,
-      text: scrubAttribution(section.narration),
-      ttsText: sceneIndex === 0
-        ? isTechnicalArticle ? `\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f\uff0c${title}\u3002` : `\u8fd9\u6761\u65b0\u95fb\u8bb2\u7684\u662f\uff0c${title}\u3002`
-        : speechFriendlyText(scrubAttribution(section.narration)),
+      text: removeNarrationLead(scrubAttribution(section.narration)),
+      ttsText: speechFriendlyText(removeNarrationLead(scrubAttribution(section.narration))),
     })),
     scenes,
     sources: [item],

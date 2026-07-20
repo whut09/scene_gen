@@ -71,6 +71,14 @@ test("draft quality catches a narration that does not open with the title", asyn
   assert.equal(result.issues.some((issue) => issue.code === "title_not_spoken_first"), true);
 });
 
+test("draft quality blocks unmatched punctuation before TTS", async () => {
+  const project = createFixtureProject();
+  project.narrationSegments!.at(-1)!.text += "(";
+  project.narration = project.narrationSegments!.map((segment) => segment.text).join("\n");
+  const result = await evaluateDraft(project, 100);
+  assert.ok(result.issues.some((issue) => issue.code === "narration_punctuation_unbalanced"));
+});
+
 test("draft number checks ignore model identifiers but keep factual numbers", () => {
   assert.deepEqual(extraNarrationNumbers("K3 新模型", "K3 定价更低"), []);
   assert.deepEqual(extraNarrationNumbers("K3 新模型", "K3 拥有 2.8 万亿参数"), ["2.8"]);

@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { rankProviders, selectProviderWithAudit } from "../../src/production/provider-registry";
 import { calculateProviderStats, readProviderOutcomes, recordProviderOutcome } from "../../src/production/provider-stats";
+import { routeTtsProvider } from "../../src/production/tts-routing";
+import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
 
 function outcome(providerId: string, index: number, input: Partial<Record<string, unknown>> = {}) {
   return {
@@ -81,6 +83,21 @@ test("profile weighting favors latency for preview and reliability for productio
     if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalOpenAi;
     if (originalF5 === undefined) delete process.env.F5_TTS_PYTHON; else process.env.F5_TTS_PYTHON = originalF5;
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("explicit Windows TTS overrides fallback-only auto-routing", { concurrency: false }, async () => {
+  const previousFile = process.env.PROVIDER_OUTCOME_FILE;
+  const previousProfile = process.env.SCENE_GEN_PROFILE;
+  delete process.env.PROVIDER_OUTCOME_FILE;
+  process.env.SCENE_GEN_PROFILE = "fast-preview";
+  try {
+    const { plan } = await compilePronunciationPlan({ displayText: "This is a local narration fallback." });
+    const result = await routeTtsProvider({ profile: "fast-preview", plan, explicitProvider: "windows" });
+    assert.equal(result.selectedProvider, "windows");
+  } finally {
+    if (previousFile === undefined) delete process.env.PROVIDER_OUTCOME_FILE; else process.env.PROVIDER_OUTCOME_FILE = previousFile;
+    if (previousProfile === undefined) delete process.env.SCENE_GEN_PROFILE; else process.env.SCENE_GEN_PROFILE = previousProfile;
   }
 });
 

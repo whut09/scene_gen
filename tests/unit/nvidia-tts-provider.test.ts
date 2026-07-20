@@ -17,7 +17,7 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-siwei-clean-boundaries-v11");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-packed-boundaries-v13");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, plan.synthesisText);
   assert.equal(identity.speed, 1.25);
@@ -36,6 +36,11 @@ test("NVIDIA synthesis splits long Mandarin at punctuation within the safe limit
   assert.equal(chunks.join(""), text);
   assert.equal(chunks.length > 1, true);
   assert.equal(chunks.every((chunk) => [...chunk].length <= 32), true);
+});
+
+test("NVIDIA synthesis packs short sentences into one stable voice request", () => {
+  const text = "First sentence. Second sentence. Third sentence.";
+  assert.deepEqual(splitNvidiaSynthesisText(text, 80), [text]);
 });
 
 test("NVIDIA pronunciation dictionary carries tone-number pinyin for risky phrases", async () => {
@@ -61,7 +66,7 @@ test("NVIDIA worker request serializes the custom pronunciation dictionary", () 
   assert.deepEqual(JSON.parse(encodeNvidiaWorkerRequest(input).toString("utf8")), input);
 });
 
-test("NVIDIA defaults to the native Mandarin Siwei voice", () => {
+test("NVIDIA defaults to the configured native Mandarin Siwei voice", () => {
   const config = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only" }, "test");
   assert.equal(config.tts.nvidia.voice, "Magpie-Multilingual.ZH-CN.Siwei");
 });

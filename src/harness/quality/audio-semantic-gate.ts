@@ -77,7 +77,7 @@ export async function runAudioSemanticGate(input: {
     : [];
   const issues = [...verification.issues, ...alignmentIssues]
     .filter((issue) => issue.code !== "audio_pronunciation_mismatch")
-    .map((issue) => input.config.quality.profile === "lenient" && issue.code === "audio_semantic_mismatch"
+    .map((issue) => input.config.quality.profile === "lenient" && ["audio_semantic_mismatch", "audio_entity_mismatch", "audio_number_mismatch"].includes(issue.code)
       ? {
           ...issue,
           severity: "warning" as const,

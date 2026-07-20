@@ -218,6 +218,13 @@ export async function evaluateDraft(
   }
   const normalizedTitle = normalizeText(project.meta.title);
   const normalizedOpening = normalizeText(firstNarration);
+  const narrationPunctuationBalance = [
+    ["(", ")"], ["（", "）"], ["[", "]"], ["【", "】"], ["“", "”"], ["‘", "’"],
+  ].filter(([open, close]) => (project.narration.split(open).length - 1) !== (project.narration.split(close).length - 1));
+  if (narrationPunctuationBalance.length > 0) {
+    issues.push({ severity: "error", code: "narration_punctuation_unbalanced", message: "Narration contains unmatched brackets or quotation marks that may produce TTS artifacts." });
+    revisionNotes.push("Remove unmatched brackets and quotation marks before synthesis.");
+  }
   if (normalizedTitle.length >= 4 && normalizedOpening.split(normalizedTitle).length - 1 > 1) {
     issues.push({ severity: "error", code: "title_spoken_repeated", message: "首屏旁白重复播报主标题，只允许完整播报一次。", sceneIndex: 0 });
     revisionNotes.push("首屏只播报一次完整标题，删除后续重复标题。");
