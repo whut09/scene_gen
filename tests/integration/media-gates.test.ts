@@ -31,7 +31,7 @@ test("FFmpeg fixtures pass audio and video structural gates without GPU", { time
     const project = createFixtureProject({
       meta: { ...createFixtureProject().meta, durationSeconds: 2 },
       narration,
-      narrationSegments: [{ sceneIndex: 0, text: narration, audioStartSeconds: 0, durationSeconds: 2 }],
+      narrationSegments: [{ sceneIndex: 0, text: narration, audioStartSeconds: 0, durationSeconds: 2, ttsProvider: "local", ttsVoice: "Microsoft Huihui Desktop", ttsLanguage: "zh-CN" }],
       scenes: [{ type: "title", duration: 2, kicker: "测试", headline: "离线媒体门禁", subhead: "两秒固定媒体", sources: ["FFmpeg"] }],
       audio: { src: audioPath, durationSeconds: 2, provider: "local" },
     });

@@ -166,6 +166,7 @@ export interface NarrationSegment {
   sceneIndex: number;
   text: string;
   ttsText?: string;
+  providerSynthesisText?: string;
   pronunciationOverrides?: import("./pronunciation/compiler").PronunciationOverride[];
   pronunciationPlan?: import("./pronunciation/schema").PronunciationPlan;
   claimIds?: string[];

@@ -176,12 +176,16 @@ export const narrationSegmentSchema = z.object({
   sceneIndex: z.number().int().nonnegative(),
   text: z.string(),
   ttsText: z.string().min(1).optional(),
+  providerSynthesisText: z.string().min(1).optional(),
   pronunciationOverrides: z.array(pronunciationOverrideSchema).optional(),
   pronunciationPlan: pronunciationPlanSchema.optional(),
   claimIds: claimIdsSchema.optional(),
   audioStartSeconds: z.number().nonnegative().optional(),
   durationSeconds: z.number().positive().optional(),
   speechAlignment: narrationSpeechAlignmentSchema.optional(),
+  ttsProvider: z.string().min(1).optional(),
+  ttsVoice: z.string().min(1).optional(),
+  ttsLanguage: z.string().min(1).optional(),
 });
 
 export const videoProjectSchema = z.object({
@@ -229,6 +233,9 @@ export const videoProjectSchema = z.object({
       budgetWarning: z.boolean().optional(),
       pronunciationPlanCount: z.number().int().nonnegative().optional(),
       pronunciationUncertainCount: z.number().int().nonnegative().optional(),
+      ttsVoice: z.string().optional(),
+      ttsLanguage: z.string().optional(),
+      ttsSceneVoiceConsistency: z.boolean().optional(),
     }).optional(),
     sceneCacheSalts: z.record(z.string(), z.string()).optional(),
     pronunciationPlansPath: z.string().optional(),

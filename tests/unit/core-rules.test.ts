@@ -48,7 +48,7 @@ test("public narration removes third-party platform promotion", () => {
 
 test("cloud narration uses stable Mandarin-friendly technical acronyms", () => {
   const text = prepareF5SynthesisText("Seed Audio 1.0 在 AB 评测和 MOS 指标中表现稳定。");
-  assert.match(text, /西德奥迪欧\s+一点零/);
+  assert.match(text, /Seed Audio\s+一点零/);
   assert.match(text, /A、B/);
   assert.match(text, /M、O、S/);
 });

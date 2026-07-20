@@ -34,11 +34,18 @@ export function narrationRateMetrics(project: VideoProject) {
 export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] {
   const issues: QualityIssueInput[] = [];
   for (const segment of project.narrationSegments ?? []) {
-    const synthesisInput = segment.ttsText?.trim() || segment.text;
+    const synthesisInput = segment.providerSynthesisText?.trim() || segment.ttsText?.trim() || segment.text;
     const prepared = prepareF5SynthesisText(synthesisInput);
     if (/\bAI\b/i.test(segment.text) && !/\bAI\b/i.test(synthesisInput) && synthesisInput.includes("人工智能")) {
       issues.push({ severity: "error", code: "tts_ai_expanded", message: `第 ${segment.sceneIndex + 1} 屏把 AI 扩写成了“人工智能”，应保持 AI 字母读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { displayText: segment.text, synthesisText: synthesisInput } });
     }
+    const protectedLatinNames = segment.text.match(/\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)+\b/g) ?? [];
+    for (const name of protectedLatinNames) {
+      if (!synthesisInput.toLowerCase().includes(name.toLowerCase())) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, displayText: segment.text, synthesisText: synthesisInput } });
+    }
+    const normalizedTitle = project.meta.title.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
+    const normalizedSynthesis = synthesisInput.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
+    if (segment.sceneIndex === 0 && normalizedTitle.length >= 4 && normalizedSynthesis.split(normalizedTitle).length - 1 > 1) issues.push({ severity: "error", code: "title_spoken_repeated", message: "The opening TTS text repeats the full title.", sceneIndex: 0, repairAction: "revise-scenes", retryable: true, evidence: { title: project.meta.title, synthesisText: synthesisInput } });
     for (const year of segment.text.match(/(?<!\d)(?:19|20)\d{2}(?!\d)/g) ?? []) {
       const expected = pronounceYearDigits(year);
       if (!prepared.includes(expected)) issues.push({ severity: "error", code: "tts_year_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏年份 ${year} 必须逐位读作 ${expected}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { year, expected, synthesisText: prepared } });

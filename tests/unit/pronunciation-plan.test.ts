@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { XMLValidator } from "fast-xml-parser";
 import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
-import { cosyVoicePronunciationInput, edgePronunciationText, f5PronunciationInput, indexTtsPronunciationInput } from "../../src/pipeline/pronunciation/provider-adapters";
+import { cosyVoicePronunciationInput, edgePronunciationText, f5PronunciationInput, indexTtsPronunciationInput, localPronunciationText } from "../../src/pipeline/pronunciation/provider-adapters";
 import { buildAzurePronunciationSsml } from "../../src/pipeline/tts/providers/azure-ssml";
 import type { PronunciationSpan } from "../../src/pipeline/pronunciation/schema";
 
 test("manual pronunciation plan covers required Chinese polyphones", async () => {
-  const text = "重构、重复、重要、重量、重启、重试、函数重载、重载运输、银行、行走、长大、长度、音乐、快乐";
+  const text = "重构、重复、重要、重量、重启、重试、函数重载、重载运输、银行、行走、长内容、长视频、长音频、延长、长大、长度、音乐、快乐";
   const { plan } = await compilePronunciationPlan({ displayText: text, domain: "software" });
   const pronunciations = new Map(plan.spans.map((span) => [span.phrase, span.expectedPinyin.join(" ")]));
   assert.equal(pronunciations.get("重构"), "chong2 gou4");
@@ -20,6 +20,10 @@ test("manual pronunciation plan covers required Chinese polyphones", async () =>
   assert.equal(pronunciations.get("重载运输"), "zhong4 zai4 yun4 shu1");
   assert.equal(pronunciations.get("银行"), "yin2 hang2");
   assert.equal(pronunciations.get("行走"), "xing2 zou3");
+  assert.equal(pronunciations.get("长内容"), "chang2 nei4 rong2");
+  assert.equal(pronunciations.get("长视频"), "chang2 shi4 pin2");
+  assert.equal(pronunciations.get("长音频"), "chang2 yin1 pin2");
+  assert.equal(pronunciations.get("延长"), "yan2 chang2");
   assert.equal(pronunciations.get("长大"), "zhang3 da4");
   assert.equal(pronunciations.get("长度"), "chang2 du4");
   assert.equal(pronunciations.get("音乐"), "yin1 yue4");
@@ -27,6 +31,12 @@ test("manual pronunciation plan covers required Chinese polyphones", async () =>
   assert.equal(plan.displayText, text);
   assert.equal(plan.spans.find((span) => span.phrase === "重构")?.risk, "high");
   assert.equal(plan.spans.find((span) => span.phrase === "重构")?.spokenFallback, "重新构建");
+});
+
+test("local TTS removes ambiguous chang pronunciations without changing display text", async () => {
+  const { plan } = await compilePronunciationPlan({ displayText: "把长内容和长视频继续延长" });
+  assert.equal(localPronunciationText(plan), "把长篇内容和长篇视频继续延伸");
+  assert.equal(plan.displayText, "把长内容和长视频继续延长");
 });
 
 test("longest phrase wins and manual entries override G2PW", async () => {

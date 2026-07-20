@@ -33,7 +33,7 @@ async function fixture(root: string, options: { riskOnSecond?: boolean } = {}) {
   const project: VideoProject = {
     meta: { title: "这是普通开场", createdAt: "2026-07-17T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 4, sourceCount: 1 },
     narration: texts.join("\n"),
-    narrationSegments: [first.plan, second.plan].map((plan, sceneIndex) => ({ sceneIndex, text: plan.displayText, audioStartSeconds: sceneIndex * 2, durationSeconds: 2, pronunciationPlan: plan })),
+    narrationSegments: [first.plan, second.plan].map((plan, sceneIndex) => ({ sceneIndex, text: plan.displayText, audioStartSeconds: sceneIndex * 2, durationSeconds: 2, pronunciationPlan: plan, ttsProvider: "azure", ttsVoice: "zh-CN-XiaoxiaoNeural", ttsLanguage: "zh-CN" })),
     audio: { src: audioPath, durationSeconds: 4, provider: "azure" },
     scenes: texts.map((text) => ({ type: "title" as const, duration: 2, kicker: "测试", headline: text, subhead: "音频门", sources: ["fixture"] })),
     sources: [{ id: "fixture", kind: "webpage", title: "fixture", url: "https://example.com", source: "fixture", summary: "fixture", content: "fixture", score: 1, tags: [] }],
@@ -286,4 +286,19 @@ test("TTS convention gate keeps AI and reads four-digit years digit by digit", a
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("TTS convention gate preserves product names and blocks a repeated title", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-tts-proper-name-"));
+  try {
+    const { project } = await fixture(root);
+    project.meta.title = "Seed Audio 1.0 发布";
+    project.narrationSegments![0].text = "Seed Audio 1.0 发布。";
+    project.narrationSegments![0].ttsText = "西德奥迪欧一点零发布。";
+    assert.ok(ttsConventionIssues(project).some((issue) => issue.code === "tts_proper_name_translated"));
+    project.meta.title = "测试标题";
+    project.narrationSegments![0].text = "测试标题。";
+    project.narrationSegments![0].ttsText = "测试标题。测试标题。";
+    assert.ok(ttsConventionIssues(project).some((issue) => issue.code === "title_spoken_repeated"));
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

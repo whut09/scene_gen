@@ -26,7 +26,7 @@ import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from 
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
-import { f5PronunciationInput } from "./pronunciation/provider-adapters";
+import { f5PronunciationInput, localPronunciationText } from "./pronunciation/provider-adapters";
 import { pronunciationPlanHash, type PronunciationPlan } from "./pronunciation/schema";
 export { prepareF5SynthesisText, removeLoneSurrogates } from "./tts/text-normalization";
 
@@ -336,7 +336,7 @@ async function synthesizeNarration(
       await f5TtsWorker(plan, outputPath, options.sceneIndex ?? 0, options.f5Runtime, options.f5Speed, options.signal);
     }
   } else if (provider === "local") {
-    await windowsTts(plan.synthesisText, outputPath, getRuntimeConfig().tts.local.voice, getRuntimeConfig().tts.local.rate);
+    await windowsTts(localPronunciationText(plan), outputPath, getRuntimeConfig().tts.local.voice, getRuntimeConfig().tts.local.rate);
   } else {
     await mockTts(plan.synthesisText, outputPath);
   }
@@ -584,6 +584,7 @@ async function attachSegmentedNarration(
     const aligned = {
       ...segment,
       ttsText: results[index].pronunciationPlan.synthesisText,
+      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : results[index].pronunciationPlan.synthesisText,
       pronunciationPlan: results[index].pronunciationPlan,
       ttsProvider: provider,
       ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : undefined),

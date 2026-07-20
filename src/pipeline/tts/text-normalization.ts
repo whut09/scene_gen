@@ -79,7 +79,6 @@ export function removeLoneSurrogates(text: string) {
 export function prepareF5SynthesisText(text: string) {
   const trimmed = applyTtsSpokenFallbacks(removeLoneSurrogates(text)).trim();
   const pronounceable = trimmed
-    .replace(/Seed\s+Audio/gi, "西德奥迪欧")
     .replace(/\bAB\b/g, "A、B")
     .replace(/\bMOS\b/g, "M、O、S")
     .replace(/^曝/u, "爆料称：")

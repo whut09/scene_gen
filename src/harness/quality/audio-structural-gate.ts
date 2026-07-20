@@ -77,6 +77,8 @@ export async function runAudioStructuralGate(input: {
   const segmentLanguages = (project.narrationSegments ?? []).map((segment) => segment.ttsLanguage).filter((language): language is string => Boolean(language));
   const uniqueVoices = [...new Set(segmentVoices)];
   const uniqueLanguages = [...new Set(segmentLanguages.map((language) => language.toLowerCase()))];
+  const identityRequired = project.audio?.provider === "local" || project.audio?.provider === "nvidia" || project.audio?.provider === "azure";
+  if (identityRequired && (segmentVoices.length !== (project.narrationSegments?.length ?? 0) || segmentLanguages.length !== (project.narrationSegments?.length ?? 0))) issues.push({ severity: "error", code: "audio_identity_metadata_missing", message: "Narration voice or language metadata is missing, so consistency cannot be verified.", evidence: { provider: project.audio?.provider ?? "unknown", voiceCount: segmentVoices.length, languageCount: segmentLanguages.length, segmentCount: project.narrationSegments?.length ?? 0 } });
   if (uniqueVoices.length > 1) issues.push({ severity: "error", code: "audio_voice_inconsistent", message: "Narration scenes use different voices.", evidence: { voices: uniqueVoices } });
   if (uniqueLanguages.length > 1 || uniqueLanguages.some((language) => language !== "zh-cn" && language !== "zh" && language !== "chinese")) issues.push({ severity: "error", code: "audio_language_inconsistent", message: "Narration scenes use inconsistent or non-Mandarin languages.", evidence: { languages: uniqueLanguages } });
   let cursor = 0;

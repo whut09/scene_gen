@@ -4,7 +4,7 @@ import type { VideoProject } from "./types";
 import { attachNarrationAudio } from "./tts";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson } from "./utils";
 import { videoProjectSchema } from "./schemas";
-import { ensureNewsDateNarration, normalizeProjectDatePrecision } from "./news-date";
+import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
 import { alignProjectSpeech } from "./speech-alignment";
 
 loadDotEnv();
@@ -21,6 +21,7 @@ if (targetSeconds && Number.isFinite(targetSeconds) && targetSeconds > 0) {
   project = { ...project, meta: { ...project.meta, durationSeconds: targetSeconds } };
 }
 project = normalizeProjectDatePrecision(project);
+project = ensureTitleSpokenFirst(project);
 project = ensureNewsDateNarration(project);
 const sourceId = project.sources[0]?.id ?? slugify(project.meta.title, "story");
 const basename =

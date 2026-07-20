@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "locale": "zh-CN",
   "entries": [
     {
@@ -102,6 +102,69 @@
       "enabled": true,
       "risk": "medium",
       "providerOverrides": {}
+    },
+    {
+      "phrase": "长内容",
+      "pinyin": [
+        "chang2",
+        "nei4",
+        "rong2"
+      ],
+      "spokenFallback": "长篇内容",
+      "enabled": true,
+      "risk": "high",
+      "providerOverrides": {
+        "local": {
+          "spokenFallback": "长篇内容"
+        }
+      }
+    },
+    {
+      "phrase": "长视频",
+      "pinyin": [
+        "chang2",
+        "shi4",
+        "pin2"
+      ],
+      "spokenFallback": "长篇视频",
+      "enabled": true,
+      "risk": "high",
+      "providerOverrides": {
+        "local": {
+          "spokenFallback": "长篇视频"
+        }
+      }
+    },
+    {
+      "phrase": "长音频",
+      "pinyin": [
+        "chang2",
+        "yin1",
+        "pin2"
+      ],
+      "spokenFallback": "长篇音频",
+      "enabled": true,
+      "risk": "high",
+      "providerOverrides": {
+        "local": {
+          "spokenFallback": "长篇音频"
+        }
+      }
+    },
+    {
+      "phrase": "延长",
+      "pinyin": [
+        "yan2",
+        "chang2"
+      ],
+      "spokenFallback": "延伸",
+      "enabled": true,
+      "risk": "high",
+      "providerOverrides": {
+        "local": {
+          "spokenFallback": "延伸"
+        }
+      }
     },
     {
       "phrase": "长大",

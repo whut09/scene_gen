@@ -41,3 +41,10 @@ export function edgePronunciationText(plan: PronunciationPlan) {
     return fallback ? `${text.slice(0, span.start)}${fallback}${text.slice(span.end)}` : text;
   }, plan.synthesisText);
 }
+
+export function localPronunciationText(plan: PronunciationPlan) {
+  return plan.spans.reduceRight((text, span) => {
+    const fallback = span.providerOverrides.local?.spokenFallback;
+    return fallback ? `${text.slice(0, span.start)}${fallback}${text.slice(span.end)}` : text;
+  }, plan.synthesisText);
+}
