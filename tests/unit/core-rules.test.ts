@@ -32,6 +32,12 @@ test("cloud narration keeps a leading AI acronym without expanding it", () => {
   assert.equal(segment.text, "AI 圈又在造新词。");
 });
 
+test("cloud narration repairs a stale AI expansion in ttsText", () => {
+  const segment = { sceneIndex: 0, text: "AI 系统完成更新。", ttsText: "人工智能系统完成更新。" };
+  assert.equal(narrationSynthesisText(segment), "AI 系统完成更新。");
+  assert.equal(segment.text, "AI 系统完成更新。");
+});
+
 test("title opening is inserted once and remains idempotent", () => {
   const title = "开源视频生成工具发布新版本";
   const narration = "这次更新重点改进离线测试。";

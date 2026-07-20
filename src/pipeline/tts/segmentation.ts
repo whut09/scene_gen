@@ -2,7 +2,11 @@ import type { NarrationSegment } from "../types";
 import { prepareF5SynthesisText } from "./text-normalization";
 
 export function narrationSynthesisText(segment: NarrationSegment) {
-  return prepareF5SynthesisText(segment.ttsText?.trim() || segment.text);
+  const configuredText = segment.ttsText?.trim() || segment.text;
+  const synthesisText = /\bAI\b/i.test(segment.text) && !/\bAI\b/i.test(configuredText) && configuredText.includes("人工智能")
+    ? segment.text
+    : configuredText;
+  return prepareF5SynthesisText(synthesisText);
 }
 
 export function audioGenerationKey(sceneCacheSalts: Record<string, string>) {
