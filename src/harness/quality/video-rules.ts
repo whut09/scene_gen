@@ -209,7 +209,8 @@ export async function evaluateVideo(
       for (const scene of visualAudit.scenes) {
         for (const issue of scene.issues) {
           domAuditIssueCount += 1;
-          issues.push({ severity: issue.severity, code: issue.code, message: issue.message, sceneIndex: scene.sceneIndex, evidence: issue.evidence });
+          const layoutHardFailures = ["content_clipped", "element_overlap", "dom_element_out_of_bounds", "text_unsafe_zone", "text_line_too_long"];
+          issues.push({ severity: issue.severity === "warning" && layoutHardFailures.includes(issue.code) ? "error" : issue.severity, code: issue.code, message: issue.message, sceneIndex: scene.sceneIndex, evidence: issue.evidence });
         }
       }
     } catch (error) {

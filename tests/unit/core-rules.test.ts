@@ -15,6 +15,7 @@ import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
 import { scrubAttribution, scrubGithubReference } from "../../src/pipeline/story";
 import { provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
+import { containsForbiddenPlatformPromotion, scrubAttribution } from "../../src/pipeline/story";
 
 test("number pronunciation converts common Chinese news formats", () => {
   const text = prepareF5SynthesisText("2026年发布，版本编号2026，增长12.5%，覆盖1000+用户，版本4.0");
@@ -36,6 +37,20 @@ test("cloud narration repairs a stale AI expansion in ttsText", () => {
   const segment = { sceneIndex: 0, text: "AI 系统完成更新。", ttsText: "人工智能系统完成更新。" };
   assert.equal(narrationSynthesisText(segment), "AI 系统完成更新。");
   assert.equal(segment.text, "AI 系统完成更新。");
+});
+
+test("public narration removes third-party platform promotion", () => {
+  const text = "Seed Audio 已在火山方舟体验中心上线，附相关链接。核心能力保持不变。";
+  assert.equal(containsForbiddenPlatformPromotion(text), true);
+  assert.equal(scrubAttribution(text).includes("火山方舟"), false);
+  assert.equal(scrubAttribution(text).includes("附相关链接"), false);
+});
+
+test("cloud narration uses stable Mandarin-friendly technical acronyms", () => {
+  const text = prepareF5SynthesisText("Seed Audio 1.0 在 AB 评测和 MOS 指标中表现稳定。");
+  assert.match(text, /西德奥迪欧\s+一点零/);
+  assert.match(text, /A、B/);
+  assert.match(text, /M、O、S/);
 });
 
 test("title opening is inserted once and remains idempotent", () => {

@@ -52,6 +52,8 @@ export const issueRegistry = {
   release_status_weakened: define("hard", "regenerate-draft", true),
   forbidden_content: define("hard", "regenerate-draft", true),
   source_attribution_exposed: define("hard", "revise-scenes", true),
+  external_platform_promotion_exposed: define("hard", "revise-scenes", true),
+  title_spoken_repeated: define("hard", "revise-scenes", true),
   external_platform_reference_exposed: define("hard", "revise-scenes", true),
   narration_short: define("hard", "regenerate-draft", true),
   narration_long: define("hard", "regenerate-draft", true),

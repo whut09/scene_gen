@@ -7,7 +7,7 @@ import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate } from "../../pipeline/news-date";
-import { containsForbiddenGithubReference, containsForbiddenSourceAttribution } from "../../pipeline/story";
+import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
 import { getRuntimeConfig, type RuntimeConfig } from "../../config/runtime-config";
@@ -211,6 +211,16 @@ export async function evaluateDraft(
   if (isNewsProject(project) && containsForbiddenSourceAttribution(publicProjectText)) {
     issues.push({ severity: "error", code: "source_attribution_exposed", message: "新闻画面或旁白不得出现网站、媒体或文章来源署名。" });
     revisionNotes.push("删除 IT之家、量子位、36氪、TechWeb 等网站来源文字，只保留事实内容。 ");
+  }
+  if (containsForbiddenPlatformPromotion(publicProjectText)) {
+    issues.push({ severity: "error", code: "external_platform_promotion_exposed", message: "视频不得出现第三方平台上线、体验中心、链接或引导访问表述。" });
+    revisionNotes.push("删除第三方平台名称、上线渠道和链接引导，只保留产品功能与事实结果。");
+  }
+  const normalizedTitle = normalizeText(project.meta.title);
+  const normalizedOpening = normalizeText(firstNarration);
+  if (normalizedTitle.length >= 4 && normalizedOpening.split(normalizedTitle).length - 1 > 1) {
+    issues.push({ severity: "error", code: "title_spoken_repeated", message: "首屏旁白重复播报主标题，只允许完整播报一次。", sceneIndex: 0 });
+    revisionNotes.push("首屏只播报一次完整标题，删除后续重复标题。");
   }
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(publicProjectText, repositoryAddresses)) {

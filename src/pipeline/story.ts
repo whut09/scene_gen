@@ -11,7 +11,6 @@ function shortTitle(title: string, max = 34) {
 
 function speechFriendlyText(text: string) {
   return text
-    .replace(/\bAI\b/gi, "人工智能")
     .replace(/\bCOO\b/gi, "首席运营官")
     .replace(/HappyHorse/gi, "活动主办方")
     .replace(/HorsePower/gi, "人工智能影像大赛");
@@ -60,6 +59,7 @@ function displaySource(item: HotItem) {
 
 const forbiddenSourceAttribution = /(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
 const forbiddenGithubPlatformReference = /(?:https?:\/\/)?(?:www\.)?github\.com(?:\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)?|\bgithub(?:\s+release)?\b/gi;
+const forbiddenPlatformPromotion = /(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)/gi;
 
 export function containsForbiddenGithubReference(text: string, repositoryAddresses: string[] = []) {
   forbiddenGithubPlatformReference.lastIndex = 0;
@@ -82,6 +82,11 @@ export function containsForbiddenSourceAttribution(text: string) {
   return forbiddenSourceAttribution.test(text);
 }
 
+export function containsForbiddenPlatformPromotion(text: string) {
+  forbiddenPlatformPromotion.lastIndex = 0;
+  return forbiddenPlatformPromotion.test(text);
+}
+
 export function scrubAttribution(text: string) {
   forbiddenSourceAttribution.lastIndex = 0;
   return text
@@ -91,6 +96,7 @@ export function scrubAttribution(text: string) {
     .replace(/来源\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_. -]{0,32}/g, "")
     .replace(/图源\s*[：:|｜]?\s*[^，。！？；;\s]{0,32}/g, "")
     .replace(/(?:^|[。！？\s])记者\s+[\u4e00-\u9fa5]{2,4}(?=$|[“”"'，,。！？\s])/gu, " ")
+    .replace(/[^。！？；;\n]*(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)[^。！？；;\n]*[。！？；;]?/gi, "")
     .replace(/^[，,：:；;\s]+/u, "")
     .replace(/[_-]\s*$/g, "")
     .replace(/\s+/g, " ")

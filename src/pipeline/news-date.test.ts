@@ -56,6 +56,19 @@ test("title-first policy removes an early duplicate title", () => {
   assert.equal(output.narrationSegments?.[0]?.text, `${input.meta.title}\u3002\u540e\u7eed\u89e3\u91ca\u8ba1\u7b97\u65b9\u6cd5\u3002`);
 });
 
+test("title-first policy removes a second exact title from the opening narration", () => {
+  const input = project("webpage");
+  input.narrationSegments![0] = {
+    sceneIndex: 0,
+    text: `${input.meta.title}。新闻日期：2026年7月20日。这条新闻讲的是：${input.meta.title}。正文。`,
+    ttsText: `${input.meta.title}。新闻日期：二零二六年七月二十日。这条新闻讲的是：${input.meta.title}。正文。`,
+  };
+  const output = ensureTitleSpokenFirst(input);
+  assert.equal(output.narrationSegments?.[0]?.text.includes(`这条新闻讲的是：${input.meta.title}`), false);
+  assert.equal(output.narrationSegments?.[0]?.ttsText?.includes(`这条新闻讲的是：${input.meta.title}`), false);
+  assert.equal(output.narrationSegments?.[0]?.text.includes("这条新闻讲的是：。"), false);
+});
+
 
 test("technical article removes publication metadata and exact timestamps", () => {
   const input = project("webpage");

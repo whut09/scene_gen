@@ -31,6 +31,22 @@ function compact(value: string) {
 }
 
 
+function removeRepeatedOpeningTitle(value: string, title: string) {
+  const firstIndex = value.indexOf(title);
+  if (firstIndex < 0) return value.trim();
+  const prefix = value.slice(0, firstIndex + title.length);
+  let suffix = value.slice(firstIndex + title.length);
+  let repeatedIndex = suffix.indexOf(title);
+  while (repeatedIndex >= 0) {
+    suffix = suffix.slice(0, repeatedIndex) + suffix.slice(repeatedIndex + title.length);
+    repeatedIndex = suffix.indexOf(title);
+  }
+  return `${prefix}${suffix}`
+    .replace(/这条新闻讲的是\s*[：:]\s*[。！？!?]?/g, "")
+    .replace(/([。！？!?])\s*([。！？!?])/g, "$1")
+    .trim();
+}
+
 function normalizeDateString(value: string, technical: boolean) {
   let normalized = value
     .replace(/(20\d{2})-(\d{2})-(\d{2})[T\s]\d{2}:\d{2}:\d{2}(?:[.]\d+)?Z?/g, (_, year, month, day) => `${year}年${Number(month)}月${Number(day)}日`)
@@ -60,7 +76,14 @@ export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {
   if (!title || !segments?.[0]) return project;
   const first = segments[0];
   const spoken = first.ttsText ?? first.text;
-  if (compact(spoken).startsWith(compact(title))) return project;
+  if (compact(first.text).startsWith(compact(title))) {
+    const nextSegments = segments.map((segment, index) => index === 0 ? {
+      ...segment,
+      text: removeRepeatedOpeningTitle(segment.text, title),
+      ttsText: removeRepeatedOpeningTitle(segment.text, title),
+    } : segment);
+    return { ...project, narrationSegments: nextSegments, narration: nextSegments.map((segment) => segment.text).join("\n") };
+  }
   const stripRepeatedTitle = (value: string) => {
     const titleIndex = value.indexOf(title);
     if (titleIndex < 0 || titleIndex > 36) return value.trim();
@@ -89,7 +112,11 @@ export function ensureNewsDateNarration(project: VideoProject): VideoProject {
     body = opening.slice(title.length).replace(/^[。！？!?，,：:\s]+/, "").trim();
   }
   const datedOpening = [title ? `${title}。` : "", `新闻日期：${date}。`, body].filter(Boolean).join("");
-  const nextSegments = segments.map((segment, index) => index === 0 ? { ...segment, text: datedOpening } : segment);
+  const nextSegments = segments.map((segment, index) => index === 0 ? {
+    ...segment,
+    text: removeRepeatedOpeningTitle(datedOpening, title),
+    ttsText: removeRepeatedOpeningTitle(segment.text, title),
+  } : segment);
   return {
     ...project,
     narrationSegments: nextSegments,

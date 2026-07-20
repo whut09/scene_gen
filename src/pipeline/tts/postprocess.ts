@@ -13,7 +13,8 @@ export async function concatNarrationSegments(
   for (const input of inputs) args.push("-i", input);
   const filters = inputs.map((_, index) => {
     const total = durations[index] + gaps[index];
-    return `[${index}:a]aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono,apad=pad_dur=${gaps[index].toFixed(3)},atrim=duration=${total.toFixed(3)}[a${index}]`;
+    const fadeOutStart = Math.max(0.02, durations[index] - 0.06);
+    return `[${index}:a]aresample=24000,aformat=sample_fmts=s16:channel_layouts=mono,afade=t=in:st=0:d=0.02,afade=t=out:st=${fadeOutStart.toFixed(3)}:d=0.06,apad=pad_dur=${gaps[index].toFixed(3)},atrim=duration=${total.toFixed(3)}[a${index}]`;
   });
   const delayMs = Math.round(Math.max(0, leadingSilenceSeconds) * 1000);
   const delay = delayMs > 0 ? `,adelay=${delayMs}:all=1` : "";
