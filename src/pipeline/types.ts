@@ -224,7 +224,7 @@ export interface VideoProject {
   audio?: {
     src: string;
     durationSeconds: number;
-    provider: "nvidia" | "azure" | "cloudflare-melotts" | "edge" | "openai" | "local" | "f5" | "mock" | "silent";
+    provider: "indextts" | "nvidia" | "azure" | "cloudflare-melotts" | "edge" | "openai" | "local" | "f5" | "mock" | "silent";
     metrics?: {
       workerStartCount: number;
       workerStartupMs: number;
@@ -263,6 +263,8 @@ export interface VideoProject {
       ttsLanguage?: string;
       ttsSceneVoiceConsistency?: boolean;
       acousticVoiceSpreadSemitones?: number;
+      minimumSpeakerSimilarity?: number;
+      averageSpeakerSimilarity?: number;
       pitchAdjustedSceneIndexes?: string;
     };
     sceneCacheSalts?: Record<string, string>;

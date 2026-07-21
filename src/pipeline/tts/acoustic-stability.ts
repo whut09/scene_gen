@@ -121,6 +121,7 @@ export async function analyzeVoiceProfilesFromTimeline(filePath: string, ranges:
   return Promise.all(ranges.map((range, index) => loadVoiceProfile(filePath, index, range.startSeconds, range.durationSeconds)));
 }
 
+
 export function voicePitchSpreadSemitones(profiles: AcousticVoiceProfile[]) {
   const pitches = profiles.filter((profile) => profile.voicedFrames >= 3 && profile.medianF0Hz > 0).map((profile) => profile.medianF0Hz);
   if (pitches.length < 2) return 0;

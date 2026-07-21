@@ -33,7 +33,7 @@ const forceAudioRebuild = Boolean(args["force-audio-rebuild"]);
 const cacheSalt = typeof args["cache-salt"] === "string" ? args["cache-salt"] : undefined;
 const reason = typeof args.reason === "string" ? args.reason : undefined;
 const pronunciationStrategy = args["pronunciation-strategy"] === "retry-verifier" || args["pronunciation-strategy"] === "switch-pronunciation-mode" || args["pronunciation-strategy"] === "use-spoken-fallback" || args["pronunciation-strategy"] === "switch-tts-provider" || args["pronunciation-strategy"] === "manual-confirmation" ? args["pronunciation-strategy"] : undefined;
-const provider = args.provider === "nvidia" || args.provider === "azure" || args.provider === "cloudflare-melotts" || args.provider === "edge" || args.provider === "openai" || args.provider === "f5" || args.provider === "local" || args.provider === "mock" ? args.provider : undefined;
+const provider = args.provider === "indextts" || args.provider === "nvidia" || args.provider === "azure" || args.provider === "cloudflare-melotts" || args.provider === "edge" || args.provider === "openai" || args.provider === "f5" || args.provider === "local" || args.provider === "mock" ? args.provider : undefined;
 
 if (project.revision?.changedSceneIndexes.length) console.log(`Rebuilding narration scenes: ${project.revision.changedSceneIndexes.map((index) => index + 1).join(", ")}`);
 project = await attachNarrationAudio(project, basename, { forceSceneIndexes, forceAudioRebuild, cacheSalt, reason, provider, pronunciationStrategy });

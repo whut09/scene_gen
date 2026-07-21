@@ -72,7 +72,7 @@ export async function evaluateAudio(project: VideoProject, targetSeconds: number
   const segmentSpeedCv = meanSegmentRate > 0 ? Math.sqrt(segmentRates.reduce((sum, value) => sum + (value - meanSegmentRate) ** 2, 0) / segmentRates.length) / meanSegmentRate : 0;
   const firstToMedianSpeed = medianSegmentRate > 0 && segmentRates.length ? segmentRates[0] / medianSegmentRate : 0;
   const ttsNumericResidue = segments.reduce((count, segment) => count + (prepareF5SynthesisText(segment.ttsText ?? segment.text).match(/\d/g)?.length ?? 0), 0);
-  const providerNaturalSpeech = project.audio?.provider === "nvidia";
+  const providerNaturalSpeech = project.audio?.provider === "nvidia" || project.audio?.provider === "indextts";
   const minimumCharsPerSecond = providerNaturalSpeech ? Math.min(config.quality.minCharsPerSecond, 3.5) : config.quality.minCharsPerSecond;
   const maximumSegmentSpeedRatio = providerNaturalSpeech ? Math.max(config.quality.maxSegmentSpeedRatio, 1.65) : config.quality.maxSegmentSpeedRatio;
   const maximumSegmentSpeedCv = providerNaturalSpeech ? Math.max(config.quality.maxSegmentSpeedCv, 0.2) : config.quality.maxSegmentSpeedCv;

@@ -206,7 +206,7 @@ export const videoProjectSchema = z.object({
   audio: z.object({
     src: z.string(),
     durationSeconds: z.number().positive(),
-    provider: z.enum(["nvidia", "azure", "cloudflare-melotts", "edge", "openai", "local", "f5", "mock", "silent"]),
+    provider: z.enum(["indextts", "nvidia", "azure", "cloudflare-melotts", "edge", "openai", "local", "f5", "mock", "silent"]),
     metrics: z.object({
       workerStartCount: z.number().int().nonnegative(),
       workerStartupMs: z.number().nonnegative(),
@@ -237,6 +237,8 @@ export const videoProjectSchema = z.object({
       ttsLanguage: z.string().optional(),
       ttsSceneVoiceConsistency: z.boolean().optional(),
       acousticVoiceSpreadSemitones: z.number().nonnegative().optional(),
+      minimumSpeakerSimilarity: z.number().min(0).max(1).optional(),
+      averageSpeakerSimilarity: z.number().min(0).max(1).optional(),
       pitchAdjustedSceneIndexes: z.string().optional(),
     }).optional(),
     sceneCacheSalts: z.record(z.string(), z.string()).optional(),

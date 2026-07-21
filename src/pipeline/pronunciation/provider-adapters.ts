@@ -26,7 +26,15 @@ export function f5PronunciationInput(plan: PronunciationPlan) {
 }
 
 export function indexTtsPronunciationInput(plan: PronunciationPlan) {
-  return { text: plan.synthesisText, mixedPinyin: plan.spans.map((span) => ({ phrase: span.phrase, start: span.start, end: span.end, pinyin: pinyinFor(span, "indextts") })), pronunciationPlanHash: plan.planHash };
+  const controlledSpans = plan.spans.filter((span) => span.risk !== "low");
+  const mixedPinyin = controlledSpans.map((span) => ({ phrase: span.phrase, start: span.start, end: span.end, pinyin: pinyinFor(span, "indextts") }));
+  const text = [...controlledSpans]
+    .sort((left, right) => right.start - left.start)
+    .reduce((value, span) => {
+      const pinyin = pinyinFor(span, "indextts").flatMap((value) => value.split(/\s+/)).filter(Boolean).map((syllable) => syllable.toUpperCase()).join("");
+      return `${value.slice(0, span.start)}${pinyin}${value.slice(span.end)}`;
+    }, plan.synthesisText);
+  return { text, mixedPinyin, pronunciationPlanHash: plan.planHash };
 }
 
 export function cosyVoicePronunciationInput(plan: PronunciationPlan) {

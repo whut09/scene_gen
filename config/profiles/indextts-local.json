@@ -1,0 +1,23 @@
+{
+  "name": "indextts-local",
+  "description": "Fixed-reference IndexTTS2 Mandarin narration with deterministic speaker identity.",
+  "env": {
+    "TTS_PROVIDER": "indextts",
+    "TTS_PROVIDER_FALLBACK": "nvidia",
+    "INDEXTTS_CONCURRENCY": "1",
+    "INDEXTTS_MIN_REFERENCE_SECONDS": "5",
+    "INDEXTTS_MIN_SPEAKER_SIMILARITY": "0.80",
+    "INDEXTTS_SEED": "20260721",
+    "INDEXTTS_TOP_P": "0.65",
+    "INDEXTTS_TOP_K": "20",
+    "INDEXTTS_TEMPERATURE": "0.65",
+    "INDEXTTS_TEMPO": "1.12",
+    "INDEXTTS_LOUDNESS_LUFS": "-19",
+    "INDEXTTS_TRUE_PEAK_DB": "-2",
+    "VIDEO_RENDER_ENGINE": "html-video",
+    "HTML_RENDER_CONCURRENCY": "2",
+    "HTML_RENDER_PRESET": "veryfast",
+    "QUALITY_GATE_PROFILE": "strict"
+  },
+  "doctor": { "requireApi": false, "requireBrowser": true }
+}

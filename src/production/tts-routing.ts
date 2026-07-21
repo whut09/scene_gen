@@ -103,11 +103,10 @@ export class PronunciationAttemptLedger {
 
 function preferredProviders(profile: string, highRisk: boolean) {
   if (profile === "ci-offline") return ["mock"];
-  if (profile === "production" && highRisk) return ["nvidia", "f5", "openai", "windows"];
-  if (profile === "production") return ["nvidia", "openai", "cloudflare-melotts", "f5", "windows"];
+  if (profile === "indextts-local" || profile === "production") return ["indextts", "nvidia", "f5", "openai", "windows"];
   if (profile === "fast-preview") return ["cloudflare-melotts", "edge", "f5", "windows"];
   if (profile === "local-f5") return ["f5", "nvidia", "openai", "windows"];
-  return ["nvidia", "openai", "f5", "windows"];
+  return ["indextts", "nvidia", "openai", "f5", "windows"];
 }
 
 export async function routeTtsProvider(input: { profile: string; plan: PronunciationPlan; domain?: string; device?: string; memoryPressure?: boolean; explicitProvider?: string }): Promise<TtsRoutingDecision> {
@@ -133,7 +132,7 @@ export async function routeTtsProvider(input: { profile: string; plan: Pronuncia
   }
   if (input.profile === "production" && highRisk) {
     for (const candidate of result.audit.candidates) {
-      if (!["nvidia", "azure", "f5"].includes(candidate.providerId) && !candidate.eliminated) {
+      if (!["indextts", "nvidia", "azure", "f5"].includes(candidate.providerId) && !candidate.eliminated) {
         candidate.eliminated = true;
         candidate.reasons.push("production high-risk pronunciation requires explicit phoneme, custom lexicon, or manual confirmation");
       }

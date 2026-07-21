@@ -288,6 +288,17 @@ test("structural gate checks sample rate, channels, silence, clipping and timeli
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("structural gate accepts a timeline offset by leading silence", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-leading-silence-"));
+  try {
+    const { project } = await fixture(root);
+    project.narrationSegments = project.narrationSegments!.map((segment) => ({ ...segment, audioStartSeconds: (segment.audioStartSeconds ?? 0) + 1.2 }));
+    const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: goodProbe });
+    assert.equal(result.issues.some((issue) => issue.code === "audio_scene_drift"), false);
+    assert.equal(result.metrics.concatDuration, 5.2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("structural gate rejects mixed voices and languages", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "scene-gen-voice-consistency-"));
   try {

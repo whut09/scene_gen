@@ -7,7 +7,7 @@ import { fromRoot } from "../../pipeline/utils";
 import type { QualityIssueInput } from "../quality-protocol";
 import { analyzeVoiceProfilesFromTimeline, MAX_VOICE_PITCH_SPREAD_SEMITONES, voicePitchSpreadSemitones } from "../../pipeline/tts/acoustic-stability";
 
-export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v3-acoustic-voice";
+export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v5-speaker-embedding";
 
 export interface AudioStructuralProbe {
   readable: boolean;
@@ -78,11 +78,11 @@ export async function runAudioStructuralGate(input: {
   const segmentLanguages = (project.narrationSegments ?? []).map((segment) => segment.ttsLanguage).filter((language): language is string => Boolean(language));
   const uniqueVoices = [...new Set(segmentVoices)];
   const uniqueLanguages = [...new Set(segmentLanguages.map((language) => language.toLowerCase()))];
-  const identityRequired = project.audio?.provider === "local" || project.audio?.provider === "nvidia" || project.audio?.provider === "azure";
+  const identityRequired = project.audio?.provider === "indextts" || project.audio?.provider === "local" || project.audio?.provider === "nvidia" || project.audio?.provider === "azure";
   if (identityRequired && (segmentVoices.length !== (project.narrationSegments?.length ?? 0) || segmentLanguages.length !== (project.narrationSegments?.length ?? 0))) issues.push({ severity: "error", code: "audio_identity_metadata_missing", message: "Narration voice or language metadata is missing, so consistency cannot be verified.", evidence: { provider: project.audio?.provider ?? "unknown", voiceCount: segmentVoices.length, languageCount: segmentLanguages.length, segmentCount: project.narrationSegments?.length ?? 0 } });
   if (uniqueVoices.length > 1) issues.push({ severity: "error", code: "audio_voice_inconsistent", message: "Narration scenes use different voices.", evidence: { voices: uniqueVoices } });
   if (uniqueLanguages.length > 1 || uniqueLanguages.some((language) => language !== "zh-cn" && language !== "zh" && language !== "chinese")) issues.push({ severity: "error", code: "audio_language_inconsistent", message: "Narration scenes use inconsistent or non-Mandarin languages.", evidence: { languages: uniqueLanguages } });
-  let cursor = 0;
+  let cursor = project.narrationSegments?.[0]?.audioStartSeconds ?? 0;
   for (const [index, scene] of project.scenes.entries()) {
     const segment = project.narrationSegments?.[index];
     if (!segment || segment.audioStartSeconds === undefined || segment.durationSeconds === undefined) {
@@ -95,15 +95,26 @@ export async function runAudioStructuralGate(input: {
   }
   let acousticVoiceSpreadSemitones = 0;
   let acousticVoiceProfiles = "";
+  let minimumSpeakerSimilarity = 1;
+  let averageSpeakerSimilarity = 1;
   try {
     const ranges = (project.narrationSegments ?? []).flatMap((segment) => segment.audioStartSeconds === undefined || segment.durationSeconds === undefined ? [] : [{ startSeconds: segment.audioStartSeconds, durationSeconds: segment.durationSeconds }]);
-    const profiles = ranges.length >= 2 ? await analyzeVoiceProfilesFromTimeline(audioPath, ranges) : [];
-    acousticVoiceSpreadSemitones = voicePitchSpreadSemitones(profiles);
-    acousticVoiceProfiles = profiles.map((profile) => profile.index + ":" + profile.medianF0Hz.toFixed(1) + "Hz/" + profile.voicedFrames).join(",");
-    if (acousticVoiceSpreadSemitones > MAX_VOICE_PITCH_SPREAD_SEMITONES) issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: "Narration median pitch drifts " + acousticVoiceSpreadSemitones.toFixed(2) + " semitones across scenes.", repairAction: "resynthesize-audio", retryable: true, evidence: { spreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), maximumSemitones: MAX_VOICE_PITCH_SPREAD_SEMITONES, profiles: acousticVoiceProfiles } });
+    if (project.audio.provider === "indextts") {
+      const cfg = config.tts.indextts;
+      const checked = await runExternalProcess(cfg.python, [cfg.speakerCheckScript, "--root", cfg.root, "--checkpoint", path.join(cfg.modelDir, "hf_cache", "campplus_cn_common.bin"), "--reference", cfg.refAudio, "--audio", audioPath, "--ranges", JSON.stringify(ranges)], { signal: input.signal, timeoutMs: 180_000 });
+      const speaker = JSON.parse(checked.stdout) as { minimum: number; average: number };
+      minimumSpeakerSimilarity = speaker.minimum;
+      averageSpeakerSimilarity = speaker.average;
+      if (minimumSpeakerSimilarity < cfg.minimumSpeakerSimilarity) issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: `Narration speaker similarity ${minimumSpeakerSimilarity.toFixed(3)} is below ${cfg.minimumSpeakerSimilarity.toFixed(3)}.`, repairAction: "resynthesize-audio", retryable: true, evidence: { minimumSpeakerSimilarity, averageSpeakerSimilarity, requiredSimilarity: cfg.minimumSpeakerSimilarity, verifier: "campplus" } });
+    } else {
+      const profiles = ranges.length >= 2 ? await analyzeVoiceProfilesFromTimeline(audioPath, ranges) : [];
+      acousticVoiceSpreadSemitones = voicePitchSpreadSemitones(profiles);
+      acousticVoiceProfiles = profiles.map((profile) => profile.index + ":" + profile.medianF0Hz.toFixed(1) + "Hz/" + profile.voicedFrames).join(",");
+      if (acousticVoiceSpreadSemitones > MAX_VOICE_PITCH_SPREAD_SEMITONES) issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: "Narration median pitch drifts " + acousticVoiceSpreadSemitones.toFixed(2) + " semitones across scenes.", repairAction: "resynthesize-audio", retryable: true, evidence: { spreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), maximumSemitones: MAX_VOICE_PITCH_SPREAD_SEMITONES, profiles: acousticVoiceProfiles } });
+    }
   } catch {
     acousticVoiceProfiles = "unavailable";
   }
   const passed = !issues.some((issue) => issue.severity === "error");
-  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
+  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, leadingSilenceSeconds: project.audio.metrics?.leadingSilenceSeconds ?? 0, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), minimumSpeakerSimilarity: Number(minimumSpeakerSimilarity.toFixed(4)), averageSpeakerSimilarity: Number(averageSpeakerSimilarity.toFixed(4)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
 }

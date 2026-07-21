@@ -82,6 +82,8 @@ test("provider adapters preserve display text and escape SSML", async () => {
   assert.equal(XMLValidator.validate(azure), true);
   assert.equal(f5PronunciationInput(plan).pronunciationPlanHash, plan.planHash);
   assert.equal(indexTtsPronunciationInput(plan).mixedPinyin.length, 1);
+  assert.match(indexTtsPronunciationInput(plan).text, /CHONG2GOU4/);
+  assert.doesNotMatch(indexTtsPronunciationInput(plan).text, /重构/);
   assert.equal(cosyVoicePronunciationInput(plan).pronunciationInpainting.length, 1);
   assert.equal(edgePronunciationText(plan), "A&B <重新构建>");
   assert.equal(plan.displayText, "A&B <重构>");

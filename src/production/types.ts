@@ -12,7 +12,7 @@ export type VisualSource =
 
 export type ProviderCapability = "programmatic" | "browser" | "stock-video" | "image" | "video" | "tts" | "music" | "alignment" | "llm";
 
-export type PronunciationControlLevel = "none" | "fallback-only" | "lexicon" | "explicit-phoneme";
+export type PronunciationControlLevel = "none" | "fallback-only" | "lexicon" | "mixed-pinyin" | "explicit-phoneme";
 export type FreeQuotaType = "none" | "monthly-characters" | "daily-neurons" | "credits" | "local";
 
 export interface TtsProviderCapabilities {

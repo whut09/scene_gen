@@ -29,8 +29,8 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-continuous-stream-v21";
-export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 20;
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-long-utterance-v23";
+export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 export const NVIDIA_TTS_NORMALIZE_FILTER = "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB,areverse,silenceremove=start_periods=1:start_duration=0.04:start_threshold=-52dB,areverse,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse,loudnorm=I=-19:TP=-2:LRA=7";
 
 export function isRetryableNvidiaTtsError(error: unknown) {
@@ -189,7 +189,7 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
     generate: async (targetPath) => {
       worker ??= new NvidiaWorker(config);
       const synthesisText = nvidiaHttpFallbackText(input.plan);
-      const httpTextChunks = splitNvidiaSynthesisText(synthesisText);
+      const synthesisUnits = splitNvidiaSynthesisText(synthesisText);
       const partPaths = [`${targetPath}.part-01.wav`];
       const naturalPath = `${targetPath}.natural.wav`;
       let requestMs = 0;
@@ -199,7 +199,7 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
         let lastError: Error | undefined;
         for (let attempt = 0; attempt < 3; attempt += 1) {
           try {
-            result = await worker.synthesize(synthesisText, partPaths[0], customDictionary, input.signal, synthesisText, httpTextChunks, httpTextChunks);
+            result = await worker.synthesize(synthesisText, partPaths[0], customDictionary, input.signal, synthesisText, synthesisUnits, synthesisUnits);
             break;
           } catch (error) {
             lastError = error as Error;
@@ -221,7 +221,7 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
         if (config.tts.nvidia.speed === 1) await renamePart(naturalPath, targetPath);
         else await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", naturalPath, "-filter:a", `atempo=${config.tts.nvidia.speed}`, "-c:a", "pcm_s16le", targetPath]);
         generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText, appliedPronunciationPhrases: Object.keys(customDictionary) };
-        return { requestMs, synthesisText, chunkCount: httpTextChunks.length, voice: config.tts.nvidia.voice, appliedPronunciationPhrases: generated.appliedPronunciationPhrases };
+        return { requestMs, synthesisText, chunkCount: synthesisUnits.length, voice: config.tts.nvidia.voice, appliedPronunciationPhrases: generated.appliedPronunciationPhrases };
       } finally {
         await Promise.all([...partPaths, naturalPath].map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
       }

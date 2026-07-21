@@ -15,6 +15,7 @@ import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
 import { nvidiaHttpFallbackText, nvidiaTts } from "./tts/providers/nvidia";
+import { indexTts } from "./tts/providers/indextts";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
 import { cloudflareMeloTts } from "./tts/providers/cloudflare-melotts";
@@ -27,7 +28,7 @@ import { analyzeVoiceProfilesFromFiles, voicePitchSpreadSemitones } from "./tts/
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
-import { f5PronunciationInput, localPronunciationText } from "./pronunciation/provider-adapters";
+import { f5PronunciationInput, indexTtsPronunciationInput, localPronunciationText } from "./pronunciation/provider-adapters";
 import { pronunciationPlanHash, type PronunciationPlan } from "./pronunciation/schema";
 export { prepareF5SynthesisText, removeLoneSurrogates } from "./tts/text-normalization";
 
@@ -35,7 +36,7 @@ const DEFAULT_F5_REF_TEXT = "对，这就是我，万人敬仰的太乙真人。
 const BAD_REF_TEXT = /太乙真人|万人敬仰|这就是我/;
 const MOJIBAKE_MARKERS = /銆|锛|锟|杩|绔|鐨|妯|浠|浜|鍦|鏄|姣|鍙|浼|棰|勭/g;
 
-export type TtsProvider = "nvidia" | "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock";
+export type TtsProvider = "indextts" | "nvidia" | "azure" | "cloudflare-melotts" | "edge" | "openai" | "f5" | "local" | "mock";
 const F5_FRONTEND_VERSION = "scene-gen-pypinyin-lexicon-v1";
 let warnedDeprecatedF5Cli = false;
 let g2pwClient: G2pwWorkerClient | undefined;
@@ -205,6 +206,7 @@ function positiveInteger(value: unknown, fallback: number) {
 
 function providerConcurrency(provider: TtsProvider, f5Runtime?: F5Runtime) {
   if (provider === "f5") return f5Runtime?.pool.concurrency ?? 1;
+  if (provider === "indextts") return getRuntimeConfig().tts.indextts.concurrency;
   if (provider === "nvidia") return getRuntimeConfig().tts.nvidia.concurrency;
   if (provider === "azure") return getRuntimeConfig().tts.azure.concurrency;
   if (provider === "cloudflare-melotts") return getRuntimeConfig().tts.cloudflare.concurrency;
@@ -248,7 +250,7 @@ function ttsProviderId(provider: TtsProvider) {
 
 function providerFromId(providerId?: string): TtsProvider {
   if (providerId === "windows") return "local";
-  if (providerId === "nvidia" || providerId === "azure" || providerId === "cloudflare-melotts" || providerId === "edge" || providerId === "openai" || providerId === "f5" || providerId === "mock") return providerId;
+  if (providerId === "indextts" || providerId === "nvidia" || providerId === "azure" || providerId === "cloudflare-melotts" || providerId === "edge" || providerId === "openai" || providerId === "f5" || providerId === "mock") return providerId;
   return "local";
 }
 
@@ -308,6 +310,7 @@ async function synthesizeNarration(
   outputPath: string,
   options?: { f5Speed?: string; sceneIndex?: number; f5Runtime?: F5Runtime; signal?: AbortSignal; forceRebuild?: boolean; cacheSalt?: string },
 ): Promise<{ reused: boolean; result?: AzureTtsResult; cacheKey?: string }> {
+  if (provider === "indextts") return indexTts({ plan, outputPath, force: options?.forceRebuild, cacheSalt: options?.cacheSalt, signal: options?.signal });
   if (provider === "nvidia") return nvidiaTts({ plan, outputPath, force: options?.forceRebuild, cacheSalt: options?.cacheSalt, signal: options?.signal });
   if (provider === "azure") {
     return azureTts({
@@ -589,10 +592,10 @@ async function attachSegmentedNarration(
     const aligned = {
       ...segment,
       ttsText: results[index].pronunciationPlan.synthesisText,
-      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" ? nvidiaHttpFallbackText(results[index].pronunciationPlan) : results[index].pronunciationPlan.synthesisText,
+      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" ? nvidiaHttpFallbackText(results[index].pronunciationPlan) : provider === "indextts" ? indexTtsPronunciationInput(results[index].pronunciationPlan).text : results[index].pronunciationPlan.synthesisText,
       pronunciationPlan: results[index].pronunciationPlan,
       ttsProvider: provider,
-      ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : undefined),
+      ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : provider === "indextts" ? "IndexTTS2.Fixed.Reference" : undefined),
       ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",
       audioStartSeconds,
       durationSeconds,
