@@ -54,6 +54,18 @@ test("scene ASR blocks a confident first-word omission", () => {
   ]);
   assert.ok(result.issues.some((item) => item.code === "audio_opening_mismatch" && item.sceneIndex === 0));
 });
+
+test("mixed Chinese and English titles use the Chinese opening anchor", () => {
+  const project = projectFixture();
+  project.meta.title = "字节发布 Seed Audio 1.0";
+  project.narrationSegments![0].text = "字节发布 Seed Audio 1.0 音频创作模型。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "字节发布 C 刀柳一点零音频创作模型。", confidence: 0.82 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_opening_mismatch" && item.sceneIndex === 0), false);
+});
 test("low confidence ASR is inconclusive and does not rebuild audio", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [

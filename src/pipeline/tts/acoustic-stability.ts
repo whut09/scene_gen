@@ -136,7 +136,7 @@ export async function stabilizeNvidiaVoicePitch(filePaths: string[]) {
   if (target > 0) {
     for (const profile of valid) {
       const semitoneDelta = 12 * Math.log2(target / profile.medianF0Hz);
-      if (Math.abs(semitoneDelta) < 1.8) continue;
+      if (Math.abs(semitoneDelta) < 1.4) continue;
       const source = filePaths[profile.index];
       const temporary = source.replace(/\.wav$/i, ".voice-stable.wav");
       const filter = "rubberband=pitch=" + (target / profile.medianF0Hz).toFixed(6) + ",loudnorm=I=-19:TP=-2:LRA=7";

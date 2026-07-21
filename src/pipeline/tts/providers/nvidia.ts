@@ -27,8 +27,13 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-acoustic-stability-v14";
-export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 180;
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-acoustic-stability-v18";
+export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 20;
+
+export function isRetryableNvidiaTtsError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /unavailable|resource_exhausted|deadline_exceeded|stream removed|stream has been closed|triton model failed|timeout/i.test(message);
+}
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {
   const chunks: string[] = [];
@@ -148,6 +153,19 @@ class NvidiaWorker {
       this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, httpText, outputPath, customDictionary }));
     });
   }
+  restart() {
+    const error = new Error("NVIDIA TTS worker restarted after a transient stream failure.");
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+    this.buffer = "";
+    const child = this.child;
+    this.child = undefined;
+    this.ready = undefined;
+    if (child && !child.killed) child.kill();
+  }
 }
 
 let worker: NvidiaWorker | undefined;
@@ -183,7 +201,8 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
               break;
             } catch (error) {
               lastError = error as Error;
-              if (!/unavailable|resource_exhausted|deadline_exceeded|stream removed|timeout/i.test(lastError.message) || attempt === 2) throw lastError;
+              if (!isRetryableNvidiaTtsError(lastError) || attempt === 2) throw lastError;
+              worker.restart();
               await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** attempt) + Math.floor(Math.random() * 250)));
             }
           }
@@ -197,6 +216,9 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
           requestMs += result.requestMs;
           const duration = await probeDuration(partPaths[index]);
           if (duration <= 0) throw new Error(`NVIDIA TTS chunk ${index + 1} is empty or invalid.`);
+          const spokenCharacters = [...chunks[index]].filter((character) => /[\p{L}\p{N}]/u.test(character)).length;
+          const minimumExpectedDuration = Math.max(0.35, spokenCharacters / 14);
+          if (duration < minimumExpectedDuration) throw new Error(`NVIDIA TTS chunk ${index + 1} was truncated: ${duration.toFixed(2)}s for ${spokenCharacters} spoken characters.`);
           partDurations.push(duration);
         }
         if (partPaths.length === 1) await normalizeNvidiaPart(partPaths[0], naturalPath);

@@ -263,7 +263,8 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
   const titleOpeningCoverage = firstTranscript ? bigramRecall(expectedTitle, actualOpening) : 0;
   const firstConfidence = transcriptMap.get(0)?.confidence;
   const expectedPrefix = canonicalSpeechText(prepareF5SynthesisText(segments[0]?.ttsText ?? segments[0]?.text ?? project.meta.title)).slice(0, 10);
-  const expectedOpeningAnchor = expectedPrefix.slice(0, 6);
+  const embeddedAsciiIndex = expectedPrefix.search(/[a-z]/);
+  const expectedOpeningAnchor = embeddedAsciiIndex > 0 ? expectedPrefix.slice(0, embeddedAsciiIndex) : expectedPrefix.slice(0, 6);
   const openingPrefixCoverage = firstTranscript ? bigramRecall(expectedOpeningAnchor, actualOpening.slice(0, expectedOpeningAnchor.length + 3)) : 0;
   const expectedLeadingAscii = expectedPrefix.match(/^[a-z][a-z0-9]{1,15}/)?.[0];
   const leadingAsciiMissing = Boolean(expectedLeadingAscii && !actualOpening.startsWith(expectedLeadingAscii));
