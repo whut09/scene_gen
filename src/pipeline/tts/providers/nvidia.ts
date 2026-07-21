@@ -22,11 +22,12 @@ export interface NvidiaTtsResult {
 export interface NvidiaWorkerRequest {
   requestId: string;
   text: string;
+  httpText?: string;
   outputPath: string;
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-packed-boundaries-v13";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-acoustic-stability-v14";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 180;
 
 export function splitNvidiaSynthesisText(text: string, maximumCharacters = NVIDIA_TTS_MAX_CHUNK_CHARACTERS) {
@@ -77,6 +78,13 @@ export function nvidiaPronunciationDictionary(plan: PronunciationPlan, text = pl
   );
 }
 
+export function nvidiaHttpFallbackText(plan: PronunciationPlan, text = plan.synthesisText) {
+  return plan.spans.reduceRight((output, span) => {
+    if (!text.includes(span.phrase) || !span.spokenFallback || (span.risk !== "medium" && span.risk !== "high")) return output;
+    return output.replaceAll(span.phrase, span.spokenFallback);
+  }, text);
+}
+
 export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSalt?: string }, config: RuntimeConfig) {
   return {
     provider: "nvidia",
@@ -84,8 +92,10 @@ export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSa
     voice: config.tts.nvidia.voice,
     language: config.tts.nvidia.language,
     sampleRateHz: config.tts.nvidia.sampleRateHz,
+    transport: config.tts.nvidia.transport,
     speed: config.tts.nvidia.speed,
     synthesisText: input.plan.synthesisText,
+    httpFallbackText: nvidiaHttpFallbackText(input.plan),
     pronunciationPlanHash: input.plan.planHash,
     frontendVersion: NVIDIA_TTS_FRONTEND_VERSION,
     cacheSalt: input.cacheSalt ?? "",
@@ -102,7 +112,7 @@ class NvidiaWorker {
     if (this.ready) return this.ready;
     this.ready = new Promise<void>((resolve, reject) => {
       const cfg = this.config.tts.nvidia;
-      const child = spawn(cfg.python, [cfg.workerScript, "--endpoint", cfg.endpoint, "--function-id", cfg.functionId, "--voice", cfg.voice, "--language", cfg.language, "--sample-rate", String(cfg.sampleRateHz), "--lexicon", loadTtsPronunciationLexicon().filePath], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8", NVIDIA_API_KEY: cfg.apiKey } });
+      const child = spawn(cfg.python, [cfg.workerScript, "--endpoint", cfg.endpoint, "--function-id", cfg.functionId, "--voice", cfg.voice, "--language", cfg.language, "--sample-rate", String(cfg.sampleRateHz), "--lexicon", loadTtsPronunciationLexicon().filePath, "--transport", cfg.transport], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8", NVIDIA_API_KEY: cfg.apiKey } });
       this.child = child;
       child.unref();
       (child.stdin as NodeJS.WritableStream & { unref?: () => void }).unref?.();
@@ -128,14 +138,14 @@ class NvidiaWorker {
     });
     return this.ready;
   }
-  async synthesize(text: string, outputPath: string, customDictionary?: Record<string, string>, signal?: AbortSignal) {
+  async synthesize(text: string, outputPath: string, customDictionary?: Record<string, string>, signal?: AbortSignal, httpText?: string) {
     await this.start();
     if (signal?.aborted) throw signal.reason;
     const requestId = randomUUID();
     return new Promise<NvidiaTtsResult>((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(requestId); this.child?.kill(); reject(new Error("NVIDIA TTS request timeout.")); }, this.config.tts.nvidia.timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
-      this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, outputPath, customDictionary }));
+      this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, httpText, outputPath, customDictionary }));
     });
   }
 }
@@ -169,7 +179,7 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
           let lastError: Error | undefined;
           for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
-              result = await worker.synthesize(chunks[index], partPaths[index], customDictionary, input.signal);
+              result = await worker.synthesize(chunks[index], partPaths[index], customDictionary, input.signal, nvidiaHttpFallbackText(input.plan, chunks[index]));
               break;
             } catch (error) {
               lastError = error as Error;
@@ -218,7 +228,7 @@ async function renamePart(partPath: string, targetPath: string) {
 async function normalizeNvidiaPart(partPath: string, targetPath: string) {
   await run("ffmpeg", [
     "-y", "-hide_banner", "-loglevel", "error", "-i", partPath,
-    "-af", "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB:stop_periods=1:stop_duration=0.04:stop_threshold=-52dB,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse",
+    "-af", "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB:stop_periods=1:stop_duration=0.04:stop_threshold=-52dB,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse,loudnorm=I=-19:TP=-2:LRA=7",
     "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", targetPath,
   ]);
 }

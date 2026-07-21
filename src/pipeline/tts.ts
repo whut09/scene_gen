@@ -14,7 +14,7 @@ import type { ProviderSelectionAudit } from "../production/types";
 import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-routing";
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
-import { nvidiaTts } from "./tts/providers/nvidia";
+import { nvidiaHttpFallbackText, nvidiaTts } from "./tts/providers/nvidia";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
 import { cloudflareMeloTts } from "./tts/providers/cloudflare-melotts";
@@ -23,6 +23,7 @@ import { mockTts } from "./tts/providers/mock";
 import { probeDuration, run } from "./tts/process";
 import { prepareF5SynthesisText } from "./tts/text-normalization";
 import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from "./tts/segmentation";
+import { stabilizeNvidiaVoicePitch } from "./tts/acoustic-stability";
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
@@ -567,7 +568,8 @@ async function attachSegmentedNarration(
     };
   });
   const segmentPaths = results.map((result) => result.segmentPath);
-  const durations = results.map((result) => result.duration);
+  const acousticStability = provider === "nvidia" ? await stabilizeNvidiaVoicePitch(segmentPaths) : undefined;
+  const durations = acousticStability?.adjustedSceneIndexes.length ? await Promise.all(segmentPaths.map(probeDuration)) : results.map((result) => result.duration);
 
   const gaps = durations.map((_, index) => (index === durations.length - 1 ? 0.8 : 0.28));
   const leadingSilenceSeconds = getRuntimeConfig().tts.leadingSilenceSeconds;
@@ -584,7 +586,7 @@ async function attachSegmentedNarration(
     const aligned = {
       ...segment,
       ttsText: results[index].pronunciationPlan.synthesisText,
-      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : results[index].pronunciationPlan.synthesisText,
+      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" && getRuntimeConfig().tts.nvidia.transport !== "grpc" ? nvidiaHttpFallbackText(results[index].pronunciationPlan) : results[index].pronunciationPlan.synthesisText,
       pronunciationPlan: results[index].pronunciationPlan,
       ttsProvider: provider,
       ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : undefined),
@@ -634,6 +636,8 @@ async function attachSegmentedNarration(
     budgetRemainingCharacters: Math.min(...results.map((result) => result.azureResult?.budgetRemainingCharacters ?? Number.MAX_SAFE_INTEGER)),
     budgetWarning: results.some((result) => result.azureResult?.budgetWarning),
     pronunciationPlanCount: results.length,
+    acousticVoiceSpreadSemitones: acousticStability ? Number(acousticStability.spreadSemitones.toFixed(3)) : undefined,
+    pitchAdjustedSceneIndexes: acousticStability?.adjustedSceneIndexes.join(",") ?? "",
     pronunciationUncertainCount: results.reduce((sum, result) => sum + result.pronunciationIssueCount, 0),
     ttsVoice: [...new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean))].join(","),
     ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",

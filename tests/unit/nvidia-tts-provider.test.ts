@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRuntimeConfig } from "../../src/config/runtime-config";
 import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
-import { encodeNvidiaWorkerRequest, NVIDIA_TTS_FRONTEND_VERSION, nvidiaPronunciationDictionary, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
+import { encodeNvidiaWorkerRequest, NVIDIA_TTS_FRONTEND_VERSION, nvidiaHttpFallbackText, nvidiaPronunciationDictionary, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
 
 test("NVIDIA worker requests preserve Mandarin text as UTF-8", () => {
   const input = { requestId: "request-1", text: "系统完成核心模块重构，这项更新非常重要。", outputPath: "output.wav" };
@@ -17,7 +17,7 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-packed-boundaries-v13");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-acoustic-stability-v14");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, plan.synthesisText);
   assert.equal(identity.speed, 1.25);
@@ -28,6 +28,13 @@ test("NVIDIA cache identity changes when narration speed changes", async () => {
   const normal = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_SPEED: "1" }, "test");
   const faster = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_SPEED: "1.25" }, "test");
   assert.notDeepEqual(nvidiaTtsCacheIdentity({ plan }, normal), nvidiaTtsCacheIdentity({ plan }, faster));
+});
+
+test("NVIDIA cache identity changes when transport changes", async () => {
+  const { plan } = await compilePronunciationPlan({ displayText: "普通话音色测试" });
+  const grpc = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_TRANSPORT: "grpc" }, "test");
+  const http = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_TRANSPORT: "http" }, "test");
+  assert.notDeepEqual(nvidiaTtsCacheIdentity({ plan }, grpc), nvidiaTtsCacheIdentity({ plan }, http));
 });
 
 test("NVIDIA synthesis splits long Mandarin at punctuation within the safe limit", () => {
@@ -54,6 +61,12 @@ test("NVIDIA pronunciation dictionary carries tone-number pinyin for risky phras
     重复: "chong2 fu4",
     重要: "zhong4 yao4",
   });
+});
+
+test("NVIDIA HTTP transport uses spoken fallbacks for risky polyphones", async () => {
+  const { plan } = await compilePronunciationPlan({ displayText: "系统完成重构并处理长内容" });
+  assert.equal(nvidiaHttpFallbackText(plan), "系统完成重新构建并处理长篇内容");
+  assert.equal(plan.displayText, "系统完成重构并处理长内容");
 });
 
 test("NVIDIA worker request serializes the custom pronunciation dictionary", () => {

@@ -262,6 +262,8 @@ export interface VideoProject {
       ttsVoice?: string;
       ttsLanguage?: string;
       ttsSceneVoiceConsistency?: boolean;
+      acousticVoiceSpreadSemitones?: number;
+      pitchAdjustedSceneIndexes?: string;
     };
     sceneCacheSalts?: Record<string, string>;
     pronunciationPlansPath?: string;

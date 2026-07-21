@@ -236,6 +236,8 @@ export const videoProjectSchema = z.object({
       ttsVoice: z.string().optional(),
       ttsLanguage: z.string().optional(),
       ttsSceneVoiceConsistency: z.boolean().optional(),
+      acousticVoiceSpreadSemitones: z.number().nonnegative().optional(),
+      pitchAdjustedSceneIndexes: z.string().optional(),
     }).optional(),
     sceneCacheSalts: z.record(z.string(), z.string()).optional(),
     pronunciationPlansPath: z.string().optional(),

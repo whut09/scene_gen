@@ -24,6 +24,23 @@ function wavBuffer(durationSeconds = 2, sampleRate = 16_000) {
   return buffer;
 }
 
+function sineWavBuffer(frequencies: number[], secondsPerTone = 2, sampleRate = 16_000) {
+  const samplesPerTone = Math.floor(secondsPerTone * sampleRate);
+  const samples = frequencies.length * samplesPerTone;
+  const dataSize = samples * 2;
+  const buffer = wavBuffer(frequencies.length * secondsPerTone, sampleRate);
+  for (let toneIndex = 0; toneIndex < frequencies.length; toneIndex += 1) {
+    const frequency = frequencies[toneIndex];
+    for (let sampleIndex = 0; sampleIndex < samplesPerTone; sampleIndex += 1) {
+      const envelope = Math.min(1, sampleIndex / 160, (samplesPerTone - sampleIndex - 1) / 160);
+      const value = Math.round(Math.sin(2 * Math.PI * frequency * sampleIndex / sampleRate) * Math.max(0, envelope) * 12_000);
+      buffer.writeInt16LE(value, 44 + (toneIndex * samplesPerTone + sampleIndex) * 2);
+    }
+  }
+  assert.equal(buffer.length, 44 + dataSize);
+  return buffer;
+}
+
 async function fixture(root: string, options: { riskOnSecond?: boolean } = {}) {
   const audioPath = path.join(root, "narration.wav");
   await writeFile(audioPath, wavBuffer(4));
@@ -266,6 +283,30 @@ test("structural gate rejects mixed voices and languages", async () => {
     const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: goodProbe });
     assert.ok(result.issues.some((issue) => issue.code === "audio_voice_inconsistent"));
     assert.ok(result.issues.some((issue) => issue.code === "audio_language_inconsistent"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("structural gate rejects scene-level acoustic voice drift", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-acoustic-drift-"));
+  try {
+    const { project, audioPath } = await fixture(root);
+    await writeFile(audioPath, sineWavBuffer([120, 240]));
+    const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: goodProbe });
+    const issue = result.issues.find((candidate) => candidate.code === "audio_acoustic_voice_drift");
+    assert.ok(issue);
+    assert.ok(Number(issue.evidence?.spreadSemitones) > 3);
+    assert.equal(issue.repairAction, "resynthesize-audio");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("structural gate accepts normal scene-level pitch variation", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-acoustic-stable-"));
+  try {
+    const { project, audioPath } = await fixture(root);
+    await writeFile(audioPath, sineWavBuffer([120, 128]));
+    const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: goodProbe });
+    assert.equal(result.issues.some((issue) => issue.code === "audio_acoustic_voice_drift"), false);
+    assert.ok(Number(result.metrics.acousticVoiceSpreadSemitones) < 3);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

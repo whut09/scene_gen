@@ -118,10 +118,10 @@ export async function routeTtsProvider(input: { profile: string; plan: Pronuncia
   const result = selectProviderWithAudit("tts", preferred, { profile: input.profile, language: "zh-CN", domain: input.domain, device: input.device, highRiskTerms: highRisk, memoryPressure: input.memoryPressure });
   if (input.explicitProvider) {
     const explicitCandidate = result.audit.candidates.find((candidate) => candidate.providerId === input.explicitProvider);
-    if (explicitCandidate?.enabled && explicitCandidate.reasons.includes("reserved as fallback while a primary provider is healthy")) {
+    if (explicitCandidate?.enabled && (explicitCandidate.reasons.includes("reserved as fallback while a primary provider is healthy") || explicitCandidate.reasons.some((reason) => reason.startsWith("unhealthy after ")))) {
       explicitCandidate.eliminated = false;
       explicitCandidate.score = Math.max(explicitCandidate.score, 1_000);
-      explicitCandidate.reasons.unshift("explicit provider overrides fallback-only auto-routing");
+      explicitCandidate.reasons.unshift("explicit provider requests one bounded health probe");
     }
     for (const candidate of result.audit.candidates) {
       if (candidate.providerId !== input.explicitProvider && !candidate.eliminated) {

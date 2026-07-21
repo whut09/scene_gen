@@ -5,8 +5,9 @@ import { runExternalProcess } from "../../pipeline/external-operation";
 import type { VideoProject } from "../../pipeline/types";
 import { fromRoot } from "../../pipeline/utils";
 import type { QualityIssueInput } from "../quality-protocol";
+import { analyzeVoiceProfilesFromTimeline, MAX_VOICE_PITCH_SPREAD_SEMITONES, voicePitchSpreadSemitones } from "../../pipeline/tts/acoustic-stability";
 
-export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v2";
+export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v3-acoustic-voice";
 
 export interface AudioStructuralProbe {
   readable: boolean;
@@ -92,6 +93,17 @@ export async function runAudioStructuralGate(input: {
     if (Math.abs(cursor - segment.audioStartSeconds) > tolerance || Math.abs(scene.duration - segment.durationSeconds) > tolerance) issues.push({ severity: "error", code: "audio_scene_drift", message: `Scene ${index + 1} audio timeline is misaligned.`, sceneIndex: index });
     cursor += scene.duration;
   }
+  let acousticVoiceSpreadSemitones = 0;
+  let acousticVoiceProfiles = "";
+  try {
+    const ranges = (project.narrationSegments ?? []).flatMap((segment) => segment.audioStartSeconds === undefined || segment.durationSeconds === undefined ? [] : [{ startSeconds: segment.audioStartSeconds, durationSeconds: segment.durationSeconds }]);
+    const profiles = ranges.length >= 2 ? await analyzeVoiceProfilesFromTimeline(audioPath, ranges) : [];
+    acousticVoiceSpreadSemitones = voicePitchSpreadSemitones(profiles);
+    acousticVoiceProfiles = profiles.map((profile) => profile.index + ":" + profile.medianF0Hz.toFixed(1) + "Hz/" + profile.voicedFrames).join(",");
+    if (acousticVoiceSpreadSemitones > MAX_VOICE_PITCH_SPREAD_SEMITONES) issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: "Narration median pitch drifts " + acousticVoiceSpreadSemitones.toFixed(2) + " semitones across scenes.", repairAction: "resynthesize-audio", retryable: true, evidence: { spreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), maximumSemitones: MAX_VOICE_PITCH_SPREAD_SEMITONES, profiles: acousticVoiceProfiles } });
+  } catch {
+    acousticVoiceProfiles = "unavailable";
+  }
   const passed = !issues.some((issue) => issue.severity === "error");
-  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
+  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
 }

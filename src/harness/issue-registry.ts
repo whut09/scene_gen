@@ -84,6 +84,7 @@ export const issueRegistry = {
   asr_verification_failed: define("environment", "check-environment", false),
   audio_language_mismatch: define("hard", "resynthesize-audio", true),
   audio_voice_inconsistent: define("hard", "resynthesize-audio", true),
+  audio_acoustic_voice_drift: define("hard", "resynthesize-audio", true),
   audio_identity_metadata_missing: define("hard", "resynthesize-audio", true),
   audio_language_inconsistent: define("hard", "resynthesize-audio", true),
   audio_opening_mismatch: define("environment", "retry-stage", true),

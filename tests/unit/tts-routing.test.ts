@@ -81,3 +81,17 @@ test("explicit F5 selection is not replaced by ci-offline mock", { concurrency: 
     assert.equal(routed.candidates.find((candidate) => candidate.providerId === "mock")?.eliminated, true);
   });
 });
+
+test("explicit NVIDIA selection receives one health probe despite stale failures", { concurrency: false }, async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "scene-gen-routing-nvidia-health-"));
+  try {
+    const outcomeFile = path.join(directory, "outcomes.jsonl");
+    const failures = Array.from({ length: 3 }, (_, index) => JSON.stringify({ version: 1, providerId: "nvidia", capability: "tts", success: false, latencyMs: 1000 + index, retryCount: 0, createdAt: new Date(Date.now() + index).toISOString() })).join("\n") + "\n";
+    await writeFile(outcomeFile, failures);
+    await withRoutingEnv({ NVIDIA_API_KEY: "test", PROVIDER_OUTCOME_FILE: outcomeFile, SCENE_GEN_CACHE_DIR: directory }, async () => {
+      const routed = await routeTtsProvider({ profile: "default", plan: plan("系统完成重构", true), explicitProvider: "nvidia" });
+      assert.equal(routed.selectedProvider, "nvidia");
+      assert.equal(routed.candidates.find((candidate) => candidate.providerId === "nvidia")?.eliminated, false);
+    });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
