@@ -22,11 +22,11 @@ export interface AudioGateDependencies {
 export function narrationRateMetrics(project: VideoProject) {
   const segments = project.narrationSegments ?? [];
   const narrationChars = segments.length
-    ? segments.reduce((sum, segment) => sum + (segment.ttsText ?? segment.text).replace(/\s+/g, "").length, 0)
+    ? segments.reduce((sum, segment) => sum + (segment.providerSynthesisText ?? segment.ttsText ?? segment.text).replace(/\s+/g, "").length, 0)
     : project.narration.replace(/\s+/g, "").length;
   const segmentRates = segments.map((segment) => {
     const segmentDuration = segment.durationSeconds ?? 0;
-    return segmentDuration > 0 ? (segment.ttsText ?? segment.text).replace(/\s+/g, "").length / segmentDuration : 0;
+    return segmentDuration > 0 ? (segment.providerSynthesisText ?? segment.ttsText ?? segment.text).replace(/\s+/g, "").length / segmentDuration : 0;
   }).filter((value) => value > 0);
   return { narrationChars, segmentRates };
 }

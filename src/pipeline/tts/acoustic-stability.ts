@@ -1,5 +1,4 @@
-import { readFile, rename, rm } from "node:fs/promises";
-import { run } from "./process";
+import { readFile } from "node:fs/promises";
 
 export const MAX_VOICE_PITCH_SPREAD_SEMITONES = 3;
 
@@ -126,26 +125,4 @@ export function voicePitchSpreadSemitones(profiles: AcousticVoiceProfile[]) {
   const pitches = profiles.filter((profile) => profile.voicedFrames >= 3 && profile.medianF0Hz > 0).map((profile) => profile.medianF0Hz);
   if (pitches.length < 2) return 0;
   return 12 * Math.log2(Math.max(...pitches) / Math.min(...pitches));
-}
-
-export async function stabilizeNvidiaVoicePitch(filePaths: string[]) {
-  const before = await analyzeVoiceProfilesFromFiles(filePaths);
-  const valid = before.filter((profile) => profile.voicedFrames >= 3 && profile.medianF0Hz > 0);
-  const target = median(valid.map((profile) => profile.medianF0Hz));
-  const adjustedSceneIndexes: number[] = [];
-  if (target > 0) {
-    for (const profile of valid) {
-      const semitoneDelta = 12 * Math.log2(target / profile.medianF0Hz);
-      if (Math.abs(semitoneDelta) < 1.4) continue;
-      const source = filePaths[profile.index];
-      const temporary = source.replace(/\.wav$/i, ".voice-stable.wav");
-      const filter = "rubberband=pitch=" + (target / profile.medianF0Hz).toFixed(6) + ",loudnorm=I=-19:TP=-2:LRA=7";
-      await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", source, "-af", filter, "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", temporary]);
-      await rm(source, { force: true });
-      await rename(temporary, source);
-      adjustedSceneIndexes.push(profile.index);
-    }
-  }
-  const after = adjustedSceneIndexes.length ? await analyzeVoiceProfilesFromFiles(filePaths) : before;
-  return { before, after, adjustedSceneIndexes, spreadSemitones: voicePitchSpreadSemitones(after) };
 }

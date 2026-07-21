@@ -1,4 +1,4 @@
-import argparse, json, os, sys, time, wave
+import argparse, io, json, os, sys, time, wave
 from pathlib import Path
 import grpc
 import riva.client
@@ -37,24 +37,34 @@ def main():
             transport = args.transport
             if transport in {"auto", "grpc"}:
                 try:
-                    response = service.synthesize(synthesis_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate, custom_dictionary=custom_dictionary)
                     with wave.open(str(output_path), "wb") as output:
-                        output.setnchannels(1); output.setsampwidth(2); output.setframerate(args.sample_rate); output.writeframes(response.audio)
+                        output.setnchannels(1); output.setsampwidth(2); output.setframerate(args.sample_rate)
+                        grpc_text = request.get("textChunks") or synthesis_text
+                        for response in service.synthesize_online(grpc_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate, custom_dictionary=custom_dictionary):
+                            output.writeframes(response.audio)
                     transport = "grpc"
                 except grpc.RpcError:
                     if args.transport == "grpc": raise
                     transport = "http"
             if transport == "http":
-                form = {"text": http_synthesis_text, "language": args.language, "voice": args.voice, "encoding": "LINEAR_PCM", "sample_rate_hz": str(args.sample_rate)}
-                response = None
-                for attempt in range(3):
-                    response = requests.post(http_endpoint, headers={"Authorization": "Bearer " + api_key, "Accept": "audio/wav"}, files={key: (None, value) for key, value in form.items()}, timeout=180)
-                    if response.status_code not in {408, 429, 500, 502, 503, 504} or attempt == 2: break
-                    time.sleep(0.75 * (2 ** attempt))
-                response.raise_for_status()
-                if not response.content.startswith(b"RIFF"): raise RuntimeError("NVIDIA HTTP TTS returned a non-WAV response")
-                output_path.write_bytes(response.content)
-            emit({"type": "result", "requestId": request_id, "status": "succeeded", "outputPath": str(output_path), "requestMs": round((time.perf_counter() - request_started) * 1000), "synthesisText": http_synthesis_text if transport == "http" else synthesis_text, "appliedPronunciationPhrases": sorted((custom_dictionary or {}).keys()) if transport == "grpc" else [], "transport": transport})
+                http_chunks = request.get("httpTextChunks") or [http_synthesis_text]
+                audio_frames = []
+                for http_chunk in http_chunks:
+                    form = {"text": http_chunk, "language": args.language, "voice": args.voice, "encoding": "LINEAR_PCM", "sample_rate_hz": str(args.sample_rate)}
+                    response = None
+                    for attempt in range(3):
+                        response = requests.post(http_endpoint, headers={"Authorization": "Bearer " + api_key, "Accept": "audio/wav"}, files={key: (None, value) for key, value in form.items()}, timeout=180)
+                        if response.status_code not in {408, 429, 500, 502, 503, 504} or attempt == 2: break
+                        time.sleep(0.75 * (2 ** attempt))
+                    response.raise_for_status()
+                    if not response.content.startswith(b"RIFF"): raise RuntimeError("NVIDIA HTTP TTS returned a non-WAV response")
+                    with wave.open(io.BytesIO(response.content), "rb") as source:
+                        if source.getnchannels() != 1 or source.getsampwidth() != 2 or source.getframerate() != args.sample_rate:
+                            raise RuntimeError("NVIDIA HTTP TTS returned an incompatible WAV format")
+                        audio_frames.append(source.readframes(source.getnframes()))
+                with wave.open(str(output_path), "wb") as output:
+                    output.setnchannels(1); output.setsampwidth(2); output.setframerate(args.sample_rate); output.writeframes(b"".join(audio_frames))
+            emit({"type": "result", "requestId": request_id, "status": "succeeded", "outputPath": str(output_path), "requestMs": round((time.perf_counter() - request_started) * 1000), "synthesisText": http_synthesis_text if transport == "http" else synthesis_text, "appliedPronunciationPhrases": sorted((custom_dictionary or {}).keys()) if transport == "grpc" else [], "transport": transport, "continuousStream": transport == "grpc", "synthesisUnitCount": len(request.get("textChunks") or [synthesis_text]) if transport == "grpc" else len(http_chunks)})
         except grpc.RpcError as error:
             emit({"type": "result", "requestId": request.get("requestId", "unknown"), "status": "failed", "errorType": error.code().name.lower(), "retryable": error.code() in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.DEADLINE_EXCEEDED}, "error": str(error.details())})
         except Exception as error:

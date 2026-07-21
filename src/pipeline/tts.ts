@@ -23,7 +23,7 @@ import { mockTts } from "./tts/providers/mock";
 import { probeDuration, run } from "./tts/process";
 import { prepareF5SynthesisText } from "./tts/text-normalization";
 import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from "./tts/segmentation";
-import { stabilizeNvidiaVoicePitch } from "./tts/acoustic-stability";
+import { analyzeVoiceProfilesFromFiles, voicePitchSpreadSemitones } from "./tts/acoustic-stability";
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
@@ -568,13 +568,16 @@ async function attachSegmentedNarration(
     };
   });
   const segmentPaths = results.map((result) => result.segmentPath);
-  const acousticStability = provider === "nvidia" ? await stabilizeNvidiaVoicePitch(segmentPaths) : undefined;
-  const durations = acousticStability?.adjustedSceneIndexes.length ? await Promise.all(segmentPaths.map(probeDuration)) : results.map((result) => result.duration);
+  const acousticProfiles = provider === "nvidia" ? await analyzeVoiceProfilesFromFiles(segmentPaths) : undefined;
+  const acousticVoiceSpreadSemitones = acousticProfiles ? voicePitchSpreadSemitones(acousticProfiles) : undefined;
+  const durations = results.map((result) => result.duration);
 
   const gaps = durations.map((_, index) => (index === durations.length - 1 ? 0.8 : 0.28));
   const leadingSilenceSeconds = getRuntimeConfig().tts.leadingSilenceSeconds;
   const totalGapSeconds = gaps.reduce((sum, gap) => sum + gap, leadingSilenceSeconds);
-  const fitted = await fitNarrationSegmentsToTarget(segmentPaths, durations, project.meta.durationSeconds, totalGapSeconds);
+  const fitted = forcedScenes.size > 0
+    ? { paths: segmentPaths, durations }
+    : await fitNarrationSegmentsToTarget(segmentPaths, durations, project.meta.durationSeconds, totalGapSeconds);
   const playbackPaths = fitted.paths;
   const playbackDurations = fitted.durations;
   const outputPath = path.join(generatedDir, `${basename}.wav`);
@@ -586,7 +589,7 @@ async function attachSegmentedNarration(
     const aligned = {
       ...segment,
       ttsText: results[index].pronunciationPlan.synthesisText,
-      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" && getRuntimeConfig().tts.nvidia.transport !== "grpc" ? nvidiaHttpFallbackText(results[index].pronunciationPlan) : results[index].pronunciationPlan.synthesisText,
+      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" ? nvidiaHttpFallbackText(results[index].pronunciationPlan) : results[index].pronunciationPlan.synthesisText,
       pronunciationPlan: results[index].pronunciationPlan,
       ttsProvider: provider,
       ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : undefined),
@@ -636,8 +639,8 @@ async function attachSegmentedNarration(
     budgetRemainingCharacters: Math.min(...results.map((result) => result.azureResult?.budgetRemainingCharacters ?? Number.MAX_SAFE_INTEGER)),
     budgetWarning: results.some((result) => result.azureResult?.budgetWarning),
     pronunciationPlanCount: results.length,
-    acousticVoiceSpreadSemitones: acousticStability ? Number(acousticStability.spreadSemitones.toFixed(3)) : undefined,
-    pitchAdjustedSceneIndexes: acousticStability?.adjustedSceneIndexes.join(",") ?? "",
+    acousticVoiceSpreadSemitones: acousticVoiceSpreadSemitones === undefined ? undefined : Number(acousticVoiceSpreadSemitones.toFixed(3)),
+    pitchAdjustedSceneIndexes: "",
     pronunciationUncertainCount: results.reduce((sum, result) => sum + result.pronunciationIssueCount, 0),
     ttsVoice: [...new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean))].join(","),
     ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",

@@ -13,7 +13,7 @@ import { assessAzurePronunciation, type PronunciationAssessmentResult } from "./
 import { projectAudioPath } from "./audio-structural-gate";
 import { tone3ToAzureSapi } from "../../pipeline/tts/providers/azure-ssml";
 
-export const AUDIO_PRONUNCIATION_GATE_VERSION = "audio-pronunciation-v1";
+export const AUDIO_PRONUNCIATION_GATE_VERSION = "audio-pronunciation-v2-provider-text";
 
 const cacheSchema = z.object({ version: z.literal(1), key: z.string().length(64), result: z.object({ status: z.enum(["verified", "inconclusive"]), actualPinyin: z.array(z.string()).optional(), phonemeCandidates: z.array(z.string()).optional(), startMs: z.number().optional(), endMs: z.number().optional(), confidence: z.number(), verifier: z.string(), reason: z.string().optional() }) }).strict();
 
@@ -57,8 +57,10 @@ export async function runAudioPronunciationGate(input: {
   const issues: QualityIssueInput[] = [];
   const checkedSceneIndexes: number[] = [];
   const audioPath = projectAudioPath(input.project);
-  const risky = (input.project.narrationSegments ?? []).flatMap((segment) => (segment.pronunciationPlan?.spans ?? []).filter((span) => span.risk !== "low").map((span) => ({ segment, span })));
-  if (!risky.length) return { issues, metrics: { pronunciationCheckedScenes: "", pronunciationRiskSpanCount: 0, pronunciationVerifierCalls: 0 } };
+  const allRisky = (input.project.narrationSegments ?? []).flatMap((segment) => (segment.pronunciationPlan?.spans ?? []).filter((span) => span.risk !== "low").map((span) => ({ segment, span })));
+  const risky = allRisky.filter(({ segment, span }) => (segment.providerSynthesisText ?? segment.ttsText ?? segment.text).includes(span.phrase));
+  const fallbackAppliedCount = allRisky.length - risky.length;
+  if (!risky.length) return { issues, metrics: { pronunciationCheckedScenes: "", pronunciationRiskSpanCount: allRisky.length, pronunciationFallbackAppliedCount: fallbackAppliedCount, pronunciationVerifierCalls: 0, pronunciationGateVersion: AUDIO_PRONUNCIATION_GATE_VERSION } };
   if (!audioPath) return { issues: risky.map(({ segment, span }) => inconclusiveIssue(segment.sceneIndex, span.phrase, "audio_missing", "none", input.config.quality.profile)), metrics: { pronunciationCheckedScenes: "", pronunciationRiskSpanCount: risky.length, pronunciationVerifierCalls: 0 } };
   const audioHash = createHash("sha256").update(await readFile(audioPath)).digest("hex");
   let verifierCalls = 0;
@@ -91,5 +93,5 @@ export async function runAudioPronunciationGate(input: {
       issues.push({ severity: "error", code: "audio_pronunciation_mismatch", message: `Pronunciation mismatch for '${span.phrase}'.`, sceneIndex: segment.sceneIndex, evidence: { phrase: span.phrase, expectedPinyin: span.expectedPinyin.join(" "), actualPinyin: result.actualPinyin.join(" "), phonemeCandidates: result.phonemeCandidates ?? [], startMs: result.startMs, endMs: result.endMs, confidence: result.confidence, verifier: result.verifier, pronunciationPlanHash: segment.pronunciationPlan!.planHash } });
     }
   }
-  return { issues, metrics: { pronunciationCheckedScenes: [...new Set(checkedSceneIndexes)].sort((a, b) => a - b).join(","), pronunciationRiskSpanCount: risky.length, pronunciationVerifierCalls: verifierCalls, pronunciationGateVersion: AUDIO_PRONUNCIATION_GATE_VERSION } };
+  return { issues, metrics: { pronunciationCheckedScenes: [...new Set(checkedSceneIndexes)].sort((a, b) => a - b).join(","), pronunciationRiskSpanCount: allRisky.length, pronunciationFallbackAppliedCount: fallbackAppliedCount, pronunciationVerifierCalls: verifierCalls, pronunciationGateVersion: AUDIO_PRONUNCIATION_GATE_VERSION } };
 }

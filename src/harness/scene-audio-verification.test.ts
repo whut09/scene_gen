@@ -31,6 +31,17 @@ test("scene ASR never infers pronunciation from Chinese transcript text", () => 
   assert.equal(result.issues.some((item) => item.code === "audio_pronunciation_mismatch"), false);
 });
 
+test("semantic ASR verifies provider fallback text instead of display text", () => {
+  const project = projectFixture();
+  project.narrationSegments![1].providerSynthesisText = "系统完成核心模块重新构建并输出结果。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
+    { sceneIndex: 1, text: "系统完成核心模块重新构建并输出结果。", confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.sceneIndex === 1 && item.code === "audio_semantic_mismatch"), false);
+});
+
 test("AI entity verification rejects expansion to the Mandarin semantic form", () => {
   const project = projectFixture();
   project.narrationSegments![2].text = "AI 系统完成验证。";

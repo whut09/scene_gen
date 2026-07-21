@@ -181,6 +181,23 @@ test("pronunciation verifier only checks risky scenes and failure does not trigg
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("spoken fallbacks skip obsolete polyphone verification", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-pronunciation-fallback-"));
+  try {
+    const { project } = await fixture(root);
+    project.narrationSegments![1].providerSynthesisText = "系统完成重新构建";
+    let verifierCalls = 0;
+    const result = await runAudioPronunciationGate({
+      project,
+      config: config(root),
+      verify: async () => { verifierCalls += 1; return { status: "inconclusive", confidence: 0, verifier: "mock" }; },
+    });
+    assert.equal(verifierCalls, 0);
+    assert.equal(result.issues.length, 0);
+    assert.equal(result.metrics.pronunciationFallbackAppliedCount, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("structural failure short-circuits ASR and pronunciation verification", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "scene-gen-structural-short-circuit-"));
   try {

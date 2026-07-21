@@ -27,6 +27,10 @@ const asrBatchResponseSchema = z.object({ segments: z.array(asrSceneTranscriptSc
 
 export type AsrSceneTranscript = z.infer<typeof asrSceneTranscriptSchema>;
 
+function expectedSynthesisText(segment: NarrationSegment) {
+  return segment.providerSynthesisText?.trim() || segment.ttsText?.trim() || segment.text;
+}
+
 function audioFilePath(project: VideoProject) {
   if (!project.audio?.src) throw new Error("Audio source is missing.");
   return project.audio.src.startsWith("/generated/")
@@ -132,13 +136,13 @@ function extractNumberUnits(text: string) {
 
 function expectedEntities(project: VideoProject, segment: NarrationSegment) {
   const claimIds = new Set(segment.claimIds ?? []);
-  const expectedText = canonicalSpeechText(prepareF5SynthesisText(segment.ttsText ?? segment.text));
+  const expectedText = canonicalSpeechText(prepareF5SynthesisText(expectedSynthesisText(segment)));
   const claimEntities = project.factLedger?.claims
     .filter((claim) => claimIds.has(claim.id))
     .flatMap((claim) => [claim.subject, /[a-zA-Z]|\d/.test(claim.value) ? claim.value : ""])
     .map(canonicalSpeechText)
     .filter((value) => value.length >= 2 && expectedText.includes(value)) ?? [];
-  const textualEntities = (segment.ttsText ?? segment.text).match(/[A-Za-z][A-Za-z0-9._+-]{1,}|[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+/g) ?? [];
+  const textualEntities = expectedSynthesisText(segment).match(/[A-Za-z][A-Za-z0-9._+-]{1,}|[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+/g) ?? [];
   return [...new Set([...claimEntities, ...textualEntities.map((value) => canonicalSpeechText(prepareF5SynthesisText(value)))].filter((value) => value.length >= 2))];
 }
 function bigramRecall(expected: string, actual: string) {
@@ -184,7 +188,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏没有 ASR 结果。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "retry-stage", retryable: true, evidence: { reason: "missing_transcript" } });
       continue;
     }
-    const expectedText = canonicalSpeechText(prepareF5SynthesisText(segment.ttsText ?? segment.text));
+    const expectedText = canonicalSpeechText(prepareF5SynthesisText(expectedSynthesisText(segment)));
     const actualText = canonicalSpeechText(transcript.text);
     const confidence = transcript.confidence ?? undefined;
     const expectedAnchor = expectedText.slice(0, Math.min(8, expectedText.length));
@@ -205,7 +209,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const entities = expectedEntities(project, segment);
     const matchedEntities = entities.filter((entity) => actualText.includes(entity));
     const entityRecall = matchedEntities.length / Math.max(1, entities.length);
-    const expectedNumbers = extractNumberUnits(segment.ttsText ?? segment.text);
+    const expectedNumbers = extractNumberUnits(expectedSynthesisText(segment));
     const actualNumbers = extractNumberUnits(transcript.text);
     const numberAccuracy = expectedNumbers.filter((value) => actualNumbers.includes(value)).length / Math.max(1, expectedNumbers.length);
     const endingRecall = boundaryRecall(expectedText, actualText, "end");
@@ -248,8 +252,8 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const actualEnd = actualText.slice(-18);
     const previous = segments[segment.sceneIndex - 1];
     const next = segments[segment.sceneIndex + 1];
-    const previousExpected = previous ? canonicalSpeechText(prepareF5SynthesisText(previous.ttsText ?? previous.text)) : "";
-    const nextExpected = next ? canonicalSpeechText(prepareF5SynthesisText(next.ttsText ?? next.text)) : "";
+    const previousExpected = previous ? canonicalSpeechText(prepareF5SynthesisText(expectedSynthesisText(previous))) : "";
+    const nextExpected = next ? canonicalSpeechText(prepareF5SynthesisText(expectedSynthesisText(next))) : "";
     const previousLeak = previousExpected ? boundaryRecall(previousExpected, actualStart, "end") : 0;
     const nextLeak = nextExpected ? boundaryRecall(nextExpected, actualEnd, "start") : 0;
     if ((previousLeak >= boundaryLeakMinimum && previousLeak > bigramRecall(currentStart, actualStart) + 0.15) || (nextLeak >= boundaryLeakMinimum && nextLeak > bigramRecall(currentEnd, actualEnd) + 0.15)) {
@@ -262,7 +266,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
   const titleAudioCoverage = firstTranscript ? bigramRecall(expectedTitle, canonicalSpeechText(firstTranscript)) : 0;
   const titleOpeningCoverage = firstTranscript ? bigramRecall(expectedTitle, actualOpening) : 0;
   const firstConfidence = transcriptMap.get(0)?.confidence;
-  const expectedPrefix = canonicalSpeechText(prepareF5SynthesisText(segments[0]?.ttsText ?? segments[0]?.text ?? project.meta.title)).slice(0, 10);
+  const expectedPrefix = canonicalSpeechText(prepareF5SynthesisText(segments[0] ? expectedSynthesisText(segments[0]) : project.meta.title)).slice(0, 10);
   const embeddedAsciiIndex = expectedPrefix.search(/[a-z]/);
   const expectedOpeningAnchor = embeddedAsciiIndex > 0 ? expectedPrefix.slice(0, embeddedAsciiIndex) : expectedPrefix.slice(0, 6);
   const openingPrefixCoverage = firstTranscript ? bigramRecall(expectedOpeningAnchor, actualOpening.slice(0, expectedOpeningAnchor.length + 3)) : 0;

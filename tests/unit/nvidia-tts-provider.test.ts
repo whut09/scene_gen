@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRuntimeConfig } from "../../src/config/runtime-config";
 import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
-import { encodeNvidiaWorkerRequest, isRetryableNvidiaTtsError, NVIDIA_TTS_FRONTEND_VERSION, nvidiaHttpFallbackText, nvidiaPronunciationDictionary, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
+import { encodeNvidiaWorkerRequest, isRetryableNvidiaTtsError, NVIDIA_TTS_FRONTEND_VERSION, NVIDIA_TTS_NORMALIZE_FILTER, nvidiaHttpFallbackText, nvidiaPronunciationDictionary, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
 
 test("NVIDIA worker requests preserve Mandarin text as UTF-8", () => {
   const input = { requestId: "request-1", text: "系统完成核心模块重构，这项更新非常重要。", outputPath: "output.wav" };
@@ -17,7 +17,7 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-acoustic-stability-v18");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-continuous-stream-v21");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, plan.synthesisText);
   assert.equal(identity.speed, 1.25);
@@ -69,10 +69,17 @@ test("NVIDIA HTTP transport uses spoken fallbacks for risky polyphones", async (
   assert.equal(plan.displayText, "系统完成重构并处理长内容");
 });
 
+test("NVIDIA stable synthesis text forces high-risk Mandarin fallbacks", async () => {
+  const { plan } = await compilePronunciationPlan({ displayText: "把长内容转成技能，并完成重构。" });
+  assert.equal(nvidiaHttpFallbackText(plan), "把长篇内容转成技能，并完成重新构建。");
+  assert.equal(plan.displayText, "把长内容转成技能，并完成重构。");
+});
+
 test("NVIDIA worker request serializes the custom pronunciation dictionary", () => {
   const input = {
     requestId: "request-tone",
     text: "系统完成重构。",
+    textChunks: ["系统完成", "重构。"],
     outputPath: "output.wav",
     customDictionary: { 重构: "chong2 gou4" },
   };
@@ -88,4 +95,9 @@ test("NVIDIA retries closed Triton streams but not deterministic request errors"
   assert.equal(isRetryableNvidiaTtsError(new Error("unavailable: Stream removed")), true);
   assert.equal(isRetryableNvidiaTtsError(new Error("Triton model failed during inference. Stream has been closed.")), true);
   assert.equal(isRetryableNvidiaTtsError(new Error("invalid pronunciation dictionary")), false);
+});
+
+test("NVIDIA normalization preserves internal speech pauses", () => {
+  assert.equal(NVIDIA_TTS_NORMALIZE_FILTER.includes("stop_periods"), false);
+  assert.equal((NVIDIA_TTS_NORMALIZE_FILTER.match(/areverse/g) ?? []).length >= 2, true);
 });

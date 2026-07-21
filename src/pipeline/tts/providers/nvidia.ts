@@ -22,13 +22,16 @@ export interface NvidiaTtsResult {
 export interface NvidiaWorkerRequest {
   requestId: string;
   text: string;
+  textChunks?: string[];
   httpText?: string;
+  httpTextChunks?: string[];
   outputPath: string;
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-acoustic-stability-v18";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-continuous-stream-v21";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 20;
+export const NVIDIA_TTS_NORMALIZE_FILTER = "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB,areverse,silenceremove=start_periods=1:start_duration=0.04:start_threshold=-52dB,areverse,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse,loudnorm=I=-19:TP=-2:LRA=7";
 
 export function isRetryableNvidiaTtsError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -143,14 +146,14 @@ class NvidiaWorker {
     });
     return this.ready;
   }
-  async synthesize(text: string, outputPath: string, customDictionary?: Record<string, string>, signal?: AbortSignal, httpText?: string) {
+  async synthesize(text: string, outputPath: string, customDictionary?: Record<string, string>, signal?: AbortSignal, httpText?: string, textChunks?: string[], httpTextChunks?: string[]) {
     await this.start();
     if (signal?.aborted) throw signal.reason;
     const requestId = randomUUID();
     return new Promise<NvidiaTtsResult>((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(requestId); this.child?.kill(); reject(new Error("NVIDIA TTS request timeout.")); }, this.config.tts.nvidia.timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
-      this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, httpText, outputPath, customDictionary }));
+      this.child!.stdin.write(encodeNvidiaWorkerRequest({ requestId, text, textChunks, httpText, httpTextChunks, outputPath, customDictionary }));
     });
   }
   restart() {
@@ -185,54 +188,40 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
     signal: input.signal,
     generate: async (targetPath) => {
       worker ??= new NvidiaWorker(config);
-      const chunks = splitNvidiaSynthesisText(input.plan.synthesisText);
-      const partPaths = chunks.map((_, index) => `${targetPath}.part-${String(index + 1).padStart(2, "0")}.wav`);
+      const synthesisText = nvidiaHttpFallbackText(input.plan);
+      const httpTextChunks = splitNvidiaSynthesisText(synthesisText);
+      const partPaths = [`${targetPath}.part-01.wav`];
       const naturalPath = `${targetPath}.natural.wav`;
-      const partDurations: number[] = [];
       let requestMs = 0;
       try {
-        for (let index = 0; index < chunks.length; index += 1) {
-          const customDictionary = nvidiaPronunciationDictionary(input.plan, chunks[index]);
-          let result: NvidiaTtsResult | undefined;
-          let lastError: Error | undefined;
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            try {
-              result = await worker.synthesize(chunks[index], partPaths[index], customDictionary, input.signal, nvidiaHttpFallbackText(input.plan, chunks[index]));
-              break;
-            } catch (error) {
-              lastError = error as Error;
-              if (!isRetryableNvidiaTtsError(lastError) || attempt === 2) throw lastError;
-              worker.restart();
-              await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** attempt) + Math.floor(Math.random() * 250)));
-            }
+        const customDictionary = nvidiaPronunciationDictionary(input.plan, synthesisText);
+        let result: NvidiaTtsResult | undefined;
+        let lastError: Error | undefined;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            result = await worker.synthesize(synthesisText, partPaths[0], customDictionary, input.signal, synthesisText, httpTextChunks, httpTextChunks);
+            break;
+          } catch (error) {
+            lastError = error as Error;
+            if (!isRetryableNvidiaTtsError(lastError) || attempt === 2) throw lastError;
+            worker.restart();
+            await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** attempt) + Math.floor(Math.random() * 250)));
           }
-          if (!result) throw lastError ?? new Error("NVIDIA TTS request failed without a result.");
-          const missingHighRiskPhrase = input.plan.spans.find((span) =>
-            (span.risk === "medium" || span.risk === "high") &&
-            chunks[index].includes(span.phrase) &&
-            !Object.hasOwn(customDictionary, span.phrase),
-          );
-          if (missingHighRiskPhrase) throw new Error(`NVIDIA pronunciation dictionary omitted phrase: ${missingHighRiskPhrase.phrase}`);
-          requestMs += result.requestMs;
-          const duration = await probeDuration(partPaths[index]);
-          if (duration <= 0) throw new Error(`NVIDIA TTS chunk ${index + 1} is empty or invalid.`);
-          const spokenCharacters = [...chunks[index]].filter((character) => /[\p{L}\p{N}]/u.test(character)).length;
-          const minimumExpectedDuration = Math.max(0.35, spokenCharacters / 14);
-          if (duration < minimumExpectedDuration) throw new Error(`NVIDIA TTS chunk ${index + 1} was truncated: ${duration.toFixed(2)}s for ${spokenCharacters} spoken characters.`);
-          partDurations.push(duration);
         }
-        if (partPaths.length === 1) await normalizeNvidiaPart(partPaths[0], naturalPath);
-        else {
-          const normalizedPaths = partPaths.map((partPath) => `${partPath}.normalized.wav`);
-          for (let index = 0; index < partPaths.length; index += 1) await normalizeNvidiaPart(partPaths[index], normalizedPaths[index]);
-          const normalizedDurations = await Promise.all(normalizedPaths.map(probeDuration));
-          await concatNarrationSegments(normalizedPaths, normalizedDurations, normalizedDurations.map((_, index) => index === normalizedDurations.length - 1 ? 0 : 0.06), naturalPath);
-          await Promise.all(normalizedPaths.map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
-        }
+        if (!result) throw lastError ?? new Error("NVIDIA TTS request failed without a result.");
+        requestMs += result.requestMs;
+        const duration = await probeDuration(partPaths[0]);
+        if (duration <= 0) throw new Error("NVIDIA TTS continuous stream is empty or invalid.");
+        const spokenCharacters = [...synthesisText].filter((character) => /[\p{L}\p{N}]/u.test(character)).length;
+        const minimumExpectedDuration = Math.max(0.35, spokenCharacters / 14);
+        if (duration < minimumExpectedDuration) throw new Error(`NVIDIA TTS continuous stream was truncated: ${duration.toFixed(2)}s for ${spokenCharacters} spoken characters.`);
+        await normalizeNvidiaPart(partPaths[0], naturalPath);
+        const normalizedDuration = await probeDuration(naturalPath);
+        if (normalizedDuration < minimumExpectedDuration) throw new Error(`NVIDIA TTS postprocessing truncated the continuous stream: ${normalizedDuration.toFixed(2)}s for ${spokenCharacters} spoken characters.`);
         if (config.tts.nvidia.speed === 1) await renamePart(naturalPath, targetPath);
         else await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", naturalPath, "-filter:a", `atempo=${config.tts.nvidia.speed}`, "-c:a", "pcm_s16le", targetPath]);
-        generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText: input.plan.synthesisText, appliedPronunciationPhrases: Object.keys(nvidiaPronunciationDictionary(input.plan)) };
-        return { requestMs, synthesisText: input.plan.synthesisText, chunkCount: chunks.length, voice: config.tts.nvidia.voice, appliedPronunciationPhrases: generated.appliedPronunciationPhrases };
+        generated = { requestId: randomUUID(), status: "succeeded", outputPath: targetPath, requestMs, synthesisText, appliedPronunciationPhrases: Object.keys(customDictionary) };
+        return { requestMs, synthesisText, chunkCount: httpTextChunks.length, voice: config.tts.nvidia.voice, appliedPronunciationPhrases: generated.appliedPronunciationPhrases };
       } finally {
         await Promise.all([...partPaths, naturalPath].map((partPath) => rm(partPath, { force: true }).catch(() => undefined)));
       }
@@ -250,7 +239,7 @@ async function renamePart(partPath: string, targetPath: string) {
 async function normalizeNvidiaPart(partPath: string, targetPath: string) {
   await run("ffmpeg", [
     "-y", "-hide_banner", "-loglevel", "error", "-i", partPath,
-    "-af", "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB:stop_periods=1:stop_duration=0.04:stop_threshold=-52dB,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse,loudnorm=I=-19:TP=-2:LRA=7",
+    "-af", NVIDIA_TTS_NORMALIZE_FILTER,
     "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", targetPath,
   ]);
 }
