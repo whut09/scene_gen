@@ -103,6 +103,7 @@ export const issueRegistry = {
   blank_frame: define("hard", "rerender-scenes", true),
   frame_content_inset: define("hard", "rerender-scenes", true),
   stream_missing: define("hard", "rerender-scenes", true),
+  video_filename_title_mismatch: define("hard", "remux", true),
   wrong_dimensions: define("hard", "rerender-scenes", true),
   scene_motion_too_static: define("soft", "switch-template", false),
   video_motion_too_static: define("soft", "switch-template", false),

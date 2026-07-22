@@ -15,6 +15,7 @@ import { findFactConflicts, highRiskPredicatesInText, sceneFactText } from "../.
 import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts } from "../scene-audio-verification";
 import { analyzeFrameVisual } from "../frame-visual-analysis";
 import { readVisualAuditFile } from "../../html-video/visual-audit";
+import { expectedVideoFileName, projectHomepageTitle } from "../../pipeline/output-naming";
 
 function runCapture(command: string, args: string[], signal?: AbortSignal) {
   return runExternalProcess(command, args, {
@@ -152,6 +153,24 @@ export async function evaluateVideo(
   const video = data.streams?.find((stream) => stream.codec_type === "video");
   const audio = data.streams?.find((stream) => stream.codec_type === "audio");
   const duration = Number(data.format?.duration ?? 0);
+  if (options.project) {
+    const expectedFileName = expectedVideoFileName(options.project);
+    const actualFileName = path.basename(videoPath);
+    if (actualFileName !== expectedFileName) {
+      issues.push({
+        severity: "error",
+        code: "video_filename_title_mismatch",
+        message: `视频文件名必须与首屏标题一致，期望 ${expectedFileName}，实际 ${actualFileName}。`,
+        repairAction: "remux",
+        retryable: true,
+        evidence: {
+          expectedFileName,
+          actualFileName,
+          homepageTitle: projectHomepageTitle(options.project),
+        },
+      });
+    }
+  }
   if (!video || !audio) issues.push({ severity: "error", code: "stream_missing", message: "成片缺少视频流或音频流。" });
   if (video?.width !== 1080 || video?.height !== 1920) {
     issues.push({ severity: "error", code: "wrong_dimensions", message: `成片尺寸不是 1080x1920。` });

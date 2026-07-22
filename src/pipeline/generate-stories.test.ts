@@ -17,6 +17,7 @@ const tsxCli = require.resolve("tsx/cli");
 test("GitHub cache writes an explicit run-scoped generation result", async () => {
   const cacheId = randomUUID().replace(/-/g, "");
   const repo = `scene-gen-tests/cache-${cacheId}`;
+  const projectName = `cache-${cacheId}`;
   const sourceUrl = `https://github.com/${repo}`;
   const storiesDir = fromRoot("public", "generated", "stories");
   const cachedProjectPath = path.join(storiesDir, `cache-${cacheId}.json`);
@@ -25,7 +26,7 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
   await mkdir(storiesDir, { recursive: true });
   await writeFile(cachedProjectPath, JSON.stringify({
     meta: {
-      title: `Cache ${cacheId}`,
+      title: projectName,
       createdAt: "2026-07-14T00:00:00.000Z",
       width: 1080,
       height: 1920,
@@ -33,13 +34,13 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
       durationSeconds: 10,
       sourceCount: 1,
     },
-    narration: `Cache ${cacheId}。`,
-    narrationSegments: [{ sceneIndex: 0, text: `Cache ${cacheId}。` }],
+    narration: `${projectName}，开源项目推荐。Cache fixture。`,
+    narrationSegments: [{ sceneIndex: 0, text: `${projectName}，开源项目推荐。Cache fixture。` }],
     scenes: [{
       type: "title",
       duration: 10,
       kicker: "TEST",
-      headline: `Cache ${cacheId}`,
+      headline: `开源项目推荐：${projectName}`,
       subhead: "Cache fixture",
       sources: [repo],
     }],

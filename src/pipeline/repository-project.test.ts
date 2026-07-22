@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { expectedVideoFileName, projectHomepageTitle } from "./output-naming";
 import { ensureRepositoryProjectIdentity, repositoryProjectName } from "./repository-project";
 import type { VideoProject } from "./types";
 
@@ -21,4 +22,6 @@ test("repository identity uses the original repository name", () => {
   assert.equal(normalized.scenes[0].type, "title");
   assert.equal((normalized.scenes[0] as Extract<typeof normalized.scenes[number], { type: "title" }>).headline, "开源项目推荐：text-to-cad");
   assert.match(normalized.narrationSegments![0].text, /^text-to-cad，开源项目推荐。/u);
+  assert.equal(projectHomepageTitle(normalized), "开源项目推荐：text-to-cad");
+  assert.equal(expectedVideoFileName(normalized), "开源项目推荐：text-to-cad.mp4");
 });

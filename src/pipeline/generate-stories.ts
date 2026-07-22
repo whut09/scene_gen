@@ -13,7 +13,7 @@ import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson, writeJso
 import { generationResultSchema, readStoryManifest, type StoryManifestItem, writeStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
 import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
-import { provisionalVideoFileName } from "./output-naming";
+import { projectHomepageTitle, provisionalVideoFileName } from "./output-naming";
 import { ensureRepositoryProjectIdentity } from "./repository-project";
 
 loadDotEnv();
@@ -86,7 +86,7 @@ if (urls.length === 1 && !args["ignore-cache"]) {
     const projectPath = runDir ? path.join(projectsDir, `${slug}.json`) : cached.projectPath;
     const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
     const productionReportPath = path.join(htmlVideoDir, slug, "production-report.json");
-    const outputPath = path.join(outputDir, provisionalVideoFileName(cachedProject.meta.title, slug));
+    const outputPath = path.join(outputDir, provisionalVideoFileName(projectHomepageTitle(cachedProject), slug));
     if (runDir) await writeJson(projectPath, videoProjectSchema.parse(cachedProject));
     await writeHtmlVideoContentGraph(cachedProject, htmlVideoGraphPath);
     await writeJson(productionReportPath, buildProductionReport(cachedProject, "html-video"));
@@ -220,7 +220,7 @@ for (const [index, item] of items.entries()) {
   const projectPath = path.join(projectsDir, `${slug}.json`);
   const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
   const productionReportPath = path.join(htmlVideoDir, slug, "production-report.json");
-  const outputPath = path.join(outputDir, provisionalVideoFileName(project.meta.title, slug));
+  const outputPath = path.join(outputDir, provisionalVideoFileName(projectHomepageTitle(project), slug));
   await writeJson(projectPath, videoProjectSchema.parse(project));
   await writeHtmlVideoContentGraph(project, htmlVideoGraphPath);
   await writeJson(productionReportPath, buildProductionReport(project, "html-video"));

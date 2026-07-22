@@ -13,9 +13,8 @@ import { narrationSynthesisText } from "../../src/pipeline/tts/segmentation";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
-import { scrubAttribution, scrubGithubReference } from "../../src/pipeline/story";
-import { provisionalVideoFileName, repositoryTitleBasedVideoPath, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
-import { containsForbiddenPlatformPromotion, scrubAttribution } from "../../src/pipeline/story";
+import { containsForbiddenPlatformPromotion, scrubAttribution, scrubGithubReference } from "../../src/pipeline/story";
+import { expectedVideoFileName, homepageTitleBasedVideoPath, projectHomepageTitle, provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 
 test("number pronunciation converts common Chinese news formats", () => {
   const text = prepareF5SynthesisText("2026年发布，版本编号2026，增长12.5%，覆盖1000+用户，版本4.0");
@@ -161,7 +160,12 @@ test("published video filename is derived from the Chinese homepage title", () =
   assert.equal(titleBasedVideoPath("E:/output/news-qbitai-v2.mp4", "数字员工正式进入企业流程"), path.join("E:/output", "数字员工正式进入企业流程.mp4"));
   assert.equal(provisionalVideoFileName("OpenRouter", "cached-project"), "openrouter.mp4");
   assert.throws(() => videoFileNameFromTitle("OpenRouter"), /Chinese characters/);
-  assert.equal(repositoryTitleBasedVideoPath("E:/output/old.mp4", "ai-agent-book"), path.join("E:/output", "ai-agent-book.mp4"));
+  assert.equal(homepageTitleBasedVideoPath("E:/output/old.mp4", "开源项目推荐：ai-agent-book"), path.join("E:/output", "开源项目推荐：ai-agent-book.mp4"));
+  const project = createFixtureProject();
+  project.meta.title = "内部项目标题";
+  project.scenes[0] = { ...project.scenes[0], type: "title", headline: "视频首页标题" };
+  assert.equal(projectHomepageTitle(project), "视频首页标题");
+  assert.equal(expectedVideoFileName(project), "视频首页标题.mp4");
 });
 
 test("news source websites are scrubbed and blocked by the draft gate", async () => {
