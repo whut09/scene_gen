@@ -32,6 +32,13 @@ test("cloud narration keeps a leading AI acronym without expanding it", () => {
   assert.equal(segment.text, "AI 圈又在造新词。");
 });
 
+test("TTS normalization preserves Agent product names and AI Agent", () => {
+  assert.equal(
+    prepareF5SynthesisText("Agent-Reach 为 AI Agent 提供联网能力。"),
+    "Agent-Reach 为 AI Agent 提供联网能力。",
+  );
+});
+
 test("cloud narration repairs a stale AI expansion in ttsText", () => {
   const segment = { sceneIndex: 0, text: "AI 系统完成更新。", ttsText: "人工智能系统完成更新。" };
   assert.equal(narrationSynthesisText(segment), "AI 系统完成更新。");
@@ -68,6 +75,16 @@ test("draft quality catches a narration that does not open with the title", asyn
   });
   const result = await evaluateDraft(project, 10, "");
   assert.equal(result.issues.some((issue) => issue.code === "title_not_spoken_first"), true);
+});
+
+test("draft release status accepts the source wording 对外推出 without upgrading it", async () => {
+  const project = createFixtureProject();
+  const narration = `${project.meta.title}。主产品对外推出三款模型。`;
+  project.sources[0].content = "主产品对外推出三款模型。另一产品随后正式发布。";
+  project.narration = narration;
+  project.narrationSegments = [{ sceneIndex: 0, text: narration }];
+  const result = await evaluateDraft(project, 10, "");
+  assert.equal(result.issues.some((issue) => issue.code === "release_status_weakened"), false);
 });
 
 test("draft quality blocks unmatched punctuation before TTS", async () => {

@@ -105,7 +105,6 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/Codex/gi, "Codex，")
     .replace(/OpenAI/gi, "欧盆艾，")
     .replace(/Prompt/gi, "提示词")
-    .replace(/Agent/gi, "智能体")
     .replace(/(?<=\d),(?=\d{3}(?:\D|$))/g, "")
     .replace(/(\d+)\s*[:\uff1a]\s*(\d+)/g, (_, left: string, right: string) => `${numberToChinese(left)}\u6bd4${numberToChinese(right)}`)
     .replace(/(\d+(?:[.]\d+)?)\s*%/g, (_, value: string) => `百分之${numberToChinese(value)}`)

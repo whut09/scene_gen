@@ -270,7 +270,7 @@ export async function evaluateDraft(
     revisionNotes.push("将主标题改写为14到30个汉字的中文事实总结，英文仅保留必要专有名。 ");
   }
   const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
-  if (/正式发布|正式推出|即日起.{0,80}开放/.test(sourceText) && !/正式发布|正式推出|即日起.{0,80}开放/.test(project.narration)) {
+  if (/正式发布|正式推出|对外推出|即日起.{0,80}开放/.test(sourceText) && !/正式发布|正式推出|对外推出|即日起.{0,80}开放/.test(project.narration)) {
     issues.push({ severity: "error", code: "release_status_weakened", message: "原文的正式发布或开放状态被弱化。" });
     revisionNotes.push("首段直接复述原文的正式发布状态、开放渠道和用户范围。 ");
   }
