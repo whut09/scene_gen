@@ -49,7 +49,7 @@ function removeRepeatedOpeningTitle(value: string, title: string) {
 
 function normalizeDateString(value: string, technical: boolean) {
   let normalized = value
-    .replace(/(20\d{2})-(\d{2})-(\d{2})[T\s]\d{2}:\d{2}:\d{2}(?:[.]\d+)?Z?/g, (_, year, month, day) => `${year}年${Number(month)}月${Number(day)}日`)
+    .replace(/(20\d{2})-(\d{2})-(\d{2})[T\s]\d{2}:\d{2}:\d{2}(?:[.]\d+)?(?:Z|[+-]\d{2}:\d{2})?/g, (_, year, month, day) => `${year}年${Number(month)}月${Number(day)}日`)
     .replace(/(20\d{2})年(\d{1,2})月(\d{1,2})日\s*\d{1,2}[:：]\d{2}(?::\d{2})?/g, '$1年$2月$3日')
     .replace(/(发布于\s*20\d{2}年\d{1,2}月\d{1,2}日)(?:\s*发布于\s*20\d{2}年\d{1,2}月\d{1,2}日)+/g, '$1');
   if (technical) normalized = normalized

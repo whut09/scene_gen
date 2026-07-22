@@ -26,6 +26,14 @@ test("GitHub projects do not receive a news date narration", () => {
   assert.equal(ensureNewsDateNarration(input).narrationSegments?.[0]?.text, "中文新闻标题示例。正文内容。");
 });
 
+test("date normalization consumes an ISO timezone offset", () => {
+  const input = project("webpage");
+  input.sources[0].publishedAt = "2026-07-22T00:00:00+08:00";
+  const output = normalizeProjectDatePrecision(input);
+  assert.equal(output.sources[0].publishedAt, "2026年7月22日");
+  assert.equal(projectNewsDate(output), "2026年7月22日");
+});
+
 test("Tencent Cloud developer articles never receive a news date", () => {
   const input = project("webpage");
   input.sources[0] = {

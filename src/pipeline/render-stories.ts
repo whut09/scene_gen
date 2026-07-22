@@ -3,7 +3,7 @@ import type { VideoProject } from "./types";
 import { HtmlSceneRenderError, renderHtmlVideoProject } from "../html-video/render-html-video";
 import { bundleRemotion, renderProject } from "./render-core";
 import { fromRoot, loadDotEnv, parseArgs, readJson, writeJsonAtomic } from "./utils";
-import { readStoryManifest } from "./story-manifest";
+import { readStoryManifest, writeStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
 import { homepageTitleBasedVideoPath, projectHomepageTitle } from "./output-naming";
 
@@ -46,11 +46,14 @@ try {
         signal: controller.signal,
       });
       renderResults.push({ outputPath, visualAuditPath: result.visualAuditPath, metrics: result.metrics });
+      story.outputPath = outputPath;
     } else {
       await renderProject(project, titledOutputPath, serveUrl as string);
       renderResults.push({ outputPath: titledOutputPath });
+      story.outputPath = titledOutputPath;
     }
   }
+  await writeStoryManifest(manifestPath, manifest);
 } catch (error) {
   if (typeof args.result === "string") {
     await writeJsonAtomic(path.resolve(args.result), {

@@ -40,8 +40,8 @@ import {
 } from "./video-stages";
 import { buildRuntimeConfig, compatibleStoredRuntimeConfigSnapshotHashes, restoreRuntimeConfig, runWithRuntimeConfig, runtimeConfigHash, runtimeConfigSnapshot, runtimeConfigWithRunOverrides, type RuntimeConfig } from "../config/runtime-config";
 import { finalizePendingAudit, loadIterations, nextAttempt, persistLoopAudit, persistStrategyTrajectory, resolveRunDir, resumeStage, shouldRun, type AgentState } from "./agent/loop-support";
-import { initialDraftLoopState, shouldContinueDraftLoop, shouldRevalidateDraftBeforeResume } from "./agent/draft-loop";
-import { generatedAudioSceneIndexes, shouldSynthesizeAudio } from "./agent/audio-loop";
+import { initialDraftLoopState, latestStageEvaluations, shouldContinueDraftLoop, shouldRevalidateDraftBeforeResume } from "./agent/draft-loop";
+import { generatedAudioSceneIndexes, nextAudioLoopIteration, shouldSynthesizeAudio, verificationRetrySceneIndexes } from "./agent/audio-loop";
 import { addTemplateExclusions, affectedVideoScenes } from "./agent/video-loop";
 import { publishAgentRun } from "./agent/publish";
 import { PronunciationAttemptLedger, phraseFingerprint, type PronunciationAttemptLedgerState, type PronunciationStrategy } from "../production/tts-routing";
@@ -195,6 +195,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       const current = state.iterations.find((item) => item.iteration === iteration) ?? { iteration, draft: gate.value.evaluation };
       current.draft = gate.value.evaluation;
       current.draftProjectHash = String(gate.value.evaluation.metrics.projectHash);
+      current.draftUpdatedAtMs = Date.now();
       current.dirtyPlan = current.dirtyPlan
         ? mergeDirtyPlans(current.dirtyPlan, gate.value.repairPlan.dirtyPlan)
         : gate.value.repairPlan.dirtyPlan;
@@ -268,8 +269,8 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     }
 
     if (!draftPassed || !state.story || !state.project || !state.manifestPath) throw new Error("Draft quality gate failed after all iterations.");
-    let audioPassed = state.iterations.at(-1)?.audio?.passed ?? false;
-    iteration = Math.max(iteration, state.iterations.at(-1)?.iteration ?? 1);
+    let audioPassed = latestStageEvaluations(state.iterations).finalAudio?.passed ?? false;
+    iteration = nextAudioLoopIteration(state.iterations);
     let forceAudioSceneIndexes: number[] | undefined;
     let forceAudioRebuild = false;
     let audioCacheSalt: string | undefined;
@@ -334,9 +335,10 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       const evaluationPath = path.join(runDir, "evaluations", `iteration-${iteration}-audio.json`);
       await writeJsonAtomic(evaluationPath, gate.value.evaluation);
       await journal.setArtifacts({ [`iteration${iteration}Audio`]: evaluationPath });
-      const current = state.iterations.find((item) => item.iteration === iteration) ?? { iteration, draft: state.iterations.at(-1)!.draft };
+      const current = state.iterations.find((item) => item.iteration === iteration) ?? { iteration, draft: latestStageEvaluations(state.iterations).finalDraft! };
       current.audio = gate.value.evaluation;
       current.audioProjectHash = String(gate.value.evaluation.metrics.projectHash);
+      current.audioUpdatedAtMs = Date.now();
       current.dirtyPlan = current.dirtyPlan
         ? mergeDirtyPlans(current.dirtyPlan, gate.value.repairPlan.dirtyPlan)
         : gate.value.repairPlan.dirtyPlan;
@@ -363,7 +365,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       if (iteration >= maxIterations) break;
       pronunciationStrategy = gate.value.repairPlan.pronunciationStrategy;
       if (pronunciationStrategy === "retry-verifier") {
-        const targetScenes = gate.value.evaluation.issues.filter((issue) => issue.code === "verification_inconclusive").map((issue) => issue.sceneIndex ?? 0);
+        const targetScenes = verificationRetrySceneIndexes(gate.value.evaluation.issues);
         if (!targetScenes.every((sceneIndex) => pronunciationAttempts.claimVerification(sceneIndex))) throw new Error("Pronunciation verifier retry budget exhausted; switch verifier or request manual confirmation.");
         await writeJsonAtomic(pronunciationAttemptsPath, pronunciationAttempts.snapshot());
         iteration += 1;
@@ -453,9 +455,13 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
                 totalRenderMs: Number(renderMetrics.totalRenderMs ?? 0),
               };
               lastRenderMetrics = scalarMetrics;
-              return { outputs: { outputPath: state.story!.outputPath, renderResultPath }, metrics: scalarMetrics };
+              return { outputs: { outputPath: value.outputPath ?? state.story!.outputPath, renderResultPath }, metrics: scalarMetrics };
             },
           });
+          if (render.value.outputPath) {
+            state.story = { ...state.story, outputPath: render.value.outputPath };
+            await journal.setArtifacts({ outputPath: render.value.outputPath });
+          }
           remuxedVideo ||= render.value.remuxedVideo;
           remuxOnly = false;
           audioRemuxRequired = false;

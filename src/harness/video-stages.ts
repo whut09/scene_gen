@@ -19,6 +19,7 @@ import { recordTemplateOutcomes } from "../templates/template-learning";
 import { recordProviderOutcome } from "../production/provider-stats";
 import { findTtsPronunciations } from "../pipeline/tts-pronunciation";
 import { getRuntimeConfig, runtimeConfigProcessEnv, runtimeConfigWithTemplateExclusions } from "../config/runtime-config";
+import { latestStageEvaluations } from "./agent/draft-loop";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -39,6 +40,8 @@ export interface IterationReport {
   audio?: QualityEvaluation;
   draftProjectHash?: string;
   audioProjectHash?: string;
+  draftUpdatedAtMs?: number;
+  audioUpdatedAtMs?: number;
   audits?: LoopAudit[];
   dirtyPlan?: DirtyPlan;
 }
@@ -205,9 +208,10 @@ export async function runRenderStage(input: {
     inheritOutput: true,
   });
   const result = input.resultPath
-    ? await readJson<{ stories?: Array<{ visualAuditPath?: string; metrics?: Record<string, unknown> }> }>(input.resultPath)
+    ? await readJson<{ stories?: Array<{ outputPath?: string; visualAuditPath?: string; metrics?: Record<string, unknown> }> }>(input.resultPath)
     : undefined;
   return {
+    outputPath: result?.stories?.[0]?.outputPath,
     remuxedVideo: Boolean(input.remuxRequired && input.engine === "html-video"),
     remuxOnly: Boolean(input.remuxOnly),
     metrics: result?.stories?.[0]?.metrics,
@@ -266,8 +270,7 @@ export async function runPublishStage(input: {
   video: QualityEvaluation;
   reportDir: string;
 }) {
-  const finalDraft = input.iterations.at(-1)?.draft;
-  const finalAudio = input.iterations.at(-1)?.audio;
+  const { finalDraft, finalAudio } = latestStageEvaluations(input.iterations);
   const passed = Boolean(finalDraft?.passed && finalAudio?.passed && input.video.passed);
   const production = buildProductionReport(input.project, input.engine);
   const dirtyPlan = mergeDirtyPlans(

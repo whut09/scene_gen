@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { QualityEvaluation } from "../quality";
 import type { StoryManifestItem } from "../../pipeline/story-manifest";
@@ -41,9 +42,11 @@ export async function loadIterations(artifacts: Record<string, string>) {
     if (match[2] === "Draft") {
       current.draft = evaluation;
       current.draftProjectHash = typeof evaluation.metrics.projectHash === "string" ? evaluation.metrics.projectHash : undefined;
+      current.draftUpdatedAtMs = await stat(filePath).then((value) => value.mtimeMs).catch(() => 0);
     } else {
       current.audio = evaluation;
       current.audioProjectHash = typeof evaluation.metrics.projectHash === "string" ? evaluation.metrics.projectHash : undefined;
+      current.audioUpdatedAtMs = await stat(filePath).then((value) => value.mtimeMs).catch(() => 0);
     }
     reports.set(iteration, current);
   }
