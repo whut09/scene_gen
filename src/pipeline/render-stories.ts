@@ -5,7 +5,7 @@ import { bundleRemotion, renderProject } from "./render-core";
 import { fromRoot, loadDotEnv, parseArgs, readJson, writeJsonAtomic } from "./utils";
 import { readStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
-import { titleBasedVideoPath } from "./output-naming";
+import { repositoryTitleBasedVideoPath, titleBasedVideoPath } from "./output-naming";
 
 loadDotEnv();
 
@@ -36,7 +36,9 @@ process.once("SIGTERM", cancel);
 try {
   for (const story of stories) {
     const project = videoProjectSchema.parse(await readJson<unknown>(story.projectPath)) as VideoProject;
-    const titledOutputPath = titleBasedVideoPath(story.outputPath, project.meta.title);
+    const titledOutputPath = project.sources[0]?.kind === "github"
+      ? repositoryTitleBasedVideoPath(story.outputPath, project.meta.title)
+      : titleBasedVideoPath(story.outputPath, project.meta.title);
     if (engine === "html-video") {
       const outputPath = overwrite ? titledOutputPath : titledOutputPath.replace(/\.mp4$/i, ".html-video.mp4");
       const result = await renderHtmlVideoProject(project, outputPath, {

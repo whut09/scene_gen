@@ -14,6 +14,7 @@ import { generationResultSchema, readStoryManifest, type StoryManifestItem, writ
 import { videoProjectSchema } from "./schemas";
 import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
 import { provisionalVideoFileName } from "./output-naming";
+import { ensureRepositoryProjectIdentity } from "./repository-project";
 
 loadDotEnv();
 
@@ -75,7 +76,12 @@ if (urls.length === 1 && !args["ignore-cache"]) {
   const cached = await findGithubCache(urls[0]);
   if (cached) {
     const cachedRepositories = cached.project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
-    const cachedProject = scrubProject(cached.project, "", cachedRepositories) as VideoProject;
+    const cachedProject = ensureRepositoryProjectIdentity(scrubProject(cached.project, "", cachedRepositories) as VideoProject);
+    const cacheIdentityChanged = cachedProject.meta.title !== cached.project.meta.title
+      || cachedProject.narrationSegments?.[0]?.text !== cached.project.narrationSegments?.[0]?.text;
+    if (cacheIdentityChanged) {
+      console.log("[github-cache] project identity changed; bypassing stale cache and rebuilding audio.");
+    } else {
     const slug = `01-${slugify(cachedProject.meta.title, cachedProject.sources[0]?.id ?? "story")}`;
     const projectPath = runDir ? path.join(projectsDir, `${slug}.json`) : cached.projectPath;
     const htmlVideoGraphPath = path.join(htmlVideoDir, slug, "content-graph.json");
@@ -110,6 +116,7 @@ if (urls.length === 1 && !args["ignore-cache"]) {
     console.log("[github-cache] 视频: " + outputPath);
     console.log("[github-cache] 生成时间: " + cached.project.meta.createdAt);
     process.exit(0);
+    }
   }
 }
 
@@ -194,6 +201,7 @@ for (const [index, item] of items.entries()) {
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   project = scrubProject(project, "", repositoryAddresses) as VideoProject;
   project = normalizeProjectDatePrecision(project);
+  project = ensureRepositoryProjectIdentity(project);
   project = ensureNewsDateNarration(project);
   project = ensureTitleSpokenFirst(project);
   project.assets = assets;

@@ -6,6 +6,7 @@ import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJson } from ".
 import { videoProjectSchema } from "./schemas";
 import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
 import { alignProjectSpeech } from "./speech-alignment";
+import { ensureRepositoryProjectIdentity } from "./repository-project";
 
 loadDotEnv();
 
@@ -21,6 +22,7 @@ if (targetSeconds && Number.isFinite(targetSeconds) && targetSeconds > 0) {
   project = { ...project, meta: { ...project.meta, durationSeconds: targetSeconds } };
 }
 project = normalizeProjectDatePrecision(project);
+project = ensureRepositoryProjectIdentity(project);
 project = ensureTitleSpokenFirst(project);
 project = ensureNewsDateNarration(project);
 const sourceId = project.sources[0]?.id ?? slugify(project.meta.title, "story");

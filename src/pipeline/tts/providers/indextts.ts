@@ -24,6 +24,8 @@ class IndexTtsWorker {
       const cfg = this.config.tts.indextts;
       const child = spawn(cfg.python, [cfg.workerScript, "--root", cfg.root, "--model-dir", cfg.modelDir, "--ref-audio", cfg.refAudio], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       this.child = child;
+      const readyTimer = setTimeout(() => reject(new Error("IndexTTS2 worker ready timeout")), cfg.readyTimeoutMs);
+      readyTimer.unref();
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk) => {
         this.buffer += chunk;
@@ -39,7 +41,10 @@ class IndexTtsWorker {
           } catch {
             continue;
           }
-          if (message.type === "ready") resolve();
+          if (message.type === "ready") {
+            clearTimeout(readyTimer);
+            resolve();
+          }
           if (message.type !== "result" || !message.requestId) continue;
           const pending = this.pending.get(message.requestId);
           if (!pending) continue;
@@ -49,9 +54,21 @@ class IndexTtsWorker {
         }
       });
       child.stderr.on("data", () => undefined);
-      child.once("error", reject);
-      child.once("exit", () => { this.ready = undefined; this.child = undefined; });
-      setTimeout(() => reject(new Error("IndexTTS2 worker ready timeout")), cfg.readyTimeoutMs).unref();
+      child.once("error", (error) => {
+        clearTimeout(readyTimer);
+        reject(error);
+      });
+      child.once("exit", () => {
+        clearTimeout(readyTimer);
+        const error = new Error("IndexTTS2 worker exited");
+        for (const pending of this.pending.values()) {
+          clearTimeout(pending.timer);
+          pending.reject(error);
+        }
+        this.pending.clear();
+        this.ready = undefined;
+        this.child = undefined;
+      });
     });
     return this.ready;
   }
@@ -68,9 +85,38 @@ class IndexTtsWorker {
       this.child!.stdin.write(`${JSON.stringify({ requestId, text, outputPath, seed, topP: cfg.topP, topK: cfg.topK, temperature: cfg.temperature, repetitionPenalty: cfg.repetitionPenalty })}\n`, "utf8");
     });
   }
+
+  async dispose() {
+    const child = this.child;
+    this.child = undefined;
+    this.ready = undefined;
+    const error = new Error("IndexTTS2 worker disposed");
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+    if (!child || child.exitCode !== null) return;
+    child.stdin.end();
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    const graceful = await Promise.race([
+      exited.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2_000)),
+    ]);
+    if (!graceful && child.exitCode === null) {
+      child.kill();
+      await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 2_000))]);
+    }
+  }
 }
 
 let worker: IndexTtsWorker | undefined;
+
+export async function releaseIndexTtsWorker() {
+  const active = worker;
+  worker = undefined;
+  await active?.dispose();
+}
 
 export async function indexTts(input: { plan: PronunciationPlan; outputPath: string; force?: boolean; cacheSalt?: string; signal?: AbortSignal }, config = getRuntimeConfig()) {
   const pronunciation = indexTtsPronunciationInput(input.plan);

@@ -14,7 +14,7 @@ import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
 import { scrubAttribution, scrubGithubReference } from "../../src/pipeline/story";
-import { provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
+import { provisionalVideoFileName, repositoryTitleBasedVideoPath, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 import { containsForbiddenPlatformPromotion, scrubAttribution } from "../../src/pipeline/story";
 
 test("number pronunciation converts common Chinese news formats", () => {
@@ -161,6 +161,7 @@ test("published video filename is derived from the Chinese homepage title", () =
   assert.equal(titleBasedVideoPath("E:/output/news-qbitai-v2.mp4", "数字员工正式进入企业流程"), path.join("E:/output", "数字员工正式进入企业流程.mp4"));
   assert.equal(provisionalVideoFileName("OpenRouter", "cached-project"), "openrouter.mp4");
   assert.throws(() => videoFileNameFromTitle("OpenRouter"), /Chinese characters/);
+  assert.equal(repositoryTitleBasedVideoPath("E:/output/old.mp4", "ai-agent-book"), path.join("E:/output", "ai-agent-book.mp4"));
 });
 
 test("news source websites are scrubbed and blocked by the draft gate", async () => {

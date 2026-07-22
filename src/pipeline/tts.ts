@@ -15,7 +15,7 @@ import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
 import { nvidiaHttpFallbackText, nvidiaTts } from "./tts/providers/nvidia";
-import { indexTts } from "./tts/providers/indextts";
+import { indexTts, releaseIndexTtsWorker } from "./tts/providers/indextts";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
 import { cloudflareMeloTts } from "./tts/providers/cloudflare-melotts";
@@ -839,6 +839,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     } satisfies VideoProject;
   } finally {
     await f5Runtime?.pool.dispose();
+    await releaseIndexTtsWorker();
     await releasePronunciationWorkers();
   }
 }

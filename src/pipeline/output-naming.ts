@@ -15,3 +15,9 @@ export function provisionalVideoFileName(title: string, fallback = "story") {
 export function titleBasedVideoPath(outputPath: string, title: string) {
   return path.join(path.dirname(outputPath), videoFileNameFromTitle(title));
 }
+
+export function repositoryTitleBasedVideoPath(outputPath: string, title: string) {
+  const safeTitle = title.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").replace(/[. ]+$/g, "");
+  if (!safeTitle) throw new Error("Repository video title must be a valid project name.");
+  return path.join(path.dirname(outputPath), `${safeTitle}.mp4`);
+}
