@@ -188,3 +188,32 @@ test("scene ASR blocks unexpected synthesized prefixes and repeated phrases", ()
   assert.ok(result.issues.some((item) => item.code === "audio_scene_opening_artifact"));
   assert.ok(result.issues.some((item) => item.code === "audio_repeated_phrase"));
 });
+
+test("scene ASR does not treat repeated year digits as repeated narration", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "1999年提出数学猜想" }];
+  project.meta.title = "数学猜想";
+  const result = verifySceneTranscripts(project, [{
+    sceneIndex: 0,
+    text: "1999年提出数学猜想",
+    confidence: 0.95,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  }], { expectedLanguage: "zh", minimumConfidence: 0.84 });
+  assert.equal(result.issues.some((item) => item.code === "audio_repeated_phrase"), false);
+});
+
+test("scene ASR does not hard fail repeated phrases below the confidence threshold", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "系统完成核心模块重构" }];
+  project.meta.title = "核心模块重构";
+  const result = verifySceneTranscripts(project, [{
+    sceneIndex: 0,
+    text: "系统系统系统完成核心模块重构",
+    confidence: 0.73,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  }], { expectedLanguage: "zh", minimumConfidence: 0.84 });
+  assert.equal(result.issues.some((item) => item.code === "audio_repeated_phrase"), false);
+  assert.ok(result.issues.some((item) => item.code === "verification_inconclusive"));
+});

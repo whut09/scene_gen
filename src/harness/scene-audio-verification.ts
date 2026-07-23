@@ -162,6 +162,7 @@ function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
     for (let index = 0; index + width * 3 <= actualText.length; index += 1) {
       const phrase = actualText.slice(index, index + width);
       if (!phrase || /^[\p{P}\p{S}\s_]+$/u.test(phrase)) continue;
+      if (/^\d+$/u.test(phrase)) continue;
       let repeats = 1;
       while (actualText.slice(index + repeats * width, index + (repeats + 1) * width) === phrase) repeats += 1;
       if (repeats >= 3 && !expectedText.includes(phrase.repeat(repeats))) return { phrase, repeats, index };
@@ -199,7 +200,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       issues.push({ severity: "error", code: "audio_scene_opening_artifact", message: `第 ${segment.sceneIndex + 1} 屏音频开头包含额外发音、漏读或变音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedPrefix: expectedAnchor, actualPrefix: openingWindow, anchorOffset, openingCoverage: Number(openingCoverage.toFixed(3)), asrConfidence: confidence } });
     }
     const repeatedPhrase = unexpectedRepeatedPhrase(expectedText, actualText);
-    if (typeof confidence === "number" && confidence >= Math.min(minimumConfidence, 0.68) && repeatedPhrase) {
+    if (typeof confidence === "number" && confidence >= minimumConfidence && repeatedPhrase) {
       issues.push({ severity: "error", code: "audio_repeated_phrase", message: `第 ${segment.sceneIndex + 1} 屏检测到旁白异常连续重复。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, repeatedPhrase: repeatedPhrase.phrase, repeatCount: repeatedPhrase.repeats, characterOffset: repeatedPhrase.index, asrConfidence: confidence } });
     }
     const expectedLanguage = options.expectedLanguage?.toLowerCase();
