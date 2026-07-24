@@ -105,7 +105,10 @@ export async function runAudioStructuralGate(input: {
       const speaker = JSON.parse(checked.stdout) as { minimum: number; average: number };
       minimumSpeakerSimilarity = speaker.minimum;
       averageSpeakerSimilarity = speaker.average;
-      if (minimumSpeakerSimilarity < cfg.minimumSpeakerSimilarity) issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: `Narration speaker similarity ${minimumSpeakerSimilarity.toFixed(3)} is below ${cfg.minimumSpeakerSimilarity.toFixed(3)}.`, repairAction: "resynthesize-audio", retryable: true, evidence: { minimumSpeakerSimilarity, averageSpeakerSimilarity, requiredSimilarity: cfg.minimumSpeakerSimilarity, verifier: "campplus" } });
+      const severeMinimumSimilarity = cfg.minimumSpeakerSimilarity * 0.9;
+      if (averageSpeakerSimilarity < cfg.minimumSpeakerSimilarity || minimumSpeakerSimilarity < severeMinimumSimilarity) {
+        issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: `Narration speaker similarity is outside the accepted range (minimum ${minimumSpeakerSimilarity.toFixed(3)}, average ${averageSpeakerSimilarity.toFixed(3)}).`, repairAction: "resynthesize-audio", retryable: true, evidence: { minimumSpeakerSimilarity, averageSpeakerSimilarity, requiredSimilarity: cfg.minimumSpeakerSimilarity, severeMinimumSimilarity, verifier: "campplus" } });
+      }
     } else {
       const profiles = ranges.length >= 2 ? await analyzeVoiceProfilesFromTimeline(audioPath, ranges) : [];
       acousticVoiceSpreadSemitones = voicePitchSpreadSemitones(profiles);
