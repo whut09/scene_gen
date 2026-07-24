@@ -72,6 +72,7 @@ export const issueRegistry = {
   tts_ai_expanded: define("hard", "resynthesize-audio", true),
   tts_proper_name_translated: define("hard", "resynthesize-audio", true),
   tts_year_pronunciation_invalid: define("hard", "resynthesize-audio", true),
+  tts_fraction_pronunciation_invalid: define("hard", "resynthesize-audio", true),
   audio_missing: define("hard", "resynthesize-audio", true),
   segment_timing_missing: define("hard", "resynthesize-audio", true),
   audio_scene_drift: define("hard", "resynthesize-audio", true),

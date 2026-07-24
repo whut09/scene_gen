@@ -26,6 +26,13 @@ test("number pronunciation converts common Chinese news formats", () => {
   assert.match(text, /四点零/);
 });
 
+test("number pronunciation expands slash fractions before TTS", () => {
+  const text = prepareF5SynthesisText("AI 只接手了 1/5 的工作，另有 3／8 的任务自动完成。");
+  assert.match(text, /五分之一/);
+  assert.match(text, /八分之三/);
+  assert.equal(/[\/／]/.test(text), false);
+});
+
 test("cloud narration keeps a leading AI acronym without expanding it", () => {
   const segment = { sceneIndex: 0, text: "AI 圈又在造新词。" };
   assert.equal(narrationSynthesisText(segment), "AI 圈又在造新词。");
