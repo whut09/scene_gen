@@ -28,7 +28,10 @@ const asrBatchResponseSchema = z.object({ segments: z.array(asrSceneTranscriptSc
 export type AsrSceneTranscript = z.infer<typeof asrSceneTranscriptSchema>;
 
 function expectedSynthesisText(segment: NarrationSegment) {
-  return segment.providerSynthesisText?.trim() || segment.ttsText?.trim() || segment.text;
+  // providerSynthesisText can contain transport-only phoneme tokens (for example
+  // CHONG2GOU4 for IndexTTS). ASR validates spoken semantics, so prefer the
+  // human-readable synthesis text and only fall back to the provider payload.
+  return segment.ttsText?.trim() || segment.providerSynthesisText?.trim() || segment.text;
 }
 
 function audioFilePath(project: VideoProject) {
