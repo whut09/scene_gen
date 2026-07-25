@@ -15,6 +15,7 @@ import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
 import { containsForbiddenPlatformPromotion, scrubAttribution, scrubGithubReference } from "../../src/pipeline/story";
 import { expectedVideoFileName, homepageTitleBasedVideoPath, projectHomepageTitle, provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
+import { ProjectSynthesisReadinessError, assertProjectReadyForSynthesis, projectSynthesisReadinessIssues, synthesisTargetSeconds } from "../../src/pipeline/synthesis-readiness";
 
 test("number pronunciation converts common Chinese news formats", () => {
   const text = prepareF5SynthesisText("2026年发布，版本编号2026，增长12.5%，覆盖1000+用户，版本4.0");
@@ -211,4 +212,42 @@ test("repository videos hide hosting platforms and repository addresses", async 
   project.narration = `${project.narration} 项目托管在 GitHub，仓库地址是 HKUDS/DeepTutor。`;
   const result = await evaluateDraft(project, project.meta.durationSeconds, "");
   assert.equal(result.issues.some((issue) => issue.code === "external_platform_reference_exposed"), true);
+});
+
+test("repository synthesis gate rejects a short summary before TTS", () => {
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "codecrafters-io/build-your-own-x", url: "https://github.com/codecrafters-io/build-your-own-x" };
+  project.meta.title = "build-your-own-x";
+  project.scenes = Array.from({ length: 5 }, () => ({ ...project.scenes[0] })).map((scene, index) => index === 0
+    ? { ...scene, type: "title", kicker: "开源项目推荐", headline: "开源项目推荐：build-your-own-x", subhead: "学习项目" }
+    : scene);
+  project.narrationSegments = project.scenes.map((_, index) => ({ sceneIndex: index, text: index === 0 ? "build-your-own-x，开源项目推荐。" : "简短介绍。" }));
+  project.narration = project.narrationSegments.map((segment) => segment.text).join("\n");
+
+  const issues = projectSynthesisReadinessIssues(project, synthesisTargetSeconds(project));
+  assert.equal(synthesisTargetSeconds(project, 20), 75);
+  assert.equal(issues.some((issue) => issue.code === "narration_short"), true);
+  assert.equal(issues.some((issue) => issue.code === "scene_narration_thin"), true);
+  assert.throws(() => assertProjectReadyForSynthesis(project, 75), ProjectSynthesisReadinessError);
+});
+
+test("repository synthesis gate permits a complete canonical project", () => {
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "MoonshotAI/kimi-code", url: "https://github.com/MoonshotAI/kimi-code" };
+  project.meta.title = "kimi-code";
+  const narration = [
+    "kimi-code，开源项目推荐。它面向日常代码工作流，把任务理解、修改建议和结果核对组织在同一套命令行体验里，帮助开发者从问题描述开始建立清晰的执行步骤。",
+    "第一屏之后，项目把复杂工作拆成可检查的小任务。使用者可以先阅读上下文和变更范围，再决定是否执行下一步，从而避免把未经确认的修改直接带入现有工程。",
+    "在代码编写阶段，它强调基于仓库上下文给出建议，并把命令、文件变更和结果反馈放在连续流程中。这样的设计适合需要频繁检查差异、回看原因和保留人工判断的开发工作。",
+    "对于较长任务，重点不只是一次生成答案，而是持续维护任务状态。每一步都应能看到当前目标、已完成内容和待确认事项，方便在中断后继续，也降低多轮修改带来的理解成本。",
+    "最后需要注意，工具不能替代测试、评审和安全检查。把它用于重复性的定位、整理和初稿工作更合适；涉及发布、权限或关键业务逻辑时，仍应由开发者核实变更并完成验证。",
+  ];
+  project.scenes = Array.from({ length: 5 }, () => ({ ...project.scenes[0] })).map((scene, index) => index === 0
+    ? { ...scene, type: "title", kicker: "开源项目推荐", headline: "开源项目推荐：kimi-code", subhead: "代码工作流工具", sources: ["项目资料"] }
+    : scene);
+  project.narrationSegments = narration.map((text, sceneIndex) => ({ sceneIndex, text }));
+  project.narration = narration.join("\n");
+
+  assert.deepEqual(projectSynthesisReadinessIssues(project, 75), []);
+  assert.doesNotThrow(() => assertProjectReadyForSynthesis(project, 75));
 });

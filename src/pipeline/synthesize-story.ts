@@ -7,24 +7,25 @@ import { videoProjectSchema } from "./schemas";
 import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
 import { alignProjectSpeech } from "./speech-alignment";
 import { ensureRepositoryProjectIdentity } from "./repository-project";
+import { assertProjectReadyForSynthesis, synthesisTargetSeconds } from "./synthesis-readiness";
 
 loadDotEnv();
 
 const args = parseArgs(process.argv.slice(2));
 if (typeof args.project !== "string") {
-  throw new Error("Usage: npm run synthesize:story -- --project <project.json> [--basename <name>] [--force-scenes 1,2] [--force-audio-rebuild] [--cache-salt <salt>] [--reason <code>]");
+  throw new Error("Usage: npm run synthesize:story -- --project <project.json> [--seconds <target>] [--basename <name>] [--force-scenes 1,2] [--force-audio-rebuild] [--cache-salt <salt>] [--reason <code>]");
 }
 
 const projectPath = path.resolve(args.project);
 let project = videoProjectSchema.parse(await readJson<unknown>(projectPath)) as VideoProject;
-const targetSeconds = typeof args.seconds === "string" ? Number(args.seconds) : undefined;
-if (targetSeconds && Number.isFinite(targetSeconds) && targetSeconds > 0) {
-  project = { ...project, meta: { ...project.meta, durationSeconds: targetSeconds } };
-}
+const requestedSeconds = typeof args.seconds === "string" ? Number(args.seconds) : undefined;
 project = normalizeProjectDatePrecision(project);
 project = ensureRepositoryProjectIdentity(project);
 project = ensureTitleSpokenFirst(project);
 project = ensureNewsDateNarration(project);
+const targetSeconds = synthesisTargetSeconds(project, requestedSeconds);
+project = { ...project, meta: { ...project.meta, durationSeconds: targetSeconds } };
+assertProjectReadyForSynthesis(project, targetSeconds);
 const sourceId = project.sources[0]?.id ?? slugify(project.meta.title, "story");
 const basename =
   typeof args.basename === "string" ? args.basename : `narration-agent-${slugify(sourceId, "story")}`;
