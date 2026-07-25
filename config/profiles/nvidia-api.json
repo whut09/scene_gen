@@ -4,6 +4,7 @@
   "env": {
     "TTS_PROVIDER": "nvidia",
     "TTS_PROVIDER_FALLBACK": "f5",
+    "NVIDIA_TTS_SPEED": "1.5",
     "TTS_FAIL_FAST": "1",
     "NVIDIA_TTS_CONCURRENCY": "1",
     "VIDEO_RENDER_ENGINE": "html-video",
