@@ -6,6 +6,7 @@ import { fromRoot, loadDotEnv, parseArgs, readJson, writeJsonAtomic } from "./ut
 import { readStoryManifest, writeStoryManifest } from "./story-manifest";
 import { videoProjectSchema } from "./schemas";
 import { homepageTitleBasedVideoPath, projectHomepageTitle } from "./output-naming";
+import { evaluateAudio } from "../harness/quality";
 
 loadDotEnv();
 
@@ -36,6 +37,14 @@ process.once("SIGTERM", cancel);
 try {
   for (const story of stories) {
     const project = videoProjectSchema.parse(await readJson<unknown>(story.projectPath)) as VideoProject;
+    const audioGate = await evaluateAudio(project, project.meta.durationSeconds, controller.signal);
+    if (!audioGate.passed) {
+      const issues = audioGate.issues
+        .filter((issue) => issue.severity === "error")
+        .map((issue) => `${issue.code}${issue.sceneIndex === undefined ? "" : `@scene-${issue.sceneIndex + 1}`}`)
+        .join(", ");
+      throw new Error(`Audio gate blocked rendering for ${project.meta.title}: ${issues || "unknown audio failure"}.`);
+    }
     const titledOutputPath = homepageTitleBasedVideoPath(story.outputPath, projectHomepageTitle(project));
     if (engine === "html-video") {
       const outputPath = overwrite ? titledOutputPath : titledOutputPath.replace(/\.mp4$/i, ".html-video.mp4");
