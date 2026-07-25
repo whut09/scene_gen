@@ -193,11 +193,15 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, targetSeconds ?? project.meta.durationSeconds);
-  project = await improveWithOpenAI(project, {
-    targetSeconds,
-    forbidAttribution: true,
-    editorialNotes,
-  });
+  if (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1") {
+    project = await improveWithOpenAI(project, {
+      targetSeconds,
+      forbidAttribution: true,
+      editorialNotes,
+    });
+  } else {
+    console.log("[repository] using deterministic repository draft; set REPOSITORY_LLM_EXPANSION=1 to opt into LLM expansion.");
+  }
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   project = scrubProject(project, "", repositoryAddresses) as VideoProject;
   project = normalizeProjectDatePrecision(project);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createStoryProject, splitArticleIntoSemanticChunks } from "./story";
 import type { HotItem } from "./types";
+import { containsForbiddenGithubReference } from "./story";
 
 test("general news fallback creates five grounded scenes", () => {
   const sentences = Array.from({ length: 12 }, (_, index) => `这是新闻正文中的第${index + 1}条完整事实描述，用于验证降级生成仍然保持事实引用和逐屏旁白。`).join("");
@@ -59,4 +60,22 @@ test("technical article fallback uses explainer structure without news wording",
   assert.equal(project.narration.includes("\u65b0\u95fb\u65e5\u671f"), false);
   assert.equal(project.narration.includes("\u8fd9\u6761\u65b0\u95fb"), false);
   assert.equal(project.narrationSegments?.[0]?.ttsText?.includes("\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f"), false);
+});
+
+test("repository fallback produces a complete five-scene project without platform promotion", () => {
+  const item: HotItem = {
+    id: "repository-fallback", kind: "github", contentType: "repository", title: "build-your-own-x: curated implementation guides",
+    url: "https://github.com/codecrafters-io/build-your-own-x", source: "项目资料", summary: "step-by-step guides for re-creating technologies from scratch",
+    content: "# Build your own <technology> This repository is a compilation of step-by-step guides for re-creating technologies from scratch. * [3D Renderer](#renderer) * [AI Model](#model) * [Database](#database) * [Network Stack](#network) * [Operating System](#os)",
+    publishedAt: "2026-07-25T00:00:00.000Z", score: 1, tags: [], repo: "codecrafters-io/build-your-own-x", metrics: { language: "Markdown" },
+  };
+  const project = createStoryProject(item);
+  assert.equal(project.meta.title, "build-your-own-x");
+  assert.equal(project.scenes.length, 5);
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.equal(project.scenes[0].type, "title");
+  assert.equal(project.scenes[0].headline, "开源项目推荐：build-your-own-x");
+  assert.equal(project.narrationSegments?.[0].text.startsWith("build-your-own-x"), true);
+  assert.ok(project.narration.replace(/\s/g, "").length >= 430);
+  assert.equal(containsForbiddenGithubReference([project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" "), [item.repo ?? ""]), false);
 });

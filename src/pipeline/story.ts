@@ -326,11 +326,130 @@ function buildNarration(items: HotItem[], screenshots: WebScreenshot[]) {
     .join("\n");
 }
 
+const repositoryTopicLabels: Record<string, string> = {
+  "3d renderer": "三维渲染", "ai model": "人工智能模型", "augmented reality": "增强现实",
+  "bittorrent client": "分布式传输", "blockchain": "区块链", "bot": "自动化机器人",
+  "command-line tool": "命令行工具", "database": "数据库", "docker": "容器技术",
+  "emulator": "模拟器", "front-end framework": "前端框架", "game": "游戏开发",
+  "git": "版本管理", "memory allocator": "内存分配", "network stack": "网络协议栈",
+  "neural network": "神经网络", "operating system": "操作系统", "physics engine": "物理引擎",
+  "processor": "处理器", "programming language": "编程语言", "regex engine": "正则引擎",
+  "search engine": "搜索引擎", "shell": "命令解释器", "template engine": "模板引擎",
+  "text editor": "文本编辑器", "visual recognition": "视觉识别", "web browser": "浏览器", "web server": "网络服务",
+};
+
+function repositoryName(item: HotItem) {
+  return item.repo?.split("/").filter(Boolean).at(-1) ?? (item.title.split(/[：:]/)[0].trim() || "开源项目");
+}
+
+function repositoryTopics(content: string) {
+  const values = [...content.matchAll(/\*\s*\[([^\]]{2,80})\]\(#/g)].map((match) => match[1].trim());
+  const labels = values.map((value) => repositoryTopicLabels[value.toLowerCase()] ?? "").filter(Boolean);
+  return [...new Set(labels)].slice(0, 8);
+}
+
+function repositoryProfile(item: HotItem) {
+  const content = item.content ?? "";
+  const name = repositoryName(item);
+  const topics = repositoryTopics(content);
+  if (/build-your-own|re-creat(?:e|ing).*from scratch/i.test(`${item.title} ${content}`)) {
+    return {
+      theme: "通过从零实现理解技术原理",
+      capability: "把不同技术主题的逐步实践资料集中整理",
+      workflow: "先选定一个具体主题，再沿着从基础概念到可运行实现的顺序推进",
+      boundaries: "它提供的是学习路径和参考资料，真正的理解仍要来自动手实现、调试和复盘",
+      topics: topics.length ? topics : ["三维渲染", "人工智能模型", "数据库", "网络协议栈", "操作系统", "编程语言"],
+    };
+  }
+  if (/coding agent|code cli|read and edit code|run shell commands/i.test(`${item.title} ${content}`)) {
+    return {
+      theme: "围绕终端代码任务工作的智能编程工具",
+      capability: "读取和编辑代码、执行命令、搜索文件，并根据反馈决定下一步",
+      workflow: "从理解项目上下文开始，经过任务拆解、执行与结果核对，持续保留可检查的步骤",
+      boundaries: "它可以加快重复性的工程操作，但测试、评审、权限和发布决策仍应由开发者确认",
+      topics: ["代码阅读", "文件修改", "命令执行", "任务拆解", "结果核对", "编辑器协作"],
+    };
+  }
+  return {
+    theme: "围绕实际开发任务整理的开源工具",
+    capability: "将项目资料中的核心功能和使用路径组织为可查阅的工作流",
+    workflow: "先理解项目解决的问题，再选择与当前任务相关的能力，并在实际工程中完成验证",
+    boundaries: "项目资料只能说明设计目标和已列出的能力，部署前仍要结合自身环境验证依赖、权限和兼容性",
+    topics: topics.length ? topics : ["核心能力", "工作流程", "工程协作", "配置使用", "验证检查", "适用边界"],
+  };
+}
+
+function createRepositoryProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }): VideoProject {
+  const name = repositoryName(item);
+  const profile = repositoryProfile(item);
+  const topics = profile.topics;
+  const metrics = item.metrics ?? {};
+  const metricValue = (value: unknown, fallback: string) => typeof value === "number" && value > 0 ? String(value) : fallback;
+  const sections: Array<{ scene: VideoScene; narration: string }> = [
+    {
+      scene: { type: "title", duration: 13, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: profile.theme, sources: ["项目定位", "核心能力", "适用边界"] },
+      narration: `${name}，开源项目推荐。这个项目的重点是${profile.theme}。项目资料展示的不是一段孤立的功能说明，而是一套围绕具体开发问题展开的内容结构：先明确要解决什么，再把关键能力和实际使用路径拆开说明。接下来用五个部分看它的核心价值、工作方式和适用边界。`,
+    },
+    {
+      scene: {
+        type: "briefing_points", duration: 19, headline: "先看它解决什么问题", source: "项目资料", title: name, summary: profile.capability,
+        metrics: [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }],
+        points: [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"],
+      },
+      narration: `第一部分先看定位。${name}的核心是${profile.capability}。它把信息放进明确的问题框架中，使用者不必从零散材料里反复寻找入口，而是可以先判断自己正在处理的是哪类任务，再沿着对应的主题展开。这样的结构更适合把学习、探索和工程实践连起来，而不是只记住几个概念或命令。`,
+    },
+    {
+      scene: {
+        type: "signal_chart", duration: 19, headline: "内容覆盖哪些技术主题",
+        bars: topics.slice(0, 4).map((topic, index) => ({ label: topic, value: 1, detail: "项目资料列出的实践主题", color: ["#18b7a5", "#7c6cff", "#facc15", "#ff6b6b"][index] })),
+      },
+      narration: `第二部分看覆盖范围。项目资料把内容拆成多个技术主题，例如${topics.slice(0, 4).join("、")}。这些标签不是为了比较高低，而是帮助使用者快速定位学习或开发时的切入点。面对陌生技术，先选择一个边界清晰、可以在本地验证的小主题，通常比一开始追求完整系统更容易建立可靠的理解。`,
+    },
+    {
+      scene: {
+        type: "flow", duration: 20, headline: "把资料变成可执行的实践", steps: [
+          { label: "选择主题", detail: "从当前问题出发确定一个具体方向。" },
+          { label: "阅读结构", detail: "先理解目标、输入和关键约束。" },
+          { label: "动手验证", detail: "用最小实现观察每一步的结果。" },
+          { label: "复盘扩展", detail: "确认原理后再增加复杂度和范围。" },
+        ],
+      },
+      narration: `第三部分是使用方式。${profile.workflow}。一个更稳妥的节奏是，先选择主题并看清它的目标与约束；随后做最小实现，观察输入、过程和输出之间的关系；最后再补充测试、异常处理和性能优化。这样可以把资料中的抽象描述转成自己能够运行和验证的实践，而不是停留在浏览列表的阶段。`,
+    },
+    {
+      scene: {
+        type: "outro", duration: 18, headline: "适合谁，以及如何使用", bullets: [
+          `适合希望系统理解${profile.theme}的开发者。`,
+          "从一个主题和最小验证开始，再逐步扩展。",
+          "关键工程决策仍要结合测试、评审与实际环境确认。",
+        ],
+      },
+      narration: `最后回到适用边界。${name}更适合希望系统理解${profile.theme}的开发者。${profile.boundaries}。项目资料还记录了${metricValue(metrics.language, "多个")}相关的实现线索与主题信息，但真正有价值的使用方式，是从一个可验证的小问题开始，完成实现和复盘后，再决定是否进入更复杂的场景。`,
+    },
+  ];
+  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 96));
+  const factLedger = buildFactLedger([item]);
+  const claimIds = (sceneIndex: number) => factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2).map((claim) => claim.id).concat(
+    factLedger.claims.length ? [] : [],
+  );
+  return {
+    meta: { title: name, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
+    narration: sections.map((section) => section.narration).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, claimIds: claimIds(sceneIndex) })),
+    scenes: scenes.map((scene, sceneIndex) => ({ ...scene, claimIds: claimIds(sceneIndex) })) as VideoScene[],
+    sources: [item],
+    screenshots: options?.screenshots ?? [],
+    factLedger,
+    titleClaimIds: claimIds(0),
+  } satisfies VideoProject;
+}
+
 export function createStoryProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
   const clean = cleanItem(item);
+  if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
