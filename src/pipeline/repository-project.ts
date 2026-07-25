@@ -16,6 +16,21 @@ function narrationBody(value: string) {
   return match ? value.slice(match[0].length).trim() : value.trim();
 }
 
+export function repositorySynthesisName(name: string) {
+  return name
+    .split(/([-_.]+)/)
+    .map((part) => /^[A-Za-z0-9]+$/.test(part) ? part.charAt(0).toUpperCase() + part.slice(1) : part)
+    .join("")
+    .replace(/[-_.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function repositorySynthesisText(text: string, name: string) {
+  const spoken = repositorySynthesisName(name);
+  return text.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), spoken);
+}
+
 export function ensureRepositoryProjectIdentity(project: VideoProject): VideoProject {
   const name = repositoryName(project);
   if (!name || !project.narrationSegments?.[0]) return project;
@@ -26,7 +41,7 @@ export function ensureRepositoryProjectIdentity(project: VideoProject): VideoPro
     ? { ...scene, kicker: "开源项目推荐", headline: `开源项目推荐：${name}` }
     : scene);
   const narrationSegments = project.narrationSegments.map((segment, index) => index === 0
-    ? { ...segment, text: opening, ttsText: undefined, providerSynthesisText: undefined, pronunciationPlan: undefined, audioStartSeconds: undefined, durationSeconds: undefined, speechAlignment: undefined }
+    ? { ...segment, text: opening, ttsText: repositorySynthesisText(opening, name), providerSynthesisText: undefined, pronunciationPlan: undefined, audioStartSeconds: undefined, durationSeconds: undefined, speechAlignment: undefined }
     : segment);
 
   return {

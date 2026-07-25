@@ -2,6 +2,7 @@
 
 import { buildFactLedger } from "./fact-ledger";
 import { contentTypeForItem } from "./content-type";
+import { repositorySynthesisText } from "./repository-project";
 
 const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15"];
 
@@ -435,7 +436,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   return {
     meta: { title: name, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
     narration: sections.map((section) => section.narration).join("\n"),
-    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, claimIds: claimIds(sceneIndex) })),
+    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, ttsText: repositorySynthesisText(section.narration, name), claimIds: claimIds(sceneIndex) })),
     scenes: scenes.map((scene, sceneIndex) => ({ ...scene, claimIds: claimIds(sceneIndex) })) as VideoScene[],
     sources: [item],
     screenshots: options?.screenshots ?? [],
