@@ -40,9 +40,23 @@ export function ensureRepositoryProjectIdentity(project: VideoProject): VideoPro
   const scenes = project.scenes.map((scene, index) => index === 0 && scene.type === "title"
     ? { ...scene, kicker: "开源项目推荐", headline: `开源项目推荐：${name}` }
     : scene);
-  const narrationSegments = project.narrationSegments.map((segment, index) => index === 0
-    ? { ...segment, text: opening, ttsText: repositorySynthesisText(opening, name), providerSynthesisText: undefined, pronunciationPlan: undefined, audioStartSeconds: undefined, durationSeconds: undefined, speechAlignment: undefined }
-    : segment);
+  const narrationSegments = project.narrationSegments.map((segment, index) => {
+    const text = index === 0 ? opening : segment.text;
+    // Rebuild synthesis text from display text on every run. Persisted ttsText may
+    // contain an obsolete pronunciation alias from a previous synthesis attempt.
+    return {
+      ...segment,
+      text,
+      ttsText: index === 0
+        ? `现在介绍，${repositorySynthesisText(text, name)}`
+        : repositorySynthesisText(text, name),
+      providerSynthesisText: undefined,
+      pronunciationPlan: undefined,
+      audioStartSeconds: undefined,
+      durationSeconds: undefined,
+      speechAlignment: undefined,
+    };
+  });
 
   return {
     ...project,

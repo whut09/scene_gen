@@ -6,8 +6,9 @@ import { getRuntimeConfig, type RuntimeConfig } from "../../../config/runtime-co
 import { indexTtsPronunciationInput } from "../../pronunciation/provider-adapters";
 import type { PronunciationPlan } from "../../pronunciation/schema";
 import { probeDuration, run } from "../process";
+import { concatNarrationSegments } from "../postprocess";
 
-export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v2-mixed-pinyin";
+export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v3-chunked-mixed-pinyin";
 type WorkerResult = { requestId: string; status: "succeeded"; outputPath: string; synthesisMs: number };
 
 class IndexTtsWorker {
@@ -112,6 +113,24 @@ class IndexTtsWorker {
 
 let worker: IndexTtsWorker | undefined;
 
+export function splitIndexTtsText(text: string, maximumCharacters = 88) {
+  const clauses = text.match(/[^，,。！？!?；;]+[，,。！？!?；;]?/gu) ?? [text];
+  const chunks: string[] = [];
+  let current = "";
+  for (const rawClause of clauses) {
+    const clause = rawClause.trim();
+    if (!clause) continue;
+    if (current && current.length + clause.length > maximumCharacters) {
+      chunks.push(current);
+      current = clause;
+      continue;
+    }
+    current += clause;
+  }
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : [text];
+}
+
 export async function releaseIndexTtsWorker() {
   const active = worker;
   worker = undefined;
@@ -134,12 +153,24 @@ export async function indexTts(input: { plan: PronunciationPlan; outputPath: str
     generate: async (targetPath) => {
       worker ??= new IndexTtsWorker(config);
       const rawPath = targetPath.replace(/\.wav$/i, ".raw.wav");
+      const rawPartPaths: string[] = [];
       try {
-        result = await worker.synthesize(pronunciation.text, rawPath, seed, input.signal);
+        const chunks = splitIndexTtsText(pronunciation.text);
+        for (let index = 0; index < chunks.length; index += 1) {
+          const partPath = chunks.length === 1 ? rawPath : rawPath.replace(/\.wav$/i, `.part-${index + 1}.wav`);
+          rawPartPaths.push(partPath);
+          result = await worker.synthesize(chunks[index], partPath, (seed + index) & 0x7FFFFFFF, input.signal);
+        }
+        if (rawPartPaths.length > 1) {
+          const durations = await Promise.all(rawPartPaths.map((partPath) => probeDuration(partPath)));
+          await concatNarrationSegments(rawPartPaths, durations, rawPartPaths.map((_, index) => index === rawPartPaths.length - 1 ? 0 : 0.12), rawPath);
+        }
         await run("ffmpeg", ["-y", "-i", rawPath, "-af", `highpass=f=55,afade=t=in:st=0:d=0.035,areverse,afade=t=in:st=0:d=0.055,areverse,atempo=${config.tts.indextts.tempo},loudnorm=I=${config.tts.indextts.loudnessLufs}:TP=${config.tts.indextts.truePeakDb}:LRA=7`, "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", targetPath]);
       } finally {
         await rm(rawPath, { force: true });
+        await Promise.all(rawPartPaths.filter((partPath) => partPath !== rawPath).map((partPath) => rm(partPath, { force: true })));
       }
+      if (!result) throw new Error("IndexTTS2 did not return a synthesis result.");
       return { synthesisMs: result.synthesisMs, fixedReference: true, useRandom: false, seed, mixedPinyin: pronunciation.mixedPinyin };
     },
   });

@@ -46,7 +46,8 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
     }
     const protectedLatinNames = segment.text.match(/\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)+\b/g) ?? [];
     for (const name of protectedLatinNames) {
-      if (!synthesisInput.toLowerCase().includes(name.toLowerCase())) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, displayText: segment.text, synthesisText: synthesisInput } });
+      const normalizedName = canonicalSpeechText(prepareF5SynthesisText(name));
+      if (!canonicalSpeechText(prepared).includes(normalizedName)) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, normalizedName, displayText: segment.text, synthesisText: synthesisInput } });
     }
     const normalizedTitle = project.meta.title.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
     const normalizedSynthesis = synthesisInput.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();

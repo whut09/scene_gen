@@ -90,8 +90,6 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/\bRAG\b/gi, "检索增强生成")
     .replace(/K2[.]7 Code HighSpeed/gi, "K二点七代码高速版")
     .replace(/K2[.]7 Code/gi, "K二点七代码")
-    .replace(/Kimi Code CLI/gi, "Kimi代码命令行工具")
-    .replace(/Kimi Code/gi, "Kimi代码")
     .replace(/Coding Plan/gi, "编程套餐")
     .replace(/Allegretto/gi, "阿莱格雷托")
     .replace(/GitNexus/gi, "吉特奈克瑟斯")

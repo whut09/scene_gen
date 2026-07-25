@@ -116,6 +116,20 @@ test("low confidence ASR is inconclusive and does not rebuild audio", () => {
   assert.deepEqual(dirtyPlanFromIssues(normalized, 3).audioSceneIndexes, []);
 });
 
+test("moderate confidence ASR does not masquerade as a semantic TTS failure", () => {
+  const project = projectFixture();
+  const result = verifySceneTranscripts(project, project.narrationSegments!.map((segment) => ({
+    sceneIndex: segment.sceneIndex,
+    text: "不可靠的转写结果",
+    confidence: 0.79,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  })));
+
+  assert.equal(result.issues.some((item) => item.code === "audio_semantic_mismatch"), false);
+  assert.ok(result.issues.some((item) => item.code === "verification_inconclusive"));
+});
+
 test("explicit production confidence threshold overrides a lower environment value", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, project.narrationSegments!.map((segment) => ({ sceneIndex: segment.sceneIndex, text: segment.text, confidence: 0.78 })), { minimumConfidence: 0.8 });

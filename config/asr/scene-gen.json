@@ -45,6 +45,7 @@
     { "pattern": "长住科选", "replacement": "常驻可选" },
     { "pattern": "k[- ]?(?:2|p)[.\\s-]*(?:7|ossanko)(?:\\s*(?:代码|code))?|k二点七代码", "replacement": "k2.7code" },
     { "pattern": "k[- ]?mi(?:code)?|k[- ]?micode|kimi代码", "replacement": "kimicode" },
+    { "pattern": "kemicode|kimiko", "replacement": "kimicode" },
     { "pattern": "常助", "replacement": "常驻" },
     { "pattern": "边程", "replacement": "编程" },
     { "pattern": "自然与[言严]", "replacement": "自然语言" },

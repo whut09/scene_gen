@@ -145,7 +145,7 @@ function expectedEntities(project: VideoProject, segment: NarrationSegment) {
     .flatMap((claim) => [claim.subject, /[a-zA-Z]|\d/.test(claim.value) ? claim.value : ""])
     .map(canonicalSpeechText)
     .filter((value) => value.length >= 2 && expectedText.includes(value)) ?? [];
-  const textualEntities = expectedSynthesisText(segment).match(/[A-Za-z][A-Za-z0-9._+-]{1,}|[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+/g) ?? [];
+  const textualEntities = expectedSynthesisText(segment).match(/[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+|[A-Za-z][A-Za-z0-9._+-]{1,}/g) ?? [];
   return [...new Set([...claimEntities, ...textualEntities.map((value) => canonicalSpeechText(prepareF5SynthesisText(value)))].filter((value) => value.length >= 2))];
 }
 function bigramRecall(expected: string, actual: string) {
@@ -183,6 +183,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
   const minimumCoverage = Number(process.env.ASR_SCENE_TOKEN_COVERAGE_MIN ?? 0.78);
   const minimumPrecision = Number(process.env.ASR_SCENE_TOKEN_PRECISION_MIN ?? 0.75);
   const minimumEntityRecall = Number(process.env.ASR_ENTITY_RECALL_MIN ?? 0.8);
+  const semanticMinimumConfidence = Number(process.env.ASR_SEMANTIC_CONFIDENCE_MIN ?? Math.max(minimumConfidence, 0.84));
   const boundaryLeakMinimum = Number(process.env.ASR_BOUNDARY_LEAK_MIN ?? 0.55);
   const endingRecallMinimum = Number(process.env.ASR_ENDING_RECALL_MIN ?? 0.62);
 
@@ -234,6 +235,10 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     }
     if (confidence < minimumConfidence) {
       issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 置信度 ${(confidence * 100).toFixed(1)}% 过低，未触发内容重建。`, sceneIndex: segment.sceneIndex, issueClass: "soft", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, asrConfidence: confidence, minimumConfidence } });
+      continue;
+    }
+    if (confidence < semanticMinimumConfidence) {
+      issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 置信度不足以判定语义或实体错误。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, asrConfidence: confidence, semanticMinimumConfidence, reason: "semantic_confidence_below_threshold" } });
       continue;
     }
     if (entities.length && entityRecall < minimumEntityRecall) {

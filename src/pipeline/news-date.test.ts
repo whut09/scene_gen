@@ -77,6 +77,17 @@ test("title-first policy removes a second exact title from the opening narration
   assert.equal(output.narrationSegments?.[0]?.text.includes("这条新闻讲的是：。"), false);
 });
 
+test("English-leading title uses a Mandarin primer without repeating the title", () => {
+  const input = project("webpage");
+  input.meta.title = "AI 正在改变开发流程";
+  input.narrationSegments![0] = { sceneIndex: 0, text: "AI 正在改变开发流程。后续说明。" };
+
+  const output = ensureTitleSpokenFirst(input);
+
+  assert.equal(output.narrationSegments![0].ttsText, "现在介绍，AI 正在改变开发流程。后续说明。");
+  assert.equal((output.narrationSegments![0].ttsText!.match(/AI/g) ?? []).length, 1);
+});
+
 
 test("technical article removes publication metadata and exact timestamps", () => {
   const input = project("webpage");
