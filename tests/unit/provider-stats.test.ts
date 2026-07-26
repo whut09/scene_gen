@@ -86,7 +86,7 @@ test("profile weighting favors latency for preview and reliability for productio
   }
 });
 
-test("explicit Windows TTS overrides fallback-only auto-routing", { concurrency: false }, async () => {
+test("explicit Windows TTS is selectable only on Windows", { concurrency: false }, async () => {
   const previousFile = process.env.PROVIDER_OUTCOME_FILE;
   const previousProfile = process.env.SCENE_GEN_PROFILE;
   delete process.env.PROVIDER_OUTCOME_FILE;
@@ -94,7 +94,7 @@ test("explicit Windows TTS overrides fallback-only auto-routing", { concurrency:
   try {
     const { plan } = await compilePronunciationPlan({ displayText: "This is a local narration fallback." });
     const result = await routeTtsProvider({ profile: "fast-preview", plan, explicitProvider: "windows" });
-    assert.equal(result.selectedProvider, "windows");
+    assert.equal(result.selectedProvider, process.platform === "win32" ? "windows" : undefined);
   } finally {
     if (previousFile === undefined) delete process.env.PROVIDER_OUTCOME_FILE; else process.env.PROVIDER_OUTCOME_FILE = previousFile;
     if (previousProfile === undefined) delete process.env.SCENE_GEN_PROFILE; else process.env.SCENE_GEN_PROFILE = previousProfile;

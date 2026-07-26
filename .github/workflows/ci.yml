@@ -2,7 +2,15 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      extended:
+        description: Run the Windows and Node 20 compatibility matrix.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -13,6 +21,44 @@ concurrency:
 
 jobs:
   test:
+    name: Ubuntu / Node 22
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Linux system test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install pronunciation test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Install Playwright Chromium on Linux
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+      - name: Run complete CI test suite
+        run: npm run test:ci
+        env:
+          SCENE_GEN_PROFILE: ci-offline
+      - name: Upload golden screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: html-template-golden-${{ runner.os }}-node-22
+          path: test-results/golden
+          if-no-files-found: ignore
+
+  compatibility:
+    if: github.event_name == 'workflow_dispatch' && inputs.extended
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -32,9 +78,7 @@ jobs:
           python-version: "3.12"
       - name: Install Linux system test dependencies
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-noto-cjk
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk
       - name: Install Windows system test dependencies
         if: runner.os == 'Windows'
         shell: pwsh
@@ -53,10 +97,3 @@ jobs:
         run: npm run test:ci
         env:
           SCENE_GEN_PROFILE: ci-offline
-      - name: Upload golden screenshots
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: html-template-golden-${{ runner.os }}-node-${{ matrix.node }}
-          path: test-results/golden
-          if-no-files-found: ignore
