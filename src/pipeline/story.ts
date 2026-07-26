@@ -459,7 +459,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           "关键工程决策仍要结合测试、评审与实际环境确认。",
         ],
       },
-      narration: `它适合希望${profile.theme}的使用者。${profile.boundaries}。建议先跑通一个小问题，再扩展到复杂场景。`,
+      narration: `它适合希望${profile.theme}的使用者。${profile.boundaries}。建议先跑通一个小问题，核对最终结果后再扩展到复杂场景。`,
     },
   ];
   const scenes = applySectionDurations(sections, Math.min(100, Math.max(60, Number(process.env.STORY_MAX_SECONDS ?? 80))));
