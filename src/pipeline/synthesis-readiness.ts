@@ -29,7 +29,7 @@ function sceneNarrationMinimum(scene: VideoScene) {
   if (scene.type === "title") return 35;
   if (scene.type === "briefing_points") return 50;
   if (scene.type === "outro") return 45;
-  return 55;
+  return 45;
 }
 
 function scenePublicText(scene: VideoScene) {
@@ -60,7 +60,7 @@ export function projectSynthesisReadinessIssues(project: VideoProject, targetSec
   }
 
   const narrationChars = compactText(project.narration).length;
-  const minimumChars = Math.ceil(targetSeconds * 3.7);
+  const minimumChars = Math.ceil(targetSeconds * 3.5);
   if (narrationChars < minimumChars) {
     issues.push({
       code: "narration_short",

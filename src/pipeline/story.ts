@@ -355,19 +355,19 @@ function repositoryProfile(item: HotItem) {
   const topics = repositoryTopics(content);
   if (/freerouting|autorout(?:er|ing)|printed circuit board|\bpcb\b/i.test(`${name} ${item.title} ${content}`)) {
     return {
-      theme: "为电路板自动规划走线的工具",
-      capability: "在已有电路板设计中，依据间距、层数、禁布区等约束寻找可行走线路径，减少反复手工绕线的时间",
-      workflow: "先从设计软件导出电路板文件，核对网络和设计规则；再设置允许使用的层与间距，执行自动走线；最后检查未完成连接和规则检查结果，再导回原设计继续调整",
-      boundaries: "自动走线适合缩短重复布局工作，但高速信号、电源完整性和生产规则仍需要工程师根据实际板厂要求复核",
+      theme: "自动规划电路板走线",
+      capability: "按间距、层数和禁布区寻找可行路径，减少手工绕线",
+      workflow: "导出板图后核对网络和规则，设置层与间距，执行走线并检查未完成连接，最后导回原设计调整",
+      boundaries: "高速信号、电源完整性和生产规则仍要按实际板厂要求复核",
       topics: ["导入板图", "设计规则", "自动走线", "未连通检查", "规则校验", "导回设计"],
     };
   }
   if (/weknora|knowledge base|knowledge.?graph|retrieval augmented|\brag\b/i.test(`${name} ${item.title} ${content}`)) {
     return {
-      theme: "让团队资料变成可检索、可追溯问答的知识库工具",
-      capability: "把文档整理为可检索的知识库，为内部问答提供相关上下文，减少在分散资料中反复查找的信息成本",
-      workflow: "先挑选一批边界清晰的资料，建立知识库并完成导入；再用真实问题测试检索结果，核对引用内容和权限范围，确认可靠后逐步扩大资料范围",
-      boundaries: "它能辅助检索和问答，但资料更新、访问权限、敏感信息处理以及关键答案的最终确认仍要由团队负责",
+      theme: "把团队资料变成可检索问答",
+      capability: "把文档整理为知识库，为内部问答提供相关上下文",
+      workflow: "选择一批边界清晰的资料，完成导入和索引，用真实问题检查检索与引用，再逐步扩大范围",
+      boundaries: "资料更新、权限、敏感信息和关键答案仍要由团队确认",
       topics: ["整理资料", "建立知识库", "导入索引", "检索问答", "引用核对", "权限管理"],
     };
   }
@@ -423,7 +423,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: { type: "title", duration: 11, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: profile.theme, sources: ["项目定位", "核心能力", "适用边界"] },
-      narration: `${name}。这是一个${profile.theme}的项目。它先解决明确的实际问题，再把关键能力和使用步骤整理出来。下面用五个部分看它能做什么、怎么开始，以及哪些地方仍要自己判断。`,
+      narration: `${name}，开源项目推荐。它${profile.theme}。下面看它解决的问题、上手步骤和使用边界。`,
     },
     {
       scene: {
@@ -431,14 +431,14 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
         metrics: [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }],
         points: [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"],
       },
-      narration: `先看它解决什么问题。${name}的核心是${profile.capability}。如果你正被同类重复工作卡住，可以先用它处理一个边界清晰的小任务，再决定是否把它接入日常流程。`,
+      narration: `它的主要作用是${profile.capability}。先用一个边界清晰的小任务，验证它是否适合你的工作。`,
     },
     {
       scene: {
         type: "signal_chart", duration: 15, headline: "使用时关注哪些环节",
         bars: topics.slice(0, 4).map((topic, index) => ({ label: topic, value: 1, detail: "项目资料列出的实践主题", color: ["#18b7a5", "#7c6cff", "#facc15", "#ff6b6b"][index] })),
       },
-      narration: `使用时可以重点看${topics.slice(0, 4).join("、")}。先把输入、规则和预期结果说清，再看每一步的输出。不要一开始追求完整系统，先完成一个能在本地验证的小结果更稳妥。`,
+      narration: `重点环节是${topics.slice(0, 4).join("、")}。先确认输入、规则和预期结果，再检查每一步输出。`,
     },
     {
       scene: {
@@ -449,7 +449,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           { label: "复盘验证", detail: "确认原理后再评估下一步。" },
         ],
       },
-      narration: `开始使用只要四步：选择主题、确认规则、动手验证、复盘结果。${profile.workflow}。每次只改变一个关键条件，保留检查结果，出现异常就回到上一步定位原因。`,
+      narration: `实际使用分四步：选择主题、确认规则、动手验证、复盘结果。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
     },
     {
       scene: {
@@ -459,7 +459,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           "关键工程决策仍要结合测试、评审与实际环境确认。",
         ],
       },
-      narration: `最后看边界。${name}适合希望系统处理${profile.theme}的使用者。${profile.boundaries}。从一个小问题开始，跑通后再扩展，比一次性投入复杂场景更可靠。`,
+      narration: `它适合希望${profile.theme}的使用者。${profile.boundaries}。建议先跑通一个小问题，再扩展到复杂场景。`,
     },
   ];
   const scenes = applySectionDurations(sections, Math.min(100, Math.max(60, Number(process.env.STORY_MAX_SECONDS ?? 80))));
