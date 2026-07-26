@@ -103,6 +103,28 @@ test("mixed Chinese and English titles use the Chinese opening anchor", () => {
   ]);
   assert.equal(result.issues.some((item) => item.code === "audio_opening_mismatch" && item.sceneIndex === 0), false);
 });
+
+test("timed Mandarin transliteration proves an English-only project title was spoken", () => {
+  const project = projectFixture();
+  project.meta.title = "WeKnora";
+  project.narrationSegments![0].text = "WeKnora，开源项目推荐。它把团队资料变成可检索问答。";
+  const result = verifySceneTranscripts(project, [
+    {
+      sceneIndex: 0,
+      text: "为诺尔，开源项目推荐。它把团队资料变成可检索问答。",
+      confidence: 0.85,
+      detectedLanguage: "zh",
+      languageConfidence: 0.99,
+      words: [
+        { text: "为诺尔", startSeconds: 0, endSeconds: 0.8, confidence: 0.85 },
+        { text: "开源项目推荐", startSeconds: 0.8, endSeconds: 1.6, confidence: 0.85 },
+      ],
+    },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_opening_mismatch" && item.sceneIndex === 0), false);
+});
 test("low confidence ASR is inconclusive and does not rebuild audio", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, [

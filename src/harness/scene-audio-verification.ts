@@ -160,6 +160,26 @@ function boundaryRecall(expected: string, actual: string, edge: "start" | "end")
     .map((length) => bigramRecall(edge === "start" ? expected.slice(0, length) : expected.slice(-length), actual)), 0);
 }
 
+function characterRecall(expected: string, actual: string) {
+  if (!expected) return 1;
+  return [...expected].filter((char) => actual.includes(char)).length / expected.length;
+}
+
+function hasTimedTransliteratedTitle(
+  transcript: AsrSceneTranscript,
+  expectedLeadingAscii: string | undefined,
+  expectedPrefix: string,
+  actualOpening: string,
+) {
+  if (!expectedLeadingAscii) return false;
+  const firstWord = transcript.words?.[0];
+  if (!firstWord || firstWord.startSeconds > 0.25) return false;
+  const alias = canonicalSpeechText(firstWord.text);
+  if (alias.length < 2 || alias.length > 7 || /[a-z0-9]/i.test(alias)) return false;
+  const expectedBoundary = expectedPrefix.slice(expectedLeadingAscii.length);
+  return characterRecall(expectedBoundary, actualOpening.slice(alias.length, alias.length + expectedBoundary.length + 3)) >= 0.6;
+}
+
 function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
   for (let width = 1; width <= 6; width += 1) {
     for (let index = 0; index + width * 3 <= actualText.length; index += 1) {
@@ -297,7 +317,11 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
   const openingPrefixCoverage = firstTranscript ? bigramRecall(expectedOpeningAnchor, actualOpening.slice(0, expectedOpeningAnchor.length + 3)) : 0;
   const expectedLeadingAscii = expectedPrefix.match(/^[a-z][a-z0-9]{1,15}/)?.[0];
   const leadingAsciiMissing = Boolean(expectedLeadingAscii && !actualOpening.startsWith(expectedLeadingAscii));
-  if (firstTranscript && typeof firstConfidence === "number" && firstConfidence >= minimumConfidence && (openingPrefixCoverage < 0.5 || leadingAsciiMissing)) {
+  const firstSceneTranscript = transcriptMap.get(0);
+  const transliteratedTitle = firstSceneTranscript
+    ? hasTimedTransliteratedTitle(firstSceneTranscript, expectedLeadingAscii, expectedPrefix, actualOpening)
+    : false;
+  if (firstTranscript && typeof firstConfidence === "number" && firstConfidence >= minimumConfidence && ((openingPrefixCoverage < 0.5 && !transliteratedTitle) || (leadingAsciiMissing && !transliteratedTitle))) {
     issues.push({ severity: "error", code: "audio_opening_mismatch", message: "首屏旁白开头与合成文本不一致，先重试验证器确认是否存在首词漏读或变音。", sceneIndex: 0, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedPrefix, expectedLeadingAscii: expectedLeadingAscii ?? "", leadingAsciiMissing, transcript: firstTranscript, openingPrefixCoverage: Number(openingPrefixCoverage.toFixed(3)), asrConfidence: firstConfidence, verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
   }
   return { issues, results, titleTranscript: firstTranscript, titleAudioCoverage, titleOpeningCoverage };
