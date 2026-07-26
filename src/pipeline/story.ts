@@ -356,7 +356,7 @@ function repositoryProfile(item: HotItem) {
   if (/freerouting|autorout(?:er|ing)|printed circuit board|\bpcb\b/i.test(`${name} ${item.title} ${content}`)) {
     return {
       theme: "自动规划电路板走线",
-      capability: "按间距、层数和禁布区寻找可行路径，减少手工绕线",
+      capability: "在间距、层数和禁布区约束下寻找可行路径",
       workflow: "导出板图后核对网络和规则，设置层与间距，执行走线并检查未完成连接，最后导回原设计调整",
       boundaries: "高速信号、电源完整性和生产规则仍要按实际板厂要求复核",
       topics: ["导入板图", "设计规则", "自动走线", "未连通检查", "规则校验", "导回设计"],
@@ -444,17 +444,17 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
       scene: {
         type: "flow", duration: 17, headline: "四步开始使用", steps: [
           { label: "选择主题", detail: "从当前问题出发确定一个具体方向。" },
-          { label: "阅读结构", detail: "先理解目标、输入和关键约束。" },
+          { label: "阅读结构", detail: "确认目标、输入和关键约束。" },
           { label: "动手验证", detail: "用最小实现观察每一步的结果。" },
-          { label: "复盘验证", detail: "确认原理后再评估下一步。" },
+          { label: "复盘验证", detail: "保留检查结果并定位异常。" },
         ],
       },
-      narration: `实际使用分四步：选择主题、确认规则、动手验证、复盘结果。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
+      narration: `实际使用分四步：选择主题、阅读结构、动手验证、复盘验证。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
     },
     {
       scene: {
         type: "outro", duration: 14, headline: "适合谁，以及如何使用", bullets: [
-          `适合希望系统理解${profile.theme}的开发者。`,
+          `适合希望${profile.theme}的使用者。`,
           "从一个主题和最小验证开始，再逐步扩展。",
           "关键工程决策仍要结合测试、评审与实际环境确认。",
         ],

@@ -55,7 +55,13 @@ function sceneVisibleText(scene: VideoScene) {
   }
 }
 
-function narrationLimits(scene: VideoScene) {
+function narrationLimits(scene: VideoScene, repository: boolean) {
+  if (repository) {
+    if (scene.type === "title") return { min: 35, max: 110 };
+    if (scene.type === "briefing_points") return { min: 50, max: 145 };
+    if (scene.type === "outro") return { min: 45, max: 125 };
+    return { min: 45, max: 135 };
+  }
   if (scene.type === "title") return { min: 55, max: 150 };
   if (scene.type === "briefing_points") return { min: 90, max: 220 };
   if (scene.type === "outro") return { min: 65, max: 170 };
@@ -114,10 +120,11 @@ export async function evaluateDraft(
   const issues: QualityIssueInput[] = [];
   const revisionNotes: string[] = [];
   const source = project.sources[0];
+  const repository = Boolean(repositoryProjectName(project));
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const naturalDuration = config.tts.durationPolicy === "natural";
-  const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.8 : 6));
-  const maximumChars = Math.round(targetSeconds * 11);
+  const minimumChars = Math.round(targetSeconds * (repository ? 3.5 : naturalDuration ? 4.8 : 6));
+  const maximumChars = Math.round(targetSeconds * (repository ? 6 : 11));
   const templateGraph = buildHtmlVideoContentGraph(project);
   const productionDecisions = buildProductionDecisions(project);
   const visualSourceCount = new Set(productionDecisions.map((decision) => decision.visualPlan.source)).size;
@@ -284,7 +291,7 @@ export async function evaluateDraft(
     const segment = project.narrationSegments?.[index];
     if (!segment) return;
     const narrationLength = segment.text.replace(/\s+/g, "").length;
-    const limits = narrationLimits(scene);
+    const limits = narrationLimits(scene, repository);
     if (narrationLength > limits.max) {
       issues.push({ severity: "error", code: "scene_narration_overloaded", message: `第 ${index + 1} 屏旁白 ${narrationLength} 字，超过当前画面建议上限 ${limits.max} 字。`, sceneIndex: index });
       revisionNotes.push(`压缩第 ${index + 1} 屏旁白，只复述该屏可见字段，不要扩展屏幕外内容。`);
@@ -294,7 +301,7 @@ export async function evaluateDraft(
     const visibleText = `${project.meta.title} ${sceneVisibleText(scene)} ${index === 0 ? projectNewsDate(project) : ""}`;
     const coverage = visibleTokenCoverage(visibleText, segment.text);
     alignmentScores.push(coverage);
-    if (coverage < 0.25) {
+    if (coverage < (repository ? 0.15 : 0.25)) {
       issues.push({ severity: "error", code: "scene_narration_mismatch", message: `第 ${index + 1} 屏旁白与画面字段重合度过低。`, sceneIndex: index });
       revisionNotes.push(`重写第 ${index + 1} 屏旁白，按画面上的标题、卡片、数据或步骤逐项讲解。`);
     }
