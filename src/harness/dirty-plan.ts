@@ -49,7 +49,7 @@ function issuePlan(issue: QualityIssue | QualityIssueInput, sceneCount: number):
     ...(issue.sceneIndex === undefined ? {} : { sceneIndex: issue.sceneIndex }),
   });
   const sceneIndex = issue.sceneIndex;
-  if (["audio_pronunciation_mismatch", "audio_scene_drift"].includes(issue.code)) {
+  if (["audio_pronunciation_mismatch", "audio_scene_drift", "audio_scene_boundary_artifact"].includes(issue.code)) {
     if (sceneIndex !== undefined) plan.audioSceneIndexes.push(sceneIndex);
     else plan.audioSceneIndexes.push(...Array.from({ length: sceneCount }, (_, index) => index));
     plan.concatAudio = true;

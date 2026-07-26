@@ -225,7 +225,7 @@ test("repository synthesis gate rejects a short summary before TTS", () => {
   project.narration = project.narrationSegments.map((segment) => segment.text).join("\n");
 
   const issues = projectSynthesisReadinessIssues(project, synthesisTargetSeconds(project));
-  assert.equal(synthesisTargetSeconds(project, 20), 75);
+  assert.equal(synthesisTargetSeconds(project, 20), 60);
   assert.equal(issues.some((issue) => issue.code === "narration_short"), true);
   assert.equal(issues.some((issue) => issue.code === "scene_narration_thin"), true);
   assert.throws(() => assertProjectReadyForSynthesis(project, 75), ProjectSynthesisReadinessError);

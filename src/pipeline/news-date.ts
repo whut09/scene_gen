@@ -80,9 +80,7 @@ export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {
     const nextSegments = segments.map((segment, index) => index === 0 ? {
       ...segment,
       text: removeRepeatedOpeningTitle(segment.text, title),
-      ttsText: /^[A-Za-z]{2,}/.test(title)
-        ? `现在介绍，${removeRepeatedOpeningTitle(segment.text, title)}`
-        : removeRepeatedOpeningTitle(segment.text, title),
+      ttsText: removeRepeatedOpeningTitle(segment.text, title),
     } : segment);
     return { ...project, narrationSegments: nextSegments, narration: nextSegments.map((segment) => segment.text).join("\n") };
   }

@@ -47,9 +47,7 @@ export function ensureRepositoryProjectIdentity(project: VideoProject): VideoPro
     return {
       ...segment,
       text,
-      ttsText: index === 0
-        ? `现在介绍，${repositorySynthesisText(text, name)}`
-        : repositorySynthesisText(text, name),
+      ttsText: repositorySynthesisText(text, name),
       providerSynthesisText: undefined,
       pronunciationPlan: undefined,
       audioStartSeconds: undefined,

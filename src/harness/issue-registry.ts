@@ -93,6 +93,7 @@ export const issueRegistry = {
   audio_language_inconsistent: define("hard", "resynthesize-audio", true),
   audio_opening_mismatch: define("environment", "retry-stage", true),
   audio_scene_opening_artifact: define("hard", "resynthesize-audio", true),
+  audio_scene_boundary_artifact: define("hard", "resynthesize-audio", true),
   audio_repeated_phrase: define("hard", "resynthesize-audio", true),
   speech_alignment_unavailable: define("environment", "retry-stage", true),
   judge_unavailable: define("environment", "check-environment", false),

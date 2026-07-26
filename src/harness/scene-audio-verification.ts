@@ -174,6 +174,18 @@ function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
   return undefined;
 }
 
+function unexpectedBoundaryTail(expectedText: string, actualText: string) {
+  for (const length of [18, 14, 10, 6]) {
+    if (expectedText.length < length) continue;
+    const expectedTail = expectedText.slice(-length);
+    const tailIndex = actualText.lastIndexOf(expectedTail);
+    if (tailIndex < 0) continue;
+    const extraTail = actualText.slice(tailIndex + expectedTail.length);
+    if (extraTail.length > 0 && extraTail.length <= 8) return { expectedTail, extraTail, tailIndex };
+  }
+  return undefined;
+}
+
 export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[], options: { expectedLanguage?: string; minimumLanguageConfidence?: number; minimumConfidence?: number } = {}) {
   const issues: QualityIssueInput[] = [];
   const results: Array<Record<string, string | number | boolean>> = [];
@@ -240,6 +252,10 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     if (confidence < semanticMinimumConfidence) {
       issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 置信度不足以判定语义或实体错误。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, asrConfidence: confidence, semanticMinimumConfidence, reason: "semantic_confidence_below_threshold" } });
       continue;
+    }
+    const boundaryTail = unexpectedBoundaryTail(expectedText, actualText);
+    if (boundaryTail) {
+      issues.push({ severity: "error", code: "audio_scene_boundary_artifact", message: `第 ${segment.sceneIndex + 1} 屏音频结尾包含未预期的残音或额外发音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedTail: boundaryTail.expectedTail, actualTail: actualText.slice(-18), extraTail: boundaryTail.extraTail, characterOffset: boundaryTail.tailIndex + boundaryTail.expectedTail.length, asrConfidence: confidence } });
     }
     if (entities.length && entityRecall < minimumEntityRecall) {
       issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏产品名、人名或关键实体不完整。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedEntities: entities, matchedEntities, transcript: transcript.text, entityRecall: Number(entityRecall.toFixed(3)), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });

@@ -353,6 +353,24 @@ function repositoryProfile(item: HotItem) {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/freerouting|autorout(?:er|ing)|printed circuit board|\bpcb\b/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "为电路板自动规划走线的工具",
+      capability: "在已有电路板设计中，依据间距、层数、禁布区等约束寻找可行走线路径，减少反复手工绕线的时间",
+      workflow: "先从设计软件导出电路板文件，核对网络和设计规则；再设置允许使用的层与间距，执行自动走线；最后检查未完成连接和规则检查结果，再导回原设计继续调整",
+      boundaries: "自动走线适合缩短重复布局工作，但高速信号、电源完整性和生产规则仍需要工程师根据实际板厂要求复核",
+      topics: ["导入板图", "设计规则", "自动走线", "未连通检查", "规则校验", "导回设计"],
+    };
+  }
+  if (/weknora|knowledge base|knowledge.?graph|retrieval augmented|\brag\b/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "让团队资料变成可检索、可追溯问答的知识库工具",
+      capability: "把文档整理为可检索的知识库，为内部问答提供相关上下文，减少在分散资料中反复查找的信息成本",
+      workflow: "先挑选一批边界清晰的资料，建立知识库并完成导入；再用真实问题测试检索结果，核对引用内容和权限范围，确认可靠后逐步扩大资料范围",
+      boundaries: "它能辅助检索和问答，但资料更新、访问权限、敏感信息处理以及关键答案的最终确认仍要由团队负责",
+      topics: ["整理资料", "建立知识库", "导入索引", "检索问答", "引用核对", "权限管理"],
+    };
+  }
   if (/metagpt|multi-agent framework|ai software company|software company/i.test(`${name} ${item.title} ${content}`)) {
     return {
       theme: "把一个软件想法拆成可执行交付步骤的多角色协作工具",
@@ -402,51 +420,49 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const name = repositoryName(item);
   const profile = repositoryProfile(item);
   const topics = profile.topics;
-  const metrics = item.metrics ?? {};
-  const metricValue = (value: unknown, fallback: string) => typeof value === "number" && value > 0 ? String(value) : fallback;
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
-      scene: { type: "title", duration: 13, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: profile.theme, sources: ["项目定位", "核心能力", "适用边界"] },
-      narration: `${name}，开源项目推荐。这个项目的重点是${profile.theme}。项目资料展示的不是一段孤立的功能说明，而是一套围绕具体开发问题展开的内容结构：先明确要解决什么，再把关键能力和实际使用路径拆开说明。接下来用五个部分看它的核心价值、工作方式和适用边界。`,
+      scene: { type: "title", duration: 11, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: profile.theme, sources: ["项目定位", "核心能力", "适用边界"] },
+      narration: `${name}。这是一个${profile.theme}的项目。它先解决明确的实际问题，再把关键能力和使用步骤整理出来。下面用五个部分看它能做什么、怎么开始，以及哪些地方仍要自己判断。`,
     },
     {
       scene: {
-        type: "briefing_points", duration: 19, headline: "先看它解决什么问题", source: "项目资料", title: name, summary: profile.capability,
+        type: "briefing_points", duration: 15, headline: "先看它解决什么问题", source: "项目资料", title: name, summary: profile.capability,
         metrics: [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }],
         points: [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"],
       },
-      narration: `第一部分先看定位。${name}的核心是${profile.capability}。它把信息放进明确的问题框架中，使用者不必从零散材料里反复寻找入口，而是可以先判断自己正在处理的是哪类任务，再沿着对应的主题展开。这样的结构更适合把学习、探索和工程实践连起来，而不是只记住几个概念或命令。`,
+      narration: `先看它解决什么问题。${name}的核心是${profile.capability}。如果你正被同类重复工作卡住，可以先用它处理一个边界清晰的小任务，再决定是否把它接入日常流程。`,
     },
     {
       scene: {
-        type: "signal_chart", duration: 19, headline: "内容覆盖哪些技术主题",
+        type: "signal_chart", duration: 15, headline: "使用时关注哪些环节",
         bars: topics.slice(0, 4).map((topic, index) => ({ label: topic, value: 1, detail: "项目资料列出的实践主题", color: ["#18b7a5", "#7c6cff", "#facc15", "#ff6b6b"][index] })),
       },
-      narration: `第二部分看覆盖范围。项目资料把内容拆成多个技术主题，例如${topics.slice(0, 4).join("、")}。这些标签不是为了比较高低，而是帮助使用者快速定位学习或开发时的切入点。面对陌生技术，先选择一个边界清晰、可以在本地验证的小主题，通常比一开始追求完整系统更容易建立可靠的理解。`,
+      narration: `使用时可以重点看${topics.slice(0, 4).join("、")}。先把输入、规则和预期结果说清，再看每一步的输出。不要一开始追求完整系统，先完成一个能在本地验证的小结果更稳妥。`,
     },
     {
       scene: {
-        type: "flow", duration: 20, headline: "把资料变成可执行的实践", steps: [
+        type: "flow", duration: 17, headline: "四步开始使用", steps: [
           { label: "选择主题", detail: "从当前问题出发确定一个具体方向。" },
           { label: "阅读结构", detail: "先理解目标、输入和关键约束。" },
           { label: "动手验证", detail: "用最小实现观察每一步的结果。" },
           { label: "复盘验证", detail: "确认原理后再评估下一步。" },
         ],
       },
-      narration: `第三部分是使用方式，画面上的四步依次是选择主题、阅读结构、动手验证和复盘验证。${profile.workflow}。先选择主题并看清它的目标与约束；再阅读结构，明确输入和关键条件；随后动手验证，观察输入、过程和输出；最后复盘验证，把测试和异常处理的结果带回下一步判断。这样才能把资料中的抽象描述转成自己能够运行和核对的实践。`,
+      narration: `开始使用只要四步：选择主题、确认规则、动手验证、复盘结果。${profile.workflow}。每次只改变一个关键条件，保留检查结果，出现异常就回到上一步定位原因。`,
     },
     {
       scene: {
-        type: "outro", duration: 18, headline: "适合谁，以及如何使用", bullets: [
+        type: "outro", duration: 14, headline: "适合谁，以及如何使用", bullets: [
           `适合希望系统理解${profile.theme}的开发者。`,
           "从一个主题和最小验证开始，再逐步扩展。",
           "关键工程决策仍要结合测试、评审与实际环境确认。",
         ],
       },
-      narration: `最后回到适用边界。${name}更适合希望系统理解${profile.theme}的开发者。${profile.boundaries}。项目资料还记录了${metricValue(metrics.language, "多个")}相关的实现线索与主题信息，但真正有价值的使用方式，是从一个可验证的小问题开始，完成实现和复盘后，再决定是否进入更复杂的场景。`,
+      narration: `最后看边界。${name}适合希望系统处理${profile.theme}的使用者。${profile.boundaries}。从一个小问题开始，跑通后再扩展，比一次性投入复杂场景更可靠。`,
     },
   ];
-  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 96));
+  const scenes = applySectionDurations(sections, Math.min(100, Math.max(60, Number(process.env.STORY_MAX_SECONDS ?? 80))));
   const factLedger = buildFactLedger([item]);
   const claimIds = (sceneIndex: number) => factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2).map((claim) => claim.id).concat(
     factLedger.claims.length ? [] : [],

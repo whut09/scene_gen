@@ -216,6 +216,20 @@ test("scene ASR blocks unexpected synthesized prefixes and repeated phrases", ()
   assert.ok(result.issues.some((item) => item.code === "audio_repeated_phrase"));
 });
 
+test("scene ASR blocks short residual narration after an otherwise complete scene", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "系统完成核心模块重构并输出结果" }];
+  project.meta.title = "核心模块重构";
+  const result = verifySceneTranscripts(project, [{
+    sceneIndex: 0,
+    text: "系统完成核心模块重构并输出结果吃",
+    confidence: 0.95,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  }], { expectedLanguage: "zh", minimumConfidence: 0.84 });
+  assert.ok(result.issues.some((item) => item.code === "audio_scene_boundary_artifact"));
+});
+
 test("scene ASR does not treat repeated year digits as repeated narration", () => {
   const project = projectFixture();
   project.narrationSegments = [{ sceneIndex: 0, text: "1999年提出数学猜想" }];

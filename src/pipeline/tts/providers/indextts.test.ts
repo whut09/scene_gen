@@ -10,5 +10,5 @@ test("IndexTTS splits long narration on sentence boundaries", () => {
 });
 
 test("IndexTTS keeps a short title in one synthesis unit", () => {
-  assert.deepEqual(splitIndexTtsText("现在介绍，Kimi Code，开源项目推荐。", 88), ["现在介绍，Kimi Code，开源项目推荐。"]);
+  assert.deepEqual(splitIndexTtsText("Kimi Code，开源项目推荐。", 88), ["Kimi Code，开源项目推荐。"]);
 });

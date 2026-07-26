@@ -26,10 +26,10 @@ function repositoryName(project: VideoProject) {
 }
 
 function sceneNarrationMinimum(scene: VideoScene) {
-  if (scene.type === "title") return 55;
-  if (scene.type === "briefing_points") return 90;
-  if (scene.type === "outro") return 65;
-  return 85;
+  if (scene.type === "title") return 35;
+  if (scene.type === "briefing_points") return 50;
+  if (scene.type === "outro") return 45;
+  return 55;
 }
 
 function scenePublicText(scene: VideoScene) {
@@ -45,7 +45,7 @@ export function synthesisTargetSeconds(project: VideoProject, requestedSeconds?:
   const requested = requestedSeconds && Number.isFinite(requestedSeconds) && requestedSeconds > 0
     ? requestedSeconds
     : project.meta.durationSeconds;
-  return repository ? Math.max(75, requested) : requested;
+  return repository ? Math.min(100, Math.max(60, requested)) : requested;
 }
 
 export function projectSynthesisReadinessIssues(project: VideoProject, targetSeconds: number): SynthesisReadinessIssue[] {
@@ -60,7 +60,7 @@ export function projectSynthesisReadinessIssues(project: VideoProject, targetSec
   }
 
   const narrationChars = compactText(project.narration).length;
-  const minimumChars = Math.ceil(targetSeconds * 4.8);
+  const minimumChars = Math.ceil(targetSeconds * 3.7);
   if (narrationChars < minimumChars) {
     issues.push({
       code: "narration_short",
