@@ -80,3 +80,23 @@ test("repository fallback produces a complete five-scene project without platfor
   assert.ok(project.narration.replace(/\s/g, "").length >= 430);
   assert.equal(containsForbiddenGithubReference([project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" "), [item.repo ?? ""]), false);
 });
+
+test("MetaGPT repository draft explains the user problem and practical workflow", () => {
+  const project = createStoryProject({
+    id: "metagpt", kind: "github", contentType: "repository", title: "MetaGPT: Multi-Agent Framework", url: "https://github.com/FoundationAgents/MetaGPT", source: "项目资料", summary: "AI Software Company", content: "MetaGPT is a multi-agent framework for building software.", score: 1, tags: [], repo: "FoundationAgents/MetaGPT",
+  });
+
+  assert.match(project.narrationSegments![0].text, /软件想法/);
+  assert.match(project.narrationSegments![1].text, /自然语言需求/);
+  assert.match(project.narrationSegments![3].text, /一句话说明要做什么/);
+});
+
+test("OfficeCLI repository draft explains direct office-file use", () => {
+  const project = createStoryProject({
+    id: "officecli", kind: "github", contentType: "repository", title: "OfficeCLI: Office suite for AI agents", url: "https://github.com/iOfficeAI/OfficeCLI", source: "项目资料", summary: "Office suite", content: "Read and write Word, Excel, spreadsheet and presentation files.", score: 1, tags: [], repo: "iOfficeAI/OfficeCLI",
+  });
+
+  assert.match(project.narrationSegments![0].text, /文档、表格和演示文稿/);
+  assert.match(project.narrationSegments![1].text, /办公文件/);
+  assert.match(project.narrationSegments![3].text, /汇总表格/);
+});

@@ -353,6 +353,24 @@ function repositoryProfile(item: HotItem) {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/metagpt|multi-agent framework|ai software company|software company/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把一个软件想法拆成可执行交付步骤的多角色协作工具",
+      capability: "把自然语言需求拆成产品说明、系统设计、开发任务和测试检查，让个人或小团队先得到一套可以继续修改的项目材料",
+      workflow: "先用一句话说明要做什么，再确认功能范围和交付目标；随后查看拆分出的计划、设计和任务，按自己的技术能力逐步实现与验证",
+      boundaries: "它适合加快需求梳理和任务拆解，但不能替代对真实用户、业务规则、数据安全和最终代码质量的判断",
+      topics: ["需求澄清", "功能拆分", "系统设计", "开发任务", "测试检查", "交付复盘"],
+    };
+  }
+  if (/officecli|office suite|word|excel|powerpoint|spreadsheet|presentation/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "让 AI 直接处理文档、表格和演示文稿的办公自动化工具",
+      capability: "用统一命令读取、创建和修改常见办公文件，适合把重复整理、填表、汇总和生成演示材料交给 AI 执行",
+      workflow: "先准备需要处理的文件和明确任务，例如汇总表格、改写文档或生成演示稿；再让 AI 执行一小步，并打开结果核对格式、数据和内容",
+      boundaries: "它能减少重复点击和复制粘贴，但涉及重要数据、对外文件和复杂格式时，仍应由使用者逐项核对后再发送或发布",
+      topics: ["读取文档", "整理表格", "生成演示稿", "批量修改", "结果核对", "文件安全"],
+    };
+  }
   if (/build-your-own|re-creat(?:e|ing).*from scratch/i.test(`${item.title} ${content}`)) {
     return {
       theme: "通过从零实现理解技术原理",
