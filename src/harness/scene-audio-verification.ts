@@ -321,7 +321,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
   const transliteratedTitle = firstSceneTranscript
     ? hasTimedTransliteratedTitle(firstSceneTranscript, expectedLeadingAscii, expectedPrefix, actualOpening)
     : false;
-  if (firstTranscript && typeof firstConfidence === "number" && firstConfidence >= minimumConfidence && ((openingPrefixCoverage < 0.5 && !transliteratedTitle) || (leadingAsciiMissing && !transliteratedTitle))) {
+  if (firstTranscript && typeof firstConfidence === "number" && firstConfidence >= semanticMinimumConfidence && ((openingPrefixCoverage < 0.5 && !transliteratedTitle) || (leadingAsciiMissing && !transliteratedTitle))) {
     issues.push({ severity: "error", code: "audio_opening_mismatch", message: "首屏旁白开头与合成文本不一致，先重试验证器确认是否存在首词漏读或变音。", sceneIndex: 0, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { expectedPrefix, expectedLeadingAscii: expectedLeadingAscii ?? "", leadingAsciiMissing, transcript: firstTranscript, openingPrefixCoverage: Number(openingPrefixCoverage.toFixed(3)), asrConfidence: firstConfidence, verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
   }
   return { issues, results, titleTranscript: firstTranscript, titleAudioCoverage, titleOpeningCoverage };

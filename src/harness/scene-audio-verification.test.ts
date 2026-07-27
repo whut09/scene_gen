@@ -72,7 +72,7 @@ test("scene ASR blocks a confident first-word omission", () => {
   project.meta.title = "AI 圈又在造新词";
   project.narrationSegments![0].text = "AI 圈又在造新词，系统进入验证阶段。";
   const result = verifySceneTranscripts(project, [
-    { sceneIndex: 0, text: "圈又在造新词，系统进入验证阶段。", confidence: 0.82 },
+    { sceneIndex: 0, text: "圈又在造新词，系统进入验证阶段。", confidence: 0.9 },
     { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
     { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
   ]);
@@ -88,6 +88,19 @@ test("low-confidence opening disagreement remains inconclusive", () => {
     { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
     { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
   ], { minimumConfidence: 0.8 });
+  assert.ok(result.issues.some((item) => item.code === "verification_inconclusive" && item.sceneIndex === 0));
+  assert.equal(result.issues.some((item) => item.code === "audio_opening_mismatch" && item.sceneIndex === 0), false);
+});
+
+test("opening disagreement below the semantic confidence threshold remains inconclusive", () => {
+  const project = projectFixture();
+  project.meta.title = "奥特曼马斯克豪言我们已进入奇点";
+  project.narrationSegments![0].text = "奥特曼马斯克豪言我们已进入奇点，系统进入验证阶段。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "欧特曼马斯克豪演我们以进入其点，系统进入验证阶段。", confidence: 0.7 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
   assert.ok(result.issues.some((item) => item.code === "verification_inconclusive" && item.sceneIndex === 0));
   assert.equal(result.issues.some((item) => item.code === "audio_opening_mismatch" && item.sceneIndex === 0), false);
 });
