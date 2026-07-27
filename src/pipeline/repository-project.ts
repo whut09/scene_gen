@@ -36,7 +36,9 @@ export function ensureRepositoryProjectIdentity(project: VideoProject): VideoPro
   if (!name || !project.narrationSegments?.[0]) return project;
 
   const first = project.narrationSegments[0];
-  const opening = `${name}，开源项目推荐。${narrationBody(first.text)}`.trim();
+  const openingTitle = `开源项目推荐：${name}`;
+  const openingBody = narrationBody(first.text);
+  const opening = `${openingTitle}。${openingBody}`.trim();
   const scenes = project.scenes.map((scene, index) => index === 0 && scene.type === "title"
     ? { ...scene, kicker: "开源项目推荐", headline: `开源项目推荐：${name}` }
     : scene);

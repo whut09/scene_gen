@@ -10,7 +10,7 @@ import { dirtyPlanFromIssues } from "../../src/harness/dirty-plan";
 import { normalizeQualityIssue } from "../../src/harness/quality-protocol";
 import { runAudioPronunciationGate } from "../../src/harness/quality/audio-pronunciation-gate";
 import { runAudioSemanticGate, transcribeScenesCached } from "../../src/harness/quality/audio-semantic-gate";
-import { runAudioStructuralGate } from "../../src/harness/quality/audio-structural-gate";
+import { indexTtsSpeakerDrift, runAudioStructuralGate } from "../../src/harness/quality/audio-structural-gate";
 import { evaluateAudio, ttsConventionIssues } from "../../src/harness/quality/audio-rules";
 
 function wavBuffer(durationSeconds = 2, sampleRate = 16_000) {
@@ -336,6 +336,16 @@ test("structural gate accepts normal scene-level pitch variation", async () => {
     assert.equal(result.issues.some((issue) => issue.code === "audio_acoustic_voice_drift"), false);
     assert.ok(Number(result.metrics.acousticVoiceSpreadSemitones) < 3);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("IndexTTS speaker gate accepts consistent scenes despite content-sensitive reference scores", () => {
+  const result = indexTtsSpeakerDrift({ minimum: 0.731, average: 0.76, pairwiseMinimum: 0.903, pairwiseAverage: 0.933 }, 0.8);
+  assert.equal(result.drift, false);
+});
+
+test("IndexTTS speaker gate rejects one scene changing speaker identity", () => {
+  const result = indexTtsSpeakerDrift({ minimum: 0.74, average: 0.78, pairwiseMinimum: 0.61, pairwiseAverage: 0.81 }, 0.8);
+  assert.equal(result.drift, true);
 });
 
 test("TTS convention gate keeps AI and reads four-digit years digit by digit", async () => {

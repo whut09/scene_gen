@@ -236,7 +236,7 @@ test("repository synthesis gate permits a complete canonical project", () => {
   project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "MoonshotAI/kimi-code", url: "https://github.com/MoonshotAI/kimi-code" };
   project.meta.title = "kimi-code";
   const narration = [
-    "kimi-code，开源项目推荐。它面向日常代码工作流，把任务理解、修改建议和结果核对组织在同一套命令行体验里，帮助开发者从问题描述开始建立清晰的执行步骤。",
+    "开源项目推荐：kimi-code。它面向日常代码工作流，把任务理解、修改建议和结果核对组织在同一套命令行体验里，帮助开发者从问题描述开始建立清晰的执行步骤。",
     "第一屏之后，项目把复杂工作拆成可检查的小任务。使用者可以先阅读上下文和变更范围，再决定是否执行下一步，从而避免把未经确认的修改直接带入现有工程。",
     "在代码编写阶段，它强调基于仓库上下文给出建议，并把命令、文件变更和结果反馈放在连续流程中。这样的设计适合需要频繁检查差异、回看原因和保留人工判断的开发工作。",
     "对于较长任务，重点不只是一次生成答案，而是持续维护任务状态。每一步都应能看到当前目标、已完成内容和待确认事项，方便在中断后继续，也降低多轮修改带来的理解成本。",

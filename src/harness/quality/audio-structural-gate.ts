@@ -7,7 +7,23 @@ import { fromRoot } from "../../pipeline/utils";
 import type { QualityIssueInput } from "../quality-protocol";
 import { analyzeVoiceProfilesFromTimeline, MAX_VOICE_PITCH_SPREAD_SEMITONES, voicePitchSpreadSemitones } from "../../pipeline/tts/acoustic-stability";
 
-export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v5-speaker-embedding";
+export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v6-pairwise-speaker-consistency";
+
+export function indexTtsSpeakerDrift(input: { minimum: number; average: number; pairwiseMinimum: number; pairwiseAverage: number }, requiredSimilarity: number) {
+  const thresholds = {
+    referenceMinimum: requiredSimilarity * 0.75,
+    referenceAverage: requiredSimilarity * 0.85,
+    pairwiseMinimum: requiredSimilarity,
+    pairwiseAverage: Math.min(0.99, requiredSimilarity + 0.05),
+  };
+  return {
+    drift: input.minimum < thresholds.referenceMinimum
+      || input.average < thresholds.referenceAverage
+      || input.pairwiseMinimum < thresholds.pairwiseMinimum
+      || input.pairwiseAverage < thresholds.pairwiseAverage,
+    thresholds,
+  };
+}
 
 export interface AudioStructuralProbe {
   readable: boolean;
@@ -97,17 +113,21 @@ export async function runAudioStructuralGate(input: {
   let acousticVoiceProfiles = "";
   let minimumSpeakerSimilarity = 1;
   let averageSpeakerSimilarity = 1;
+  let pairwiseMinimumSpeakerSimilarity = 1;
+  let pairwiseAverageSpeakerSimilarity = 1;
   try {
     const ranges = (project.narrationSegments ?? []).flatMap((segment) => segment.audioStartSeconds === undefined || segment.durationSeconds === undefined ? [] : [{ startSeconds: segment.audioStartSeconds, durationSeconds: segment.durationSeconds }]);
     if (project.audio.provider === "indextts") {
       const cfg = config.tts.indextts;
       const checked = await runExternalProcess(cfg.python, [cfg.speakerCheckScript, "--root", cfg.root, "--checkpoint", path.join(cfg.modelDir, "hf_cache", "campplus_cn_common.bin"), "--reference", cfg.refAudio, "--audio", audioPath, "--ranges", JSON.stringify(ranges)], { signal: input.signal, timeoutMs: 180_000 });
-      const speaker = JSON.parse(checked.stdout) as { minimum: number; average: number };
+      const speaker = JSON.parse(checked.stdout) as { minimum: number; average: number; pairwiseMinimum: number; pairwiseAverage: number };
       minimumSpeakerSimilarity = speaker.minimum;
       averageSpeakerSimilarity = speaker.average;
-      const severeMinimumSimilarity = cfg.minimumSpeakerSimilarity * 0.9;
-      if (averageSpeakerSimilarity < cfg.minimumSpeakerSimilarity || minimumSpeakerSimilarity < severeMinimumSimilarity) {
-        issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: `Narration speaker similarity is outside the accepted range (minimum ${minimumSpeakerSimilarity.toFixed(3)}, average ${averageSpeakerSimilarity.toFixed(3)}).`, repairAction: "resynthesize-audio", retryable: true, evidence: { minimumSpeakerSimilarity, averageSpeakerSimilarity, requiredSimilarity: cfg.minimumSpeakerSimilarity, severeMinimumSimilarity, verifier: "campplus" } });
+      pairwiseMinimumSpeakerSimilarity = speaker.pairwiseMinimum;
+      pairwiseAverageSpeakerSimilarity = speaker.pairwiseAverage;
+      const consistency = indexTtsSpeakerDrift(speaker, cfg.minimumSpeakerSimilarity);
+      if (consistency.drift) {
+        issues.push({ severity: "error", code: "audio_acoustic_voice_drift", message: `Narration speaker identity or scene-to-scene consistency is outside the accepted range (reference minimum ${minimumSpeakerSimilarity.toFixed(3)}, pairwise minimum ${pairwiseMinimumSpeakerSimilarity.toFixed(3)}).`, repairAction: "resynthesize-audio", retryable: true, evidence: { minimumSpeakerSimilarity, averageSpeakerSimilarity, pairwiseMinimumSpeakerSimilarity, pairwiseAverageSpeakerSimilarity, requiredSimilarity: cfg.minimumSpeakerSimilarity, referenceMinimumThreshold: consistency.thresholds.referenceMinimum, referenceAverageThreshold: consistency.thresholds.referenceAverage, pairwiseMinimumThreshold: consistency.thresholds.pairwiseMinimum, pairwiseAverageThreshold: consistency.thresholds.pairwiseAverage, verifier: "campplus" } });
       }
     } else {
       const profiles = ranges.length >= 2 ? await analyzeVoiceProfilesFromTimeline(audioPath, ranges) : [];
@@ -119,5 +139,5 @@ export async function runAudioStructuralGate(input: {
     acousticVoiceProfiles = "unavailable";
   }
   const passed = !issues.some((issue) => issue.severity === "error");
-  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, leadingSilenceSeconds: project.audio.metrics?.leadingSilenceSeconds ?? 0, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), minimumSpeakerSimilarity: Number(minimumSpeakerSimilarity.toFixed(4)), averageSpeakerSimilarity: Number(averageSpeakerSimilarity.toFixed(4)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
+  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, leadingSilenceSeconds: project.audio.metrics?.leadingSilenceSeconds ?? 0, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), minimumSpeakerSimilarity: Number(minimumSpeakerSimilarity.toFixed(4)), averageSpeakerSimilarity: Number(averageSpeakerSimilarity.toFixed(4)), pairwiseMinimumSpeakerSimilarity: Number(pairwiseMinimumSpeakerSimilarity.toFixed(4)), pairwiseAverageSpeakerSimilarity: Number(pairwiseAverageSpeakerSimilarity.toFixed(4)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
 }

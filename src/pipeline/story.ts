@@ -389,6 +389,15 @@ function repositoryProfile(item: HotItem) {
       topics: ["读取文档", "整理表格", "生成演示稿", "批量修改", "结果核对", "文件安全"],
     };
   }
+  if (/\bbifrost\b|enterprise ai gateway|openai-compatible api|automatic fallbacks|semantic caching|load balancing/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "统一管理多个大模型供应商调用的高性能模型网关",
+      capability: "让应用只对接一套兼容接口，就能调用二十三家以上模型服务，并获得自动故障切换、负载均衡、语义缓存、预算控制和调用监控",
+      workflow: "先在本地或服务器启动网关，通过管理界面配置模型服务和密钥；再把原有应用的接口地址改到网关，最后用故障切换、延迟和成本监控验证配置",
+      boundaries: "它解决的是模型调用入口和运行治理，不会替你选择最合适的模型；生产使用前仍要验证密钥权限、供应商兼容性、缓存策略和故障切换规则",
+      topics: ["统一模型接口", "自动故障切换", "负载均衡", "语义缓存", "预算控制", "调用监控"],
+    };
+  }
   if (/build-your-own|re-creat(?:e|ing).*from scratch/i.test(`${item.title} ${content}`)) {
     return {
       theme: "通过从零实现理解技术原理",
@@ -420,18 +429,19 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const name = repositoryName(item);
   const profile = repositoryProfile(item);
   const topics = profile.topics;
+  const isBifrost = name.toLowerCase() === "bifrost";
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: { type: "title", duration: 11, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: profile.theme, sources: ["项目定位", "核心能力", "适用边界"] },
-      narration: `${name}，开源项目推荐。它${profile.theme}。下面看它解决的问题、上手步骤和使用边界。`,
+      narration: `开源项目推荐：${name}。它${profile.theme}。${isBifrost ? "应用只需接一套接口，就能统一管理模型调用。" : ""}`,
     },
     {
       scene: {
         type: "briefing_points", duration: 15, headline: "先看它解决什么问题", source: "项目资料", title: name, summary: profile.capability,
-        metrics: [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }],
-        points: [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"],
+        metrics: isBifrost ? [{ label: "统一入口", value: "23+ 服务" }, { label: "兼容方式", value: "一套 API" }] : [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }],
+        points: isBifrost ? [profile.capability, "应用无需分别适配每一家模型服务。", "服务异常时可以按规则自动切换备用模型。"] : [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"],
       },
-      narration: `它的主要作用是${profile.capability}。先用一个边界清晰的小任务，验证它是否适合你的工作。`,
+      narration: isBifrost ? `Bifrost 的核心作用，是${profile.capability}。应用不用分别适配每一家服务，模型异常时还能自动切换备用方案。` : `它的主要作用是${profile.capability}。先用一个边界清晰的小任务，验证它是否适合你的工作。`,
     },
     {
       scene: {
@@ -443,23 +453,30 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
     {
       scene: {
         type: "flow", duration: 17, headline: "四步开始使用", steps: [
-          { label: "选择主题", detail: "从当前问题出发确定一个具体方向。" },
-          { label: "阅读结构", detail: "确认目标、输入和关键约束。" },
-          { label: "动手验证", detail: "用最小实现观察每一步的结果。" },
-          { label: "复盘验证", detail: "保留检查结果并定位异常。" },
+          ...(isBifrost ? [
+            { label: "启动网关", detail: "在本地或服务器运行统一入口。" },
+            { label: "配置服务", detail: "在管理界面填写模型服务和密钥。" },
+            { label: "修改地址", detail: "把应用接口地址指向网关。" },
+            { label: "验证策略", detail: "检查切换、延迟、缓存和成本。" },
+          ] : [
+            { label: "选择主题", detail: "从当前问题出发确定一个具体方向。" },
+            { label: "阅读结构", detail: "确认目标、输入和关键约束。" },
+            { label: "动手验证", detail: "用最小实现观察每一步的结果。" },
+            { label: "复盘验证", detail: "保留检查结果并定位异常。" },
+          ]),
         ],
       },
-      narration: `实际使用分四步：选择主题、阅读结构、动手验证、复盘验证。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
+      narration: isBifrost ? `上手分四步：启动网关，配置模型服务和密钥，把应用接口地址改到 Bifrost，再验证故障切换、延迟、缓存和成本。` : `实际使用分四步：选择主题、阅读结构、动手验证、复盘验证。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
     },
     {
       scene: {
         type: "outro", duration: 14, headline: "适合谁，以及如何使用", bullets: [
           `适合希望${profile.theme}的使用者。`,
-          "从一个主题和最小验证开始，再逐步扩展。",
-          "关键工程决策仍要结合测试、评审与实际环境确认。",
+          isBifrost ? "适合同时使用多个模型服务的应用和团队。" : "从一个主题和最小验证开始，再逐步扩展。",
+          isBifrost ? "它管理调用入口，不替你选择业务模型。" : "关键工程决策仍要结合测试、评审与实际环境确认。",
         ],
       },
-      narration: `它适合希望${profile.theme}的使用者。${profile.boundaries}。建议先跑通一个小问题，核对最终结果并保留验证记录后，再扩展到复杂场景。`,
+      narration: isBifrost ? `它适合同时使用多个模型服务、需要稳定性和成本治理的应用。它管理的是调用入口，不会替你选择业务模型。生产使用前要验证权限、兼容性和切换规则。` : `它适合希望${profile.theme}的使用者。${profile.boundaries}。先跑通一个小问题，核对结果后再扩展。`,
     },
   ];
   const scenes = applySectionDurations(sections, Math.min(100, Math.max(60, Number(process.env.STORY_MAX_SECONDS ?? 80))));

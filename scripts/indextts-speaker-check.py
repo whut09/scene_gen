@@ -30,11 +30,26 @@ def main():
     reference = embedding(reference_wav, reference_rate)
     audio, sample_rate = load_audio(args.audio)
     similarities = []
+    scene_embeddings = []
     for item in json.loads(args.ranges):
         start = int(item["startSeconds"] * sample_rate)
         end = min(audio.shape[1], start + int(item["durationSeconds"] * sample_rate))
-        similarities.append(float(torch.dot(reference, embedding(audio[:, start:end], sample_rate))))
-    print(json.dumps({"similarities": similarities, "minimum": min(similarities) if similarities else 1, "average": sum(similarities) / len(similarities) if similarities else 1}))
+        scene_embedding = embedding(audio[:, start:end], sample_rate)
+        scene_embeddings.append(scene_embedding)
+        similarities.append(float(torch.dot(reference, scene_embedding)))
+    pairwise_similarities = [
+        float(torch.dot(scene_embeddings[left], scene_embeddings[right]))
+        for left in range(len(scene_embeddings))
+        for right in range(left + 1, len(scene_embeddings))
+    ]
+    print(json.dumps({
+        "similarities": similarities,
+        "minimum": min(similarities) if similarities else 1,
+        "average": sum(similarities) / len(similarities) if similarities else 1,
+        "pairwiseSimilarities": pairwise_similarities,
+        "pairwiseMinimum": min(pairwise_similarities) if pairwise_similarities else 1,
+        "pairwiseAverage": sum(pairwise_similarities) / len(pairwise_similarities) if pairwise_similarities else 1,
+    }))
 
 if __name__ == "__main__":
     main()

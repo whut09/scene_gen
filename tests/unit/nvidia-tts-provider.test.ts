@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRuntimeConfig } from "../../src/config/runtime-config";
 import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
-import { encodeNvidiaWorkerRequest, isRetryableNvidiaTtsError, NVIDIA_TTS_FRONTEND_VERSION, NVIDIA_TTS_NORMALIZE_FILTER, nvidiaHttpFallbackText, nvidiaPronunciationDictionary, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
+import { encodeNvidiaWorkerRequest, isRetryableNvidiaTtsError, NVIDIA_TTS_FRONTEND_VERSION, NVIDIA_TTS_NORMALIZE_FILTER, nvidiaHttpFallbackText, nvidiaPronunciationDictionary, nvidiaStableSynthesisText, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
 
 test("NVIDIA worker requests preserve Mandarin text as UTF-8", () => {
   const input = { requestId: "request-1", text: "系统完成核心模块重构，这项更新非常重要。", outputPath: "output.wav" };
@@ -17,9 +17,9 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-long-utterance-v23");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-spelled-acronyms-v24");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
-  assert.equal(identity.synthesisText, plan.synthesisText);
+  assert.equal(identity.synthesisText, nvidiaStableSynthesisText(plan));
   assert.equal(identity.speed, 1.25);
 });
 
@@ -73,6 +73,12 @@ test("NVIDIA stable synthesis text forces high-risk Mandarin fallbacks", async (
   const { plan } = await compilePronunciationPlan({ displayText: "把长内容转成技能，并完成重构。" });
   assert.equal(nvidiaHttpFallbackText(plan), "把长篇内容转成技能，并完成重新构建。");
   assert.equal(plan.displayText, "把长内容转成技能，并完成重构。");
+});
+
+test("NVIDIA stable synthesis text spells standalone acronyms without changing product names", async () => {
+  const { plan } = await compilePronunciationPlan({ displayText: "AI 和 AGI 通过 OpenAI API 接入模型。" });
+  assert.equal(nvidiaStableSynthesisText(plan), "A I 和 A G I 通过 OpenAI A P I 接入模型。");
+  assert.equal(plan.displayText, "AI 和 AGI 通过 OpenAI API 接入模型。");
 });
 
 test("NVIDIA worker request serializes the custom pronunciation dictionary", () => {

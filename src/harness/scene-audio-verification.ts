@@ -165,6 +165,23 @@ function characterRecall(expected: string, actual: string) {
   return [...expected].filter((char) => actual.includes(char)).length / expected.length;
 }
 
+function expectedAcronyms(text: string) {
+  return [...new Set(text.match(/\b(?:AI|AGI|API)\b/g) ?? [])];
+}
+
+function normalizeAcronymHomophones(text: string) {
+  return text
+    .replace(/A\s*[,.，、 ]?\s*G\s*[,.，、 ]?\s*[爱艾愛]/gi, "AGI")
+    .replace(/A\s*[,.，、 ]?\s*P\s*[,.，、 ]?\s*[爱艾愛]/gi, "API")
+    .replace(/A\s*[,.，、 ]?\s*[爱艾愛]/gi, "AI");
+}
+
+function transcriptSpellsAcronymAsLetters(text: string, acronym: string) {
+  const asciiTranscript = normalizeAcronymHomophones(text).toUpperCase().replace(/[^A-Z]/g, "");
+  if (asciiTranscript.includes(acronym)) return true;
+  return acronym === "AI" && /[诶欸][爱艾愛]/.test(text);
+}
+
 function hasTimedTransliteratedTitle(
   transcript: AsrSceneTranscript,
   expectedLeadingAscii: string | undefined,
@@ -226,8 +243,9 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       continue;
     }
     const expectedText = canonicalSpeechText(prepareF5SynthesisText(expectedSynthesisText(segment)));
-    const actualText = canonicalSpeechText(transcript.text);
+    const actualText = canonicalSpeechText(normalizeAcronymHomophones(transcript.text));
     const confidence = transcript.confidence ?? undefined;
+    const acronyms = expectedAcronyms(expectedSynthesisText(segment));
     const expectedAnchor = expectedText.slice(0, Math.min(8, expectedText.length));
     const openingWindow = actualText.slice(0, expectedAnchor.length + 8);
     const anchorOffset = expectedAnchor.length >= 3 ? openingWindow.indexOf(expectedAnchor) : 0;
@@ -238,6 +256,10 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const repeatedPhrase = unexpectedRepeatedPhrase(expectedText, actualText);
     if (typeof confidence === "number" && confidence >= minimumConfidence && repeatedPhrase) {
       issues.push({ severity: "error", code: "audio_repeated_phrase", message: `第 ${segment.sceneIndex + 1} 屏检测到旁白异常连续重复。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, repeatedPhrase: repeatedPhrase.phrase, repeatCount: repeatedPhrase.repeats, characterOffset: repeatedPhrase.index, asrConfidence: confidence } });
+    }
+    const missingAcronym = acronyms.find((acronym) => !transcriptSpellsAcronymAsLetters(transcript.text, acronym));
+    if (missingAcronym && typeof confidence === "number" && confidence >= Math.min(minimumConfidence, 0.6)) {
+      issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏没有完整读出缩写 ${missingAcronym}，必须逐字母播报。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedAcronym: missingAcronym, transcript: transcript.text, asrConfidence: confidence, requiredReading: [...missingAcronym].join(" ") } });
     }
     const expectedLanguage = options.expectedLanguage?.toLowerCase();
     const detectedLanguage = transcript.detectedLanguage?.toLowerCase();

@@ -250,16 +250,17 @@ export async function evaluateDraft(
       issues.push({ severity: "error", code: "repository_name_not_canonical", message: `开源项目标题必须使用项目原名 ${repositoryName}。` });
       revisionNotes.push(`将视频标题恢复为项目原名 ${repositoryName}，不要翻译或改写。`);
     }
-    if (!normalizeText(firstNarration).startsWith(normalizeText(repositoryName))) {
-      issues.push({ severity: "error", code: "repository_name_not_spoken_first", message: `首屏旁白必须先播报项目原名 ${repositoryName}。`, sceneIndex: 0 });
-      revisionNotes.push(`首句先播报项目原名 ${repositoryName}，再说明这是开源项目推荐。`);
+    const canonicalOpening = `开源项目推荐：${repositoryName}`;
+    if (!normalizeText(firstNarration).startsWith(normalizeText(canonicalOpening))) {
+      issues.push({ severity: "error", code: "repository_name_not_spoken_first", message: `首屏旁白必须先完整播报“${canonicalOpening}”。`, sceneIndex: 0 });
+      revisionNotes.push(`首句完整播报“${canonicalOpening}”，然后进入项目用途。`);
     }
   }
   if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(publicProjectText, repositoryAddresses)) {
     issues.push({ severity: "error", code: "external_platform_reference_exposed", message: "开源项目视频不得展示或播报第三方代码托管平台名称、域名或仓库地址。" });
     revisionNotes.push("删除平台名称、平台域名和 owner/repository 地址，只保留项目名称与功能事实。 ");
   }
-  if (!normalizeText(firstNarration).startsWith(normalizeText(project.meta.title))) {
+  if (!repositoryName && !normalizeText(firstNarration).startsWith(normalizeText(project.meta.title))) {
     issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。", sceneIndex: 0 });
     revisionNotes.push("将新闻标题逐字放在第一段旁白的第一句话，念完标题后再进入正文。 ");
   }

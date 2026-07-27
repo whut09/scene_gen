@@ -75,9 +75,10 @@ test("repository fallback produces a complete five-scene project without platfor
   assert.equal(project.narrationSegments?.length, 5);
   assert.equal(project.scenes[0].type, "title");
   assert.equal(project.scenes[0].headline, "开源项目推荐：build-your-own-x");
-  assert.equal(project.narrationSegments?.[0].text.startsWith("build-your-own-x"), true);
-  assert.equal(project.narrationSegments?.[0].ttsText?.startsWith("Build Your Own X"), true);
-  assert.ok(project.narration.replace(/\s/g, "").length >= 300);
+  assert.equal(project.narrationSegments?.[0].text.startsWith("开源项目推荐：build-your-own-x"), true);
+  assert.equal(project.narrationSegments?.[0].ttsText?.startsWith("开源项目推荐：Build Your Own X"), true);
+  assert.ok(project.narration.replace(/\s/g, "").length >= 240);
+  assert.ok(project.meta.durationSeconds >= 50 && project.meta.durationSeconds <= 100);
   assert.equal(containsForbiddenGithubReference([project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" "), [item.repo ?? ""]), false);
 });
 
@@ -99,4 +100,17 @@ test("OfficeCLI repository draft explains direct office-file use", () => {
   assert.match(project.narrationSegments![0].text, /文档、表格和演示文稿/);
   assert.match(project.narrationSegments![1].text, /办公文件/);
   assert.match(project.narrationSegments![3].text, /汇总表格/);
+});
+
+test("Bifrost repository draft explains the model gateway and direct setup path", () => {
+  const project = createStoryProject({
+    id: "bifrost", kind: "github", contentType: "repository", title: "bifrost: enterprise AI gateway", url: "https://github.com/maximhq/bifrost", source: "项目资料", summary: "OpenAI-compatible gateway", content: "Bifrost is an enterprise AI gateway for 23+ providers with automatic fallbacks, load balancing, semantic caching, budgets and observability.", score: 1, tags: [], repo: "maximhq/bifrost",
+  });
+
+  assert.match(project.narrationSegments![0].text, /模型网关/);
+  assert.match(project.narrationSegments![1].text, /二十三家以上模型服务/);
+  assert.match(project.narrationSegments![2].text, /故障切换.*负载均衡.*语义缓存/);
+  assert.match(project.narrationSegments![3].text, /启动网关.*配置模型服务和密钥.*接口地址/);
+  assert.doesNotMatch(project.narrationSegments!.map((segment) => segment.text).join(" "), /选择主题|阅读结构|下面看/);
+  assert.ok(project.narrationSegments!.every((segment) => segment.text.length <= 125));
 });

@@ -22,10 +22,10 @@ test("repository identity uses the original repository name", () => {
   assert.equal(normalized.meta.title, "text-to-cad");
   assert.equal(normalized.scenes[0].type, "title");
   assert.equal((normalized.scenes[0] as Extract<typeof normalized.scenes[number], { type: "title" }>).headline, "开源项目推荐：text-to-cad");
-  assert.match(normalized.narrationSegments![0].text, /^text-to-cad，开源项目推荐。/u);
+  assert.match(normalized.narrationSegments![0].text, /^开源项目推荐：text-to-cad。/u);
   assert.equal(projectHomepageTitle(normalized), "开源项目推荐：text-to-cad");
   assert.equal(expectedVideoFileName(normalized), "开源项目推荐：text-to-cad.mp4");
-  assert.match(normalized.narrationSegments![0].ttsText ?? "", /^Text To Cad，开源项目推荐/u);
+  assert.match(normalized.narrationSegments![0].ttsText ?? "", /^开源项目推荐：Text To Cad。/u);
 });
 
 test("repository synthesis text is refreshed from the public project name", () => {
@@ -35,7 +35,7 @@ test("repository synthesis text is refreshed from the public project name", () =
 
   const normalized = ensureRepositoryProjectIdentity(project);
 
-  assert.match(normalized.narrationSegments![0].ttsText ?? "", /^Kimi Code，开源项目推荐/u);
+  assert.match(normalized.narrationSegments![0].ttsText ?? "", /^开源项目推荐：Kimi Code。/u);
   assert.doesNotMatch(normalized.narrationSegments![0].ttsText ?? "", /过期/u);
 });
 
@@ -45,5 +45,5 @@ test("repository synthesis alias survives the title-first normalization", () => 
 
   const normalized = ensureRepositoryProjectIdentity(ensureTitleSpokenFirst(project));
 
-  assert.match(normalized.narrationSegments![0].ttsText ?? "", /^Kimi Code，开源项目推荐/u);
+  assert.match(normalized.narrationSegments![0].ttsText ?? "", /^开源项目推荐：Kimi Code。/u);
 });

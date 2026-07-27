@@ -29,7 +29,7 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-long-utterance-v23";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-spelled-acronyms-v24";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 export const NVIDIA_TTS_NORMALIZE_FILTER = "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB,areverse,silenceremove=start_periods=1:start_duration=0.04:start_threshold=-52dB,areverse,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse,loudnorm=I=-19:TP=-2:LRA=7";
 
@@ -93,6 +93,10 @@ export function nvidiaHttpFallbackText(plan: PronunciationPlan, text = plan.synt
   }, text);
 }
 
+export function nvidiaStableSynthesisText(plan: PronunciationPlan, text = plan.synthesisText) {
+  return nvidiaHttpFallbackText(plan, text).replace(/\b[A-Z]{2,5}\b/g, (acronym) => [...acronym].join(" "));
+}
+
 export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSalt?: string }, config: RuntimeConfig) {
   return {
     provider: "nvidia",
@@ -102,8 +106,7 @@ export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSa
     sampleRateHz: config.tts.nvidia.sampleRateHz,
     transport: config.tts.nvidia.transport,
     speed: config.tts.nvidia.speed,
-    synthesisText: input.plan.synthesisText,
-    httpFallbackText: nvidiaHttpFallbackText(input.plan),
+    synthesisText: nvidiaStableSynthesisText(input.plan),
     pronunciationPlanHash: input.plan.planHash,
     frontendVersion: NVIDIA_TTS_FRONTEND_VERSION,
     cacheSalt: input.cacheSalt ?? "",
@@ -188,7 +191,7 @@ export async function nvidiaTts(input: { plan: PronunciationPlan; outputPath: st
     signal: input.signal,
     generate: async (targetPath) => {
       worker ??= new NvidiaWorker(config);
-      const synthesisText = nvidiaHttpFallbackText(input.plan);
+      const synthesisText = nvidiaStableSynthesisText(input.plan);
       const synthesisUnits = splitNvidiaSynthesisText(synthesisText);
       const partPaths = [`${targetPath}.part-01.wav`];
       const naturalPath = `${targetPath}.natural.wav`;

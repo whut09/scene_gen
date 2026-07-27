@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { copyFile, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { NarrationSegment, VideoProject } from "./types";
 import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
@@ -14,7 +14,7 @@ import type { ProviderSelectionAudit } from "../production/types";
 import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-routing";
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
-import { nvidiaHttpFallbackText, nvidiaTts } from "./tts/providers/nvidia";
+import { nvidiaStableSynthesisText, nvidiaTts } from "./tts/providers/nvidia";
 import { indexTts, releaseIndexTtsWorker } from "./tts/providers/indextts";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
@@ -24,7 +24,7 @@ import { mockTts } from "./tts/providers/mock";
 import { probeDuration, run } from "./tts/process";
 import { prepareF5SynthesisText } from "./tts/text-normalization";
 import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from "./tts/segmentation";
-import { analyzeVoiceProfilesFromFiles, type AcousticVoiceProfile, voicePitchSpreadSemitones } from "./tts/acoustic-stability";
+import { analyzeVoiceProfilesFromFiles, voicePitchSpreadSemitones } from "./tts/acoustic-stability";
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
@@ -52,40 +52,6 @@ async function releasePronunciationWorkers() {
 }
 
 type TtsSynthesisMetrics = NonNullable<NonNullable<VideoProject["audio"]>["metrics"]>;
-
-const NVIDIA_PITCH_NORMALIZATION_THRESHOLD_SEMITONES = 3;
-
-function geometricMedianPitch(profiles: AcousticVoiceProfile[]) {
-  const pitches = profiles
-    .filter((profile) => profile.voicedFrames >= 3 && profile.medianF0Hz > 0)
-    .map((profile) => profile.medianF0Hz)
-    .sort((left, right) => left - right);
-  if (!pitches.length) return 0;
-  const middle = Math.floor(pitches.length / 2);
-  return pitches.length % 2 ? pitches[middle] : Math.sqrt(pitches[middle - 1] * pitches[middle]);
-}
-
-async function normalizeNvidiaScenePitch(paths: string[], profiles: AcousticVoiceProfile[]) {
-  if (voicePitchSpreadSemitones(profiles) <= NVIDIA_PITCH_NORMALIZATION_THRESHOLD_SEMITONES) return [];
-  const targetPitch = geometricMedianPitch(profiles);
-  if (!targetPitch) return [];
-  const adjustedIndexes: number[] = [];
-  for (const profile of profiles) {
-    if (profile.voicedFrames < 3 || profile.medianF0Hz <= 0) continue;
-    const factor = targetPitch / profile.medianF0Hz;
-    if (Math.abs(12 * Math.log2(factor)) < 0.15) continue;
-    const sourcePath = paths[profile.index];
-    const temporaryPath = `${sourcePath}.pitch-normalized.wav`;
-    await run("ffmpeg", [
-      "-y", "-hide_banner", "-loglevel", "error", "-i", sourcePath,
-      "-filter:a", `asetrate=24000*${factor.toFixed(6)},aresample=24000,atempo=${(1 / factor).toFixed(6)}`,
-      "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", temporaryPath,
-    ]);
-    await rename(temporaryPath, sourcePath);
-    adjustedIndexes.push(profile.index);
-  }
-  return adjustedIndexes;
-}
 
 interface F5Runtime {
   pool: F5WorkerPool;
@@ -605,11 +571,7 @@ async function attachSegmentedNarration(
     };
   });
   const segmentPaths = results.map((result) => result.segmentPath);
-  let acousticProfiles = provider === "nvidia" ? await analyzeVoiceProfilesFromFiles(segmentPaths) : undefined;
-  const pitchAdjustedSceneIndexes = acousticProfiles
-    ? await normalizeNvidiaScenePitch(segmentPaths, acousticProfiles)
-    : [];
-  if (pitchAdjustedSceneIndexes.length) acousticProfiles = await analyzeVoiceProfilesFromFiles(segmentPaths);
+  const acousticProfiles = provider === "nvidia" ? await analyzeVoiceProfilesFromFiles(segmentPaths) : undefined;
   const acousticVoiceSpreadSemitones = acousticProfiles ? voicePitchSpreadSemitones(acousticProfiles) : undefined;
   const durations = results.map((result) => result.duration);
 
@@ -630,7 +592,7 @@ async function attachSegmentedNarration(
     const aligned = {
       ...segment,
       ttsText: results[index].pronunciationPlan.synthesisText,
-      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" ? nvidiaHttpFallbackText(results[index].pronunciationPlan) : provider === "indextts" ? indexTtsPronunciationInput(results[index].pronunciationPlan).text : results[index].pronunciationPlan.synthesisText,
+      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" ? nvidiaStableSynthesisText(results[index].pronunciationPlan) : provider === "indextts" ? indexTtsPronunciationInput(results[index].pronunciationPlan).text : results[index].pronunciationPlan.synthesisText,
       pronunciationPlan: results[index].pronunciationPlan,
       ttsProvider: provider,
       ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : provider === "indextts" ? "IndexTTS2.Fixed.Reference" : undefined),
@@ -681,7 +643,7 @@ async function attachSegmentedNarration(
     budgetWarning: results.some((result) => result.azureResult?.budgetWarning),
     pronunciationPlanCount: results.length,
     acousticVoiceSpreadSemitones: acousticVoiceSpreadSemitones === undefined ? undefined : Number(acousticVoiceSpreadSemitones.toFixed(3)),
-    pitchAdjustedSceneIndexes: pitchAdjustedSceneIndexes.join(","),
+    pitchAdjustedSceneIndexes: "",
     pronunciationUncertainCount: results.reduce((sum, result) => sum + result.pronunciationIssueCount, 0),
     ttsVoice: [...new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean))].join(","),
     ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",

@@ -8,7 +8,7 @@ import type { PronunciationPlan } from "../../pronunciation/schema";
 import { probeDuration, run } from "../process";
 import { concatNarrationSegments } from "../postprocess";
 
-export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v3-chunked-mixed-pinyin";
+export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v5-paused-acronyms";
 type WorkerResult = { requestId: string; status: "succeeded"; outputPath: string; synthesisMs: number };
 
 class IndexTtsWorker {
@@ -114,7 +114,7 @@ class IndexTtsWorker {
 let worker: IndexTtsWorker | undefined;
 
 export function splitIndexTtsText(text: string, maximumCharacters = 88) {
-  const clauses = text.match(/[^，,。！？!?；;]+[，,。！？!?；;]?/gu) ?? [text];
+  const clauses = text.match(/[^，。！？；：,.!?;:]+[，。！？；：,.!?;:]?/gu) ?? [text];
   const chunks: string[] = [];
   let current = "";
   for (const rawClause of clauses) {

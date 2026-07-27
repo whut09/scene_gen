@@ -34,8 +34,8 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
       durationSeconds: 10,
       sourceCount: 1,
     },
-    narration: `${projectName}，开源项目推荐。Cache fixture。`,
-    narrationSegments: [{ sceneIndex: 0, text: `${projectName}，开源项目推荐。Cache fixture。` }],
+    narration: `开源项目推荐：${projectName}。Cache fixture。`,
+    narrationSegments: [{ sceneIndex: 0, text: `开源项目推荐：${projectName}。Cache fixture。` }],
     scenes: [{
       type: "title",
       duration: 10,

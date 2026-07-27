@@ -67,6 +67,66 @@ test("AI entity verification rejects expansion to the Mandarin semantic form", (
   assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 2), true);
 });
 
+test("AI acronym verification rejects the Chinese homophone", () => {
+  const project = projectFixture();
+  project.narrationSegments![0].text = "AI 正在改变开发流程。";
+  project.narrationSegments![0].ttsText = "AI 正在改变开发流程。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "爱正在改变开发流程。", confidence: 0.82 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.ok(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0));
+});
+
+test("AI acronym verification accepts a spelled letter transcript", () => {
+  const project = projectFixture();
+  project.narrationSegments![0].text = "AI 正在改变开发流程。";
+  project.narrationSegments![0].ttsText = "AI 正在改变开发流程。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "A I 正在改变开发流程。", confidence: 0.95 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0), false);
+});
+
+test("AGI acronym verification rejects the entire acronym collapsing to a homophone", () => {
+  const project = projectFixture();
+  project.narrationSegments![0].text = "AGI 加速窗口已经到来。";
+  project.narrationSegments![0].ttsText = "AGI 加速窗口已经到来。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "爱加速窗口已经到来。", confidence: 0.9 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.ok(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0));
+});
+
+test("AGI acronym verification accepts ASR writing the spoken letter I as its homophone", () => {
+  const project = projectFixture();
+  project.narrationSegments![0].text = "AGI 加速窗口已经到来。";
+  project.narrationSegments![0].ttsText = "AGI 加速窗口已经到来。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "AG爱加速窗口已经到来。", confidence: 0.9 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0), false);
+});
+
+test("AGI acronym verification accepts all three ASCII letters", () => {
+  const project = projectFixture();
+  project.narrationSegments![0].text = "AGI 加速窗口已经到来。";
+  project.narrationSegments![0].ttsText = "AGI 加速窗口已经到来。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "A G I 加速窗口已经到来。", confidence: 0.9 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0), false);
+});
+
 test("scene ASR blocks a confident first-word omission", () => {
   const project = projectFixture();
   project.meta.title = "AI 圈又在造新词";

@@ -33,7 +33,12 @@ export function indexTtsPronunciationInput(plan: PronunciationPlan) {
     .reduce((value, span) => {
       const pinyin = pinyinFor(span, "indextts").flatMap((value) => value.split(/\s+/)).filter(Boolean).map((syllable) => syllable.toUpperCase()).join("");
       return `${value.slice(0, span.start)}${pinyin}${value.slice(span.end)}`;
-    }, plan.synthesisText);
+    }, plan.synthesisText)
+    .replace(/\b[A-Z]{2,5}\b/g, (acronym, offset: number, source: string) => {
+      const next = source.slice(offset + acronym.length).trimStart()[0] ?? "";
+      const pause = /[，。！？；：、,.!?;:]/.test(next) ? "" : "，";
+      return `${[...acronym].join("、")}${pause}`;
+    });
   return { text, mixedPinyin, pronunciationPlanHash: plan.planHash };
 }
 

@@ -19,3 +19,16 @@ test("repository draft gate requires recommendation banner and original name", a
   assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_canonical"), true);
   assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_spoken_first"), true);
 });
+
+test("repository draft gate accepts the canonical recommendation opening", async () => {
+  const value = project();
+  value.meta.title = "ai-agent-book";
+  value.scenes[0] = { type: "title", duration: value.scenes[0].duration, kicker: "开源项目推荐", headline: "开源项目推荐：ai-agent-book", subhead: "面向非技术读者的智能体实践", sources: ["项目资料"] };
+  value.narrationSegments![0].text = "开源项目推荐：ai-agent-book。它帮助非技术读者理解智能体的用途和实践方法。";
+  value.narration = value.narrationSegments![0].text;
+
+  const result = await evaluateDraft(value, 12, "");
+
+  assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_spoken_first"), false);
+  assert.equal(result.issues.some((issue) => issue.code === "title_not_spoken_first"), false);
+});

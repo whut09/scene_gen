@@ -87,8 +87,8 @@ export function projectSynthesisReadinessIssues(project: VideoProject, targetSec
   if (project.meta.title !== repository) {
     issues.push({ code: "repository_name_not_canonical", message: "Repository video metadata must keep the original project name." });
   }
-  if (!compactText(segments[0]?.text ?? "").startsWith(repository)) {
-    issues.push({ code: "repository_name_not_spoken_first", sceneIndex: 0, message: "The first narration must begin with the original repository name." });
+  if (!compactText(segments[0]?.text ?? "").startsWith(compactText(`开源项目推荐：${repository}`))) {
+    issues.push({ code: "repository_name_not_spoken_first", sceneIndex: 0, message: "The first narration must begin with the canonical recommendation title and original repository name." });
   }
 
   const publicText = [project.meta.title, project.narration, ...project.scenes.map(scenePublicText)].join(" ");
