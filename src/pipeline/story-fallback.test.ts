@@ -114,3 +114,39 @@ test("Bifrost repository draft explains the model gateway and direct setup path"
   assert.doesNotMatch(project.narrationSegments!.map((segment) => segment.text).join(" "), /选择主题|阅读结构|下面看/);
   assert.ok(project.narrationSegments!.every((segment) => segment.text.length <= 125));
 });
+
+test("T3 Code repository draft explains its coding-agent workspace", () => {
+  const project = createStoryProject({
+    id: "t3code", kind: "github", contentType: "repository", title: "t3code: minimal web GUI for coding agents", url: "https://github.com/pingdotgg/t3code", source: "项目资料", summary: "Web GUI for coding agents", content: "T3 Code is a minimal web GUI for coding agents including Codex, Claude, Cursor, and OpenCode.", score: 1, tags: [], repo: "pingdotgg/t3code",
+  });
+
+  assert.equal(project.meta.title, "t3code");
+  assert.match(project.narrationSegments![0].text, /网页和桌面工作台/);
+  assert.match(project.narrationSegments![1].text, /统一图形界面/);
+  assert.match(project.narrationSegments![3].text, /安装并登录.*启动 T3 Code.*选择项目/);
+  assert.doesNotMatch(project.narration, /选择主题|阅读结构/);
+});
+
+test("speech-to-speech repository draft explains the realtime voice pipeline", () => {
+  const project = createStoryProject({
+    id: "speech-to-speech", kind: "github", contentType: "repository", title: "speech-to-speech: Build local voice agents", url: "https://github.com/huggingface/speech-to-speech", source: "项目资料", summary: "Low-latency modular voice-agent pipeline", content: "A low-latency modular voice-agent pipeline: VAD, STT, LLM and TTS through an OpenAI Realtime-compatible API.", score: 1, tags: [], repo: "huggingface/speech-to-speech",
+  });
+
+  assert.equal(project.meta.title, "speech-to-speech");
+  assert.match(project.narrationSegments![0].text, /低延迟语音智能体/);
+  assert.match(project.narrationSegments![1].text, /语音活动检测.*语音识别.*大模型.*语音合成/);
+  assert.match(project.narrationSegments![3].text, /实时服务.*真实对话.*延迟/);
+  assert.doesNotMatch(project.narration, /选择主题|阅读结构/);
+});
+
+test("aisuite repository draft explains provider switching and agent tools", () => {
+  const project = createStoryProject({
+    id: "aisuite", kind: "github", contentType: "repository", title: "aisuite: unified interface to multiple Generative AI providers", url: "https://github.com/andrewyng/aisuite", source: "项目资料", summary: "Unified Chat Completions and Agents APIs", content: "One API across multiple LLM providers with Agents API, toolkits and MCP tools.", score: 1, tags: [], repo: "andrewyng/aisuite",
+  });
+
+  assert.equal(project.meta.title, "aisuite");
+  assert.match(project.narrationSegments![0].text, /一套 Python 接口/);
+  assert.match(project.narrationSegments![1].text, /修改模型名称.*切换供应商/);
+  assert.match(project.narrationSegments![3].text, /供应商扩展.*统一客户端.*工具/);
+  assert.doesNotMatch(project.narration, /选择主题|阅读结构/);
+});

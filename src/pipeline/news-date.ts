@@ -72,15 +72,18 @@ export function normalizeProjectDatePrecision(project: VideoProject): VideoProje
 
 export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {
   const segments = project.narrationSegments;
-  const title = project.meta.title.trim().replace(/[\u3002\uff01\uff1f?]+$/u, "");
+  const repository = project.sources.find((source) => source.kind === "github");
+  const repositoryName = repository?.repo?.split("/").filter(Boolean).at(-1) ?? "";
+  const isRepositoryOpening = Boolean(repositoryName);
+  const title = (repositoryName ? `开源项目推荐：${repositoryName}` : project.meta.title.trim()).replace(/[\u3002\uff01\uff1f?]+$/u, "");
   if (!title || !segments?.[0]) return project;
   const first = segments[0];
   const spoken = first.ttsText ?? first.text;
   if (compact(first.text).startsWith(compact(title))) {
     const nextSegments = segments.map((segment, index) => index === 0 ? {
       ...segment,
-      text: removeRepeatedOpeningTitle(segment.text, title),
-      ttsText: removeRepeatedOpeningTitle(segment.text, title),
+      text: isRepositoryOpening ? segment.text : removeRepeatedOpeningTitle(segment.text, title),
+      ttsText: isRepositoryOpening ? (segment.ttsText ?? segment.text) : removeRepeatedOpeningTitle(segment.text, title),
     } : segment);
     return { ...project, narrationSegments: nextSegments, narration: nextSegments.map((segment) => segment.text).join("\n") };
   }

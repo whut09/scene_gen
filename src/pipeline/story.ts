@@ -349,7 +349,18 @@ function repositoryTopics(content: string) {
   return [...new Set(labels)].slice(0, 8);
 }
 
-function repositoryProfile(item: HotItem) {
+interface RepositoryProfile {
+  theme: string;
+  capability: string;
+  workflow: string;
+  boundaries: string;
+  topics: string[];
+  metrics?: Array<{ label: string; value: string }>;
+  problemPoints?: string[];
+  steps?: Array<{ label: string; detail: string }>;
+}
+
+function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
@@ -380,7 +391,7 @@ function repositoryProfile(item: HotItem) {
       topics: ["需求澄清", "功能拆分", "系统设计", "开发任务", "测试检查", "交付复盘"],
     };
   }
-  if (/officecli|office suite|word|excel|powerpoint|spreadsheet|presentation/i.test(`${name} ${item.title} ${content}`)) {
+  if (!/\baisuite\b/i.test(`${name} ${item.title}`) && /officecli|office suite|word|excel|powerpoint|spreadsheet|presentation/i.test(`${name} ${item.title} ${content}`)) {
     return {
       theme: "让 AI 直接处理文档、表格和演示文稿的办公自动化工具",
       capability: "用统一命令读取、创建和修改常见办公文件，适合把重复整理、填表、汇总和生成演示材料交给 AI 执行",
@@ -396,6 +407,57 @@ function repositoryProfile(item: HotItem) {
       workflow: "先在本地或服务器启动网关，通过管理界面配置模型服务和密钥；再把原有应用的接口地址改到网关，最后用故障切换、延迟和成本监控验证配置",
       boundaries: "它解决的是模型调用入口和运行治理，不会替你选择最合适的模型；生产使用前仍要验证密钥权限、供应商兼容性、缓存策略和故障切换规则",
       topics: ["统一模型接口", "自动故障切换", "负载均衡", "语义缓存", "预算控制", "调用监控"],
+    };
+  }
+  if (/\bt3code\b|minimal web gui for coding agents|codex.*claude.*cursor.*opencode/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把多个代码智能体集中到网页和桌面工作台中管理",
+      capability: "为 Codex、Claude、Cursor 和 OpenCode 提供统一图形界面，让使用者查看任务、切换项目并管理远程会话，不必反复操作多个终端窗口",
+      workflow: "先安装并登录项目列出的一个代码智能体，再启动 T3 Code；随后选择项目、创建任务，并在统一界面中查看执行过程和结果",
+      boundaries: "它是代码智能体的操作界面，不会替代底层模型和命令行工具；项目仍处于早期阶段，使用前要确认权限、命令和代码改动",
+      topics: ["统一工作台", "多智能体接入", "项目切换", "任务管理", "远程访问", "结果核对"],
+      metrics: [{ label: "接入工具", value: "4 类" }, { label: "使用方式", value: "网页与桌面" }],
+      problemPoints: ["多个代码智能体分散在不同终端，任务状态难以统一查看。", "通过一个图形界面管理项目、会话和执行过程。", "适合已经使用代码智能体、不想频繁切换终端的人。"],
+      steps: [
+        { label: "准备工具", detail: "安装并登录项目列出的代码智能体。" },
+        { label: "启动界面", detail: "运行 T3 Code 或安装桌面版本。" },
+        { label: "选择项目", detail: "打开代码目录并创建具体任务。" },
+        { label: "核对结果", detail: "检查命令、文件改动和测试结果。" },
+      ],
+    };
+  }
+  if (/speech-to-speech|voice-agent pipeline|openai realtime-compatible|vad.*stt.*llm.*tts/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "用可替换的开源组件搭建低延迟语音智能体",
+      capability: "把语音活动检测、语音识别、大模型和语音合成串成实时流水线，并通过兼容 Realtime 协议的接口接入应用",
+      workflow: "先安装软件包并选择语音识别、大模型和语音合成后端，再启动实时服务；客户端连接本地接口后，用真实对话检查延迟、打断和语言效果",
+      boundaries: "实际延迟和中文体验取决于所选模型与硬件；本地部署还要评估显存、依赖版本、模型许可和并发能力",
+      topics: ["语音活动检测", "实时语音识别", "大模型响应", "流式语音合成", "组件替换", "本地部署"],
+      metrics: [{ label: "核心链路", value: "4 阶段" }, { label: "接入协议", value: "实时接口" }],
+      problemPoints: ["语音智能体通常需要分别拼接识别、模型和合成服务。", "项目把四个阶段组织成低延迟、可替换的统一流水线。", "既可连接云端模型，也能组合本地开源模型。"],
+      steps: [
+        { label: "安装组件", detail: "安装软件包并确认 Python 与硬件环境。" },
+        { label: "选择后端", detail: "配置语音识别、大模型和语音合成。" },
+        { label: "启动服务", detail: "运行实时接口并连接客户端。" },
+        { label: "验证对话", detail: "检查延迟、打断、转写和音色。" },
+      ],
+    };
+  }
+  if (/\baisuite\b|unified.*chat completions|agents api.*toolkits|one api across multiple llm/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "用一套 Python 接口调用不同大模型并构建工具型智能体",
+      capability: "统一多家模型服务的对话调用格式，只需修改模型名称即可切换供应商，并可为智能体添加 Python 函数、工具包和 MCP 工具",
+      workflow: "先安装基础包和需要的供应商扩展，配置自己的模型密钥；再用统一客户端发起对话，最后按需要加入工具、运行循环和权限策略",
+      boundaries: "统一接口不能消除不同模型在参数、能力、费用和输出上的差异；工具执行还必须设置权限、审批和结果校验",
+      topics: ["统一模型接口", "供应商切换", "工具调用", "智能体循环", "MCP 接入", "权限策略"],
+      metrics: [{ label: "接口层", value: "统一调用" }, { label: "智能体能力", value: "工具与 MCP" }],
+      problemPoints: ["不同模型供应商的 SDK 和调用格式各不相同，切换时需要重新适配。", "aisuite 用统一接口屏蔽常见差异，并向上提供智能体工具层。", "适合需要比较模型或构建多供应商应用的开发者。"],
+      steps: [
+        { label: "安装扩展", detail: "安装基础包及所需供应商组件。" },
+        { label: "配置密钥", detail: "只启用准备实际调用的模型服务。" },
+        { label: "统一调用", detail: "通过模型名称切换供应商和模型。" },
+        { label: "加入工具", detail: "配置函数、工具包、MCP 与权限策略。" },
+      ],
     };
   }
   if (/build-your-own|re-creat(?:e|ing).*from scratch/i.test(`${item.title} ${content}`)) {
@@ -430,6 +492,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const profile = repositoryProfile(item);
   const topics = profile.topics;
   const isBifrost = name.toLowerCase() === "bifrost";
+  const hasDetailedWorkflow = profile.steps?.length === 4;
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: { type: "title", duration: 11, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: profile.theme, sources: ["项目定位", "核心能力", "适用边界"] },
@@ -438,8 +501,8 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
     {
       scene: {
         type: "briefing_points", duration: 15, headline: "先看它解决什么问题", source: "项目资料", title: name, summary: profile.capability,
-        metrics: isBifrost ? [{ label: "统一入口", value: "23+ 服务" }, { label: "兼容方式", value: "一套 API" }] : [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }],
-        points: isBifrost ? [profile.capability, "应用无需分别适配每一家模型服务。", "服务异常时可以按规则自动切换备用模型。"] : [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"],
+        metrics: profile.metrics ?? (isBifrost ? [{ label: "统一入口", value: "23+ 服务" }, { label: "兼容方式", value: "一套 API" }] : [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }]),
+        points: profile.problemPoints ?? (isBifrost ? [profile.capability, "应用无需分别适配每一家模型服务。", "服务异常时可以按规则自动切换备用模型。"] : [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"]),
       },
       narration: isBifrost ? `Bifrost 的核心作用，是${profile.capability}。应用不用分别适配每一家服务，模型异常时还能自动切换备用方案。` : `它的主要作用是${profile.capability}。先用一个边界清晰的小任务，验证它是否适合你的工作。`,
     },
@@ -453,7 +516,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
     {
       scene: {
         type: "flow", duration: 17, headline: "四步开始使用", steps: [
-          ...(isBifrost ? [
+          ...(profile.steps ?? (isBifrost ? [
             { label: "启动网关", detail: "在本地或服务器运行统一入口。" },
             { label: "配置服务", detail: "在管理界面填写模型服务和密钥。" },
             { label: "修改地址", detail: "把应用接口地址指向网关。" },
@@ -463,10 +526,10 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
             { label: "阅读结构", detail: "确认目标、输入和关键约束。" },
             { label: "动手验证", detail: "用最小实现观察每一步的结果。" },
             { label: "复盘验证", detail: "保留检查结果并定位异常。" },
-          ]),
+          ])),
         ],
       },
-      narration: isBifrost ? `上手分四步：启动网关，配置模型服务和密钥，把应用接口地址改到 Bifrost，再验证故障切换、延迟、缓存和成本。` : `实际使用分四步：选择主题、阅读结构、动手验证、复盘验证。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
+      narration: isBifrost ? `上手分四步：启动网关，配置模型服务和密钥，把应用接口地址改到 Bifrost，再验证故障切换、延迟、缓存和成本。` : hasDetailedWorkflow ? `上手可以分四步。${profile.workflow}。` : `实际使用分四步：选择主题、阅读结构、动手验证、复盘验证。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
     },
     {
       scene: {

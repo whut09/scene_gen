@@ -47,3 +47,13 @@ test("repository synthesis alias survives the title-first normalization", () => 
 
   assert.match(normalized.narrationSegments![0].ttsText ?? "", /^开源项目推荐：Kimi Code。/u);
 });
+
+test("title-first normalization preserves the canonical repository recommendation", () => {
+  const project = fixture();
+  project.sources[0].repo = "pingdotgg/t3code";
+
+  const normalized = ensureTitleSpokenFirst(ensureRepositoryProjectIdentity(project));
+
+  assert.match(normalized.narrationSegments![0].text, /^开源项目推荐：t3code。/u);
+  assert.match(normalized.narrationSegments![0].ttsText ?? "", /^开源项目推荐：T3code。/u);
+});
