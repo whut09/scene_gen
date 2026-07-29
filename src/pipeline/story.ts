@@ -23,6 +23,11 @@ function speechFriendlyTitle(title: string) {
 
 const danglingClauseEnding = /(?:\u6b63\u662f\u56e0\u4e3a|\u56e0\u4e3a|\u4f46\u662f|\u800c\u4e14|\u4ee5\u53ca|\u5e76\u4e14|\u4ece\u800c|\u6240\u4ee5|\u5305\u62ec|\u4f8b\u5982)[\uff0c,:\s]*$/u;
 
+function hasUnclosedPairedPunctuation(text: string) {
+  const pairs = [["“", "”"], ["‘", "’"], ["（", "）"], ["(", ")"], ["《", "》"], ["【", "】"]] as const;
+  return pairs.some(([opening, closing]) => text.split(opening).length > text.split(closing).length);
+}
+
 function removeNarrationLead(value: string) {
   return value.replace(/^(?:\u8fd9\u6761\u65b0\u95fb\u8bb2\u7684\u662f|\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f)[\uff1a:,\uff0c\s]*/u, "").trim();
 }
@@ -34,7 +39,7 @@ export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72)
   for (const rawClause of clauses) {
     const clause = rawClause.trim();
     if (!clause) continue;
-    if (current && [...current, ...clause].length > maxCharacters && !danglingClauseEnding.test(current)) {
+    if (current && [...current, ...clause].length > maxCharacters && !danglingClauseEnding.test(current) && !hasUnclosedPairedPunctuation(current)) {
       chunks.push(current);
       current = clause;
     } else {

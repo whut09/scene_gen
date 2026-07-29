@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { FactClaim, FactLedger, HotItem, NarrationSegment, VideoProject, VideoScene } from "./types";
 
 const risky = ["正式发布", "发布", "正式推出", "开放", "上线", "领先", "提升", "增长", "降低", "减少", "增加", "支持", "仅限", "计划"];
-const qualifiers = [/部分(?:用户|地区|场景|功能)?/g, /可能|预计|有望|或将|计划|拟/g, /实验结果|测试结果|初步结果|内部测试|基准测试/g, /仅|只|最多|至少|不超过|约|近|超过/g, /尚未|暂未|仍需|取决于/g, /截至[^，。；]{1,24}/g];
+const qualifiers = [/部分(?:用户|地区|场景|功能)?/g, /可能|预计|有望|或将|计划|拟/g, /实验结果|测试结果|初步结果|内部测试|基准测试/g, /(?<!不)仅|只|最多|至少|不超过|约|近|超过/g, /尚未|暂未|仍需|取决于/g, /截至[^，。；]{1,24}/g];
 
 function normalize(value: string) {
   return value.replace(/\s+/g, "").replace(/[，。！？；：、,.!?;:'"“”‘’（）()【】\[\]<>《》]/g, "").toLowerCase();

@@ -19,5 +19,5 @@ test("IndexTTS spells standalone acronyms and invalidates the previous frontend 
   const { plan } = await compilePronunciationPlan({ displayText: "AI 和 AGI 通过 OpenAI API 接入模型。" });
 
   assert.equal(indexTtsPronunciationInput(plan).text, "A、I， 和 A、G、I， 通过 OpenAI A、P、I， 接入模型。");
-  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v5-paused-acronyms");
+  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v6-safe-product-punctuation");
 });

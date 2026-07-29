@@ -47,6 +47,10 @@ test("TTS normalization preserves Agent product names and AI Agent", () => {
   );
 });
 
+test("TTS normalization does not duplicate punctuation after Codex", () => {
+  assert.equal(prepareF5SynthesisText("适配 Claude Code、Codex、Qoder 和 Cursor。"), "适配 Claude Code、Codex、Qoder 和 Cursor。");
+});
+
 test("cloud narration repairs a stale AI expansion in ttsText", () => {
   const segment = { sceneIndex: 0, text: "AI 系统完成更新。", ttsText: "人工智能系统完成更新。" };
   assert.equal(narrationSynthesisText(segment), "AI 系统完成更新。");

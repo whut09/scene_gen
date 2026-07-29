@@ -100,7 +100,7 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/Next[.]js/gi, "Next JS")
     .replace(/draw[.]io/gi, "Draw IO")
     .replace(/ChatGPT/gi, "聊天 GPT，")
-    .replace(/Codex/gi, "Codex，")
+    .replace(/Codex(?![，、。！？；：,.!?;:])/gi, "Codex，")
     .replace(/OpenAI/gi, "欧盆艾，")
     .replace(/Prompt/gi, "提示词")
     .replace(/(?<=\d),(?=\d{3}(?:\D|$))/g, "")
