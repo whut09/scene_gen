@@ -21,6 +21,7 @@ test("general news fallback creates five grounded scenes", () => {
   };
   const project = createStoryProject(item);
   assert.equal(project.scenes.length, 5);
+  assert.equal(project.scenes[0].headline.endsWith("..."), false);
   assert.equal(project.narrationSegments?.length, 5);
   assert.equal(project.scenes.every((scene) => (scene.claimIds?.length ?? 0) > 0), true);
   assert.equal(project.narrationSegments?.every((segment) => (segment.claimIds?.length ?? 0) > 0), true);

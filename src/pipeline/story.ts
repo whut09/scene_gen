@@ -7,7 +7,7 @@ import { repositorySynthesisText } from "./repository-project";
 const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15"];
 
 function shortTitle(title: string, max = 34) {
-  return title.length > max ? `${title.slice(0, max - 1)}...` : title;
+  return title.length > max ? `${title.slice(0, max - 1)}…` : title;
 }
 
 function speechFriendlyText(text: string) {
