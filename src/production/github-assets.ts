@@ -36,9 +36,14 @@ export async function collectGithubAssets(item: HotItem, limit = 3): Promise<Pro
   if (!target || item.kind !== "github" || limit <= 0) return [];
   const branch = String(item.metrics?.branch ?? "main");
   const readmeUrl = "https://raw.githubusercontent.com/" + target.owner + "/" + target.name + "/" + branch + "/README.md";
-  const readmeResponse = await fetch(readmeUrl, { headers: { "user-agent": "scene-gen/0.1 asset collector" } });
-  if (!readmeResponse.ok) return [];
-  const markdown = await readmeResponse.text();
+  let markdown = item.content ?? "";
+  try {
+    const readmeResponse = await fetch(readmeUrl, { headers: { "user-agent": "scene-gen/0.1 asset collector" } });
+    if (readmeResponse.ok) markdown = await readmeResponse.text();
+  } catch (error) {
+    console.warn("[assets] README unavailable; continuing without remote assets: " + (error as Error).message);
+  }
+  if (!markdown) return [];
   const candidates = markdownImages(markdown);
   const assets: ProjectAsset[] = [];
   const assetDir = fromRoot("public", "generated", "assets", target.owner + "-" + target.name);

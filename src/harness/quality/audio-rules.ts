@@ -41,7 +41,8 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
       const expected = `${prepareF5SynthesisText(denominator)}分之${prepareF5SynthesisText(numerator)}`;
       if (!prepared.includes(expected)) issues.push({ severity: "error", code: "tts_fraction_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏分数 ${match[0]} 必须读作 ${expected}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { fraction: match[0], expected, synthesisText: prepared } });
     }
-    if (/\bAI\b/i.test(segment.text) && !/\bAI\b/i.test(synthesisInput) && synthesisInput.includes("人工智能")) {
+    const spellsAi = /(?:^|[^A-Za-z])A\s*[、，,。.;；:\s-]+\s*I(?:[^A-Za-z]|$)/i.test(synthesisInput);
+    if (/\bAI\b/i.test(segment.text) && !/\bAI\b/i.test(synthesisInput) && !spellsAi && synthesisInput.includes("人工智能")) {
       issues.push({ severity: "error", code: "tts_ai_expanded", message: `第 ${segment.sceneIndex + 1} 屏把 AI 扩写成了“人工智能”，应保持 AI 字母读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { displayText: segment.text, synthesisText: synthesisInput } });
     }
     const protectedLatinNames = segment.text.match(/\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)+\b/g) ?? [];

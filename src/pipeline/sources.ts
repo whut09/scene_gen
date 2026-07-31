@@ -1,9 +1,12 @@
 import { XMLParser } from "fast-xml-parser";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { HotItem, SourceConfig } from "./types";
 import { compactText, daysAgo, domainFromUrl, stableId } from "./utils";
-import { fetchWithRetry } from "./external-operation";
+import { fetchWithRetry, runExternalProcess } from "./external-operation";
 import { classifyWebpageContent } from "./content-type";
 
 export { classifyWebpageContent } from "./content-type";
@@ -346,24 +349,75 @@ function cleanGithubDescription(value: string, repoName: string) {
     .trim();
   return compactText(withoutRepo || repoName, 96);
 }
+
+function githubReadmeDescription(readme: string, repoName: string) {
+  const lines = readme.split(/\r?\n/).map((line) => line.trim());
+  const heading = lines.find((line) => /^#{1,2}\s+\S/u.test(line) && !/language|support|contents?/i.test(line))
+    ?.replace(/^#{1,2}\s+/u, "").replace(/[*_`]/g, "").trim();
+  const paragraph = lines.find((line) => line.length >= 40
+    && !/^\s*(?:\[?!\[|[|#<>]|[-*+]\s|\d+[.)]\s)/u.test(line)
+    && !/img[.]shields[.]io|badge|discord|github[.]com\//i.test(line))
+    ?.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`<>]/g, "")
+    .trim();
+  return cleanGithubDescription([heading, paragraph].filter(Boolean).join("。") || repoName, repoName);
+}
+
+function githubReadmeItem(url: string, target: NonNullable<ReturnType<typeof githubRepoFromUrl>>, readme: string, config: SourceConfig): HotItem {
+  const description = compactText(githubReadmeDescription(readme, target.repo), 260);
+  const joined = [description, readme].join(" ");
+  return {
+    id: stableId("github", url, target.fullName), kind: "github", contentType: "repository",
+    title: `${target.repo}：${description}`, url, source: "项目资料", summary: description,
+    content: compactText(readme, 12000), publishedAt: new Date().toISOString(),
+    score: scoreItem(joined, undefined, 1, config.keywords), tags: normalizeTags(joined, config.keywords).slice(0, 8),
+    repo: target.fullName, metrics: { stars: 0, forks: 0, issues: 0, language: "Unknown", license: "Unknown", branch: "HEAD" },
+  };
+}
+
+async function githubReadmeViaGit(target: NonNullable<ReturnType<typeof githubRepoFromUrl>>) {
+  const directory = await mkdtemp(path.join(tmpdir(), "scene-gen-github-"));
+  const repositoryDirectory = path.join(directory, "repository");
+  try {
+    await runExternalProcess("git", ["clone", "--depth", "1", "--filter=blob:none", "--no-checkout", `https://github.com/${target.fullName}.git`, repositoryDirectory], { timeoutMs: 120_000, retryOnExit: true, retries: 1 });
+    for (const name of ["README.md", "README.MD", "readme.md"]) {
+      try {
+        const result = await runExternalProcess("git", ["-C", repositoryDirectory, "show", `HEAD:${name}`], { timeoutMs: 30_000 });
+        if (result.stdout.trim()) return result.stdout;
+      } catch {
+        continue;
+      }
+    }
+    const checkoutPath = path.join(repositoryDirectory, "README.md");
+    return await readFile(checkoutPath, "utf8");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function collectGithubReadmeFallback(url: string, target: NonNullable<ReturnType<typeof githubRepoFromUrl>>, config: SourceConfig, headers: Record<string, string>) {
+  try {
+    const readmeResponse = await fetchWithRetry(`https://raw.githubusercontent.com/${target.fullName}/HEAD/README.md`, { headers: { "user-agent": headers["user-agent"] } }, { label: "github-readme-fallback" });
+    if (readmeResponse.ok) return githubReadmeItem(url, target, await readmeResponse.text(), config);
+  } catch {
+    // Git uses the system network stack and remains a viable fallback when Node DNS is unavailable.
+  }
+  return githubReadmeItem(url, target, await githubReadmeViaGit(target), config);
+}
+
 async function collectGithubRepository(url: string, config: SourceConfig): Promise<HotItem | null> {
   const target = githubRepoFromUrl(url);
   if (!target) return null;
   const headers = { "user-agent": "scene-gen/0.1 video research bot", accept: "application/vnd.github+json" };
-  const repoResponse = await fetchWithRetry("https://api.github.com/repos/" + target.fullName, { headers }, { label: "github-repository" });
+  let repoResponse: Response;
+  try {
+    repoResponse = await fetchWithRetry("https://api.github.com/repos/" + target.fullName, { headers }, { label: "github-repository" });
+  } catch {
+    return collectGithubReadmeFallback(url, target, config, headers);
+  }
   if (!repoResponse.ok && [403, 429].includes(repoResponse.status)) {
-    const readmeResponse = await fetchWithRetry(`https://raw.githubusercontent.com/${target.fullName}/HEAD/README.md`, { headers: { "user-agent": headers["user-agent"] } }, { label: "github-readme-fallback" });
-    if (!readmeResponse.ok) throw new Error("Repository README fallback " + readmeResponse.status + " " + readmeResponse.statusText);
-    const readme = await readmeResponse.text();
-    const description = cleanGithubDescription(compactText(readme.replace(/[#*`<>!\[\]()]/g, " "), 260), target.repo);
-    const joined = [description, readme].join(" ");
-    return {
-      id: stableId("github", url, target.fullName), kind: "github", contentType: "repository",
-      title: `${target.repo}：${description}`, url, source: "项目资料", summary: description,
-      content: compactText(readme, 12000), publishedAt: new Date().toISOString(),
-      score: scoreItem(joined, undefined, 1, config.keywords), tags: normalizeTags(joined, config.keywords).slice(0, 8),
-      repo: target.fullName, metrics: { stars: 0, forks: 0, issues: 0, language: "Unknown", license: "Unknown", branch: "HEAD" },
-    };
+    return collectGithubReadmeFallback(url, target, config, headers);
   }
   if (!repoResponse.ok) throw new Error("GitHub API " + repoResponse.status + " " + repoResponse.statusText);
   const repo = await repoResponse.json() as {

@@ -1,6 +1,6 @@
 ﻿import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
 
-import { buildFactLedger } from "./fact-ledger";
+import { buildFactLedger, claimIdsForText, sceneFactText } from "./fact-ledger";
 import { contentTypeForItem } from "./content-type";
 import { repositorySynthesisText } from "./repository-project";
 
@@ -28,12 +28,48 @@ function hasUnclosedPairedPunctuation(text: string) {
   return pairs.some(([opening, closing]) => text.split(opening).length > text.split(closing).length);
 }
 
+function balancePairedPunctuation(text: string) {
+  const pairs = [["“", "”"], ["‘", "’"], ["（", "）"], ["(", ")"], ["《", "》"], ["【", "】"]] as const;
+  return pairs.reduce((result, [opening, closing]) => {
+    const openingCount = result.split(opening).length - 1;
+    const closingCount = result.split(closing).length - 1;
+    return openingCount === closingCount ? result : result.replaceAll(opening, "").replaceAll(closing, "");
+  }, text);
+}
+
+function normalizeArticleNarration(text: string) {
+  return text
+    .replace(/([A-Za-z])-[。．](?=\d)/g, (_match, letter: string) => `${letter}-`)
+    .replace(/([。！？；\s])?[△●•▪■]+\s*/gu, "$1")
+    .replace(/(?<![A-Za-z0-9])([。！？；])?\s*(?=[2-9][、．]\s*)/gu, "。")
+    .replace(/[（(]\s*[xX×]\s*[）)]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitOversizedChunk(chunk: string, maxCharacters: number) {
+  if (chunk.length <= maxCharacters) return [chunk];
+  const sentences = chunk.match(/[^\u3002\uff01\uff1f\uff1b]+[\u3002\uff01\uff1f\uff1b]?/gu) ?? [chunk];
+  const result: string[] = [];
+  let current = "";
+  for (const sentence of sentences) {
+    if (current && current.length + sentence.length > maxCharacters && !hasUnclosedPairedPunctuation(current)) {
+      result.push(balancePairedPunctuation(current));
+      current = sentence;
+    } else {
+      current += sentence;
+    }
+  }
+  if (current) result.push(balancePairedPunctuation(current));
+  return result;
+}
+
 function removeNarrationLead(value: string) {
   return value.replace(/^(?:\u8fd9\u6761\u65b0\u95fb\u8bb2\u7684\u662f|\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f)[\uff1a:,\uff0c\s]*/u, "").trim();
 }
 
 export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72) {
-  const clauses = scrubAttribution(text).match(/[^\uff0c\uff1b\uff1a\u3002\uff01\uff1f]+[\uff0c\uff1b\uff1a\u3002\uff01\uff1f]?/gu) ?? [];
+  const clauses = normalizeArticleNarration(scrubAttribution(text)).match(/[^\uff0c\uff1b\uff1a\u3002\uff01\uff1f]+[\uff0c\uff1b\uff1a\u3002\uff01\uff1f]?/gu) ?? [];
   const chunks: string[] = [];
   let current = "";
   for (const rawClause of clauses) {
@@ -50,9 +86,11 @@ export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72)
   return chunks
     .map((chunk) => chunk.trim())
     .map((chunk) => {
-      const complete = danglingClauseEnding.test(chunk) ? chunk.replace(danglingClauseEnding, "") : chunk;
+      const balanced = balancePairedPunctuation(chunk);
+      const complete = danglingClauseEnding.test(balanced) ? balanced.replace(danglingClauseEnding, "") : balanced;
       return /[\u3002\uff01\uff1f\uff1b]$/u.test(complete) ? complete : `${complete.replace(/[\uff0c\uff1a]+$/u, "")}\u3002`;
     })
+    .flatMap((chunk) => splitOversizedChunk(chunk, maxCharacters))
     .filter((chunk) => chunk.length >= 12);
 }
 
@@ -142,6 +180,19 @@ function metricValue(item: HotItem, key: string) {
 function compactSentence(text: string, max = 72) {
   const clean = scrubAttribution(text).replace(/[。！？].*$/, (match) => match.slice(0, max));
   return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
+}
+
+function limitNarration(text: string, maxCharacters = 110) {
+  if (text.length <= maxCharacters) return text;
+  const chunks = splitArticleIntoSemanticChunks(text, maxCharacters);
+  const selected: string[] = [];
+  let length = 0;
+  for (const chunk of chunks) {
+    if (selected.length && length + chunk.length > maxCharacters) break;
+    selected.push(chunk);
+    length += chunk.length;
+  }
+  return selected.join("") || `${text.slice(0, maxCharacters).replace(/[，、：；]+$/u, "")}。`;
 }
 
 function articleFacts(item: HotItem) {
@@ -394,6 +445,23 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       workflow: "先用一句话说明要做什么，再确认功能范围和交付目标；随后查看拆分出的计划、设计和任务，按自己的技术能力逐步实现与验证",
       boundaries: "它适合加快需求梳理和任务拆解，但不能替代对真实用户、业务规则、数据安全和最终代码质量的判断",
       topics: ["需求澄清", "功能拆分", "系统设计", "开发任务", "测试检查", "交付复盘"],
+    };
+  }
+  if (/\bai-for-beginners\b|artificial intelligence for beginners|12-week.*24-lesson/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "面向初学者的系统化人工智能入门课程",
+      capability: "把人工智能基础组织成十二周、二十四课的学习路径，配有概念讲解、测验和实验，覆盖神经网络、计算机视觉、自然语言处理和人工智能伦理",
+      workflow: "先从课程目录选择语言并阅读导论，再按课次学习概念、完成测验和实验；遇到代码练习时，按照课程说明准备 Python 环境并运行示例",
+      boundaries: "它是一套学习课程，不是一键生成内容的应用；部分实验需要编程基础、Python 环境以及 TensorFlow 或 PyTorch 等工具",
+      topics: ["十二周课程", "二十四课", "神经网络", "计算机视觉", "自然语言处理", "人工智能伦理"],
+      metrics: [{ label: "学习周期", value: "12 周" }, { label: "课程数量", value: "24 课" }],
+      problemPoints: ["初学者面对零散资料时，很难建立完整的人工智能知识框架。", "课程按周和课次组织概念、测验与实验，适合循序学习。", "内容覆盖常见模型方向，也包含人工智能伦理和实践边界。"],
+      steps: [
+        { label: "选择语言", detail: "从课程目录进入适合自己的语言版本。" },
+        { label: "学习概念", detail: "按课次阅读讲解并理解关键术语。" },
+        { label: "完成实验", detail: "运行示例，完成测验和配套练习。" },
+        { label: "整理复盘", detail: "记录结果，再进入下一课学习。" },
+      ],
     };
   }
   if (!/\baisuite\b/i.test(`${name} ${item.title}`) && /officecli|office suite|word|excel|powerpoint|spreadsheet|presentation/i.test(`${name} ${item.title} ${content}`)) {
@@ -835,7 +903,8 @@ function createGeneralNewsProject(
         },
       ];
 
-  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 96));
+  const narrationSections = sections.map((section, index) => ({ ...section, narration: limitNarration(section.narration, index === 0 ? 100 : 110) }));
+  const scenes = applySectionDurations(narrationSections, Number(process.env.STORY_MAX_SECONDS ?? 96));
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const project = {
     meta: {
@@ -847,8 +916,8 @@ function createGeneralNewsProject(
       durationSeconds,
       sourceCount: 1,
     },
-    narration: sections.map((section) => scrubAttribution(section.narration)).join("\n"),
-    narrationSegments: sections.map((section, sceneIndex) => ({
+    narration: narrationSections.map((section) => scrubAttribution(section.narration)).join("\n"),
+    narrationSegments: narrationSections.map((section, sceneIndex) => ({
       sceneIndex,
       text: removeNarrationLead(scrubAttribution(section.narration)),
       ttsText: speechFriendlyText(removeNarrationLead(scrubAttribution(section.narration))),
@@ -858,16 +927,24 @@ function createGeneralNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   const factLedger = buildFactLedger(project.sources);
-  const claimIdsForScene = (sceneIndex: number) => {
-    const selected = factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2).map((claim) => claim.id);
-    return selected.length ? selected : factLedger.claims.slice(0, 1).map((claim) => claim.id);
+  const groundedClaimIds = (text: string) => {
+    const candidates = claimIdsForText(factLedger, text, 8);
+    const safe = candidates.filter((claimId) => {
+      const claim = factLedger.claims.find((item) => item.id === claimId);
+      return claim?.qualifiers.every((qualifier) => text.includes(qualifier));
+    });
+    return (safe.length ? safe : candidates).slice(0, 2);
   };
+  const referencedScenes = project.scenes.map((scene) => ({ ...scene, claimIds: groundedClaimIds(sceneFactText(scene)) })) as VideoScene[];
   return {
     ...project,
     factLedger,
-    titleClaimIds: claimIdsForScene(0),
-    scenes: project.scenes.map((scene, sceneIndex) => ({ ...scene, claimIds: claimIdsForScene(sceneIndex) })) as VideoScene[],
-    narrationSegments: project.narrationSegments?.map((segment) => ({ ...segment, claimIds: claimIdsForScene(segment.sceneIndex) })),
+    titleClaimIds: groundedClaimIds(project.meta.title),
+    scenes: referencedScenes,
+    narrationSegments: project.narrationSegments?.map((segment) => ({
+      ...segment,
+      claimIds: groundedClaimIds(`${sceneFactText(referencedScenes[segment.sceneIndex])} ${segment.text}`),
+    })),
   };
 }
 

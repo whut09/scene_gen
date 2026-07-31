@@ -46,6 +46,31 @@ test("semantic article chunks keep quoted prompts balanced", () => {
   assert.ok(chunks.every((chunk) => (chunk.match(/‘/gu)?.length ?? 0) === (chunk.match(/’/gu)?.length ?? 0)));
 });
 
+test("semantic article chunks clean numbered lists and unmatched quotes", () => {
+  const chunks = splitArticleIntoSemanticChunks("△ 第一项需要验证。1、保留事实2、删除冗余3、扩大任务。“未闭合引号会干扰语音。", 36);
+
+  assert.equal(chunks.length, 1);
+  assert.ok(chunks.every((chunk) => chunk.length <= 72));
+  assert.ok(chunks.every((chunk) => !/[△●•▪■]/u.test(chunk)));
+  assert.ok(chunks.every((chunk) => (chunk.match(/“/gu)?.length ?? 0) === (chunk.match(/”/gu)?.length ?? 0)));
+  assert.match(chunks[0], /1、保留事实。2、删除冗余。3、扩大任务/u);
+});
+
+test("semantic article chunks split long numbered quote lists", () => {
+  const text = "1、少一点预判，多做测试。2、模型能力会超出产品边界。3、让模型独立工作更长时间。4、顶尖用户会持续调整方法。5、编程学习者需要先掌握验证方法。‘模型是一种活体生物，它有自己的性格。’‘系统代码只保留安全、权限和静态分析。’";
+  const chunks = splitArticleIntoSemanticChunks(text, 72);
+
+  assert.ok(chunks.length >= 2);
+  assert.ok(chunks.every((chunk) => chunk.length <= 72));
+  assert.ok(chunks.every((chunk) => (chunk.match(/‘/gu)?.length ?? 0) === (chunk.match(/’/gu)?.length ?? 0)));
+});
+
+test("semantic article chunks repair punctuation inserted inside model versions", () => {
+  const chunks = splitArticleIntoSemanticChunks("GPT-。5.6已经参与优化运行环境，版本指标保持可核对。", 72);
+  assert.equal(chunks.join("").includes("GPT-。5.6"), false);
+  assert.match(chunks.join(""), /GPT-5\.6/u);
+});
+
 test("technical article fallback uses explainer structure without news wording", () => {
   const content = Array.from({ length: 12 }, (_, index) => `\u8fd9\u662f\u6280\u672f\u6587\u7ae0\u7684\u7b2c${index + 1}\u4e2a\u5b8c\u6574\u63a8\u5bfc\u6b65\u9aa4\uff0c\u7528\u4e8e\u8bf4\u660e\u6570\u636e\u3001\u5047\u8bbe\u3001\u8ba1\u7b97\u548c\u7ed3\u8bba\u8fb9\u754c\u3002`).join("");
   const item: HotItem = {
@@ -108,6 +133,18 @@ test("OfficeCLI repository draft explains direct office-file use", () => {
   assert.match(project.narrationSegments![0].text, /文档、表格和演示文稿/);
   assert.match(project.narrationSegments![1].text, /办公文件/);
   assert.match(project.narrationSegments![3].text, /汇总表格/);
+});
+
+test("AI-For-Beginners repository draft explains the structured learning curriculum", () => {
+  const project = createStoryProject({
+    id: "ai-for-beginners", kind: "github", contentType: "repository", title: "AI-For-Beginners: Artificial Intelligence for Beginners - A Curriculum", url: "https://github.com/microsoft/AI-For-Beginners", source: "项目资料", summary: "A 12-week, 24-lesson curriculum", content: "Explore artificial intelligence with a 12-week, 24-lesson curriculum including quizzes, labs, TensorFlow, PyTorch, computer vision, NLP and ethics.", score: 1, tags: [], repo: "microsoft/AI-For-Beginners",
+  });
+
+  assert.equal(project.meta.title, "AI-For-Beginners");
+  assert.match(project.narrationSegments![0].text, /人工智能入门课程/);
+  assert.match(project.narrationSegments![1].text, /十二周、二十四课/);
+  assert.match(project.narrationSegments![3].text, /选择语言.*学习概念.*测验和实验/);
+  assert.doesNotMatch(project.narration, /文档、表格和演示文稿/);
 });
 
 test("Bifrost repository draft explains the model gateway and direct setup path", () => {
