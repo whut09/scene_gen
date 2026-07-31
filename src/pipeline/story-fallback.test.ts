@@ -71,6 +71,32 @@ test("semantic article chunks repair punctuation inserted inside model versions"
   assert.match(chunks.join(""), /GPT-5\.6/u);
 });
 
+test("DeepSeek V4 Flash news fallback keeps API scope and benchmark facts complete", () => {
+  const project = createStoryProject({
+    id: "deepseek-v4-flash", kind: "webpage", title: "DeepSeek-V4-Flash 正式版 API 上线公测，V4-Pro 正式版将尽快发布", url: "https://example.com/deepseek", source: "核心事实", summary: "DeepSeek-V4-Flash 正式版 API 上线公测。", content: "Agent 能力增强。Terminal Bench 2.1: 82.7 Toolathlon verified: 70.3 DSBench-FullStack: 68.7 DSBench-Hard: 59.6。原生支持 Responses API 并适配 Codex。结构和尺寸与预览版一致，仅重新进行了后训练。本次仅升级 Flash API，V4-Pro API 及 APP WEB 端未做更改，V4-Pro 正式版将尽快发布。", publishedAt: "2026-07-31", score: 1, tags: [],
+  });
+
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.ok(project.narration.length >= 384);
+  assert.match(project.narrationSegments![1].text, /82\.7.*70\.3.*68\.7/);
+  assert.match(project.narrationSegments![2].text, /Responses API.*Codex.*后训练/);
+  assert.match(project.narrationSegments![3].text, /只升级.*Flash.*V4-Pro API 没有变化.*网页端/);
+  assert.doesNotMatch(project.narration, /IT之家|点此前往|文档链接/);
+});
+
+test("Seedance 2.5 fallback explains capabilities without platform promotion", () => {
+  const project = createStoryProject({
+    id: "seedance-25", kind: "webpage", title: "一镜成片，随心参考｜Seedance 2.5 正式发布", url: "https://example.com/seedance", source: "核心事实", summary: "三十秒长叙事和多模态参考能力。", content: "Seedance 2.5 单次生成时长达 30 秒并可多轮延长。单次输入最多 30 张图片、10 段视频、10 段音频。可用时间戳控制剧情和运镜，并定向修改角色、动作、声音或剧情。项目主页和体验入口不应进入视频。", publishedAt: "2026-07-31", score: 1, tags: [],
+  });
+
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.ok(project.narration.length >= 384);
+  assert.match(project.narrationSegments![1].text, /三十秒.*多轮延长/);
+  assert.match(project.narrationSegments![2].text, /三十张图片.*十段视频.*十段音频/);
+  assert.match(project.narrationSegments![3].text, /时间戳.*局部修改/);
+  assert.doesNotMatch(project.narration, /项目主页|体验入口|即梦|豆包/);
+});
+
 test("technical article fallback uses explainer structure without news wording", () => {
   const content = Array.from({ length: 12 }, (_, index) => `\u8fd9\u662f\u6280\u672f\u6587\u7ae0\u7684\u7b2c${index + 1}\u4e2a\u5b8c\u6574\u63a8\u5bfc\u6b65\u9aa4\uff0c\u7528\u4e8e\u8bf4\u660e\u6570\u636e\u3001\u5047\u8bbe\u3001\u8ba1\u7b97\u548c\u7ed3\u8bba\u8fb9\u754c\u3002`).join("");
   const item: HotItem = {
@@ -144,6 +170,17 @@ test("AI-For-Beginners repository draft explains the structured learning curricu
   assert.match(project.narrationSegments![0].text, /人工智能入门课程/);
   assert.match(project.narrationSegments![1].text, /十二周、二十四课/);
   assert.match(project.narrationSegments![3].text, /选择语言.*学习概念.*测验和实验/);
+  assert.doesNotMatch(project.narration, /文档、表格和演示文稿/);
+});
+
+test("ESP32-Bit-Pirate repository draft explains multi-protocol hardware analysis", () => {
+  const project = createStoryProject({
+    id: "esp32-bit-pirate", kind: "github", contentType: "repository", title: "ESP32-Bit-Pirate: multi-protocol development tool", url: "https://github.com/geo-tp/ESP32-Bit-Pirate", source: "项目资料", summary: "ESP32 multi-protocol tool", content: "Firmware inspired by Bus Pirate with I2C, SPI, UART, CAN, infrared, Bluetooth, Wi-Fi, Sub-GHz, RFID and a mobile web interface presentation.", score: 1, tags: [], repo: "geo-tp/ESP32-Bit-Pirate",
+  });
+
+  assert.match(project.narrationSegments![0].text, /多协议硬件调试与分析工具/);
+  assert.match(project.narrationSegments![1].text, /I2C.*SPI.*UART.*CAN/);
+  assert.match(project.narrationSegments![3].text, /确认开发板电压和引脚.*刷入固件.*网页终端/);
   assert.doesNotMatch(project.narration, /文档、表格和演示文稿/);
 });
 

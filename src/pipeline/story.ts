@@ -464,7 +464,24 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       ],
     };
   }
-  if (!/\baisuite\b/i.test(`${name} ${item.title}`) && /officecli|office suite|word|excel|powerpoint|spreadsheet|presentation/i.test(`${name} ${item.title} ${content}`)) {
+  if (/esp32-bit-pirate|multi-protocol development and analysis tool|bus pirate/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把 ESP32-S3 变成便携式多协议硬件调试与分析工具",
+      capability: "通过串口终端或网页命令行扫描、收发、嗅探和脚本化操作 I2C、SPI、UART、CAN 等数字总线，也能分析红外、蓝牙、Wi-Fi、Sub-GHz 和 RFID",
+      workflow: "先确认开发板电压和引脚，再刷入固件；随后通过 USB 串口或网页终端连接设备，选择协议模式，用 scan、sniff、read 或 write 等命令完成最小测试",
+      boundaries: "它适合硬件开发、协议排查和安全研究，但接线、电压、射频操作和授权测试必须遵守目标设备规范与当地法规",
+      topics: ["I2C 与 SPI", "UART 与 CAN", "协议嗅探", "红外与 RFID", "蓝牙与 Wi-Fi", "脚本自动化"],
+      metrics: [{ label: "协议模式", value: "20+" }, { label: "连接方式", value: "串口与网页" }],
+      problemPoints: ["调试不同芯片和总线时，通常需要准备多种独立工具。", "它把常见数字总线、无线协议和脚本能力集中到一块 ESP32-S3 设备。", "设备可以连接电脑，部分带屏型号还能独立操作。"],
+      steps: [
+        { label: "确认硬件", detail: "核对开发板型号、电压和引脚映射。" },
+        { label: "刷入固件", detail: "使用网页刷写器或设备工具安装固件。" },
+        { label: "选择模式", detail: "通过串口或网页终端进入目标协议模式。" },
+        { label: "最小验证", detail: "先扫描和读取，再谨慎执行写入或发送操作。" },
+      ],
+    };
+  }
+  if (/officecli|office suite/i.test(`${name} ${item.title}`) || /\bword\b.*\bexcel\b.*\b(?:powerpoint|spreadsheet|presentation)\b/i.test(content)) {
     return {
       theme: "让 AI 直接处理文档、表格和演示文稿的办公自动化工具",
       capability: "用统一命令读取、创建和修改常见办公文件，适合把重复整理、填表、汇总和生成演示材料交给 AI 执行",
@@ -639,6 +656,8 @@ export function createStoryProject(
   const clean = cleanItem(item);
   if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
+  if (/Seedance\s*2\.5/i.test(joinedContent)) return createSeedance25Project(clean, options);
+  if (/DeepSeek-V4-Flash/i.test(joinedContent) && /V4-Pro/i.test(joinedContent)) return createDeepSeekV4FlashProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
   }
@@ -926,6 +945,10 @@ function createGeneralNewsProject(
     sources: [item],
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
+  return withGroundedFactReferences(project);
+}
+
+function withGroundedFactReferences(project: VideoProject) {
   const factLedger = buildFactLedger(project.sources);
   const groundedClaimIds = (text: string) => {
     const candidates = claimIdsForText(factLedger, text, 8);
@@ -946,6 +969,131 @@ function createGeneralNewsProject(
       claimIds: groundedClaimIds(`${sceneFactText(referencedScenes[segment.sceneIndex])} ${segment.text}`),
     })),
   };
+}
+
+function createDeepSeekV4FlashProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  const sections: Array<{ scene: VideoScene; narration: string }> = [
+    {
+      scene: { type: "title", duration: 10, kicker: "模型更新", headline: shortTitle(title, 42), subhead: "正式版 API 进入公测，Pro 版本仍待发布", sources: ["API 公测", "Agent 能力", "版本边界"] },
+      narration: `${title}。DeepSeek-V4-Flash 正式版 API 进入公测，重点变化集中在 Agent 能力和开发接口。`,
+    },
+    {
+      scene: {
+        type: "briefing_points", duration: 18, headline: "Agent 基准成绩", source: "核心事实", title: "多项公开基准成绩",
+        summary: "正式版公开了多项 Agent 与软件工程基准成绩。",
+        metrics: [{ label: "Terminal Bench", value: "82.7" }, { label: "Toolathlon", value: "70.3" }, { label: "FullStack", value: "68.7" }],
+        points: ["Terminal Bench 2.1 为 82.7。", "Toolathlon verified 为 70.3。", "DSBench-FullStack 为 68.7，DSBench-Hard 为 59.6。"],
+      },
+      narration: "多项公开基准成绩里，Terminal Bench 2.1 是 82.7，Toolathlon verified 是 70.3，DSBench FullStack 是 68.7，DSBench Hard 是 59.6。这些项目主要观察 Agent 和软件工程任务表现。",
+    },
+    {
+      scene: {
+        type: "flow", duration: 17, headline: "开发接口与模型训练变化",
+        steps: [
+          { label: "Responses API", detail: "正式版原生兼容该接口格式。" },
+          { label: "Codex", detail: "针对代码智能体接入进行适配。" },
+          { label: "模型结构", detail: "结构和尺寸与预览版保持一致。" },
+          { label: "后训练", detail: "本次主要重新进行后训练。" },
+        ],
+      },
+      narration: "开发接口与模型训练变化可以分成四点。正式版原生兼容 Responses API，并针对 Codex 接入做了适配。模型结构和尺寸与 Flash 预览版保持一致，这次更新主要来自重新进行的后训练。",
+    },
+    {
+      scene: {
+        type: "flow", duration: 16, headline: "本次更新范围要分清", steps: [
+          { label: "已更新", detail: "DeepSeek-V4-Flash 正式版 API。" },
+          { label: "未更新", detail: "DeepSeek-V4-Pro API。" },
+          { label: "客户端不变", detail: "应用端和网页端模型本次没有调整。" },
+          { label: "Pro 状态", detail: "V4-Pro 正式版仍在等待发布。" },
+        ],
+      },
+      narration: "本次更新范围要分清：只升级了 DeepSeek-V4-Flash 的 API 接口。V4-Pro API 没有变化，应用端和网页端模型也没有调整。V4-Pro 正式版仍未发布，官方表述是将尽快推出。",
+    },
+    {
+      scene: {
+        type: "outro", duration: 15, headline: "公测阶段应该关注什么", bullets: [
+          "先验证现有接口和参数兼容性。", "用真实任务比较工具调用与代码任务表现。", "上线前继续观察稳定性、延迟和服务边界。",
+        ],
+      },
+      narration: "对开发者来说，当前最值得验证的是接口兼容性、工具调用和真实代码任务表现。公测成绩不能直接等同于所有业务场景，上线前仍要检查稳定性、延迟、限额和现有调用链路。",
+    },
+  ];
+  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 80));
+  const project = {
+    meta: { title, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
+    narration: sections.map((section) => section.narration).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, ttsText: speechFriendlyText(section.narration) })),
+    scenes,
+    sources: [item],
+    screenshots: options?.screenshots ?? [],
+  } satisfies VideoProject;
+  return withGroundedFactReferences(project);
+}
+
+function createSeedance25Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  const sections: Array<{ scene: VideoScene; narration: string }> = [
+    {
+      scene: { type: "title", duration: 10, kicker: "视频生成模型", headline: shortTitle(title, 42), subhead: "更长叙事、更多参考素材和更细粒度控制", sources: ["长叙事", "多模态参考", "可控生成"] },
+      narration: `${title}。这次更新把重点放在三件事：单次生成更长，多模态参考更丰富，以及镜头和局部内容更可控。`,
+    },
+    {
+      scene: {
+        type: "briefing_points", duration: 18, headline: "单次三十秒，并可继续延长", source: "核心能力", title: "从短片段走向完整叙事",
+        summary: "模型可在三十秒内组织多个有关联的镜头，并通过多轮延长继续衔接后续内容。",
+        metrics: [{ label: "单次时长", value: "30 秒" }, { label: "延长方式", value: "多轮" }, { label: "目标", value: "连贯叙事" }],
+        points: ["镜头可覆盖铺垫、推进、转折和收尾。", "延长时保持主体、场景和视听风格连贯。", "运镜衔接、音画一致性和运动质量经过优化。"],
+      },
+      narration: "单次三十秒，并可继续延长，是长叙事的第一项核心变化。模型可在三十秒内组织铺垫、推进、转折和收尾，再通过多轮延长衔接后续内容。延长时会保持主体、场景和视听风格连贯，运镜衔接、音画一致性和运动质量也经过优化。",
+    },
+    {
+      scene: {
+        type: "signal_chart", duration: 18, headline: "多模态参考素材扩展",
+        bars: [
+          { label: "图片参考", value: 30, detail: "单次最多三十张图片。", color: "#18b7a5" },
+          { label: "视频参考", value: 10, detail: "单次最多十段视频。", color: "#7c6cff" },
+          { label: "音频参考", value: 10, detail: "单次最多十段音频。", color: "#facc15" },
+        ],
+      },
+      narration: "多模态参考素材扩展，是第二项核心变化。一次可输入最多三十张图片、十段视频和十段音频，这三类素材可共同约束人物、场景、动作、声音与镜头风格。白模还可以描述空间结构、主体姿态、运动轨迹和镜头机位。",
+    },
+    {
+      scene: {
+        type: "flow", duration: 17, headline: "生成前后都能细化控制", steps: [
+          { label: "时间戳", detail: "指定某个时间段发生的剧情和镜头。" },
+          { label: "视角运镜", detail: "约束镜头位置、节奏和景别变化。" },
+          { label: "局部修改", detail: "针对角色、动作、声音或剧情片段调整。" },
+          { label: "保持连贯", detail: "修改时维持前后主体和场景一致。" },
+        ],
+      },
+      narration: "生成前后都能细化控制，是第三项核心变化。生成前可以用时间戳指定某段剧情、视角运镜和节奏；生成后还能针对角色、动作、声音或剧情片段进行局部修改，并保持修改前后的主体和场景连贯。",
+    },
+    {
+      scene: {
+        type: "outro", duration: 15, headline: "适合哪些创作任务", bullets: [
+          "影视和广告中的多镜头叙事与预演。", "教学内容、工业流程和设备演示。", "复杂项目仍需人工核对人物一致性、物理效果和版权。",
+        ],
+      },
+      narration: "它适合影视和广告中的多镜头叙事与预演，也适合教学内容、工业流程和设备演示。复杂项目仍需人工核对人物一致性、物理效果、声音和素材授权。三十秒生成与多轮延长也不代表所有片段都能直接使用，最终剪辑仍要人工检查。",
+    },
+  ];
+  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 80));
+  const project = {
+    meta: { title, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
+    narration: sections.map((section) => section.narration).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, ttsText: speechFriendlyText(section.narration) })),
+    scenes,
+    sources: [item],
+    screenshots: options?.screenshots ?? [],
+  } satisfies VideoProject;
+  return withGroundedFactReferences(project);
 }
 
 export function createProject(
