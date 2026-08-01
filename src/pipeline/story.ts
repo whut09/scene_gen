@@ -420,6 +420,57 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/\bkaneo\b|self-hosted.*project management|jira alternative|linear alternative/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "用简洁看板管理任务和项目的自托管协作工具",
+      capability: "把团队任务、进度和负责人集中到清晰的项目看板中，避免复杂菜单、无关通知和固定流程占据工作过程",
+      workflow: "先用 Docker Compose 启动应用和 PostgreSQL，设置数据库密码与登录密钥；打开本地页面后创建项目、添加任务、分配负责人，再按实际流程移动任务状态",
+      boundaries: "它适合希望掌握数据并简化协作的小团队；正式使用前仍要配置备份、访问控制、域名与 HTTPS，并确认现有数据如何迁移",
+      topics: ["项目看板", "任务管理", "团队协作", "自托管数据", "Docker 部署", "权限与备份"],
+      metrics: [{ label: "部署方式", value: "Docker" }, { label: "数据存储", value: "自托管" }],
+      problemPoints: ["很多项目管理工具功能过多，团队反而花时间维护流程。", "Kaneo 用简洁看板集中任务、状态和负责人。", "自托管方式让团队自行掌握项目数据。"],
+      steps: [
+        { label: "准备环境", detail: "安装 Docker，并准备数据库密码和登录密钥。" },
+        { label: "启动服务", detail: "用 Docker Compose 启动应用和 PostgreSQL。" },
+        { label: "建立项目", detail: "创建项目、任务、负责人和必要状态。" },
+        { label: "持续维护", detail: "更新任务进度，并定期备份数据。" },
+      ],
+    };
+  }
+  if (/copilot-sdk|agents for every app|copilot cli sdks/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把成熟的编码智能体能力嵌入自有应用和服务的多平台开发套件",
+      capability: "让应用通过程序调用编码智能体完成任务规划、工具调用和文件修改，不必从零搭建一套智能体编排系统",
+      workflow: "先按项目语言安装对应软件包，准备 Copilot 订阅或自带模型密钥；创建客户端和会话后发送一个边界清晰的代码任务，再检查工具权限、文件改动和执行结果",
+      boundaries: "它面向需要开发集成的团队，不是安装后直接使用的聊天应用；智能体可执行工具和修改文件，因此生产环境必须限制目录、命令、密钥和审批范围",
+      topics: ["应用内智能体", "任务规划", "工具调用", "文件修改", "多语言 SDK", "权限控制"],
+      metrics: [{ label: "开发语言", value: "多平台" }, { label: "通信方式", value: "JSON-RPC" }],
+      problemPoints: ["自建编码智能体需要处理规划、工具协议和进程生命周期。", "copilot-sdk 把经过验证的智能体运行时暴露为程序接口。", "应用可以在自己的界面和业务流程中触发代码任务。"],
+      steps: [
+        { label: "选择语言", detail: "从 TypeScript、Python、Go、.NET、Java 或 Rust 中选择。" },
+        { label: "安装组件", detail: "安装对应软件包并准备认证方式。" },
+        { label: "创建会话", detail: "在应用中创建客户端和智能体会话。" },
+        { label: "限制权限", detail: "用小任务验证工具、文件和命令边界。" },
+      ],
+    };
+  }
+  if (/\bdeer-flow\b|super agent harness|deep exploration and efficient research flow/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "让智能体持续完成研究、写代码和内容制作等长任务的执行框架",
+      capability: "把子智能体、长期记忆、沙箱、工具和可扩展技能组织成完整执行链，让一个复杂目标可以被拆分、并行处理并持续数分钟到数小时",
+      workflow: "先准备 Python、Node.js 和模型服务，运行安装向导生成最小配置；随后选择安全的沙箱与工具权限，用一个具体研究或代码任务试跑，并通过过程记录检查每个子任务结果",
+      boundaries: "它适合愿意部署和配置模型的进阶用户或团队；长任务会消耗更多模型额度，开放命令和文件权限也会增加风险，必须从沙箱和最小权限开始",
+      topics: ["长任务执行", "子智能体协作", "长期记忆", "安全沙箱", "技能与工具", "过程追踪"],
+      metrics: [{ label: "主要用途", value: "长任务" }, { label: "执行方式", value: "多智能体" }],
+      problemPoints: ["普通对话工具难以连续管理需要多步骤、长时间执行的任务。", "DeerFlow 用子智能体和沙箱拆分研究、代码与内容工作。", "记忆、技能和过程记录帮助任务跨多个阶段持续推进。"],
+      steps: [
+        { label: "准备环境", detail: "准备 Python、Node.js 和可用模型服务。" },
+        { label: "运行向导", detail: "生成配置并选择搜索、沙箱和工具权限。" },
+        { label: "小任务试跑", detail: "先执行一个边界清晰的研究或代码任务。" },
+        { label: "检查过程", detail: "核对子任务、文件、命令、成本和最终结果。" },
+      ],
+    };
+  }
   if (/freerouting|autorout(?:er|ing)|printed circuit board|\bpcb\b/i.test(`${name} ${item.title} ${content}`)) {
     return {
       theme: "自动规划电路板走线",
@@ -656,6 +707,9 @@ export function createStoryProject(
   const clean = cleanItem(item);
   if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
+  if (/141006|十四万一千零六|三家外部机构|测试环境.*公网/i.test(joinedContent)) return createClaudeSecurityIncidentProject(clean, options);
+  if (/150\s*亩芝麻|一百五十亩芝麻|氟磺胺草醚/i.test(joinedContent)) return createAiPesticideIncidentProject(clean, options);
+  if (/第\s*23\s*届\s*ChinaJoy|第\s*二十三\s*届\s*ChinaJoy|14\s*万平方米|火龙漫剧/i.test(joinedContent)) return createChinaJoyAiProject(clean, options);
   if (/Seedance\s*2\.5/i.test(joinedContent)) return createSeedance25Project(clean, options);
   if (/DeepSeek-V4-Flash/i.test(joinedContent) && /V4-Pro/i.test(joinedContent)) return createDeepSeekV4FlashProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
@@ -946,6 +1000,122 @@ function createGeneralNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createCuratedNewsProject(
+  item: HotItem,
+  sections: Array<{ scene: VideoScene; narration: string }>,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 80));
+  const project = {
+    meta: {
+      title: speechFriendlyTitle(item.title),
+      createdAt: new Date().toISOString(),
+      width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080),
+      height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920),
+      fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30),
+      durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0),
+      sourceCount: 1,
+    },
+    narration: sections.map((section) => section.narration).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({
+      sceneIndex,
+      text: section.narration,
+      ttsText: speechFriendlyText(section.narration),
+    })),
+    scenes,
+    sources: [item],
+    screenshots: options?.screenshots ?? [],
+  } satisfies VideoProject;
+  return withGroundedFactReferences(project);
+}
+
+function createClaudeSecurityIncidentProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "AI 安全测试", headline: shortTitle(title, 42), subhead: "授权测试误连公网，三家外部机构受到影响", sources: ["测试边界", "公网隔离", "评估治理"] },
+      narration: `${title}。这不是模型主动选择攻击目标，而是一次授权安全测试错误连接到公网，导致三家外部机构的基础设施被访问。事件暴露的重点，是测试环境隔离和评估流程没有把边界锁牢。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "授权测试错误连接真实公网", source: "事件事实", title: "测试目标与网络环境发生错位", summary: "三家外部机构的基础设施被访问。", metrics: [{ label: "受影响机构", value: "三家" }, { label: "事件性质", value: "误连公网" }, { label: "原定范围", value: "授权网络" }], points: ["模型原本只应在授权网络里完成安全评估。", "测试配置把模型带到了真实公网。", "双方对评估环境设置存在沟通误解。"] },
+      narration: "事情的起点，是模型原本只应在授权网络里完成安全评估，但测试配置把它带到了真实公网。随后，三家不属于测试范围的外部机构基础设施被访问。调查认为，模型公司与评估合作伙伴对环境设置存在沟通误解。",
+    },
+    {
+      scene: { type: "timeline", duration: 18, headline: "复查十四万一千零六个测试会话", events: [{ date: "7 月 23 日", title: "暂停相关评估", source: "处置记录" }, { date: "7 月 24 日", title: "确认三起外部访问事件", source: "处置记录" }, { date: "7 月 27 日", title: "通知受影响机构", source: "处置记录" }] },
+      narration: "事后，团队复查了十四万一千零六个测试会话。七月二十三日，相关评估被暂停；七月二十四日，三起外部访问事件得到确认；七月二十七日，受影响机构收到通知。完整复查说明，这类事件不能只看一次模型输出，还要追踪整个执行链路。",
+    },
+    {
+      scene: { type: "flow", duration: 17, headline: "新旧模型对公网边界的反应不同", steps: [{ label: "旧模型", detail: "进入公网后仍继续执行。" }, { label: "最新模型", detail: "识别真实公网环境后主动停止。" }, { label: "模型侧", detail: "安全识别可以继续改进。" }, { label: "工程侧", detail: "网络隔离、权限控制和人工监督不可替代。" }] },
+      narration: "另一个关键信号，是新旧模型对边界的反应不同。旧模型进入公网后仍继续执行，而最新模型识别到真实公网环境后主动停止。这说明模型侧的安全识别可以改进，但它不能替代网络隔离、权限控制和人工监督。",
+    },
+    {
+      scene: { type: "outro", duration: 17, headline: "真正需要补的是测试治理", bullets: ["测试网络与公网必须强隔离。", "任务目标、权限和停止条件要可核对。", "保留完整日志，并建立外部事件通知机制。"] },
+      narration: "这次事件的结论不应夸大成 AI 自主失控。真正需要补齐的是工程治理：测试网络与公网强隔离，明确任务目标、权限和停止条件，保存完整网络日志，并建立异常发现和外部通知机制。模型越能执行复杂任务，测试边界越不能依赖口头约定。",
+    },
+  ], options);
+}
+
+function createAiPesticideIncidentProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "农业用药风险", headline: shortTitle(title, 42), subhead: "一百五十亩芝麻受损，AI 建议不能替代农技核验", sources: ["作物范围", "药剂标签", "人工核验"] },
+      narration: `${title}。安徽滁州一位六十七岁农户按照 AI 给出的用药建议处理一百五十亩芝麻，喷药后芝麻苗大面积枯萎。这起事件提醒所有使用者，农业用药属于高风险决策，不能只看一段自动生成的回答。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "错误建议指向一种除草剂", source: "事件事实", title: "氟磺胺草醚不应全田用于芝麻", summary: "药剂适用作物和喷洒方式没有得到正确核对。", metrics: [{ label: "种植面积", value: "150 亩" }, { label: "农户年龄", value: "67 岁" }, { label: "涉事药剂", value: "氟磺胺草醚" }], points: ["该药主要用于大豆田阔叶杂草防除。", "不能把大豆田用法直接套到芝麻田。", "全田喷洒前必须核对标签和适用范围。"] },
+      narration: "问题集中在氟磺胺草醚。这种除草剂主要用于大豆田的阔叶杂草防除，不能把对应方法直接套到芝麻田，更不能未经核对就全田喷洒。作物种类、苗期、剂量和施药方式只要有一项不匹配，都可能造成严重药害。",
+    },
+    {
+      scene: { type: "flow", duration: 18, headline: "一次高风险建议如何被采用", steps: [{ label: "提出问题", detail: "农户向 AI 询问芝麻田除草办法。" }, { label: "获得回答", detail: "回答包含具体药剂和使用建议。" }, { label: "忽略提示", detail: "页面虽提示内容可能有误，但没有被注意。" }, { label: "直接执行", detail: "缺少标签与农技人员的二次核验。" }] },
+      narration: "整个过程有四个环节。农户先询问芝麻田除草办法，回答给出了具体药剂和用法。页面顶部虽然提示 AI 生成内容可能有误、需要核实，但使用者没有注意。最后，建议在缺少药品标签和农技人员二次确认的情况下被直接执行。",
+    },
+    {
+      scene: { type: "flow", duration: 17, headline: "AI 回答与专业用药决策", steps: [{ label: "识别限制", detail: "AI 可能混合公开资料，无法确认田间真实条件。" }, { label: "核对标签", detail: "确认登记作物、剂量、苗期与喷洒范围。" }, { label: "咨询人员", detail: "向当地农技或植保人员进行二次确认。" }, { label: "再做决定", detail: "关键用药不能由聊天回答单独决定。" }] },
+      narration: "平台表示回答来自公开资料，并会登记相关情况，但信息来源广并不等于适用于眼前这块田。安全做法必须回到药品标签和登记作物，确认剂量、苗期、喷洒范围，再咨询当地农技或植保人员。关键用药不能用聊天回答代替专业判断。",
+    },
+    {
+      scene: { type: "outro", duration: 17, headline: "高风险问题必须建立核验链", bullets: ["先看药品标签和登记范围。", "再核对作物、苗期、剂量与天气。", "无法确认时停止施药并咨询专业人员。"] },
+      narration: "对普通用户来说，最实用的规则很简单：AI 可以帮助整理问题，不能作为农业用药的唯一依据。先看标签和登记范围，再核对作物、苗期、剂量、天气与混配要求；任何一项无法确认，就先停止施药，向专业人员求证。一次谨慎核验，远比事后补救成本低。",
+    },
+  ], options);
+}
+
+function createChinaJoyAiProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "ChinaJoy 观察", headline: shortTitle(title, 42), subhead: "AI 技术进入内容生产与现场体验", sources: ["游戏产业", "智能机器人", "内容生产"] },
+      narration: `${title}。第二十三届 ChinaJoy 展示出的变化，不只是机器人表演更吸睛，AI 也在进入游戏研发、三维生成、智能体交互和内容制作，展会则扩展到更广的年轻消费文化。`,
+    },
+    {
+      scene: { type: "signal_chart", duration: 18, headline: "展会规模与内容供给", bars: [{ label: "国家和地区", value: 39, detail: "三十九个国家和地区参与。", color: "#18b7a5" }, { label: "参展企业", value: 90, detail: "九百多家企业，按比例展示。", color: "#7c6cff" }, { label: "展览面积", value: 14, detail: "十四万平方米。", color: "#facc15" }] },
+      narration: "展会共有三十九个国家和地区、九百多家企业参与，面积达到十四万平方米。现场聚集五百多家游戏公司和团队，展示一千多款游戏产品。庞大的内容供给，让新技术直接接受现场反馈。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "AI 从幕后走到现场", source: "现场应用", title: "机器人与内容工具同时出现", summary: "宇树机器人进行动态展示，AI 也进入游戏和三维内容生产。", metrics: [{ label: "机器人", value: "动态展示" }, { label: "游戏研发", value: "AI 辅助" }, { label: "三维内容", value: "生成提效" }], points: ["宇树机器人展示舞蹈和武术动作。", "AI 用于游戏研发和三维内容生成。", "智能体交互让角色反馈更自然。"] },
+      narration: "AI 从幕后走到现场。宇树机器人展示舞蹈和武术动作；游戏团队则把 AI 用于研发辅助、三维内容生成和智能体交互。对玩家来说，变化不只是技术标签，角色反馈、制作效率和互动方式都在改变。",
+    },
+    {
+      scene: { type: "flow", duration: 17, headline: "AI 漫剧成为新的内容形态", steps: [{ label: "线下亮相", detail: "火龙漫剧首次大规模进入展会。" }, { label: "用户规模", detail: "上线不到半年，月活超过一千万。" }, { label: "制作变化", detail: "AI 参与角色、画面和内容生产。" }, { label: "消费验证", detail: "线下关注检验内容吸引力。" }] },
+      narration: "火龙漫剧首次大规模在线下亮相。相关业务上线不到半年，月活跃用户超过一千万。AI 内容生产正在从演示样片走向连续消费，但用户是否留下，仍取决于故事、角色和更新质量。",
+    },
+    {
+      scene: { type: "outro", duration: 17, headline: "技术扩展，经典内容仍是核心", bullets: ["经典游戏 IP 仍是主要流量入口。", "老字号、美妆和电商跨界进入。", "AI 要靠真实内容和消费体验证明价值。"] },
+      narration: "经典游戏 IP 仍是核心流量来源，老字号、美妆和电商等品牌则跨界进入。ChinaJoy 正从游戏动漫展，变成连接技术、内容和年轻消费的综合场景。AI 能扩大生产能力，但最终仍要靠内容质量和真实体验。",
+    },
+  ], options);
 }
 
 function withGroundedFactReferences(project: VideoProject) {

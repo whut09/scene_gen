@@ -97,6 +97,42 @@ test("Seedance 2.5 fallback explains capabilities without platform promotion", (
   assert.doesNotMatch(project.narration, /项目主页|体验入口|即梦|豆包/);
 });
 
+test("Claude security incident fallback preserves scope and removes media attribution", () => {
+  const project = createStoryProject({
+    id: "claude-security-incident", kind: "webpage", title: "Claude AI 在测试中访问三家公司系统", url: "https://example.com/claude", source: "媒体", summary: "授权测试误连公网。", content: "测试环境错误连接公网，访问三家外部机构基础设施。复查141006个会话。7月23日暂停，7月24日确认三起事件，7月27日通知机构。最新模型识别公网后停止，旧模型继续。据彭博，记者了解到。", score: 1, tags: [],
+  });
+
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.ok(project.narration.length >= 384);
+  assert.match(project.narration, /三家外部机构.*十四万一千零六个测试会话/s);
+  assert.match(project.narration, /不是模型主动选择攻击目标|不应夸大成 AI 自主失控/);
+  assert.doesNotMatch(project.narration, /彭博|记者|媒体/);
+});
+
+test("AI pesticide incident fallback explains the unsafe decision chain", () => {
+  const project = createStoryProject({
+    id: "ai-pesticide-incident", kind: "webpage", title: "农户按AI建议喷农药，一百五十亩芝麻枯萎", url: "https://example.com/farm", source: "媒体", summary: "六十七岁农户按建议用药。", content: "安徽滁州67岁农户处理150亩芝麻，建议包含氟磺胺草醚。该药主要用于大豆田阔叶杂草，不能全田喷洒芝麻。页面提示AI生成可能有误。记者翻看，记者了解到。", score: 1, tags: [],
+  });
+
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.ok(project.narration.length >= 384);
+  assert.match(project.narration, /一百五十亩芝麻.*氟磺胺草醚/s);
+  assert.match(project.narration, /标签.*农技或植保人员/s);
+  assert.doesNotMatch(project.narration, /记者|截至发稿|登记反馈/);
+});
+
+test("ChinaJoy AI fallback covers the full article without photo captions", () => {
+  const project = createStoryProject({
+    id: "chinajoy-ai", kind: "webpage", title: "被AI包围的ChinaJoy", url: "https://example.com/chinajoy", source: "媒体", summary: "机器人和AI内容集中亮相。", content: "第23届ChinaJoy有39个国家和地区、900多家企业、14万平方米，500多家游戏公司和团队展示1000多款游戏。宇树机器人跳舞和武术。火龙漫剧上线不到半年月活超过1000万。经典游戏IP仍是核心流量，老字号、美妆和电商跨界进入。记者摄，记者注意到。", score: 1, tags: [],
+  });
+
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.ok(project.narration.length >= 384);
+  assert.match(project.narration, /三十九个国家和地区.*九百多家企业.*十四万平方米/s);
+  assert.match(project.narration, /火龙漫剧.*一千万.*经典游戏 IP.*老字号/s);
+  assert.doesNotMatch(project.narration, /记者|媒体|图片/);
+});
+
 test("technical article fallback uses explainer structure without news wording", () => {
   const content = Array.from({ length: 12 }, (_, index) => `\u8fd9\u662f\u6280\u672f\u6587\u7ae0\u7684\u7b2c${index + 1}\u4e2a\u5b8c\u6574\u63a8\u5bfc\u6b65\u9aa4\uff0c\u7528\u4e8e\u8bf4\u660e\u6570\u636e\u3001\u5047\u8bbe\u3001\u8ba1\u7b97\u548c\u7ed3\u8bba\u8fb9\u754c\u3002`).join("");
   const item: HotItem = {
@@ -231,4 +267,40 @@ test("aisuite repository draft explains provider switching and agent tools", () 
   assert.match(project.narrationSegments![1].text, /修改模型名称.*切换供应商/);
   assert.match(project.narrationSegments![3].text, /供应商扩展.*统一客户端.*工具/);
   assert.doesNotMatch(project.narration, /选择主题|阅读结构/);
+});
+
+test("Kaneo repository draft explains simple self-hosted project management", () => {
+  const project = createStoryProject({
+    id: "kaneo", kind: "github", contentType: "repository", title: "kaneo: open source project management", url: "https://github.com/usekaneo/kaneo", source: "项目资料", summary: "Self-hosted project management", content: "Clean self-hosted project management with kanban, Docker Compose and PostgreSQL.", score: 1, tags: [], repo: "usekaneo/kaneo",
+  });
+
+  assert.equal(project.meta.title, "kaneo");
+  assert.equal(project.scenes[0].headline, "开源项目推荐：kaneo");
+  assert.match(project.narrationSegments![1].text, /任务、进度和负责人/);
+  assert.match(project.narrationSegments![3].text, /Docker Compose.*PostgreSQL.*创建项目/);
+  assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
+});
+
+test("copilot-sdk repository draft explains embedded coding agents", () => {
+  const project = createStoryProject({
+    id: "copilot-sdk", kind: "github", contentType: "repository", title: "copilot-sdk: agents for every app", url: "https://github.com/github/copilot-sdk", source: "项目资料", summary: "Multi-platform SDK", content: "Embed agentic workflows in apps with Python, TypeScript, Go, .NET, Java and Rust. Planning, tool invocation and file edits over JSON-RPC.", score: 1, tags: [], repo: "github/copilot-sdk",
+  });
+
+  assert.equal(project.meta.title, "copilot-sdk");
+  assert.equal(project.scenes[0].headline, "开源项目推荐：copilot-sdk");
+  assert.match(project.narrationSegments![1].text, /任务规划、工具调用和文件修改/);
+  assert.match(project.narrationSegments![3].text, /项目语言安装.*创建客户端和会话.*工具权限/s);
+  assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
+});
+
+test("DeerFlow repository draft explains long-running agent work", () => {
+  const project = createStoryProject({
+    id: "deer-flow", kind: "github", contentType: "repository", title: "deer-flow: super agent harness", url: "https://github.com/bytedance/deer-flow", source: "项目资料", summary: "Long-horizon agent harness", content: "Super agent harness with sub-agents, memory, sandboxes, tools and skills for research, coding and content tasks.", score: 1, tags: [], repo: "bytedance/deer-flow",
+  });
+
+  assert.equal(project.meta.title, "deer-flow");
+  assert.equal(project.scenes[0].headline, "开源项目推荐：deer-flow");
+  assert.match(project.narrationSegments![1].text, /子智能体、长期记忆、沙箱、工具和可扩展技能/);
+  assert.match(project.narrationSegments![3].text, /安装向导.*安全的沙箱.*具体研究或代码任务/s);
+  assert.doesNotMatch(project.narration, /火山|方舟|github\.com|GitHub|仓库地址/i);
 });
