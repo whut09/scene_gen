@@ -420,6 +420,57 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/awesome-systematic-trading|systematic trading|quantitative trading|algorithmic trading/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "整理系统化交易研究与实践资料的量化投资资源清单",
+      capability: "把回测框架、交易库、数据工具、策略论文、书籍、课程和案例按主题集中，帮助初学者从概念学习走到历史数据验证",
+      workflow: "先从入门书籍或课程理解策略，再选择一个回测库和历史数据；把规则写成可重复的实验，比较收益、回撤和交易成本，最后才考虑模拟或实盘环境",
+      boundaries: "它是学习和选型索引，不是投资建议，也不保证任何策略有效；真实交易还要核对数据质量、费用、滑点、风险和合规要求",
+      topics: ["回测框架", "交易策略", "历史数据", "风险指标", "机器学习", "入门课程"],
+      metrics: [{ label: "资源类型", value: "库、书、课程" }, { label: "主要方向", value: "量化研究" }],
+      problemPoints: ["量化交易资料分散，初学者很难判断先学什么、用什么工具验证。", "清单按回测、数据、策略和学习资料整理可选入口。", "不同资源需要结合自己的市场、数据和风险约束独立验证。"],
+      steps: [
+        { label: "确定问题", detail: "先明确市场、周期和想验证的交易假设。" },
+        { label: "选择工具", detail: "从一个回测库、数据源和入门材料开始。" },
+        { label: "重复回测", detail: "记录收益、回撤、成本与样本外表现。" },
+        { label: "谨慎扩展", detail: "先做模拟验证，再评估是否进入真实环境。" },
+      ],
+    };
+  }
+  if (/\bvoice-pro\b|voice conversion|multilingual dubbing|zero-shot voice cloning|speech recognition.*translation/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把识别、翻译、配音和声音处理集中到一个多媒体语音工作台",
+      capability: "处理视频下载、语音分离、字幕识别、跨语言翻译和文本转语音，也能用 F5-TTS、CosyVoice 等模型做零样本音色克隆",
+      workflow: "先导入本地视频或音频，提取并分离人声；再检查识别文本、翻译和时间戳，选择稳定的中文音色生成配音，最后逐段试听并导出字幕和视频",
+      boundaries: "它更适合 Windows 和 NVIDIA 显卡环境；音色克隆必须获得授权，长视频会消耗显存和磁盘，正式发布前要复核译文、专名、音画同步和素材版权",
+      topics: ["语音识别", "多语言翻译", "文本转语音", "音色克隆", "人声分离", "字幕处理"],
+      metrics: [{ label: "处理链路", value: "识别到配音" }, { label: "部署重点", value: "显卡与模型" }],
+      problemPoints: ["视频翻译通常要在下载、识别、分离、翻译和配音工具之间反复切换。", "Voice-Pro 把这些步骤集中在一个可视化工作台中。", "音色和语言效果仍需按每段音频人工复核。"],
+      steps: [
+        { label: "导入素材", detail: "加载本地视频或音频，并提取原始声音。" },
+        { label: "校对文本", detail: "检查识别结果、翻译、专名和时间戳。" },
+        { label: "生成配音", detail: "选择合适音色，逐段生成并试听。" },
+        { label: "导出复核", detail: "检查音画同步、字幕和授权后再导出成片。" },
+      ],
+    };
+  }
+  if (/\bansible\b|configuration management|application deployment|cloud provisioning|network automation|agentless/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "用声明式任务自动部署和维护多台服务器与应用",
+      capability: "通过人和机器都能读懂的任务文件，完成配置管理、应用部署、云资源准备、网络自动化和多节点编排，而且远端无需安装专用代理",
+      workflow: "先安装 Ansible 并准备 SSH 访问清单，再用一个小型 playbook 描述目标状态；先在测试机器执行和检查差异，确认无误后分批发布并保留审计记录",
+      boundaries: "自动化会放大配置错误的影响；生产使用前必须限制凭据权限、区分环境、设置变更审批和回滚方案，并测试模块对目标系统的兼容性",
+      topics: ["配置管理", "应用部署", "SSH 连接", "多节点编排", "网络自动化", "变更审计"],
+      metrics: [{ label: "连接方式", value: "SSH" }, { label: "远端要求", value: "无需代理" }],
+      problemPoints: ["逐台登录服务器部署和修改配置容易重复、遗漏且难以审计。", "Ansible 用声明式任务把一次变更应用到多台机器。", "无代理设计让远端无需安装额外组件，连接仍使用现有 SSH 通道。"],
+      steps: [
+        { label: "安装工具", detail: "用 Python 包管理器或系统包安装 Ansible。" },
+        { label: "准备清单", detail: "配置主机、分组和最小 SSH 权限。" },
+        { label: "编写任务", detail: "用 playbook 描述目标配置并先做检查。" },
+        { label: "分批执行", detail: "在测试环境验证后分批执行并保留记录。" },
+      ],
+    };
+  }
   if (/\bkaneo\b|self-hosted.*project management|jira alternative|linear alternative/i.test(`${name} ${item.title} ${content}`)) {
     return {
       theme: "用简洁看板管理任务和项目的自托管协作工具",
@@ -707,6 +758,8 @@ export function createStoryProject(
   const clean = cleanItem(item);
   if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
+  if (/不可取代|薪资奴役|高自主性|不可受雇/i.test(joinedContent)) return createAiCareerIndependenceProject(clean, options);
+  if (/Astra|菲尔兹奖级|非sofic|十项.*数学|数学难题/i.test(joinedContent) || /36kr\.com\/p\/3921682068172419/i.test(clean.url)) return createAiMathBreakthroughProject(clean, options);
   if (/141006|十四万一千零六|三家外部机构|测试环境.*公网/i.test(joinedContent)) return createClaudeSecurityIncidentProject(clean, options);
   if (/150\s*亩芝麻|一百五十亩芝麻|氟磺胺草醚/i.test(joinedContent)) return createAiPesticideIncidentProject(clean, options);
   if (/第\s*23\s*届\s*ChinaJoy|第\s*二十三\s*届\s*ChinaJoy|14\s*万平方米|火龙漫剧/i.test(joinedContent)) return createChinaJoyAiProject(clean, options);
@@ -1114,6 +1167,67 @@ function createChinaJoyAiProject(
     {
       scene: { type: "outro", duration: 17, headline: "技术扩展，经典内容仍是核心", bullets: ["经典游戏 IP 仍是主要流量入口。", "老字号、美妆和电商跨界进入。", "AI 要靠真实内容和消费体验证明价值。"] },
       narration: "经典游戏 IP 仍是核心流量来源，老字号、美妆和电商等品牌则跨界进入。ChinaJoy 正从游戏动漫展，变成连接技术、内容和年轻消费的综合场景。AI 能扩大生产能力，但最终仍要靠内容质量和真实体验。",
+    },
+  ], options);
+}
+
+function createAiCareerIndependenceProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "职场与人工智能", headline: shortTitle(title, 42), subhead: "与其等待工作变化，不如建立自己的行动能力", sources: ["工作依赖", "自主行动", "持续迭代"] },
+      narration: `${title}。文章的核心不是保证人工智能永远无法替代任何人，而是提醒你：不要把生存完全交给雇主、岗位或单一技能。真正能穿越变化的，是持续学习、主动行动和把想法做成有价值成果的能力。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "先看薪资依赖的问题", source: "文章观点", title: "工作可以是跳板，不能成为唯一身份", summary: "为了生活，只能长期做并非主动选择的工作。", metrics: [{ label: "依赖对象", value: "岗位与雇主" }, { label: "常见困境", value: "技能单一" }, { label: "转变方向", value: "建立替代能力" }], points: ["工作可以是积累经验和技能的跳板。", "只掌握本职岗位，难以理解收入系统。", "把身份、收入和未来都绑定在一个雇主身上。"] },
+      narration: "文章把这种处境称为薪资依赖：为了生活，只能长期做并非主动选择的工作。工作可以是积累经验和技能的跳板；真正危险的是只掌握本职岗位，把身份、收入和未来都绑定在一个雇主身上。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 18, headline: "五项能力构成自主行动", bars: [{ label: "自主性", value: 5, detail: "主动发现机会并行动。", color: "#18b7a5" }, { label: "品味", value: 4, detail: "判断什么值得呈现。", color: "#7c6cff" }, { label: "说服力", value: 3, detail: "让别人理解成果价值。", color: "#facc15" }, { label: "毅力与迭代", value: 2, detail: "从错误和反馈中继续修正。", color: "#ff6b6b" }] },
+      narration: "文章总结了五项能力：自主性，是没人要求时也能发现机会并行动；品味，是判断什么值得呈现；说服力，是让别人理解成果价值；毅力，是把错误看成过程；迭代，则是根据反馈不断修正方向。它们共同构成解决问题和选择方向的能力。",
+    },
+    {
+      scene: { type: "flow", duration: 17, headline: "从想法走到可验证的成果", steps: [{ label: "选择问题", detail: "找到别人确实愿意解决的小问题。" }, { label: "做出工具", detail: "先完成规模可控的应用或服务。" }, { label: "获得反馈", detail: "观察使用者是否真的在意结果。" }, { label: "持续迭代", detail: "修正方法，再扩大有效部分。" }] },
+      narration: "人工智能降低了做软件和内容的门槛，但能生成一个东西，不等于它值得构建，也不等于别人会在意。更实际的路径，是从一个规模可控、能解决真实问题的小工具开始，观察反馈，修正方法，再决定是否扩大。",
+    },
+    {
+      scene: { type: "outro", duration: 17, headline: "真正的改变从今天的小行动开始", bullets: ["不要只在社交媒体表达焦虑。", "用一个小项目练习自主性和迭代。", "完成后核对价值、反馈和长期边界。"] },
+      narration: "这篇文章最后给出的方向很具体：少一点对变化的抱怨，多做一件属于自己的小事。用一个小项目练习自主性和迭代，可以是一个工具、一项服务，或者一次可验证的内容实践。完成后核对价值、反馈和长期边界，再根据真实反馈改进；这样积累的，是面对下一次变化仍能重新行动的能力。",
+    },
+  ], options);
+}
+
+function createAiMathBreakthroughProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem = /36kr\.com\/p\/3921682068172419/i.test(item.url)
+    ? { ...item, title: "突发！OpenAI下一代AI攻克10项菲尔兹奖级难题" }
+    : item;
+  const title = speechFriendlyTitle(storyItem.title);
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 10, kicker: "AI 数学推理", headline: shortTitle(title, 42), subhead: "多项数学结果公开，最终仍需同行复核", sources: ["数学证明", "形式化验证", "同行复核"] },
+      narration: `${title}。报道介绍 OpenAI 下一代模型 Astra 在多项长期未解数学问题上给出的证明和反例，但最终结论仍需专家复核。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "这次公开了什么", source: "论文内容", title: "从多个领域给出证明与反例", summary: "问题涉及几何、编码、群论、算子代数和组合学。", metrics: [{ label: "论文篇幅", value: "249 页" }, { label: "讨论问题", value: "10 项" }, { label: "验证方式", value: "Lean 4" }], points: ["结果覆盖高维几何、编码理论和群论等方向。", "部分问题已有多年没有明显进展。", "论文同时提供了形式化证明和可检查的验证材料。"] },
+      narration: "材料是一份二百四十九页的论文，讨论十项数学问题，覆盖高维几何、编码理论、群论和算子代数等方向，并附 Lean 4 形式化验证，便于逐步检查。这次公开的重点，就是十项问题、249页论文和Lean 4验证入口，读者可以按问题逐项检查。",
+    },
+    {
+      scene: { type: "flow", duration: 18, headline: "三个代表性问题", steps: [{ label: "非 sofic 群", detail: "构造反例，挑战所有可数群都具备该性质的猜想。" }, { label: "高维球体堆积", detail: "讨论无限维度下的密度边界。" }, { label: "刚性猜想", detail: "给出群与算子代数关系的反例构造。" }, { label: "共同特点", detail: "从具体结构出发，再用形式化步骤核验。" }] },
+      narration: "重点包括非 sofic 群反例、高维球体堆积的密度边界，以及刚性猜想反例。三个代表性问题分别是非 sofic 群、高维球体堆积和刚性猜想。共同点是先构造数学结构，再用形式化步骤检查推理。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 17, headline: "为什么这件事值得关注", bars: [{ label: "跨领域", value: 4, detail: "多个数学方向同时出现结果。", color: "#18b7a5" }, { label: "可复核", value: 3, detail: "附带 Lean 4 形式化材料。", color: "#7c6cff" }, { label: "成本", value: 2, detail: "报道估算总成本不到 2000 美元。", color: "#facc15" }] },
+      narration: "关注点有三：跨领域结果、Lean 4 复核入口，以及按接口价格估算总成本不到二千美元。这正是它值得关注的原因：跨领域、可复核，还有成本这一项。但低成本不等于结论成立，仍要看证明、假设和独立复现。",
+    },
+    {
+      scene: { type: "outro", duration: 17, headline: "不要把新闻标题当成最终定论", bullets: ["区分报道表述与学界确认。", "检查完整论文、形式化证明和假设。", "等待独立复核，再判断长期影响。"] },
+      narration: "现在能确认的是材料已经公开，不能确认所有结果都已被学界接受。还要区分报道摘要、作者解释和正式证明，检查完整论文、证明假设、独立复现和同行评议，核对定义、边界条件和机器证书是否完整，再判断它对数学研究和人工智能推理的长期影响。",
     },
   ], options);
 }

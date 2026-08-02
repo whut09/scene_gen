@@ -133,6 +133,41 @@ test("ChinaJoy AI fallback covers the full article without photo captions", () =
   assert.doesNotMatch(project.narration, /记者|媒体|图片/);
 });
 
+test("career independence article fallback keeps the five capabilities complete", () => {
+  const project = createStoryProject({
+    id: "career-independence", kind: "webpage", contentType: "news", title: "如何让自己变得让人工智能永远也无法取代", url: "https://example.com/career", source: "媒体", summary: "从薪资依赖走向高自主性。", content: "文章讨论薪资奴役、高自主性、五项能力：自主性、品味、说服力、毅力和迭代，并建议做自己的小产品。", score: 1, tags: [],
+  });
+
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.ok(project.narration.length >= 384);
+  assert.match(project.narration, /薪资依赖.*自主性.*品味.*说服力.*毅力.*迭代/s);
+  assert.match(project.narration, /规模可控.*真实问题.*反馈.*修正/s);
+  assert.doesNotMatch(project.narration, /记者|媒体|36氪|来源/);
+});
+
+test("AI mathematics article fallback separates reported claims from final verification", () => {
+  const project = createStoryProject({
+    id: "ai-math-breakthrough", kind: "webpage", contentType: "news", title: "突发！OpenAI 下一代 AI 攻克 10 项菲尔兹奖级难题", url: "https://example.com/math", source: "媒体", summary: "Astra 公开多项数学证明。", content: "249页论文讨论10项数学问题，涉及非sofic群、高维球体堆积和刚性猜想，附带Lean 4形式化验证，报道估算成本不到2000美元。结果仍需同行复核。新智元，经授权发布。", score: 1, tags: [],
+  });
+
+  assert.equal(project.narrationSegments?.length, 5);
+  assert.ok(project.narration.length >= 384);
+  assert.match(project.narration, /二百四十九页.*十项.*Lean 4/s);
+  assert.match(project.narration, /非 sofic 群.*高维球体堆积.*刚性猜想/s);
+  assert.match(project.narration, /仍需.*复核|还不能直接确认/s);
+  assert.doesNotMatch(project.narration, /新智元|记者|36氪|论文链接|证明链接/);
+});
+
+test("AI mathematics URL fallback restores the canonical title when source parsing fails", () => {
+  const project = createStoryProject({
+    id: "ai-math-url-fallback", kind: "webpage", contentType: "news", title: "页面标题读取失败", url: "https://www.36kr.com/p/3921682068172419", source: "核心事实", summary: "页面摘要读取失败。", content: "页面正文读取失败。", score: 1, tags: [],
+  });
+
+  assert.equal(project.meta.title, "突发！OpenAI下一代AI攻克10项菲尔兹奖级难题");
+  assert.equal(project.scenes[0].headline, "突发！OpenAI下一代AI攻克10项菲尔兹奖级难题");
+  assert.match(project.narrationSegments![0].text, /^突发！OpenAI下一代AI攻克10项菲尔兹奖级难题/);
+});
+
 test("technical article fallback uses explainer structure without news wording", () => {
   const content = Array.from({ length: 12 }, (_, index) => `\u8fd9\u662f\u6280\u672f\u6587\u7ae0\u7684\u7b2c${index + 1}\u4e2a\u5b8c\u6574\u63a8\u5bfc\u6b65\u9aa4\uff0c\u7528\u4e8e\u8bf4\u660e\u6570\u636e\u3001\u5047\u8bbe\u3001\u8ba1\u7b97\u548c\u7ed3\u8bba\u8fb9\u754c\u3002`).join("");
   const item: HotItem = {
@@ -303,4 +338,43 @@ test("DeerFlow repository draft explains long-running agent work", () => {
   assert.match(project.narrationSegments![1].text, /子智能体、长期记忆、沙箱、工具和可扩展技能/);
   assert.match(project.narrationSegments![3].text, /安装向导.*安全的沙箱.*具体研究或代码任务/s);
   assert.doesNotMatch(project.narration, /火山|方舟|github\.com|GitHub|仓库地址/i);
+});
+
+test("awesome-systematic-trading repository draft stays educational and grounded", () => {
+  const project = createStoryProject({
+    id: "awesome-systematic-trading", kind: "github", contentType: "repository", title: "awesome-systematic-trading: quantitative trading resources", url: "https://github.com/paperswithbacktest/awesome-systematic-trading", source: "项目资料", summary: "A curated list of resources for systematic trading", content: "A collection of 97 libraries and packages, 40+ strategies, 55 books, videos, blogs and courses for quantitative trading.", score: 1, tags: [], repo: "paperswithbacktest/awesome-systematic-trading",
+  });
+
+  assert.equal(project.meta.title, "awesome-systematic-trading");
+  assert.equal(project.scenes[0].headline, "开源项目推荐：awesome-systematic-trading");
+  assert.match(project.narrationSegments![1].text, /回测框架、交易库、数据工具/);
+  assert.match(project.narrationSegments![3].text, /历史数据.*收益、回撤和交易成本.*模拟或实盘/s);
+  assert.match(project.narration, /不是投资建议/);
+  assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
+});
+
+test("Voice-Pro repository draft explains the end-to-end dubbing workflow", () => {
+  const project = createStoryProject({
+    id: "voice-pro", kind: "github", contentType: "repository", title: "Voice-Pro: AI speech recognition and multilingual dubbing", url: "https://github.com/abus-aikorea/voice-pro", source: "项目资料", summary: "Speech recognition, translation and dubbing web application", content: "Speech recognition, translation, dubbing, F5-TTS, CosyVoice, Edge-TTS, Whisper and voice cloning.", score: 1, tags: [], repo: "abus-aikorea/voice-pro",
+  });
+
+  assert.equal(project.meta.title, "voice-pro");
+  assert.equal(project.scenes[0].headline, "开源项目推荐：voice-pro");
+  assert.match(project.narrationSegments![1].text, /视频下载、语音分离、字幕识别、跨语言翻译和文本转语音/);
+  assert.match(project.narrationSegments![3].text, /导入.*分离人声.*识别文本.*生成配音/s);
+  assert.match(project.narration, /音色克隆必须获得授权/);
+  assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
+});
+
+test("Ansible repository draft explains agentless infrastructure automation", () => {
+  const project = createStoryProject({
+    id: "ansible", kind: "github", contentType: "repository", title: "ansible: IT automation", url: "https://github.com/ansible/ansible", source: "项目资料", summary: "Simple agentless IT automation", content: "Configuration management, application deployment, cloud provisioning, network automation and multi-node orchestration using SSH without agents.", score: 1, tags: [], repo: "ansible/ansible",
+  });
+
+  assert.equal(project.meta.title, "ansible");
+  assert.equal(project.scenes[0].headline, "开源项目推荐：ansible");
+  assert.match(project.narrationSegments![1].text, /人和机器都能读懂的任务文件.*配置管理、应用部署/);
+  assert.match(project.narrationSegments![3].text, /安装 Ansible.*SSH.*playbook.*测试机器/s);
+  assert.match(project.narration, /无需安装专用代理/);
+  assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
 });
