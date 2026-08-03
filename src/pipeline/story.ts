@@ -140,7 +140,7 @@ export function scrubAttribution(text: string) {
   return text
     .replace(forbiddenSourceAttribution, "")
     .replace(/作者\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
-    .replace(/编辑\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
+    .replace(/编辑(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "")
     .replace(/来源\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_. -]{0,32}/g, "")
     .replace(/图源\s*[：:|｜]?\s*[^，。！？；;\s]{0,32}/g, "")
     .replace(/(?:^|[。！？\s])记者\s+[\u4e00-\u9fa5]{2,4}(?=$|[“”"'，,。！？\s])/gu, " ")
@@ -652,6 +652,74 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       ],
     };
   }
+  if (/\bvoicebox\b|local-first.*voice studio|voice cloning.*23 languages|global dictation/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "在本地完成声音克隆、语音生成和听写的语音工作室",
+      capability: "用几秒授权音频建立声音档案，并通过七种语音引擎生成二十三种语言的语音；还提供全局听写、语音识别、故事编辑、接口服务和智能体语音输出",
+      workflow: "先安装桌面应用并录制或导入已获授权的声音样本，再选择引擎和语言生成短句试听；确认音色、发音和节奏后，用故事编辑器分段生成，最后检查拼接和后处理效果",
+      boundaries: "声音克隆必须获得本人授权；不同引擎、语言和硬件的效果与速度不同，正式导出前要逐段试听专名、数字、情绪和拼接位置",
+      topics: ["声音克隆", "二十三种语言", "七种语音引擎", "全局听写", "故事编辑", "本地数据"],
+      metrics: [{ label: "语言数量", value: "23 种" }, { label: "语音引擎", value: "7 种" }],
+      problemPoints: ["声音克隆、听写和长文本配音通常分散在不同工具中。", "Voicebox 把声音档案、生成、识别和故事编辑集中在本地应用。", "语音数据和录音默认留在自己的设备上。"],
+      steps: [
+        { label: "安装应用", detail: "按系统和显卡环境安装桌面版本。" },
+        { label: "建立声音", detail: "录制或导入已获授权的短音频。" },
+        { label: "短句试听", detail: "选择引擎和语言，先检查音色与发音。" },
+        { label: "分段导出", detail: "生成长内容并复核拼接和后处理。" },
+      ],
+    };
+  }
+  if (/deepseek-reasonix|reasonix\.toml|deepseek-native coding agent|stdio json-rpc/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "在终端里规划、执行和检查代码任务的轻量编程智能体",
+      capability: "用一个静态 Go 程序连接兼容接口的模型，通过配置文件选择执行模型、规划模型、工具和插件，并在命令行、桌面端或编辑器中复用同一套本地引擎",
+      workflow: "先安装程序并运行 reasonix setup，配置模型服务和最小工具权限；再从一个边界清晰的小任务开始，检查它读取的文件、执行的命令和最终改动，确认后再扩大任务范围",
+      boundaries: "它需要用户自行配置模型服务；工具可以执行命令和修改文件，因此必须限制工作目录、密钥和审批权限，并用测试与代码审查验证结果",
+      topics: ["终端智能体", "任务规划", "工具插件", "模型配置", "上下文维护", "权限审批"],
+      metrics: [{ label: "程序形态", value: "单文件" }, { label: "工具协议", value: "JSON-RPC" }],
+      problemPoints: ["长时间代码会话容易丢失上下文，并产生重复的模型输入成本。", "Reasonix 用稳定配置、插件工具和上下文维护组织整个代码任务。", "命令行、桌面端和编辑器可以共享同一套执行引擎。"],
+      steps: [
+        { label: "安装程序", detail: "获取适合系统的单文件程序。" },
+        { label: "运行设置", detail: "执行 reasonix setup 配置模型服务。" },
+        { label: "限制权限", detail: "限定当前任务可访问的目录和工具。" },
+        { label: "小步验证", detail: "检查命令、改动和测试后再扩大范围。" },
+      ],
+    };
+  }
+  if (/pdf-inspector|textbased|scanned|imagebased|position-aware.*pdf|without ocr/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "先判断 PDF 类型，再快速提取原生文本和版面结构",
+      capability: "不用光学识别就能把文档分为文本型、扫描型、图片型或混合型，并提取标题、列表、代码、表格、链接、分栏和阅读顺序，转换为干净的 Markdown",
+      workflow: "先把 PDF 交给分类器判断页面类型；对原生文本页面直接本地提取，对扫描页或异常页再转交光学识别，最后抽样核对阅读顺序、表格和标题结构",
+      boundaries: "它刻意不做光学识别，因此扫描件仍需其他工具；低于二百毫秒和各项基准来自项目测试，实际速度与准确率取决于文件结构和设备",
+      topics: ["PDF 分类", "文本提取", "阅读顺序", "表格与分栏", "Markdown", "按需光学识别"],
+      metrics: [{ label: "文档类型", value: "4 类" }, { label: "整体得分", value: "0.875" }],
+      problemPoints: ["直接对所有 PDF 做光学识别需要更多时间和计算资源。", "PDF Inspector 先识别哪些页面已经包含可提取文本。", "只有扫描页和异常页需要进入更昂贵的识别流程。"],
+      steps: [
+        { label: "分类文档", detail: "先判断文本型、扫描型、图片型或混合型。" },
+        { label: "本地提取", detail: "对原生文本页提取结构化内容。" },
+        { label: "按需识别", detail: "只把扫描页和问题页交给光学识别。" },
+        { label: "抽样核对", detail: "检查阅读顺序、表格、标题和链接。" },
+      ],
+    };
+  }
+  if (/\bairllm\b|one layer.*at a time|small gpu memory|70b.*4gb|405b.*8gb/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "用分层加载方式在小显存设备上运行超大语言模型",
+      capability: "推理时一次只把当前模型层或专家加载到显卡，让四 GB 左右显存也能尝试七百亿参数模型，并适配多种常见模型家族",
+      workflow: "先确认模型许可、磁盘容量和下载时间，再安装 AirLLM 并选择一个适合的模型；首次运行会拆分并保存模型层，完成后先用短提示测试速度和内存，再决定是否处理更长任务",
+      boundaries: "低显存不等于高速度，模型层需要频繁从磁盘读取，硬盘性能和容量往往成为瓶颈；超大模型仍需大量存储，首次拆分也会耗时",
+      topics: ["分层加载", "小显存推理", "模型拆分", "磁盘吞吐", "多模型适配", "性能边界"],
+      metrics: [{ label: "70B 显存", value: "约 4GB" }, { label: "405B 显存", value: "约 8GB" }],
+      problemPoints: ["超大模型通常要求昂贵的高显存显卡。", "AirLLM 用逐层加载把推理显存控制在较小范围。", "节省显存的代价是更多磁盘空间、读取时间和较慢推理。"],
+      steps: [
+        { label: "核对资源", detail: "确认模型许可、磁盘容量和下载条件。" },
+        { label: "安装工具", detail: "安装 AirLLM 并选择已适配的模型。" },
+        { label: "完成拆分", detail: "首次运行等待模型层拆分和保存。" },
+        { label: "短句测试", detail: "先测速度、内存和输出，再扩大任务。" },
+      ],
+    };
+  }
   if (/build-your-own|re-creat(?:e|ing).*from scratch/i.test(`${item.title} ${content}`)) {
     return {
       theme: "通过从零实现理解技术原理",
@@ -758,6 +826,9 @@ export function createStoryProject(
   const clean = cleanItem(item);
   if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
+  if (/tmtpost\.com\/8088190/i.test(clean.url) || /Loop.*Graph|Graph.*Loop|AI Coding.*Graph/i.test(joinedContent)) return createLoopGraphEngineeringProject(clean, options);
+  if (/qbitai\.com\/2026\/08\/465215/i.test(clean.url) || /Qwen3\.8/i.test(joinedContent)) return createQwen38Project(clean, options);
+  if (/ithome\.com\/0\/985\/044/i.test(clean.url) || /SenseNova\s*U1\.5-Lite-Preview/i.test(joinedContent)) return createSenseNovaU15Project(clean, options);
   if (/不可取代|薪资奴役|高自主性|不可受雇/i.test(joinedContent)) return createAiCareerIndependenceProject(clean, options);
   if (/Astra|菲尔兹奖级|非sofic|十项.*数学|数学难题/i.test(joinedContent) || /36kr\.com\/p\/3921682068172419/i.test(clean.url)) return createAiMathBreakthroughProject(clean, options);
   if (/141006|十四万一千零六|三家外部机构|测试环境.*公网/i.test(joinedContent)) return createClaudeSecurityIncidentProject(clean, options);
@@ -1253,6 +1324,93 @@ function withGroundedFactReferences(project: VideoProject) {
       claimIds: groundedClaimIds(`${sceneFactText(referencedScenes[segment.sceneIndex])} ${segment.text}`),
     })),
   };
+}
+
+function createLoopGraphEngineeringProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, contentType: "technical-article", title: "Loop才火了六周，AI Coding为什么又开始谈Graph？" };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 10, kicker: "技术架构解析", headline: storyItem.title, subhead: "Loop 负责单点迭代，Graph 负责多任务协作", sources: ["任务拆分", "状态流转", "成本控制"] },
+      narration: `${storyItem.title} Loop 擅长让一个智能体反复检查、修改和重试；Graph 解决的是多个工作单元如何分工、并行、交接和恢复。两者不是替代关系，而是处理不同层级的问题。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "Loop 反复修改，Graph 管理协作", source: "架构分析", title: "单点迭代与全局编排", summary: "同一个智能体读取结果、发现问题、修改后再次执行。", metrics: [{ label: "Loop", value: "修改重试" }, { label: "Graph", value: "分支并行" }, { label: "组合方式", value: "节点内循环" }], points: ["Loop 让同一个智能体读取结果并持续修改。", "Graph 把复杂目标拆成节点，用共享状态管理分支、并行、回退与交接。", "Graph 节点内部仍然可以运行 Loop。"] },
+      narration: "Loop 适合边做边检查：同一个智能体读取结果、发现问题、修改后再次执行。Graph 则把复杂目标拆成节点，通过边和共享状态管理分支、并行、回退与交接。实际系统中，一个 Graph 节点内部完全可以继续运行 Loop。",
+    },
+    {
+      scene: { type: "flow", duration: 18, headline: "Graph 带来的工程能力", steps: [{ label: "拆分", detail: "把可独立验证的工作变成节点。" }, { label: "并行", detail: "无依赖任务可以同时执行。" }, { label: "路由", detail: "根据状态选择下一条路径。" }, { label: "恢复", detail: "失败节点可重试、回退或交接。" }] },
+      narration: "Graph 的价值不是多放几个智能体，而是把任务依赖显式化。可独立验证的工作变成节点，无依赖任务可以并行，路由器根据状态选择下一步；某个节点失败时，也能局部重试、回退或交给其他节点，而不是全部重来。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 18, headline: "多智能体并不总是更好", bars: [{ label: "金融任务提升", value: 80.8, detail: "研究报告中的最高提升。", color: "#18b7a5" }, { label: "Plan Craft 下降", value: 70, detail: "部分任务最高下降幅度。", color: "#ff6b6b" }, { label: "额外令牌", value: 15, detail: "可能约为聊天模式十五倍。", color: "#facc15" }] },
+      narration: "多智能体并不天然更强。文章引用的研究里，部分金融任务最高提升百分之八十点八，但 Plan Craft 的表现最高下降百分之七十，软件工程基准也出现百分之一点三到十二点八的下降。多智能体令牌消耗还可能达到聊天模式的十五倍左右。",
+    },
+    {
+      scene: { type: "outro", duration: 16, headline: "只在任务确实可拆时使用 Graph", bullets: ["适合可拆分、可独立验证的复杂任务。", "简单或强顺序任务优先保留 Loop。", "从最小图开始，持续观察状态、成本和恢复效果。"] },
+      narration: "选择标准应该回到任务本身。能拆分、能独立验证、需要并行或故障恢复时，Graph 才有价值；简单任务和强顺序任务，Loop 往往更直接。工程上应从能可靠完成任务的最小图开始，持续观察路由、状态、成本和恢复效果。",
+    },
+  ], options);
+}
+
+function createQwen38Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem = { ...item, title: "阿里Qwen3.8正式发布，编程与办公再进化，推理更快更稳定" };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 10, kicker: "大模型更新", headline: storyItem.title, subhead: "视觉理解、百万上下文与长任务能力同步升级", sources: ["模型规模", "公开评测", "专业任务"] },
+      narration: `${storyItem.title}。Qwen3.8-Max 是这次更新的旗舰模型，重点覆盖编程、办公、视觉理解和长时间智能体任务。公开信息给出的模型规模是总参数二点四万亿，单次激活九百五十亿参数。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "模型规模与输入能力", source: "公开信息", title: "更大规模，同时支持视觉输入", summary: "支持视觉理解和一百万 Tokens 上下文。", metrics: [{ label: "总参数", value: "2.4T" }, { label: "激活参数", value: "95B" }, { label: "上下文", value: "1M Tokens" }], points: ["旗舰模型采用大规模稀疏激活结构。", "支持图像和视觉内容理解。", "长上下文可处理更大规模的材料与任务记录。"] },
+      narration: "核心规格有三项：总参数二点四万亿，单次激活九百五十亿参数，并支持一百万 Tokens 的上下文。模型还能理解图像和视觉内容。这些能力让它可以同时处理更长资料、更多工具反馈和更复杂的办公内容。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 18, headline: "公开基准覆盖研究与智能体", bars: [{ label: "PaperBench", value: 93, detail: "公开结果为九十三点零。", color: "#18b7a5" }, { label: "WideSearch", value: 81.9, detail: "公开结果为八十一点九。", color: "#7c6cff" }, { label: "OSWorld", value: 86.1, detail: "公开结果为八十六点一。", color: "#facc15" }] },
+      narration: "公开基准里，PaperBench 得分九十三点零，WideSearch 是八十一点九，OSWorld Verified 是八十六点一。Agent's Last Exam 为五十二点四，GPQA Diamond 为九十二点六。这些是发布方报告的评测结果，不能直接等同于每个真实业务的效果。",
+    },
+    {
+      scene: { type: "flow", duration: 18, headline: "十六天编程与多类专业任务", steps: [{ label: "编程示例", detail: "持续约十六天，完成智能体执行框架。" }, { label: "文档工作", detail: "覆盖法律文档审查和多步骤办公任务。" }, { label: "分析任务", detail: "处理体育视频分析与量化研究。" }, { label: "落地检查", detail: "限制权限、保存过程并检查最终结果。" }] },
+      narration: "更新强调的不只是单次问答。编程示例展示了持续约十六天的自动任务，用来完成一套智能体执行框架；专业任务还覆盖法律文档审查、体育视频分析、量化研究和视觉操作。真正落地时，仍要限制权限、保存过程并检查最终结果。",
+    },
+    {
+      scene: { type: "outro", duration: 16, headline: "真实价值要在自己的任务里验证", bullets: ["用现有工作流测试稳定性与准确率。", "长上下文不等于关键信息不会遗漏。", "高风险任务保留人工复核和权限边界。"] },
+      narration: "对使用者来说，最重要的不是追逐单项分数，而是拿自己的代码、文档和长任务验证稳定性、延迟与准确率。百万上下文不代表关键信息一定不会遗漏，长时间执行也需要预算、权限和停止条件。高风险结论仍应由专业人员复核。",
+    },
+  ], options);
+}
+
+function createSenseNovaU15Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem = { ...item, title: "原生支持4K图像生成，商汤科技开源多模态模型SenseNova U1.5-Lite-Preview预览版本" };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 10, kicker: "多模态模型", headline: storyItem.title, subhead: "轻量统一架构加入原生 4K 图像生成", sources: ["8B-MoT", "4K 生成", "预览版本"] },
+      narration: `${storyItem.title}。这是一个八十亿规模的轻量统一多模态模型，重点是原生四 K 图像生成、更准确的中英文文字，以及更稳定的图像编辑。需要注意，它目前仍是预览版本。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 18, headline: "轻量模型加入原生 4K 生成", source: "模型信息", title: "SenseNova U1.5-Lite-Preview", summary: "八十亿规模的混合架构，同时处理理解、生成和编辑。", metrics: [{ label: "模型规模", value: "8B-MoT" }, { label: "图像分辨率", value: "4K" }, { label: "版本状态", value: "Preview" }], points: ["统一模型覆盖视觉理解与图像生成。", "原生输出四 K 图像，不依赖简单放大。", "轻量定位面向部署和试验场景。"] },
+      narration: "这款模型采用八十亿规模的混合架构，把视觉理解、图像生成和编辑放进统一模型。它可以原生生成四 K 图像，不是先生成低分辨率再简单放大。轻量版本面向部署和试验场景，但实际资源需求仍要以模型说明为准。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 18, headline: "画面细节与文字生成得到加强", bars: [{ label: "原生图像", value: 4, detail: "支持原生四 K 图像生成。", color: "#18b7a5" }, { label: "模型规模", value: 8, detail: "八十亿规模的混合架构。", color: "#7c6cff" }, { label: "版本序列", value: 1.5, detail: "U1.5 Lite Preview 预览版本。", color: "#facc15" }] },
+      narration: "U1.5 Lite Preview 是八十亿规模的混合架构，并支持原生四 K 图像生成。图像改进集中在局部纹理、细节和真实感，也包括中英文文字与复杂布局组织。具体效果仍受提示词、构图复杂度和输出场景影响。",
+    },
+    {
+      scene: { type: "flow", duration: 18, headline: "编辑和视觉指令更稳定", steps: [{ label: "理解输入", detail: "识别画面主体、关系和编辑要求。" }, { label: "局部修改", detail: "尽量只改变指定区域或属性。" }, { label: "保持一致", detail: "保持主体身份和整体风格。" }, { label: "复核结果", detail: "检查文字、细节和未指定区域。" }] },
+      narration: "图像编辑方面，模型强调更稳定的视觉指令跟随。理想流程是先理解主体和修改要求，只调整指定区域或属性，并尽量保持身份、布局和风格一致。实际使用仍要逐张检查文字、手部、局部细节和没有要求修改的区域。",
+    },
+    {
+      scene: { type: "outro", duration: 16, headline: "预览版本适合验证，不宜过度承诺", bullets: ["适合海报、信息图和高分辨率内容试验。", "公开说明称多项生成与编辑指标超过上一代。", "正式生产前验证稳定性、资源占用与许可边界。"] },
+      narration: "公开说明称，它在多项图像生成和编辑基准上超过上一代 U1，但这仍是模型方给出的结果。当前更适合用于海报、信息图和高分辨率内容试验。进入正式生产前，应继续验证稳定性、资源占用、文字准确率和模型许可边界。",
+    },
+  ], options);
 }
 
 function createDeepSeekV4FlashProject(

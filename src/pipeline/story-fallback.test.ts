@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createStoryProject, splitArticleIntoSemanticChunks } from "./story";
+import { createStoryProject, scrubAttribution, splitArticleIntoSemanticChunks } from "./story";
 import type { HotItem } from "./types";
 import { containsForbiddenGithubReference } from "./story";
 
@@ -69,6 +69,11 @@ test("semantic article chunks repair punctuation inserted inside model versions"
   const chunks = splitArticleIntoSemanticChunks("GPT-。5.6已经参与优化运行环境，版本指标保持可核对。", 72);
   assert.equal(chunks.join("").includes("GPT-。5.6"), false);
   assert.match(chunks.join(""), /GPT-5\.6/u);
+});
+
+test("attribution scrubber preserves natural sentences beginning with editing", () => {
+  assert.equal(scrubAttribution("编辑和视觉指令更稳定"), "编辑和视觉指令更稳定");
+  assert.equal(scrubAttribution("编辑：测试人员"), "");
 });
 
 test("DeepSeek V4 Flash news fallback keeps API scope and benchmark facts complete", () => {
@@ -377,4 +382,64 @@ test("Ansible repository draft explains agentless infrastructure automation", ()
   assert.match(project.narrationSegments![3].text, /安装 Ansible.*SSH.*playbook.*测试机器/s);
   assert.match(project.narration, /无需安装专用代理/);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
+});
+
+test("Loop and Graph technical article uses an explainer without date or attribution", () => {
+  const project = createStoryProject({
+    id: "loop-graph", kind: "webpage", contentType: "news", title: "页面标题读取失败", url: "https://www.tmtpost.com/8088190.html", source: "媒体来源", summary: "Loop and Graph engineering", content: "Loop coordinates retries while Graph coordinates nodes, edges, shared state, branching and parallel work.", score: 1, tags: [],
+  });
+
+  assert.equal(project.meta.title, "Loop才火了六周，AI Coding为什么又开始谈Graph？");
+  assert.equal(project.scenes.length, 5);
+  assert.equal(project.scenes[0].type, "title");
+  if (project.scenes[0].type === "title") assert.equal(project.scenes[0].kicker, "技术架构解析");
+  assert.match(project.narration, /节点内部完全可以继续运行 Loop/);
+  assert.match(project.narration, /百分之八十点八.*百分之七十.*十五倍/s);
+  assert.doesNotMatch(project.narration, /新闻日期|2026年|8月3日|钛媒体|记者|来源/);
+});
+
+test("Qwen3.8 news profile preserves reported metrics and evaluation caveat", () => {
+  const project = createStoryProject({
+    id: "qwen38", kind: "webpage", contentType: "news", title: "页面标题读取失败", url: "https://www.qbitai.com/2026/08/465215.html", source: "量子位", summary: "Qwen3.8-Max", content: "2.4T total parameters, 95B activated parameters, 1M Tokens context, PaperBench 93.0 and WideSearch 81.9.", score: 1, tags: [],
+  });
+
+  assert.equal(project.meta.title, "阿里Qwen3.8正式发布，编程与办公再进化，推理更快更稳定");
+  assert.equal(project.scenes.length, 5);
+  assert.match(project.narration, /二点四万亿.*九百五十亿.*一百万 Tokens/s);
+  assert.match(project.narration, /发布方报告的评测结果.*不能直接等同/s);
+  assert.doesNotMatch(project.narration, /量子位|上线千问|平台|记者|来源|链接/);
+});
+
+test("SenseNova U1.5 news profile keeps preview status and 4K scope", () => {
+  const project = createStoryProject({
+    id: "sensenova", kind: "webpage", contentType: "news", title: "页面标题读取失败", url: "https://www.ithome.com/0/985/044.htm", source: "IT之家", summary: "SenseNova U1.5-Lite-Preview", content: "8B-MoT model with native 4K image generation, stronger bilingual text rendering and image editing.", score: 1, tags: [],
+  });
+
+  assert.equal(project.meta.title, "原生支持4K图像生成，商汤科技开源多模态模型SenseNova U1.5-Lite-Preview预览版本");
+  assert.equal(project.scenes.length, 5);
+  assert.match(project.narration, /原生四 K.*预览版本/s);
+  assert.match(project.narration, /模型方给出的结果.*正式生产前/s);
+  assert.doesNotMatch(project.narration, /IT之家|记者|来源|链接/);
+});
+
+test("requested repository profiles explain direct use and practical boundaries", () => {
+  const fixtures = [
+    { repo: "jamiepine/voicebox", title: "voicebox: local-first AI voice studio", content: "Local-first voice studio with voice cloning, 23 languages, 7 TTS engines, global dictation and story editor.", expected: /二十三种语言.*七种语音引擎.*声音克隆必须获得本人授权/s },
+    { repo: "esengine/DeepSeek-Reasonix", title: "DeepSeek-Reasonix: coding agent", content: "DeepSeek-native coding agent, reasonix.toml, static Go binary and stdio JSON-RPC tools.", expected: /reasonix setup.*模型服务.*工具可以执行命令和修改文件/s },
+    { repo: "firecrawl/pdf-inspector", title: "pdf-inspector: fast PDF classifier", content: "Classifies TextBased, Scanned, ImageBased or Mixed PDF files with position-aware extraction without OCR.", expected: /文本型、扫描型、图片型或混合型.*对扫描页或异常页再转交光学识别/s },
+    { repo: "lyogavin/airllm", title: "airllm: run large models with small GPU memory", content: "Load one layer at a time. Run 70B with 4GB and 405B with 8GB of GPU memory.", expected: /四 GB 左右显存.*低显存不等于高速度/s },
+  ];
+
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: fixture.title, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo });
+    const visibleText = [project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" ");
+
+    assert.equal(project.meta.title, name);
+    assert.equal(project.scenes[0].headline, `开源项目推荐：${name}`);
+    assert.equal(project.scenes.length, 5);
+    assert.ok(project.meta.durationSeconds >= 60 && project.meta.durationSeconds <= 100);
+    assert.match(project.narration, fixture.expected);
+    assert.equal(containsForbiddenGithubReference(visibleText, [fixture.repo]), false);
+  }
 });
