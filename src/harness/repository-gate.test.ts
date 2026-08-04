@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createStoryProject } from "../pipeline/story";
 import type { VideoProject } from "../pipeline/types";
 import { evaluateDraft } from "./quality/draft-rules";
 
@@ -18,6 +19,7 @@ test("repository draft gate requires recommendation banner and original name", a
   assert.equal(result.issues.some((issue) => issue.code === "repository_recommendation_missing"), true);
   assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_canonical"), true);
   assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_spoken_first"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "repository_promotion_structure_missing"), true);
 });
 
 test("repository draft gate accepts the canonical recommendation opening", async () => {
@@ -31,4 +33,23 @@ test("repository draft gate accepts the canonical recommendation opening", async
 
   assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_spoken_first"), false);
   assert.equal(result.issues.some((issue) => issue.code === "title_not_spoken_first"), false);
+});
+
+test("generated repository recommendation follows the promotion structure", async () => {
+  const value = createStoryProject({
+    id: "voicebox", kind: "github", contentType: "repository", title: "voicebox: local-first voice studio",
+    url: "https://github.com/jamiepine/voicebox", source: "项目资料", summary: "Local-first voice studio",
+    content: "Local-first voice studio with voice cloning, dictation and story editing.", score: 1, tags: [], repo: "jamiepine/voicebox", metrics: { stars: 48_672 },
+  });
+
+  const result = await evaluateDraft(value, value.meta.durationSeconds, "");
+
+  assert.equal(result.issues.some((issue) => issue.code === "repository_promotion_structure_missing"), false);
+  assert.deepEqual(value.scenes.map((scene) => scene.headline), [
+    "开源项目推荐：voicebox",
+    "先看它替你省掉什么麻烦",
+    "真正值得关注的三点",
+    "最快怎么开始",
+    "什么人值得用，什么情况别急",
+  ]);
 });

@@ -335,11 +335,11 @@ function storySections(item: HotItem) {
   ];
 }
 
-function applySectionDurations(sections: Array<{ scene: VideoScene; narration: string }>, maxSeconds?: number) {
+function applySectionDurations(sections: Array<{ scene: VideoScene; narration: string }>, maxSeconds?: number, minSeconds = 55) {
   const narrationChars = sections.map((section) => section.narration.length);
   const totalChars = narrationChars.reduce((sum, count) => sum + count, 0);
   const target = Math.min(maxSeconds ?? 96, 115);
-  const seconds = Math.max(55, Math.min(target, Math.ceil(totalChars / 5.4)));
+  const seconds = Math.max(minSeconds, Math.min(target, Math.ceil(totalChars / 5.4)));
   const minDurations = sections.map((section) => (section.scene.type === "title" ? 7 : 10));
   const minTotal = minDurations.reduce((sum, duration) => sum + duration, 0);
   let remaining = Math.max(0, seconds - minTotal);
@@ -403,6 +403,33 @@ function repositoryStars(item: HotItem) {
   const stars = Number(item.metrics?.stars);
   if (!Number.isFinite(stars) || stars < 0) return "Stars unavailable";
   return `${Math.round(stars).toLocaleString("en-US")} Stars`;
+}
+
+function repositoryProofMetrics(item: HotItem, profile: RepositoryProfile) {
+  const stars = Number(item.metrics?.stars);
+  const metrics = Number.isFinite(stars) && stars >= 0
+    ? [{ label: "社区关注", value: `${Math.round(stars).toLocaleString("en-US")} Stars` }]
+    : [];
+  return [...metrics, ...(profile.metrics ?? []), { label: "项目定位", value: profile.topics[0] ?? "实用工具" }, { label: "建议起点", value: "最小任务" }].slice(0, 2);
+}
+
+function repositoryPromotionCopy(profile: RepositoryProfile) {
+  const problem = profile.problemPoints?.[0]
+    ?? `当你想${profile.theme}时，最费时间的往往不是找到工具，而是把零散步骤变成一条能跑通、能检查的路径。`;
+  const benefit = profile.problemPoints?.[1]
+    ?? `这个项目把${profile.topics.slice(0, 3).join("、")}组织成可以逐步验证的工作流。`;
+  const firstStep = profile.steps?.[0]?.detail ?? "先选一个边界清晰的小任务，跑通最小流程。";
+  return {
+    problem,
+    benefit,
+    audience: `需要${profile.theme}的个人或团队`,
+    firstStep,
+    highlights: [
+      `核心结果：${compactSentence(profile.capability, 54)}`,
+      `最短路径：${compactSentence(profile.workflow, 54)}`,
+      `使用前提：${compactSentence(profile.boundaries, 54)}`,
+    ],
+  };
 }
 
 function repositoryTopics(content: string) {
@@ -756,63 +783,64 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
 function createRepositoryProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }): VideoProject {
   const name = repositoryName(item);
   const profile = repositoryProfile(item);
-  const topics = profile.topics;
-  const isBifrost = name.toLowerCase() === "bifrost";
-  const hasDetailedWorkflow = profile.steps?.length === 4;
+  const promotion = repositoryPromotionCopy(profile);
+  const proofMetrics = repositoryProofMetrics(item, profile);
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
-      scene: { type: "title", duration: 11, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: `${profile.theme} · ${repositoryStars(item)}`, sources: ["项目定位", "核心能力", repositoryStars(item)] },
-      narration: `开源项目推荐：${name}。它${profile.theme}。${isBifrost ? "应用只需接一套接口，就能统一管理模型调用。" : ""}`,
+      scene: { type: "title", duration: 10, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: `${profile.theme} · ${repositoryStars(item)}`, sources: ["一句话用途", "社区关注", repositoryStars(item)] },
+      narration: `开源项目推荐：${name}。它${profile.theme}。`,
     },
     {
       scene: {
-        type: "briefing_points", duration: 15, headline: "先看它解决什么问题", source: "项目资料", title: name, summary: profile.capability,
-        metrics: profile.metrics ?? (isBifrost ? [{ label: "统一入口", value: "23+ 服务" }, { label: "兼容方式", value: "一套 API" }] : [{ label: "主要定位", value: "开发实践" }, { label: "组织方式", value: "分步理解" }]),
-        points: profile.problemPoints ?? (isBifrost ? [profile.capability, "应用无需分别适配每一家模型服务。", "服务异常时可以按规则自动切换备用模型。"] : [profile.capability, "内容围绕实际任务组织，而不是只给出结论。", "每个主题都需要结合自己的工程上下文判断。"]),
+        type: "briefing_points", duration: 16, headline: "先看它替你省掉什么麻烦", source: "项目资料", title: name, summary: promotion.problem,
+        metrics: proofMetrics,
+        points: [promotion.problem, promotion.benefit, `直接收益：${profile.capability}`],
       },
-      narration: isBifrost ? `Bifrost 的核心作用，是${profile.capability}。应用不用分别适配每一家服务，模型异常时还能自动切换备用方案。` : `它的主要作用是${profile.capability}。先用一个边界清晰的小任务，验证它是否适合你的工作。`,
+      narration: limitNarration(`${promotion.problem}直接收益是${profile.capability}。`, 120),
     },
     {
       scene: {
-        type: "signal_chart", duration: 15, headline: "使用时关注哪些环节",
-        bars: topics.slice(0, 4).map((topic, index) => ({ label: topic, value: 1, detail: "项目资料列出的实践主题", color: ["#18b7a5", "#7c6cff", "#facc15", "#ff6b6b"][index] })),
+        type: "news_stack", duration: 16, headline: "真正值得关注的三点",
+        items: promotion.highlights.map((highlight, index) => ({
+          title: ["核心结果", "最短路径", "使用前提"][index],
+          summary: highlight.replace(/^[^：]+：/u, ""),
+          source: "项目资料",
+          url: "about:blank",
+          tags: [profile.topics[index] ?? "项目能力"],
+        })),
       },
-      narration: `重点环节是${topics.slice(0, 4).join("、")}。先确认输入、规则和预期结果，再检查每一步输出。`,
+      narration: limitNarration(`核心价值是${profile.capability}。`, 115),
     },
     {
       scene: {
-        type: "flow", duration: 17, headline: "四步开始使用", steps: [
-          ...(profile.steps ?? (isBifrost ? [
-            { label: "启动网关", detail: "在本地或服务器运行统一入口。" },
-            { label: "配置服务", detail: "在管理界面填写模型服务和密钥。" },
-            { label: "修改地址", detail: "把应用接口地址指向网关。" },
-            { label: "验证策略", detail: "检查切换、延迟、缓存和成本。" },
-          ] : [
-            { label: "选择主题", detail: "从当前问题出发确定一个具体方向。" },
-            { label: "阅读结构", detail: "确认目标、输入和关键约束。" },
-            { label: "动手验证", detail: "用最小实现观察每一步的结果。" },
-            { label: "复盘验证", detail: "保留检查结果并定位异常。" },
-          ])),
+        type: "flow", duration: 17, headline: "最快怎么开始", steps: [
+          ...(profile.steps ?? [
+            { label: "明确问题", detail: compactSentence(profile.theme, 38) },
+            { label: "准备输入", detail: compactSentence(profile.workflow, 38) },
+            { label: "最小验证", detail: compactSentence(profile.capability, 38) },
+            { label: "核对边界", detail: compactSentence(profile.boundaries, 38) },
+          ]),
         ],
       },
-      narration: isBifrost ? `上手分四步：启动网关，配置模型服务和密钥，把应用接口地址改到 Bifrost，再验证故障切换、延迟、缓存和成本。` : hasDetailedWorkflow ? `上手可以分四步。${profile.workflow}。` : `实际使用分四步：选择主题、阅读结构、动手验证、复盘验证。${profile.workflow}。每次只改变一个关键条件并保留检查结果。`,
+      narration: limitNarration(`最快开始分四步：明确问题、准备输入、最小验证、核对边界。${profile.workflow}。`, 120),
     },
     {
       scene: {
-        type: "outro", duration: 14, headline: "适合谁，以及如何使用", bullets: [
-          `适合希望${profile.theme}的使用者。`,
-          isBifrost ? "适合同时使用多个模型服务的应用和团队。" : "从一个主题和最小验证开始，再逐步扩展。",
-          isBifrost ? "它管理调用入口，不替你选择业务模型。" : "关键工程决策仍要结合测试、评审与实际环境确认。",
+        type: "outro", duration: 15, headline: "什么人值得用，什么情况别急", bullets: [
+          `推荐：${promotion.audience}。`,
+          `先试：${promotion.firstStep}`,
+          `注意：${profile.boundaries}。`,
         ],
       },
-      narration: isBifrost ? `它适合同时使用多个模型服务、需要稳定性和成本治理的应用。它管理的是调用入口，不会替你选择业务模型。生产使用前要验证权限、兼容性和切换规则。` : `它适合希望${profile.theme}的使用者。${profile.boundaries}。先跑通一个小问题，核对结果后再扩展。`,
+      narration: limitNarration(`如果你是${promotion.audience}，这个项目值得从一个小任务开始试。${profile.boundaries}。`, 120),
     },
   ];
-  const scenes = applySectionDurations(sections, Math.min(100, Math.max(60, Number(process.env.STORY_MAX_SECONDS ?? 80))));
+  const scenes = applySectionDurations(sections, Math.min(100, Math.max(60, Number(process.env.STORY_MAX_SECONDS ?? 80))), 60);
   const factLedger = buildFactLedger([item]);
-  const claimIds = (sceneIndex: number) => factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2).map((claim) => claim.id).concat(
-    factLedger.claims.length ? [] : [],
-  );
+  const claimIds = (sceneIndex: number) => {
+    const selected = factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2);
+    return (selected.length ? selected : factLedger.claims.slice(0, 2)).map((claim) => claim.id);
+  };
   return {
     meta: { title: name, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
     narration: sections.map((section) => section.narration).join("\n"),

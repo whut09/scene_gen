@@ -255,6 +255,21 @@ export async function evaluateDraft(
       issues.push({ severity: "error", code: "repository_name_not_spoken_first", message: `首屏旁白必须先完整播报“${canonicalOpening}”。`, sceneIndex: 0 });
       revisionNotes.push(`首句完整播报“${canonicalOpening}”，然后进入项目用途。`);
     }
+    const promotionHeadlines = project.scenes.slice(1).map((scene) => sceneVisibleText(scene));
+    const missingPromotionSections = [
+      { label: "用户痛点", pattern: /解决|麻烦|痛点|省掉/ },
+      { label: "核心价值", pattern: /值得关注|核心价值|核心亮点/ },
+      { label: "上手路径", pattern: /开始|上手|使用/ },
+      { label: "适用人群与边界", pattern: /什么人|适合谁|使用边界|别急/ },
+    ].filter((section) => !promotionHeadlines.some((headline) => section.pattern.test(headline)));
+    if (missingPromotionSections.length > 0) {
+      issues.push({
+        severity: "error",
+        code: "repository_promotion_structure_missing",
+        message: `开源项目推荐缺少：${missingPromotionSections.map((section) => section.label).join("、")}。`,
+      });
+      revisionNotes.push("按用户痛点、一句话收益、可信亮点、最短上手路径、适用人群与边界重写五屏项目推荐，删除空泛功能罗列。");
+    }
   }
   if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(publicProjectText, repositoryAddresses)) {
     issues.push({ severity: "error", code: "external_platform_reference_exposed", message: "开源项目视频不得展示或播报第三方代码托管平台名称、域名或仓库地址。" });

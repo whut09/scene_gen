@@ -214,6 +214,8 @@ test("repository fallback produces a complete five-scene project without platfor
   assert.equal(project.narrationSegments?.[0].ttsText?.startsWith("开源项目推荐：Build Your Own X"), true);
   assert.ok(project.narration.replace(/\s/g, "").length >= 240);
   assert.ok(project.meta.durationSeconds >= 50 && project.meta.durationSeconds <= 100);
+  assert.match(project.narration, /省掉什么麻烦|最费时间/);
+  assert.doesNotMatch(project.narration, /重点环节是|项目资料列出的实践主题|先确认输入、规则和预期结果/);
   assert.equal(containsForbiddenGithubReference([project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" "), [item.repo ?? ""]), false);
 });
 

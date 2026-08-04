@@ -58,6 +58,7 @@ export const issueRegistry = {
   repository_recommendation_missing: define("hard", "revise-scenes", true),
   repository_name_not_canonical: define("hard", "regenerate-draft", true),
   repository_name_not_spoken_first: define("hard", "revise-scenes", true),
+  repository_promotion_structure_missing: define("hard", "regenerate-draft", true),
   narration_short: define("hard", "regenerate-draft", true),
   narration_long: define("hard", "regenerate-draft", true),
   narration_punctuation_unbalanced: define("hard", "revise-scenes", true),

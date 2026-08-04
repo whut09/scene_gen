@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import type { VideoProject } from "../../src/pipeline/types";
 import { buildHtmlVideoContentGraph } from "../../src/html-video/content-graph";
 import { inspectSceneDom } from "../../src/html-video/visual-audit";
+import { createStoryProject } from "../../src/pipeline/story";
 import { getTemplateById } from "../../src/templates/template-registry";
 
 const project: VideoProject = {
@@ -31,6 +32,31 @@ test("selected five-scene templates pass error-level DOM readability audit", { t
       await page.setContent(template.renderHtml({ project, scene, sceneIndex: node.sceneIndex, width: project.meta.width, height: project.meta.height, variantId: node.variantId }), { waitUntil: "load" });
       await page.evaluate(() => document.fonts.ready);
       const audit = await inspectSceneDom(page, { sceneIndex: node.sceneIndex, width: project.meta.width, height: project.meta.height, durationSec: scene.duration, headline: scene.headline, syncCues: node.syncCues });
+      assert.deepEqual(audit.issues.filter((issue) => issue.severity === "error"), [], `scene=${node.sceneIndex} template=${node.templateId} ${JSON.stringify(audit.issues)}`);
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("repository promotion scenes remain readable with benefit-led copy", { timeout: 120_000 }, async () => {
+  const repositoryProject = createStoryProject({
+    id: "voicebox", kind: "github", contentType: "repository", title: "voicebox: local-first AI voice studio",
+    url: "https://github.com/jamiepine/voicebox", source: "项目资料", summary: "Local-first AI voice studio",
+    content: "Local-first voice studio with voice cloning, 23 languages, 7 TTS engines, global dictation and story editor.",
+    score: 1, tags: [], repo: "jamiepine/voicebox", metrics: { stars: 48_672, forks: 5_993 },
+  });
+  const graph = buildHtmlVideoContentGraph(repositoryProject);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: repositoryProject.meta.width, height: repositoryProject.meta.height } });
+    for (const node of graph.nodes) {
+      const template = getTemplateById(node.templateId);
+      assert.ok(template);
+      const scene = repositoryProject.scenes[node.sceneIndex];
+      await page.setContent(template.renderHtml({ project: repositoryProject, scene, sceneIndex: node.sceneIndex, width: repositoryProject.meta.width, height: repositoryProject.meta.height, variantId: node.variantId }), { waitUntil: "load" });
+      await page.evaluate(() => document.fonts.ready);
+      const audit = await inspectSceneDom(page, { sceneIndex: node.sceneIndex, width: repositoryProject.meta.width, height: repositoryProject.meta.height, durationSec: scene.duration, headline: scene.headline, syncCues: node.syncCues });
       assert.deepEqual(audit.issues.filter((issue) => issue.severity === "error"), [], `scene=${node.sceneIndex} template=${node.templateId} ${JSON.stringify(audit.issues)}`);
     }
   } finally {
