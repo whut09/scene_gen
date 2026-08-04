@@ -788,7 +788,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: { type: "title", duration: 10, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: `${profile.theme} · ${repositoryStars(item)}`, sources: ["一句话用途", "社区关注", repositoryStars(item)] },
-      narration: `开源项目推荐：${name}。它${profile.theme}。`,
+      narration: `开源项目推荐：${name}。它${profile.theme}。先用一个边界清晰的小任务验证效果，再决定是否放进日常工作流。`,
     },
     {
       scene: {
@@ -809,7 +809,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           tags: [profile.topics[index] ?? "项目能力"],
         })),
       },
-      narration: limitNarration(`核心价值是${profile.capability}。`, 115),
+      narration: limitNarration(`真正值得关注的是${profile.capability}。下面从核心结果、最短路径和使用前提三个方面判断它是否适合你。`, 115),
     },
     {
       scene: {
@@ -911,7 +911,7 @@ function createGeneralNewsProject(
   const isTechnicalArticle = contentTypeForItem(item) === "technical-article";
   const isChipStory =
     /芯片|AI芯片|推理芯片|自研芯片|造芯|算力芯片/i.test(topicText) &&
-    !/发布.*模型|推出.*模型|模型.*发布|模型.*上线/i.test(item.title);
+    !/(?:开源|发布|推出).{0,20}(?:模型|H3)|(?:模型|H3).{0,20}(?:开源|发布|推出)/i.test(item.title);
   const title = speechFriendlyTitle(item.title);
   const summary =
     item.summary && item.summary !== item.title

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { projectSynthesisReadinessIssues } from "./synthesis-readiness";
 import { createStoryProject, scrubAttribution, splitArticleIntoSemanticChunks } from "./story";
 import type { HotItem } from "./types";
 import { containsForbiddenGithubReference } from "./story";
+import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
 
 test("general news fallback creates five grounded scenes", () => {
   const sentences = Array.from({ length: 12 }, (_, index) => `这是新闻正文中的第${index + 1}条完整事实描述，用于验证降级生成仍然保持事实引用和逐屏旁白。`).join("");
@@ -226,6 +228,35 @@ test("repository title screen displays the captured star count", () => {
 
   assert.equal(project.scenes[0].type, "title");
   if (project.scenes[0].type === "title") assert.match(project.scenes[0].subhead, /48,666 Stars/);
+});
+
+test("repository fallback with a short project name passes synthesis readiness", () => {
+  const project = createStoryProject({
+    id: "n8n", kind: "github", contentType: "repository", title: "n8n: workflow automation", url: "https://github.com/n8n-io/n8n",
+    source: "项目资料", summary: "Workflow automation platform", content: "Build and deploy workflow automation and AI agents.", score: 1, tags: [], repo: "n8n-io/n8n", metrics: { stars: 120_000 },
+  });
+
+  assert.deepEqual(projectSynthesisReadinessIssues(project, 80), []);
+});
+
+test("template learning cannot reintroduce adjacent template repeats", () => {
+  const project = createStoryProject({
+    id: "angular", kind: "github", contentType: "repository", title: "angular: web framework", url: "https://github.com/angular/angular",
+    source: "项目资料", summary: "Web framework", content: "A web framework for building applications.", score: 1, tags: [], repo: "angular/angular", metrics: { stars: 100_000 },
+  });
+  const graph = buildHtmlVideoContentGraph(project);
+  assert.equal(graph.nodes.some((node, index) => index > 0 && node.templateId === graph.nodes[index - 1].templateId), false);
+});
+
+test("model release articles are not misclassified as chip strategy stories", () => {
+  const project = createStoryProject({
+    id: "minimax-h3", kind: "webpage", contentType: "news", title: "又一国产模型重磅开源，有声视频编辑全球第一，16家芯片及平台首日适配",
+    url: "https://www.36kr.com/p/3923895999068550", source: "核心事实", summary: "文图音视频一把抓。",
+    content: "MiniMax H3 是通用型全模态生成系统，可生成视频和立体声音频。模型开源后，芯片厂商和推理框架完成适配。",
+    publishedAt: "2026年8月4日", score: 1, tags: [],
+  });
+  assert.doesNotMatch(project.narration, /DeepSeek 和智谱|推理芯片/);
+  assert.match(project.narration, /MiniMax H3|全模态/);
 });
 
 test("MetaGPT repository draft explains the user problem and practical workflow", () => {

@@ -42,6 +42,15 @@ test("content graph validates numbers against referenced claims instead of sourc
   assert.deepEqual(evidence.claimIds, [target.id]);
 });
 
+test("content graph ignores ellipsis after a number instead of creating a malformed number claim", () => {
+  const project = projectFixture();
+  const titleScene = project.scenes[0];
+  assert.equal(titleScene.type, "title");
+  project.scenes[0] = { ...titleScene, subhead: "结果达到8..." };
+  const evidence = buildHtmlVideoContentGraph(project).nodes[0].sourceEvidence;
+  assert.equal(evidence.unmatchedNumbers.includes("8.."), false);
+});
+
 test("fact ledger reports conflicting structured metrics", () => {
   const project = projectFixture();
   project.sources[0].metrics = { users: "100万" };

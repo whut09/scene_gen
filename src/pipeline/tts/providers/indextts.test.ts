@@ -15,9 +15,9 @@ test("IndexTTS keeps a short title in one synthesis unit", () => {
   assert.deepEqual(splitIndexTtsText("Kimi Code，开源项目推荐。", 88), ["Kimi Code，开源项目推荐。"]);
 });
 
-test("IndexTTS spells standalone acronyms and invalidates the previous frontend cache", async () => {
+test("IndexTTS uses a stable two-syllable Mandarin spelling for AI", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "AI 和 AGI 通过 OpenAI API 接入模型。" });
 
-  assert.equal(indexTtsPronunciationInput(plan).text, "A、I， 和 A、G、I， 通过 OpenAI A、P、I， 接入模型。");
+  assert.equal(indexTtsPronunciationInput(plan).text, "诶，爱， 和 A、G、I， 通过 OpenAI A、P、I， 接入模型。");
   assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v6-safe-product-punctuation");
 });

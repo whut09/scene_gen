@@ -231,7 +231,8 @@ export function selectTemplateForScene(
     usageCounts?: ReadonlyMap<string, number>;
   } = {},
 ): TemplateSelection {
-  const selected = rankTemplatesForScene(scene, project, options)[0];
+  const ranked = rankTemplatesForScene(scene, project, options);
+  const selected = ranked.find((candidate) => candidate.template.id !== options.previousTemplateId) ?? ranked[0];
   if (!selected) throw new Error("No commercial HTML video template supports scene type " + scene.type);
   return selected;
 }

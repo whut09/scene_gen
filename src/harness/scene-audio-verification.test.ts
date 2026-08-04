@@ -72,11 +72,24 @@ test("AI acronym verification rejects the Chinese homophone", () => {
   project.narrationSegments![0].text = "AI 正在改变开发流程。";
   project.narrationSegments![0].ttsText = "AI 正在改变开发流程。";
   const result = verifySceneTranscripts(project, [
-    { sceneIndex: 0, text: "爱正在改变开发流程。", confidence: 0.82 },
+    { sceneIndex: 0, text: "爱正在改变开发流程。", confidence: 0.95 },
     { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
     { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
   ]);
   assert.ok(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0));
+});
+
+test("AI acronym verification is inconclusive when ASR confidence is below the semantic threshold", () => {
+  const project = projectFixture();
+  project.narrationSegments![0].text = "AI 正在改变开发流程。";
+  project.narrationSegments![0].ttsText = "AI 正在改变开发流程。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "爱正在改变开发流程。", confidence: 0.72 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0), false);
+  assert.ok(result.issues.some((item) => item.code === "verification_inconclusive" && item.sceneIndex === 0));
 });
 
 test("AI acronym verification accepts a spelled letter transcript", () => {

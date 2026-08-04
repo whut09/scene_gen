@@ -81,7 +81,9 @@ export interface GraphValidationResult {
 }
 
 function normalizedNumbers(text: string) {
-  return [...new Set((text.match(/\d[\d,.]*(?:%|％)?/g) ?? []).map((value) => value.replace(/,/g, "").replace(/％/g, "%").replace(/[.]$/, "")))];
+  return [...new Set((text.match(/\d[\d,.]*(?:%|％)?/g) ?? [])
+    .map((value) => value.replace(/,/g, "").replace(/％/g, "%").replace(/[.]+$/g, ""))
+    .filter((value) => /^\d+(?:\.\d+)?%?$/.test(value)))];
 }
 
 function sceneEvidenceText(scene: VideoScene) {

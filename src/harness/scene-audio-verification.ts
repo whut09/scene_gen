@@ -258,7 +258,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       issues.push({ severity: "error", code: "audio_repeated_phrase", message: `第 ${segment.sceneIndex + 1} 屏检测到旁白异常连续重复。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, repeatedPhrase: repeatedPhrase.phrase, repeatCount: repeatedPhrase.repeats, characterOffset: repeatedPhrase.index, asrConfidence: confidence } });
     }
     const missingAcronym = acronyms.find((acronym) => !transcriptSpellsAcronymAsLetters(transcript.text, acronym));
-    if (missingAcronym && typeof confidence === "number" && confidence >= Math.min(minimumConfidence, 0.6)) {
+    if (missingAcronym && typeof confidence === "number" && confidence >= semanticMinimumConfidence) {
       issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏没有完整读出缩写 ${missingAcronym}，必须逐字母播报。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedAcronym: missingAcronym, transcript: transcript.text, asrConfidence: confidence, requiredReading: [...missingAcronym].join(" ") } });
     }
     const expectedLanguage = options.expectedLanguage?.toLowerCase();
