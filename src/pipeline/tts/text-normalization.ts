@@ -84,7 +84,7 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/^曝/u, "爆料称：")
     .replace(/重置/g, "重新设置")
     .replace(/豆包和千问/g, "豆包，和千问，")
-    .replace(/DeepSeek/gi, "深度求索")
+    .replace(/Qwen(?=\d|\b)/gi, "千问")
     .replace(/MoneyPrinterTurbo/gi, "Money Printer Turbo")
     .replace(/awesome-llm-apps/gi, "这个项目")
     .replace(/\bRAG\b/gi, "检索增强生成")

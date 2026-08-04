@@ -399,6 +399,12 @@ function repositoryName(item: HotItem) {
   return item.repo?.split("/").filter(Boolean).at(-1) ?? (item.title.split(/[：:]/)[0].trim() || "开源项目");
 }
 
+function repositoryStars(item: HotItem) {
+  const stars = Number(item.metrics?.stars);
+  if (!Number.isFinite(stars) || stars < 0) return "Stars unavailable";
+  return `${Math.round(stars).toLocaleString("en-US")} Stars`;
+}
+
 function repositoryTopics(content: string) {
   const values = [...content.matchAll(/\*\s*\[([^\]]{2,80})\]\(#/g)].map((match) => match[1].trim());
   const labels = values.map((value) => repositoryTopicLabels[value.toLowerCase()] ?? "").filter(Boolean);
@@ -755,7 +761,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const hasDetailedWorkflow = profile.steps?.length === 4;
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
-      scene: { type: "title", duration: 11, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: profile.theme, sources: ["项目定位", "核心能力", "适用边界"] },
+      scene: { type: "title", duration: 11, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: `${profile.theme} · ${repositoryStars(item)}`, sources: ["项目定位", "核心能力", repositoryStars(item)] },
       narration: `开源项目推荐：${name}。它${profile.theme}。${isBifrost ? "应用只需接一套接口，就能统一管理模型调用。" : ""}`,
     },
     {

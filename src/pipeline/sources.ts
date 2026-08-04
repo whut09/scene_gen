@@ -364,7 +364,9 @@ function githubReadmeDescription(readme: string, repoName: string) {
   return cleanGithubDescription([heading, paragraph].filter(Boolean).join("。") || repoName, repoName);
 }
 
-function githubReadmeItem(url: string, target: NonNullable<ReturnType<typeof githubRepoFromUrl>>, readme: string, config: SourceConfig): HotItem {
+type GithubRepositoryMetrics = NonNullable<HotItem["metrics"]>;
+
+function githubReadmeItem(url: string, target: NonNullable<ReturnType<typeof githubRepoFromUrl>>, readme: string, config: SourceConfig, repositoryMetrics: GithubRepositoryMetrics = {}): HotItem {
   const description = compactText(githubReadmeDescription(readme, target.repo), 260);
   const joined = [description, readme].join(" ");
   return {
@@ -372,8 +374,22 @@ function githubReadmeItem(url: string, target: NonNullable<ReturnType<typeof git
     title: `${target.repo}：${description}`, url, source: "项目资料", summary: description,
     content: compactText(readme, 12000), publishedAt: new Date().toISOString(),
     score: scoreItem(joined, undefined, 1, config.keywords), tags: normalizeTags(joined, config.keywords).slice(0, 8),
-    repo: target.fullName, metrics: { stars: 0, forks: 0, issues: 0, language: "Unknown", license: "Unknown", branch: "HEAD" },
+    repo: target.fullName, metrics: { stars: 0, forks: 0, issues: 0, language: "Unknown", license: "Unknown", branch: "HEAD", ...repositoryMetrics },
   };
+}
+
+async function githubRepositoryMetricsFallback(target: NonNullable<ReturnType<typeof githubRepoFromUrl>>): Promise<GithubRepositoryMetrics> {
+  // The primary Node request has already failed; use the Windows system network stack instead of repeating it.
+  if (process.platform !== "win32") return {};
+  try {
+    const apiUrl = `https://api.github.com/repos/${target.fullName}`;
+    const script = `$ErrorActionPreference='Stop'; $repo=Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent'='scene-gen/0.1'; 'Accept'='application/vnd.github+json' } -Uri '${apiUrl}'; [pscustomobject]@{ stars=$repo.stargazers_count; forks=$repo.forks_count; issues=$repo.open_issues_count; language=$repo.language; license=$repo.license.spdx_id; branch=$repo.default_branch } | ConvertTo-Json -Compress`;
+    const result = await runExternalProcess("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeoutMs: 20_000, retries: 0 });
+    const parsed = JSON.parse(result.stdout.trim()) as { stars?: number; forks?: number; issues?: number; language?: string; license?: string; branch?: string };
+    return { stars: Number(parsed.stars ?? 0), forks: Number(parsed.forks ?? 0), issues: Number(parsed.issues ?? 0), language: parsed.language || "Unknown", license: parsed.license || "Unknown", branch: parsed.branch || "main" };
+  } catch {
+    return {};
+  }
 }
 
 async function githubReadmeViaGit(target: NonNullable<ReturnType<typeof githubRepoFromUrl>>) {
@@ -397,13 +413,14 @@ async function githubReadmeViaGit(target: NonNullable<ReturnType<typeof githubRe
 }
 
 async function collectGithubReadmeFallback(url: string, target: NonNullable<ReturnType<typeof githubRepoFromUrl>>, config: SourceConfig, headers: Record<string, string>) {
+  const repositoryMetrics = await githubRepositoryMetricsFallback(target);
   try {
     const readmeResponse = await fetchWithRetry(`https://raw.githubusercontent.com/${target.fullName}/HEAD/README.md`, { headers: { "user-agent": headers["user-agent"] } }, { label: "github-readme-fallback" });
-    if (readmeResponse.ok) return githubReadmeItem(url, target, await readmeResponse.text(), config);
+    if (readmeResponse.ok) return githubReadmeItem(url, target, await readmeResponse.text(), config, repositoryMetrics);
   } catch {
     // Git uses the system network stack and remains a viable fallback when Node DNS is unavailable.
   }
-  return githubReadmeItem(url, target, await githubReadmeViaGit(target), config);
+  return githubReadmeItem(url, target, await githubReadmeViaGit(target), config, repositoryMetrics);
 }
 
 async function collectGithubRepository(url: string, config: SourceConfig): Promise<HotItem | null> {

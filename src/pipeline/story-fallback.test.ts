@@ -217,6 +217,15 @@ test("repository fallback produces a complete five-scene project without platfor
   assert.equal(containsForbiddenGithubReference([project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" "), [item.repo ?? ""]), false);
 });
 
+test("repository title screen displays the captured star count", () => {
+  const project = createStoryProject({
+    id: "stars", kind: "github", contentType: "repository", title: "voicebox: local-first voice studio", url: "https://github.com/jamiepine/voicebox", source: "项目资料", summary: "Local-first voice studio", content: "Local-first voice studio with voice cloning.", score: 1, tags: [], repo: "jamiepine/voicebox", metrics: { stars: 48666 },
+  });
+
+  assert.equal(project.scenes[0].type, "title");
+  if (project.scenes[0].type === "title") assert.match(project.scenes[0].subhead, /48,666 Stars/);
+});
+
 test("MetaGPT repository draft explains the user problem and practical workflow", () => {
   const project = createStoryProject({
     id: "metagpt", kind: "github", contentType: "repository", title: "MetaGPT: Multi-Agent Framework", url: "https://github.com/FoundationAgents/MetaGPT", source: "项目资料", summary: "AI Software Company", content: "MetaGPT is a multi-agent framework for building software.", score: 1, tags: [], repo: "FoundationAgents/MetaGPT",

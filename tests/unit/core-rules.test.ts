@@ -40,6 +40,13 @@ test("cloud narration keeps a leading AI acronym without expanding it", () => {
   assert.equal(segment.text, "AI 圈又在造新词。");
 });
 
+test("TTS reads Qwen as 千问 and keeps DeepSeek in English", () => {
+  const text = prepareF5SynthesisText("Qwen3.8 和 DeepSeek 正在发布新模型。");
+  assert.match(text, /千问三点八/);
+  assert.match(text, /DeepSeek/);
+  assert.doesNotMatch(text, /深度求索/);
+});
+
 test("TTS normalization preserves Agent product names and AI Agent", () => {
   assert.equal(
     prepareF5SynthesisText("Agent-Reach 为 AI Agent 提供联网能力。"),
