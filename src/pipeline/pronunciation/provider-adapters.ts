@@ -37,7 +37,6 @@ export function indexTtsPronunciationInput(plan: PronunciationPlan) {
     .replace(/\b[A-Z]{2,5}\b/g, (acronym, offset: number, source: string) => {
       const next = source.slice(offset + acronym.length).trimStart()[0] ?? "";
       const pause = /[，。！？；：、,.!?;:]/.test(next) ? "" : "，";
-      if (acronym === "AI") return `诶，爱${pause}`;
       return `${[...acronym].join("、")}${pause}`;
     });
   return { text, mixedPinyin, pronunciationPlanHash: plan.planHash };

@@ -137,6 +137,11 @@ function extractNumberUnits(text: string) {
     .filter((value) => value.length > 1);
 }
 
+function hasProtectedAcronymChunk(chunks: string[] | undefined, acronym: string) {
+  const expected = [...acronym].join("、");
+  return (chunks ?? []).some((chunk) => chunk.trim().replace(/[，。！？；：、,.!?;:\s]+$/u, "") === expected);
+}
+
 function expectedEntities(project: VideoProject, segment: NarrationSegment) {
   const claimIds = new Set(segment.claimIds ?? []);
   const expectedText = canonicalSpeechText(prepareF5SynthesisText(expectedSynthesisText(segment)));
@@ -246,6 +251,12 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const actualText = canonicalSpeechText(normalizeAcronymHomophones(transcript.text));
     const confidence = transcript.confidence ?? undefined;
     const acronyms = expectedAcronyms(expectedSynthesisText(segment));
+    const unprotectedAcronym = segment.ttsProvider === "indextts"
+      ? acronyms.find((acronym) => !hasProtectedAcronymChunk(segment.providerSynthesisChunks, acronym))
+      : undefined;
+    if (unprotectedAcronym) {
+      issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${unprotectedAcronym} 没有作为独立合成单元生成。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { acronym: unprotectedAcronym, provider: segment.ttsProvider ?? "unknown", providerSynthesisChunks: segment.providerSynthesisChunks ?? [] } });
+    }
     const expectedAnchor = expectedText.slice(0, Math.min(8, expectedText.length));
     const openingWindow = actualText.slice(0, expectedAnchor.length + 8);
     const anchorOffset = expectedAnchor.length >= 3 ? openingWindow.indexOf(expectedAnchor) : 0;

@@ -114,6 +114,23 @@ class IndexTtsWorker {
 let worker: IndexTtsWorker | undefined;
 
 export function splitIndexTtsText(text: string, maximumCharacters = 88) {
+  const acronymPattern = /(?<![A-Za-z])(?:[A-Z]、){1,4}[A-Z](?![A-Za-z])/g;
+  const protectedChunks: string[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(acronymPattern)) {
+    const matchIndex = match.index ?? 0;
+    protectedChunks.push(...splitIndexTtsNaturalText(text.slice(cursor, matchIndex), maximumCharacters));
+    const acronymEnd = matchIndex + match[0].length;
+    const punctuation = text.slice(acronymEnd).match(/^[，。！？；：、,.!?;:]+/)?.[0] ?? "";
+    protectedChunks.push(`${match[0]}${punctuation}`);
+    cursor = acronymEnd + punctuation.length;
+  }
+  if (protectedChunks.length === 0) return splitIndexTtsNaturalText(text, maximumCharacters);
+  protectedChunks.push(...splitIndexTtsNaturalText(text.slice(cursor), maximumCharacters));
+  return protectedChunks.filter(Boolean);
+}
+
+function splitIndexTtsNaturalText(text: string, maximumCharacters: number) {
   const clauses = text.match(/[^，。！？；：,.!?;:]+[，。！？；：,.!?;:]?/gu) ?? [text];
   const chunks: string[] = [];
   let current = "";
@@ -139,13 +156,14 @@ export async function releaseIndexTtsWorker() {
 
 export async function indexTts(input: { plan: PronunciationPlan; outputPath: string; force?: boolean; cacheSalt?: string; signal?: AbortSignal }, config = getRuntimeConfig()) {
   const pronunciation = indexTtsPronunciationInput(input.plan);
+  const synthesisChunks = splitIndexTtsText(pronunciation.text);
   const referenceDurationSeconds = await probeDuration(config.tts.indextts.refAudio);
   if (referenceDurationSeconds < config.tts.indextts.minimumReferenceSeconds) throw new Error(`IndexTTS2 reference audio must be at least ${config.tts.indextts.minimumReferenceSeconds}s; received ${referenceDurationSeconds.toFixed(2)}s.`);
   const referenceAudioHash = createHash("sha256").update(await readFile(config.tts.indextts.refAudio)).digest("hex");
   const seedIdentity = createHash("sha256").update(`${input.plan.planHash}:${input.cacheSalt ?? ""}`).digest("hex");
   const seedOffset = Number.parseInt(seedIdentity.slice(0, 8), 16);
   const seed = (config.tts.indextts.seed + seedOffset) & 0x7FFFFFFF;
-  const identity = { provider: "indextts", model: "IndexTTS2", text: pronunciation.text, pronunciationPlanHash: input.plan.planHash, referenceAudioHash, referenceDurationSeconds, useRandom: false, seed, topP: config.tts.indextts.topP, topK: config.tts.indextts.topK, temperature: config.tts.indextts.temperature, repetitionPenalty: config.tts.indextts.repetitionPenalty, tempo: config.tts.indextts.tempo, loudnessLufs: config.tts.indextts.loudnessLufs, truePeakDb: config.tts.indextts.truePeakDb, frontendVersion: INDEXTTS_FRONTEND_VERSION, cacheSalt: input.cacheSalt ?? "" };
+  const identity = { provider: "indextts", model: "IndexTTS2", text: pronunciation.text, synthesisChunks, pronunciationPlanHash: input.plan.planHash, referenceAudioHash, referenceDurationSeconds, useRandom: false, seed, topP: config.tts.indextts.topP, topK: config.tts.indextts.topK, temperature: config.tts.indextts.temperature, repetitionPenalty: config.tts.indextts.repetitionPenalty, tempo: config.tts.indextts.tempo, loudnessLufs: config.tts.indextts.loudnessLufs, truePeakDb: config.tts.indextts.truePeakDb, frontendVersion: INDEXTTS_FRONTEND_VERSION, cacheSalt: input.cacheSalt ?? "" };
   const cacheKey = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
   let result: WorkerResult | undefined;
   const cached = await getOrCreateMediaCache({
@@ -155,7 +173,7 @@ export async function indexTts(input: { plan: PronunciationPlan; outputPath: str
       const rawPath = targetPath.replace(/\.wav$/i, ".raw.wav");
       const rawPartPaths: string[] = [];
       try {
-        const chunks = splitIndexTtsText(pronunciation.text);
+        const chunks = synthesisChunks;
         for (let index = 0; index < chunks.length; index += 1) {
           const partPath = chunks.length === 1 ? rawPath : rawPath.replace(/\.wav$/i, `.part-${index + 1}.wav`);
           rawPartPaths.push(partPath);

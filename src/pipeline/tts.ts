@@ -15,7 +15,7 @@ import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
 import { nvidiaStableSynthesisText, nvidiaTts } from "./tts/providers/nvidia";
-import { indexTts, releaseIndexTtsWorker } from "./tts/providers/indextts";
+import { indexTts, releaseIndexTtsWorker, splitIndexTtsText } from "./tts/providers/indextts";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
 import { cloudflareMeloTts } from "./tts/providers/cloudflare-melotts";
@@ -589,10 +589,12 @@ async function attachSegmentedNarration(
   let audioStartSeconds = 0;
   const alignedSegments = segments.map((segment, index) => {
     const durationSeconds = playbackDurations[index] + gaps[index] + (index === 0 ? leadingSilenceSeconds : 0);
+    const indexTtsInput = provider === "indextts" ? indexTtsPronunciationInput(results[index].pronunciationPlan) : undefined;
     const aligned = {
       ...segment,
       ttsText: results[index].pronunciationPlan.synthesisText,
-      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" ? nvidiaStableSynthesisText(results[index].pronunciationPlan) : provider === "indextts" ? indexTtsPronunciationInput(results[index].pronunciationPlan).text : results[index].pronunciationPlan.synthesisText,
+      providerSynthesisText: provider === "local" ? localPronunciationText(results[index].pronunciationPlan) : provider === "nvidia" ? nvidiaStableSynthesisText(results[index].pronunciationPlan) : indexTtsInput?.text ?? results[index].pronunciationPlan.synthesisText,
+      providerSynthesisChunks: indexTtsInput ? splitIndexTtsText(indexTtsInput.text) : undefined,
       pronunciationPlan: results[index].pronunciationPlan,
       ttsProvider: provider,
       ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : provider === "indextts" ? "IndexTTS2.Fixed.Reference" : undefined),

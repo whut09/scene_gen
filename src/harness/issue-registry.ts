@@ -91,6 +91,7 @@ export const issueRegistry = {
   audio_voice_inconsistent: define("hard", "resynthesize-audio", true),
   audio_acoustic_voice_drift: define("hard", "resynthesize-audio", true),
   audio_identity_metadata_missing: define("hard", "resynthesize-audio", true),
+  audio_acronym_plan_unprotected: define("hard", "resynthesize-audio", true),
   audio_language_inconsistent: define("hard", "resynthesize-audio", true),
   audio_opening_mismatch: define("environment", "retry-stage", true),
   audio_scene_opening_artifact: define("hard", "resynthesize-audio", true),

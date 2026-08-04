@@ -177,6 +177,7 @@ export const narrationSegmentSchema = z.object({
   text: z.string(),
   ttsText: z.string().min(1).optional(),
   providerSynthesisText: z.string().min(1).optional(),
+  providerSynthesisChunks: z.array(z.string().min(1)).optional(),
   pronunciationOverrides: z.array(pronunciationOverrideSchema).optional(),
   pronunciationPlan: pronunciationPlanSchema.optional(),
   claimIds: claimIdsSchema.optional(),
