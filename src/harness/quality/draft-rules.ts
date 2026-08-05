@@ -7,7 +7,7 @@ import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate } from "../../pipeline/news-date";
-import { repositoryProjectName } from "../../pipeline/repository-project";
+import { repositoryProjectName, repositoryProjectUrl } from "../../pipeline/repository-project";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
@@ -75,7 +75,7 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
   return { min: 45, max: 105 };
 }
 
-const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|最多|至少/;
+const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|失控|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|最多|至少/;
 
 function textTokens(value: string) {
   const compact = normalizeText(value);
@@ -319,6 +319,23 @@ export async function evaluateDraft(
       issues.push({ severity: "error", code: "repository_name_not_canonical", message: `开源项目标题必须使用项目原名 ${repositoryName}。` });
       revisionNotes.push(`将视频标题恢复为项目原名 ${repositoryName}，不要翻译或改写。`);
     }
+    const repositoryUrl = repositoryProjectUrl(project);
+    const coverDecision = productionDecisions[0]?.templateSelection;
+    const coverTemplate = coverDecision ? getTemplateById(coverDecision.templateId) : undefined;
+    const coverHtml = firstScene && coverTemplate
+      ? coverTemplate.renderHtml({
+        project,
+        scene: firstScene,
+        sceneIndex: 0,
+        width: project.meta.width,
+        height: project.meta.height,
+        variantId: coverDecision.variantId,
+      })
+      : "";
+    if (!repositoryUrl || !coverHtml.includes(repositoryUrl)) {
+      issues.push({ severity: "error", code: "repository_address_missing", message: "开源项目首屏必须清晰展示完整仓库地址。", sceneIndex: 0, evidence: { repositoryUrl: repositoryUrl || "missing" } });
+      revisionNotes.push("在首屏安全区展示 github.com/owner/repository，地址只用于画面识别。 ");
+    }
     const canonicalOpening = `开源项目推荐：${repositoryName}`;
     if (!normalizeText(firstNarration).startsWith(normalizeText(canonicalOpening))) {
       issues.push({ severity: "error", code: "repository_name_not_spoken_first", message: `首屏旁白必须先完整播报“${canonicalOpening}”。`, sceneIndex: 0 });
@@ -340,9 +357,13 @@ export async function evaluateDraft(
       revisionNotes.push("按用户痛点、一句话收益、可信证据、最短上手路径、适用人群与边界重写项目推荐，删除空泛功能罗列。");
     }
   }
-  if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(publicProjectText, repositoryAddresses)) {
-    issues.push({ severity: "error", code: "external_platform_reference_exposed", message: "开源项目视频不得展示或播报第三方代码托管平台名称、域名或仓库地址。" });
-    revisionNotes.push("删除平台名称、平台域名和 owner/repository 地址，只保留项目名称与功能事实。 ");
+  const spokenProjectText = [
+    project.narration,
+    ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
+  ].join(" ");
+  if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(spokenProjectText, repositoryAddresses)) {
+    issues.push({ severity: "error", code: "repository_address_spoken", message: "开源项目仓库地址只能显示在首屏，不得出现在旁白或 TTS 合成文本中。", sceneIndex: 0 });
+    revisionNotes.push("保留首屏仓库地址，但从旁白、ttsText 和 providerSynthesisText 中删除平台名、域名及 owner/repository。 ");
   }
   if (!repositoryName && !normalizeText(firstNarration).startsWith(normalizeText(project.meta.title))) {
     issues.push({ severity: "error", code: "title_not_spoken_first", message: "第一段旁白没有先完整播报新闻标题。", sceneIndex: 0 });

@@ -1,6 +1,7 @@
 import type { VideoProject } from "../pipeline/types";
 import type { VideoScene } from "../pipeline/types";
 import { projectNewsDate } from "../pipeline/news-date";
+import { repositoryProjectUrl } from "../pipeline/repository-project";
 
 export function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -35,9 +36,7 @@ export function projectPublicationDate(project: VideoProject) {
 }
 
 export function projectSourceUrl(project: VideoProject) {
-  const url = project.sources[0]?.url ?? "";
-  if (!/^https?:\/\/github\.com\//i.test(url)) return "";
-  return url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  return repositoryProjectUrl(project);
 }
 
 export function headlineFontSize(text: string, max = 88, min = 58) {

@@ -42,6 +42,8 @@ Issue code 由注册表维护，同时声明默认分类、修复动作、是否
 - `low_visual_change_rate`：平均超过 4 秒没有有效视觉状态变化；
 - `empty_summary_close`：结尾只重复标题或前文；
 - `title_repeated_in_narration`：完整标题播报超过一次。
+- `repository_address_missing`：开源项目首屏未显示完整 `github.com/owner/repository` 地址。
+- `repository_address_spoken`：旁白或 TTS 文本朗读了平台名、域名或 owner/repository；地址只允许显示。
 
 默认预算为新闻 32～45 秒、开源项目 40～55 秒、技术文章 50～70 秒。新闻和开源项目使用四屏短版，技术文章使用五屏解释版。
 

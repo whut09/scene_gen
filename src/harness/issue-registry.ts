@@ -64,6 +64,8 @@ export const issueRegistry = {
   title_spoken_repeated: define("hard", "revise-scenes", true),
   external_platform_reference_exposed: define("hard", "revise-scenes", true),
   repository_recommendation_missing: define("hard", "revise-scenes", true),
+  repository_address_missing: define("hard", "switch-template", true),
+  repository_address_spoken: define("hard", "revise-scenes", true),
   repository_name_not_canonical: define("hard", "regenerate-draft", true),
   repository_name_not_spoken_first: define("hard", "revise-scenes", true),
   repository_promotion_structure_missing: define("hard", "regenerate-draft", true),

@@ -1,9 +1,9 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPublicationDate, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPublicationDate, projectSourceUrl, sceneHeadline } from "../html-utils";
 
 export const kineticTitleTemplate: HtmlTemplateDefinition = {
   id: "kinetic-title",
-  version: "1.3.1",
+  version: "1.3.2",
   name: "Kinetic Title",
   description: "Oversized editorial typography with paced signal strips for hooks and conclusions.",
   engine: "html-video",
@@ -42,6 +42,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
     const kicker = isTitle ? scene.kicker : "最终结论";
     const titleSize = headlineFontSize(headline, 88, 60);
     const isGithubProject = project.sources.some((source) => source.kind === "github" || Boolean(source.repo));
+    const repositoryUrl = isTitle ? projectSourceUrl(project) : "";
     const publicationDate = projectPublicationDate(project);
     const heroAsset = projectHeroAsset(project);
     const body =
@@ -53,7 +54,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
       '<h1 class="kt-title">' + escapeHtml(headline).replace(/\n/g, "<br />") + '</h1>' +
       '<div class="kt-rule"><i></i><i></i><i></i></div>' +
       '<p class="kt-support">' + escapeHtml(supporting) + '</p>' +
-      '<div class="kt-stamp">' + (isGithubProject ? 'PROJECT / SIGNAL' : 'NEWS / SIGNAL') + '</div>' +
+      '<div class="kt-stamp">' + escapeHtml(repositoryUrl || (isGithubProject ? 'PROJECT / SIGNAL' : 'NEWS / SIGNAL')) + '</div>' +
       '</main>';
     const css =
       '.kt-main{inset:112px 58px 72px;display:flex;flex-direction:column;justify-content:center;}' +

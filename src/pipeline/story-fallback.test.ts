@@ -464,8 +464,37 @@ test("SenseNova U1.5 news profile keeps preview status and 4K scope", () => {
   assert.doesNotMatch(project.narration, /IT之家|记者|来源|链接/);
 });
 
+test("MAGI-2 technical article is not misclassified as Seedance", () => {
+  const project = createStoryProject({
+    id: "magi-2", kind: "webpage", contentType: "technical-article", title: "全球首个千亿级MoE视频模型开源", url: "https://zhidx.com/p/582336.html", source: "智东西", summary: "MAGI-2 Preview", content: "The article also mentions Seedance 2.5. MAGI-2 has 114B total parameters and activates 6B per forward pass.", score: 1, tags: [],
+  });
+
+  assert.equal(project.meta.title, "1140亿参数只激活60亿，MAGI-2 Preview正式发布并开源");
+  assert.equal(project.scenes.length, 5);
+  assert.match(project.narration, /三千零七十二维.*十二个二百五十六维.*MagiMoE.*榜单排第六/s);
+  assert.doesNotMatch(project.narration, /单次三十秒|三十张图片|多轮延长/);
+});
+
+test("requested August articles use grounded URL-specific short-video structures", () => {
+  const fixtures = [
+    { url: "https://www.tmtpost.com/8091801.html", title: "AI办公竞争不再围绕文件，而是争夺完整任务入口", type: "technical-article", scenes: 5, expected: /独立办公 Agent.*任务和价值交付.*流程和组织改造/s },
+    { url: "https://www.tmtpost.com/8091516.html", title: "Agent把模型竞争从单价改成每项任务性价比", type: "technical-article", scenes: 5, expected: /四十分升到五十分.*连续二十步.*统一 Harness/s },
+    { url: "https://www.tmtpost.com/8091864.html", title: "AI数据中心订单正在流向挖掘机和发电设备", type: "technical-article", scenes: 5, expected: /二百零五点四亿美元.*土地开发.*一百三十多万条行业知识/s },
+    { url: "https://www.ithome.com/0/985/886.htm", title: "Mistral推出30亿参数Shieldstral，单张16GB显卡可运行", type: "news", scenes: 4, expected: /2026年8月5日.*Instruct.*Softmax/s },
+  ] as const;
+
+  for (const fixture of fixtures) {
+    const project = createStoryProject({ id: fixture.title, kind: "webpage", contentType: fixture.type, title: fixture.title, url: fixture.url, source: "网站来源", summary: fixture.title, content: fixture.expected.source, publishedAt: "2026年8月5日", score: 1, tags: [] });
+    assert.equal(project.meta.title, fixture.title);
+    assert.equal(project.scenes.length, fixture.scenes);
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /IT之家|钛媒体|来源|网址/);
+  }
+});
+
 test("requested repository profiles explain direct use and practical boundaries", () => {
   const fixtures = [
+    { repo: "huangruiteng/loopx", title: "loopx: local control plane for long-running AI agent work", content: "Keep objectives, gates, todos, evidence, quota, and handoffs stable while Codex, Claude Code, Cursor, or another runtime executes bounded turns.", expected: /长期运行的智能体任务.*目标、人工门槛、待办、证据、额度和交接状态.*不是无人值守的生产控制器.*对外操作/s },
     { repo: "jamiepine/voicebox", title: "voicebox: local-first AI voice studio", content: "Local-first voice studio with voice cloning, 23 languages, 7 TTS engines, global dictation and story editor.", expected: /七种语音引擎.*二十三种语言.*声音克隆必须获得本人授权/s },
     { repo: "esengine/DeepSeek-Reasonix", title: "DeepSeek-Reasonix: coding agent", content: "DeepSeek-native coding agent, reasonix.toml, static Go binary and stdio JSON-RPC tools.", expected: /静态 Go 程序.*模型服务.*工具可以执行命令和修改文件/s },
     { repo: "firecrawl/pdf-inspector", title: "pdf-inspector: fast PDF classifier", content: "Classifies TextBased, Scanned, ImageBased or Mixed PDF files with position-aware extraction without OCR.", expected: /文本型、扫描型、图片型或混合型.*扫描件仍需其他工具/s },

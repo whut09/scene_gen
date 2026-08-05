@@ -12,7 +12,7 @@ function sceneItems(scene: Parameters<HtmlTemplateDefinition["renderHtml"]>[0]["
 
 export const investmentResearchTemplate: HtmlTemplateDefinition = {
   id: "investment-research",
-  version: "1.1.0",
+  version: "1.1.1",
   name: "Investment Research Desk",
   description: "Shareholder-letter typography, market tape and animated thesis cards for finance and research projects.",
   engine: "html-video",
@@ -44,7 +44,7 @@ export const investmentResearchTemplate: HtmlTemplateDefinition = {
     const items = sceneItems(scene).slice(0, 5);
     const title = sceneHeadline(scene);
     const repoUrl = projectSourceUrl(project);
-    const visibleRepoUrl = scene.type === "title" ? "" : repoUrl;
+    const visibleRepoUrl = repoUrl;
     const cards = items.map((item, index) => {
       const delay = pacedDelay(index, items.length, scene.duration, 1.1);
       const showMetric = scene.type === "github_pulse" && "value" in item && typeof item.value === "number";

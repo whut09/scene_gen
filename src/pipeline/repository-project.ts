@@ -11,6 +11,19 @@ function repositoryName(project: VideoProject) {
   }
 }
 
+export function repositoryProjectUrl(project: VideoProject) {
+  const source = project.sources.find((item) => item.kind === "github" || Boolean(item.repo));
+  if (!source) return "";
+  try {
+    const parsed = new URL(source.url);
+    if (parsed.hostname.toLowerCase() !== "github.com") return "";
+    const parts = parsed.pathname.split("/").filter(Boolean).slice(0, 2);
+    return parts.length === 2 ? `github.com/${parts.join("/")}` : "";
+  } catch {
+    return source.repo ? `github.com/${source.repo.replace(/^\/+|\/+$/g, "")}` : "";
+  }
+}
+
 function narrationBody(value: string) {
   const match = value.match(/^.*?[。！？!?](?:\s*)/u);
   return match ? value.slice(match[0].length).trim() : value.trim();

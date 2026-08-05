@@ -447,6 +447,7 @@ interface RepositoryProfile {
   metrics?: Array<{ label: string; value: string }>;
   problemPoints?: string[];
   steps?: Array<{ label: string; detail: string }>;
+  narration?: [string, string, string, string];
 }
 
 function repositoryProfile(item: HotItem): RepositoryProfile {
@@ -634,7 +635,30 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       topics: ["统一模型接口", "自动故障切换", "负载均衡", "语义缓存", "预算控制", "调用监控"],
     };
   }
-  if (/\bt3code\b|minimal web gui for coding agents|codex.*claude.*cursor.*opencode/i.test(`${name} ${item.title} ${content}`)) {
+  if (/\bloopx\b|local control plane for long-running ai agent work|loop engineering for long-running ai agents/i.test(`${name} ${item.title}`)) {
+    return {
+      theme: "让长期运行的智能体任务保持可管理、可复盘和可继续",
+      capability: "把目标、人工门槛、待办、证据、额度和交接状态保存在一个本地控制层中，让不同代码智能体每次只执行边界明确的一段工作，并能在中断后继续",
+      workflow: "先连接一个现有项目并检查当前状态，再把长期目标拆成可领取的待办；每轮执行后写回证据、下一步和交接信息，由额度与门槛决定是否继续",
+      boundaries: "它管理的是长期任务状态和执行边界，不会替代底层智能体，也不是无人值守的生产控制器；对外操作、危险权限和最终决策仍应由人确认",
+      topics: ["长期任务状态", "人工门槛", "证据与交接", "执行额度", "多智能体协作", "本地控制"],
+      metrics: [{ label: "运行方式", value: "本地优先" }, { label: "核心对象", value: "目标与证据" }],
+      problemPoints: ["长期任务会经历目标变化、证据过期、人员判断和跨智能体交接。", "聊天记录和定时器无法稳定管理这些状态，也难以阻止无效消耗。", "LoopX 把目标、门槛、待办、证据和额度集中到可检查的控制层。"],
+      steps: [
+        { label: "连接项目", detail: "在已有项目中初始化或复用本地状态。" },
+        { label: "拆分待办", detail: "把长期目标拆成边界清晰的执行片段。" },
+        { label: "写回证据", detail: "每轮记录结果、判断、交接和下一步。" },
+        { label: "门槛续跑", detail: "根据人工门槛和额度决定继续或停止。" },
+      ],
+      narration: [
+        "开源项目推荐：loopx。长期运行的智能体任务容易失控，它让状态可管理、可复盘、可继续。",
+        "目标变化、证据过期和跨智能体交接，靠聊天记录很难管理。它把目标、人工门槛、待办、证据、额度和交接状态保存在本地控制层。",
+        "核心结果是每轮只执行边界明确的一段工作，完成后写回证据和下一步。最短路径是连接现有项目，它适合多天工程、研究和监控任务。",
+        "先连接现有项目，从一个小待办开始。它不是无人值守的生产控制器，对外操作、危险权限和最终决策仍应由人确认。",
+      ],
+    };
+  }
+  if (/\bt3code\b|minimal web gui for coding agents/i.test(`${name} ${item.title}`)) {
     return {
       theme: "把多个代码智能体集中到网页和桌面工作台中管理",
       capability: "为 Codex、Claude、Cursor 和 OpenCode 提供统一图形界面，让使用者查看任务、切换项目并管理远程会话，不必反复操作多个终端窗口",
@@ -784,11 +808,12 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const name = repositoryName(item);
   const profile = repositoryProfile(item);
   const promotion = repositoryPromotionCopy(profile);
+  const narration = profile.narration;
   const proofMetrics = repositoryProofMetrics(item, profile);
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: { type: "title", duration: 10, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: `${profile.theme} · ${repositoryStars(item)}`, sources: ["一句话用途", "社区关注", repositoryStars(item)] },
-      narration: `开源项目推荐：${name}。它直接解决${profile.theme}。`,
+      narration: narration?.[0] ?? `开源项目推荐：${name}。它直接解决${profile.theme}。`,
     },
     {
       scene: {
@@ -796,7 +821,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
         metrics: proofMetrics,
         points: [promotion.problem, promotion.benefit, `直接收益：${profile.capability}`],
       },
-      narration: limitNarration(`${promotion.problem}直接收益是${profile.capability}。`, 100),
+      narration: narration?.[1] ?? limitNarration(`${promotion.problem}直接收益是${profile.capability}。`, 100),
     },
     {
       scene: {
@@ -809,7 +834,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           tags: [profile.topics[index] ?? "项目能力"],
         })),
       },
-      narration: limitNarration(`判断它是否值得用，主要看三点：${promotion.highlights.join("；")}。`, 105),
+      narration: narration?.[2] ?? limitNarration(`判断它是否值得用，主要看三点：${promotion.highlights.join("；")}。`, 105),
     },
     {
       scene: {
@@ -819,7 +844,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           `注意：${profile.boundaries}。`,
         ],
       },
-      narration: limitNarration(`最快开始：${promotion.firstStep.replace(/[。！？!?]+$/u, "")}。注意：${profile.boundaries.replace(/[。！？!?]+$/u, "")}。`, 130),
+      narration: narration?.[3] ?? limitNarration(`最快开始：${promotion.firstStep.replace(/[。！？!?]+$/u, "")}。注意：${profile.boundaries.replace(/[。！？!?]+$/u, "")}。`, 130),
     },
   ];
   const scenes = applySectionDurations(sections, Math.min(55, Math.max(40, Number(process.env.STORY_MAX_SECONDS ?? 48))), 40);
@@ -848,14 +873,19 @@ export function createStoryProject(
   if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
   if (/tmtpost\.com\/8088190/i.test(clean.url) || /Loop.*Graph|Graph.*Loop|AI Coding.*Graph/i.test(joinedContent)) return createLoopGraphEngineeringProject(clean, options);
+  if (/tmtpost\.com\/8091801/i.test(clean.url)) return createAiOfficeCompetitionProject(clean, options);
+  if (/tmtpost\.com\/8091516/i.test(clean.url)) return createModelKillZoneProject(clean, options);
+  if (/tmtpost\.com\/8091864/i.test(clean.url)) return createAiIndustrialDemandProject(clean, options);
+  if (/ithome\.com\/0\/985\/886/i.test(clean.url)) return createShieldstralProject(clean, options);
   if (/qbitai\.com\/2026\/08\/465215/i.test(clean.url) || /Qwen3\.8/i.test(joinedContent)) return createQwen38Project(clean, options);
   if (/ithome\.com\/0\/985\/044/i.test(clean.url) || /SenseNova\s*U1\.5-Lite-Preview/i.test(joinedContent)) return createSenseNovaU15Project(clean, options);
+  if (/zhidx\.com\/p\/582336/i.test(clean.url) || /MAGI-2 Preview/i.test(`${clean.title} ${clean.summary ?? ""}`)) return createSandMagi2Project(clean, options);
   if (/不可取代|薪资奴役|高自主性|不可受雇/i.test(joinedContent)) return createAiCareerIndependenceProject(clean, options);
   if (/Astra|菲尔兹奖级|非sofic|十项.*数学|数学难题/i.test(joinedContent) || /36kr\.com\/p\/3921682068172419/i.test(clean.url)) return createAiMathBreakthroughProject(clean, options);
   if (/141006|十四万一千零六|三家外部机构|测试环境.*公网/i.test(joinedContent)) return createClaudeSecurityIncidentProject(clean, options);
   if (/150\s*亩芝麻|一百五十亩芝麻|氟磺胺草醚/i.test(joinedContent)) return createAiPesticideIncidentProject(clean, options);
   if (/第\s*23\s*届\s*ChinaJoy|第\s*二十三\s*届\s*ChinaJoy|14\s*万平方米|火龙漫剧/i.test(joinedContent)) return createChinaJoyAiProject(clean, options);
-  if (/Seedance\s*2\.5/i.test(joinedContent)) return createSeedance25Project(clean, options);
+  if (/Seedance\s*2\.5/i.test(`${clean.title} ${clean.summary ?? ""}`)) return createSeedance25Project(clean, options);
   if (/DeepSeek-V4-Flash/i.test(joinedContent) && /V4-Pro/i.test(joinedContent)) return createDeepSeekV4FlashProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
@@ -1430,6 +1460,151 @@ function createSenseNovaU15Project(
     {
       scene: { type: "outro", duration: 16, headline: "预览版本适合验证，不宜过度承诺", bullets: ["适合海报、信息图和高分辨率内容试验。", "公开说明称多项生成与编辑指标超过上一代。", "正式生产前验证稳定性、资源占用与许可边界。"] },
       narration: "公开说明称，它在多项图像生成和编辑基准上超过上一代 U1，但这仍是模型方给出的结果。当前更适合用于海报、信息图和高分辨率内容试验。进入正式生产前，应继续验证稳定性、资源占用、文字准确率和模型许可边界。",
+    },
+  ], options);
+}
+
+function createSandMagi2Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = {
+    ...item,
+    title: "1140亿参数只激活60亿，MAGI-2 Preview正式发布并开源",
+    contentType: "technical-article",
+  };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 9, kicker: "技术路线", headline: storyItem.title, subhead: "大容量不等于每次都调用全部参数", sources: ["114B 总参数", "6B 激活", "统一音视频"] },
+      narration: `${storyItem.title}。真正价值不是单纯堆参数，而是让模型容量和单次计算成本分离。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "视频模型撞上容量和成本两堵墙", source: "技术事实", title: "长序列放大计算压力", summary: "几秒视频就可能形成几十万到上百万视觉 Token。", metrics: [{ label: "总参数", value: "114B" }, { label: "单次激活", value: "6B" }], points: ["视频还要叠加音频和文本指令。", "稠密模型越大，每次调用参数量同步增加。", "MoE 用稀疏激活扩容量、控成本。"] },
+      narration: "几秒视频就要处理几十万到上百万视觉 Token，还叠加声音和文本。稠密模型越大，每次调用越贵，容量和成本成为两堵墙。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "统一单流让音画从生成开始协同", steps: [{ label: "同一上下文", detail: "文本、视频和音频进入同一个 Transformer。" }, { label: "持续交互", detail: "每层自注意力共同建模口型、动作和声音。" }, { label: "共享专家", detail: "处理场景语义与运动等共性。" }, { label: "专属专家", detail: "分别处理不同模态的差异。" }] },
+      narration: "文本、画面和音频进入同一个 Transformer，从生成开始联合建模口型、动作和声音；共享专家处理共性，专属专家负责不同模态。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "细粒度路由重写通信方式", bars: [{ label: "隐藏表示", value: 3072, detail: "一个 Token 的完整表示。", color: "#18b7a5" }, { label: "子空间", value: 12, detail: "拆成十二个独立路由子空间。", color: "#7c6cff" }, { label: "每组维度", value: 256, detail: "每个子空间各自选择专家。", color: "#facc15" }] },
+      narration: "细粒度路由重写通信方式：它把三千零七十二维表示拆成十二个二百五十六维子空间独立路由，三十六层网络配合 Head Parallel，让主要通信量取决于输入表示。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "这是扩展路线验证，不是低成本保证", bullets: ["MagiMoE 优化路由与专家计算。", "MagiMuon 支撑分布式训练。", "榜单第六和开源证明路线可运行，实际成本仍需测试。"] },
+      narration: "这是路线验证，不是低成本保证。MagiMoE 负责算子，MagiMuon 负责分布式优化；模型在 Artificial Analysis 图生视频榜单排第六并全面开源，实际成本仍需测试。",
+    },
+  ], options);
+}
+
+function createAiOfficeCompetitionProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, title: "AI办公竞争不再围绕文件，而是争夺完整任务入口", contentType: "technical-article" };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 9, kicker: "行业变化", headline: storyItem.title, subhead: "工作起点从打开软件变成直接交代任务", sources: ["独立 Agent", "嵌入流程", "任务交付"] },
+      narration: `${storyItem.title}。真正变化是，用户不再先打开某个软件，而是直接告诉 Agent 要完成什么。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "厂商同时押注两条路线", source: "公开产品信息", title: "新入口与旧流程并行", summary: "独立办公 Agent 从零建立入口，原有协同产品把 AI 嵌入聊天、文档和审批。", metrics: [{ label: "路线", value: "2 条" }, { label: "竞争单位", value: "任务" }], points: ["腾讯同时推进 WorkBuddy 和企业微信 AI 助理。", "字节同时推进豆包专业版与飞书内的企业版。", "金山和阿里也在独立入口与原有产品之间并行。"] },
+      narration: "厂商同时押注两条路线：独立办公 Agent 从零建立入口，原有协同产品把 AI 嵌入聊天、文档和审批。两条路线服务的工作起点不同。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "用户愿意为完整任务付费", bars: [{ label: "豆包专业版", value: 68, detail: "标准档每月六十八元。", color: "#18b7a5" }, { label: "WorkBuddy", value: 99, detail: "标准档每月九十九元。", color: "#7c6cff" }, { label: "灵犀专业版", value: 50, detail: "预期月费五十元起。", color: "#facc15" }] },
+      narration: "付费也开始围绕任务能力展开：豆包专业版标准档每月六十八元，WorkBuddy 标准档九十九元，灵犀专业版预期五十元起。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "真正价值是接手重复劳动", steps: [{ label: "理解目标", detail: "用户直接描述要完成的业务结果。" }, { label: "调用工具", detail: "跨数据、文档和业务系统执行。" }, { label: "交付结果", detail: "完成报告、分析或整条工作链。" }, { label: "人工判断", detail: "把需要经验的决策留给人。" }] },
+      narration: "真正价值是接手重复劳动：用户直接描述业务目标，Agent 跨数据、文档和业务系统调用工具，交付报告、分析或完整工作链；需要经验的判断仍然留给人。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "文件不会消失，但不再是唯一入口", bullets: ["工作单位从文件转向完整任务。", "定价从席位逐步转向价值交付。", "稳定性和组织改造仍是落地门槛。"] },
+      narration: "文件不会消失，但不再是唯一入口；定价也会从席位逐步转向任务和价值交付。当前 Agent 稳定性仍不足，企业落地更取决于流程和组织改造。",
+    },
+  ], options);
+}
+
+function createModelKillZoneProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, title: "Agent把模型竞争从单价改成每项任务性价比", contentType: "technical-article" };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 9, kicker: "竞争指标", headline: storyItem.title, subhead: "能力更强、完成任务更便宜，才在安全区", sources: ["任务成功率", "端到端成本", "Agent Harness"] },
+      narration: `${storyItem.title}。真正的斩杀线，不再看一次回答多便宜，而是看完整任务能否成功交付。`,
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "V4 Flash 0731把性价比边界推向左上", bars: [{ label: "0731 新版", value: 50, detail: "Intelligence Index 五十分。", color: "#18b7a5" }, { label: "上一版", value: 40, detail: "同一指数四十分。", color: "#7c6cff" }, { label: "最接近对手", value: 51, detail: "高一分，但每任务成本更高。", color: "#facc15" }] },
+      narration: "DeepSeek V4 Flash 0731 的指数从四十分升到五十分。最接近的对手得五十一分，但降价后每任务成本仍高约百分之六十。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "多步骤把小差距放大", steps: [{ label: "单步能力", detail: "一次回答只差几个百分点。" }, { label: "连续执行", detail: "多步骤成功率会连乘下降。" }, { label: "失败重试", detail: "中途失败需要重新支付 Token。" }, { label: "最终成本", detail: "能力不足直接变成额外支出。" }] },
+      narration: "Agent 会放大能力和成本差距。单步准确率百分之九十五和百分之九十，连续二十步后，成功率约为百分之三十六和百分之十二；失败重试还会继续增加支出。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "模型只是系统中的一个部件", source: "评测方法", title: "Harness会改变结果", summary: "同一个模型接入不同 Agent，耗时和 Token 消耗可能明显不同。", metrics: [{ label: "测试框架", value: "4 个" }, { label: "消耗差距", value: "约 4 倍" }], points: ["真实 Bug 修复测试中，四个 Agent 的消耗与耗时相差约四倍。", "统一 Harness 才能比较模型本身。", "业务使用仍要用自己的工具链复测。"] },
+      narration: "模型只是系统中的一个部件。同一模型接入四个 Agent，真实修复任务的耗时和 Token 消耗相差约四倍；统一 Harness 之后，模型比较才更可信。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "斩杀线会继续上移", bullets: ["模型能力提高，基础设施成本下降。", "切换成本低，优势很难变成永久壁垒。", "基准结论必须回到真实任务验证。"] },
+      narration: "斩杀线会继续上移，因为模型在进步，推理成本也在下降。但性价比优势需要持续投入才能维持，任何基准结论都必须回到自己的真实任务验证。",
+    },
+  ], options);
+}
+
+function createAiIndustrialDemandProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, title: "AI数据中心订单正在流向挖掘机和发电设备", contentType: "technical-article" };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 9, kicker: "产业链扩散", headline: storyItem.title, subhead: "服务器进机房前，先要平整土地、施工和接电", sources: ["工程机械", "备用发电", "工业设备"] },
+      narration: `${storyItem.title}。真正变化是，算力需求开始外溢到实体基建；服务器进机房前，数据中心先需要土地、施工、电力和备用发电。`,
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "卡特彼勒财报出现基建信号", bars: [{ label: "季度营收", value: 205.4, detail: "二百零五点四亿美元，同比增长百分之二十四。", color: "#18b7a5" }, { label: "新增订单", value: 94, detail: "九十四亿美元。", color: "#7c6cff" }, { label: "积压订单", value: 721, detail: "七百二十一亿美元，创纪录。", color: "#facc15" }] },
+      narration: "卡特彼勒第二季度营收二百零五点四亿美元，同比增长百分之二十四；新增订单九十四亿美元，积压订单达到创纪录的七百二十一亿美元。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "算力建设沿实体链条传导", steps: [{ label: "土地开发", detail: "场地平整和厂房施工。" }, { label: "工程设备", detail: "挖掘机、推土机参与建设。" }, { label: "电力接入", detail: "扩建电网和能源系统。" }, { label: "备用发电", detail: "保障数据中心稳定运行。" }] },
+      narration: "算力建设沿实体链条传导：土地开发带动工程机械，电力缺口带动能源系统和备用发电。芯片只是起点，数据中心本身是一项大型基建工程。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "传统制造商也在用 AI 改造设备", source: "企业实践", title: "从卖设备到提供智能系统", summary: "AI开始进入维护、供应链和自动化施工。", metrics: [{ label: "行业知识", value: "130 万+" }, { label: "业务场景", value: "700+" }], points: ["卡特彼勒推出设备助手并推进自动化设备。", "三一沉淀一百三十多万条行业知识。", "三一 AI 应用覆盖七百多个业务场景。"] },
+      narration: "AI 也在改造设备本身。卡特彼勒推出设备助手；三一沉淀一百三十多万条行业知识，训练十余款行业模型，应用覆盖七百多个业务场景。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "AI受益链正在向工业基础设施扩散", bullets: ["工程机械承接数据中心施工需求。", "能源设备承接供电与备用发电需求。", "订单能否持续仍取决于真实建设节奏。"] },
+      narration: "AI 受益链正在从芯片扩散到工程机械、能源和工业制造。但财报只说明当前订单强劲，未来能否持续，还要看数据中心的真实建设和电力投入节奏。",
+    },
+  ], options);
+}
+
+function createShieldstralProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, title: "Mistral推出30亿参数Shieldstral，单张16GB显卡可运行", contentType: "news" };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 8, kicker: "内容审核模型", headline: storyItem.title, subhead: "审核政策写进输入，不必为每个场景重新训练", sources: ["3B 参数", "16GB 显存", "12 种语言"] },
+      narration: `${storyItem.title}。可直接配置审核规则。新闻日期：2026年8月5日。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 11, headline: "开放权重，面向本地部署", source: "公开规格", title: "小规模多模态审核", summary: "模型可处理文本，也可审核带可选文字的图像。", metrics: [{ label: "参数量", value: "3B" }, { label: "显存", value: "16GB" }, { label: "语言", value: "12 种" }], points: ["依据 Apache 2.0 许可证发布。", "单张十六 GB 显卡可运行。", "官方称效果可比七倍规模开放模型。"] },
+      narration: "模型总参数三十亿，支持十二种语言，单张十六 GB 显卡可运行，并采用 Apache 二点零许可证。官方称其效果可比七倍规模开放模型。",
+    },
+    {
+      scene: { type: "flow", duration: 11, headline: "三段输入定义审核任务", steps: [{ label: "Instruct", detail: "说明评估场景和严格程度。" }, { label: "Query", detail: "提出一个是或否的问题。" }, { label: "Document", detail: "提供提示词、回答或图像。" }] },
+      narration: "每项审核都被改写成二元问题：Instruct 定义场景和严格程度，Query 提出是或否的问题，Document 放入提示词、回答或图像。",
+    },
+    {
+      scene: { type: "outro", duration: 10, headline: "输出连续分数，再按阈值判断", bullets: ["读取是与否两个词元的逻辑值。", "通过 Softmax 转成连续安全分数。", "默认零点五阈值仍需按业务验证。"] },
+      narration: "推理时只读取是和否两个词元，再用 Softmax 转成连续分数，以零点五作为默认阈值。它能覆盖提示词、回答、拒答和毒性检测，但正式使用仍要验证自己的政策和误判率。",
     },
   ], options);
 }
