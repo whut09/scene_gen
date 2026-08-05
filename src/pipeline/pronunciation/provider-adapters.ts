@@ -28,17 +28,17 @@ export function f5PronunciationInput(plan: PronunciationPlan) {
 export function indexTtsPronunciationInput(plan: PronunciationPlan) {
   const controlledSpans = plan.spans.filter((span) => span.risk !== "low");
   const mixedPinyin = controlledSpans.map((span) => ({ phrase: span.phrase, start: span.start, end: span.end, pinyin: pinyinFor(span, "indextts") }));
-  const text = [...controlledSpans]
+  const protectedPinyin = new Map<string, string>();
+  const textWithProtectedPinyin = [...controlledSpans]
     .sort((left, right) => right.start - left.start)
-    .reduce((value, span) => {
+    .reduce((value, span, index) => {
       const pinyin = pinyinFor(span, "indextts").flatMap((value) => value.split(/\s+/)).filter(Boolean).map((syllable) => syllable.toUpperCase()).join("");
-      return `${value.slice(0, span.start)}${pinyin}${value.slice(span.end)}`;
-    }, plan.synthesisText)
-    .replace(/\b[A-Z]{2,5}\b/g, (acronym, offset: number, source: string) => {
-      const next = source.slice(offset + acronym.length).trimStart()[0] ?? "";
-      const pause = /[，。！？；：、,.!?;:]/.test(next) ? "" : "，";
-      return `${[...acronym].join("、")}${pause}`;
-    });
+      const marker = `\uE000${index}\uE001`;
+      protectedPinyin.set(marker, pinyin);
+      return `${value.slice(0, span.start)}${marker}${value.slice(span.end)}`;
+    }, plan.synthesisText);
+  let text = textWithProtectedPinyin.replace(/(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])/g, (acronym) => [...acronym].join(" "));
+  for (const [marker, pinyin] of protectedPinyin) text = text.replaceAll(marker, pinyin);
   return { text, mixedPinyin, pronunciationPlanHash: plan.planHash };
 }
 

@@ -102,7 +102,7 @@ HTML Video 路径现在执行以下协议：
 
 ## GitHub 项目输入
 
-输入 github.com/<owner>/<repo> 时，抓取器会优先调用 GitHub Repository API 和 README raw API，而不是对网页导航结构做 Readability 摘要。VideoProject 会保存 repo、Stars、Forks、Issues、主语言、许可证和默认分支，LLM 按项目拆解模式生成标题、技能结构与工作流。
+输入 github.com/<owner>/<repo> 时，抓取器会优先调用 GitHub Repository API 和 README raw API，并在 Node 网络失败时尝试已登录的 `gh api` 和系统网络回退。VideoProject 会保存 repo、Stars、Forks、Issues、主语言、许可证和默认分支。Star 数缺失或小于等于零时停止发布，不得显示 `0 Stars`。
 
 定性技能分类会自动选择 category-cards，不显示虚构百分比；只有来源中存在真实可比较数据时才使用柱状图。
 
@@ -200,3 +200,5 @@ F5-TTS 按 segment 文本和参考音色缓存。文本未变化的段落直接�
 - 场景和时长均未变化：直接复用 MP4。
 
 GitHub 项目的所有可选标题模板都会在封面安全区内以约 26-30px 的高对比字号显示 `github.com/owner/repo`。地址只用于画面识别，旁白、`ttsText` 和 provider 合成文本均不得朗读；长地址允许在安全区内换行。
+
+开源项目首屏还必须直接展示“用途”和“适用场景”，新闻与技术文章的输出文件名及首页标题使用清洗后的原始文章标题。模型类内容必须在首屏说明模型用于生成、审核、推理或其他具体任务，不能只罗列参数。

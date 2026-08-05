@@ -8,7 +8,7 @@ import type { PronunciationPlan } from "../../pronunciation/schema";
 import { probeDuration, run } from "../process";
 import { concatNarrationSegments } from "../postprocess";
 
-export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v6-safe-product-punctuation";
+export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v8-protected-pinyin";
 type WorkerResult = { requestId: string; status: "succeeded"; outputPath: string; synthesisMs: number };
 
 class IndexTtsWorker {
@@ -114,20 +114,7 @@ class IndexTtsWorker {
 let worker: IndexTtsWorker | undefined;
 
 export function splitIndexTtsText(text: string, maximumCharacters = 88) {
-  const acronymPattern = /(?<![A-Za-z])(?:[A-Z]、){1,4}[A-Z](?![A-Za-z])/g;
-  const protectedChunks: string[] = [];
-  let cursor = 0;
-  for (const match of text.matchAll(acronymPattern)) {
-    const matchIndex = match.index ?? 0;
-    protectedChunks.push(...splitIndexTtsNaturalText(text.slice(cursor, matchIndex), maximumCharacters));
-    const acronymEnd = matchIndex + match[0].length;
-    const punctuation = text.slice(acronymEnd).match(/^[，。！？；：、,.!?;:]+/)?.[0] ?? "";
-    protectedChunks.push(`${match[0]}${punctuation}`);
-    cursor = acronymEnd + punctuation.length;
-  }
-  if (protectedChunks.length === 0) return splitIndexTtsNaturalText(text, maximumCharacters);
-  protectedChunks.push(...splitIndexTtsNaturalText(text.slice(cursor), maximumCharacters));
-  return protectedChunks.filter(Boolean);
+  return splitIndexTtsNaturalText(text, maximumCharacters);
 }
 
 function splitIndexTtsNaturalText(text: string, maximumCharacters: number) {

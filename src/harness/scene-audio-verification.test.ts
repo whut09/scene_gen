@@ -104,7 +104,7 @@ test("AI acronym verification accepts a spelled letter transcript", () => {
   assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0), false);
 });
 
-test("IndexTTS acronym gate requires AI to be an isolated synthesis unit", () => {
+test("IndexTTS acronym gate rejects punctuation and accepts connected synthesis", () => {
   const project = projectFixture();
   project.narrationSegments![0] = {
     ...project.narrationSegments![0], text: "AI 正在改变开发流程。", ttsText: "AI 正在改变开发流程。",
@@ -117,7 +117,8 @@ test("IndexTTS acronym gate requires AI to be an isolated synthesis unit", () =>
   ];
   assert.ok(verifySceneTranscripts(project, transcripts).issues.some((item) => item.code === "audio_acronym_plan_unprotected" && item.sceneIndex === 0));
 
-  project.narrationSegments![0].providerSynthesisChunks = ["A、I，", "正在改变开发流程。"];
+  project.narrationSegments![0].providerSynthesisText = "A I正在改变开发流程。";
+  project.narrationSegments![0].providerSynthesisChunks = ["A I正在改变开发流程。"];
   assert.equal(verifySceneTranscripts(project, transcripts).issues.some((item) => item.code === "audio_acronym_plan_unprotected" && item.sceneIndex === 0), false);
 });
 

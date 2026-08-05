@@ -69,7 +69,7 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
     if (scene.type === "outro") return { min: 40, max: 95 };
     return { min: 55, max: 120 };
   }
-  if (scene.type === "title") return { min: 25, max: 65 };
+  if (scene.type === "title") return { min: 25, max: 80 };
   if (scene.type === "briefing_points") return { min: 45, max: 110 };
   if (scene.type === "outro") return { min: 35, max: 80 };
   return { min: 45, max: 105 };
@@ -274,6 +274,17 @@ export async function evaluateDraft(
   }
   const normalizedTitle = normalizeText(project.meta.title);
   const normalizedOpening = normalizeText(firstNarration);
+  const sourceTitle = normalizeText(project.sources[0]?.title ?? "");
+  if (!repositoryProjectName(project) && sourceTitle && normalizedTitle !== sourceTitle) {
+    issues.push({ severity: "error", code: "source_title_not_preserved", message: "视频标题和首页标题必须直接使用清洗后的原始文章标题。", sceneIndex: 0, evidence: { sourceTitle: project.sources[0]?.title, projectTitle: project.meta.title } });
+    revisionNotes.push("恢复原始文章标题，不要另写概括标题。 ");
+  }
+  const firstScenePurposeText = project.scenes[0] ? sceneVisibleText(project.scenes[0]) : "";
+  const isModelRelease = /(?:模型|MAGI|Shieldstral|Mistral)/i.test(project.meta.title) && /(?:发布|推出|开源|参数|Preview)/i.test(project.meta.title);
+  if (isModelRelease && !/(?:用途|用于|用来|可用于|审核|生成|处理|完成)/u.test(firstScenePurposeText)) {
+    issues.push({ severity: "error", code: "homepage_purpose_missing", message: "模型类视频首屏必须直接说明模型是做什么的。", sceneIndex: 0 });
+    revisionNotes.push("在首屏副标题写清模型用途和直接使用场景，不要只展示参数。 ");
+  }
   const narrationPunctuationBalance = [
     ["(", ")"], ["（", "）"], ["[", "]"], ["【", "】"], ["“", "”"], ["‘", "’"],
   ].filter(([open, close]) => (project.narration.split(open).length - 1) !== (project.narration.split(close).length - 1));
@@ -335,6 +346,25 @@ export async function evaluateDraft(
     if (!repositoryUrl || !coverHtml.includes(repositoryUrl)) {
       issues.push({ severity: "error", code: "repository_address_missing", message: "开源项目首屏必须清晰展示完整仓库地址。", sceneIndex: 0, evidence: { repositoryUrl: repositoryUrl || "missing" } });
       revisionNotes.push("在首屏安全区展示 github.com/owner/repository，地址只用于画面识别。 ");
+    }
+    const stars = Number(project.sources.find((item) => item.kind === "github")?.metrics?.stars);
+    if (!Number.isFinite(stars) || stars <= 0 || /(?:^|\D)0\s*Stars\b/i.test(firstVisibleText)) {
+      issues.push({ severity: "error", code: "repository_star_count_invalid", message: "开源项目 Star 数缺失或无效，禁止以 0 Stars 发布。", sceneIndex: 0, evidence: { stars: Number.isFinite(stars) ? stars : "missing" } });
+      revisionNotes.push("重新抓取项目的真实 Star 数；抓取失败时停止发布，不得用 0 代替。 ");
+    } else {
+      const formattedStars = `${Math.round(stars).toLocaleString("en-US")} Stars`;
+      if (!coverHtml.includes(formattedStars)) {
+        issues.push({ severity: "error", code: "repository_star_not_visible", message: "开源项目真实 Star 数没有显示在首屏。", sceneIndex: 0, evidence: { stars, expectedText: formattedStars } });
+        revisionNotes.push(`在首屏安全区清晰显示真实 Star 数：${formattedStars}。`);
+      }
+    }
+    const missingRepositoryContext = [
+      !/(?:用途|用于|用来|解决)/u.test(firstVisibleText) ? "用途" : "",
+      !/(?:适用|场景)/u.test(firstVisibleText) ? "适用场景" : "",
+    ].filter(Boolean);
+    if (missingRepositoryContext.length > 0) {
+      issues.push({ severity: "error", code: "repository_value_context_missing", message: `开源项目首屏缺少：${missingRepositoryContext.join("、")}。`, sceneIndex: 0 });
+      revisionNotes.push("首屏同时写清项目用途、解决的问题和适用场景。 ");
     }
     const canonicalOpening = `开源项目推荐：${repositoryName}`;
     if (!normalizeText(firstNarration).startsWith(normalizeText(canonicalOpening))) {

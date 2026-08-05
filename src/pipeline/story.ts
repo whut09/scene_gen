@@ -105,7 +105,7 @@ function displaySource(item: HotItem) {
   return "核心事实";
 }
 
-const forbiddenSourceAttribution = /(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
+const forbiddenSourceAttribution = /(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|智东西|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
 const forbiddenGithubPlatformReference = /(?:https?:\/\/)?(?:www\.)?github\.com(?:\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)?|\bgithub(?:\s+release)?\b/gi;
 const forbiddenPlatformPromotion = /(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)/gi;
 
@@ -401,13 +401,13 @@ function repositoryName(item: HotItem) {
 
 function repositoryStars(item: HotItem) {
   const stars = Number(item.metrics?.stars);
-  if (!Number.isFinite(stars) || stars < 0) return "Stars unavailable";
+  if (!Number.isFinite(stars) || stars <= 0) return "Star 数据暂不可用";
   return `${Math.round(stars).toLocaleString("en-US")} Stars`;
 }
 
 function repositoryProofMetrics(item: HotItem, profile: RepositoryProfile) {
   const stars = Number(item.metrics?.stars);
-  const metrics = Number.isFinite(stars) && stars >= 0
+  const metrics = Number.isFinite(stars) && stars > 0
     ? [{ label: "社区关注", value: `${Math.round(stars).toLocaleString("en-US")} Stars` }]
     : [];
   return [...metrics, ...(profile.metrics ?? []), { label: "项目定位", value: profile.topics[0] ?? "实用工具" }, { label: "建议起点", value: "最小任务" }].slice(0, 2);
@@ -812,7 +812,11 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const proofMetrics = repositoryProofMetrics(item, profile);
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
-      scene: { type: "title", duration: 10, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: `${profile.theme} · ${repositoryStars(item)}`, sources: ["一句话用途", "社区关注", repositoryStars(item)] },
+      scene: {
+        type: "title", duration: 10, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`,
+        subhead: `用途：${compactSentence(profile.capability, 52)}`,
+        sources: [repositoryStars(item), `适用：${compactSentence(promotion.audience, 18)}`, `场景：${profile.topics.slice(0, 2).join("、")}`],
+      },
       narration: narration?.[0] ?? `开源项目推荐：${name}。它直接解决${profile.theme}。`,
     },
     {
@@ -1470,13 +1474,13 @@ function createSandMagi2Project(
 ): VideoProject {
   const storyItem: HotItem = {
     ...item,
-    title: "1140亿参数只激活60亿，MAGI-2 Preview正式发布并开源",
+    title: item.title,
     contentType: "technical-article",
   };
   return createCuratedNewsProject(storyItem, [
     {
-      scene: { type: "title", duration: 9, kicker: "技术路线", headline: storyItem.title, subhead: "大容量不等于每次都调用全部参数", sources: ["114B 总参数", "6B 激活", "统一音视频"] },
-      narration: `${storyItem.title}。真正价值不是单纯堆参数，而是让模型容量和单次计算成本分离。`,
+      scene: { type: "title", duration: 9, kicker: "技术路线", headline: storyItem.title, subhead: "用途：统一生成视频、音频和文本，稀疏激活控制单次计算量", sources: ["114B 总参数", "6B 激活", "统一音视频"] },
+      narration: `${storyItem.title}。模型已正式发布并开源。`,
     },
     {
       scene: { type: "briefing_points", duration: 13, headline: "视频模型撞上容量和成本两堵墙", source: "技术事实", title: "长序列放大计算压力", summary: "几秒视频就可能形成几十万到上百万视觉 Token。", metrics: [{ label: "总参数", value: "114B" }, { label: "单次激活", value: "6B" }], points: ["视频还要叠加音频和文本指令。", "稠密模型越大，每次调用参数量同步增加。", "MoE 用稀疏激活扩容量、控成本。"] },
@@ -1501,7 +1505,7 @@ function createAiOfficeCompetitionProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
-  const storyItem: HotItem = { ...item, title: "AI办公竞争不再围绕文件，而是争夺完整任务入口", contentType: "technical-article" };
+  const storyItem: HotItem = { ...item, title: item.title, contentType: "technical-article" };
   return createCuratedNewsProject(storyItem, [
     {
       scene: { type: "title", duration: 9, kicker: "行业变化", headline: storyItem.title, subhead: "工作起点从打开软件变成直接交代任务", sources: ["独立 Agent", "嵌入流程", "任务交付"] },
@@ -1530,7 +1534,7 @@ function createModelKillZoneProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
-  const storyItem: HotItem = { ...item, title: "Agent把模型竞争从单价改成每项任务性价比", contentType: "technical-article" };
+  const storyItem: HotItem = { ...item, title: item.title, contentType: "technical-article" };
   return createCuratedNewsProject(storyItem, [
     {
       scene: { type: "title", duration: 9, kicker: "竞争指标", headline: storyItem.title, subhead: "能力更强、完成任务更便宜，才在安全区", sources: ["任务成功率", "端到端成本", "Agent Harness"] },
@@ -1541,8 +1545,8 @@ function createModelKillZoneProject(
       narration: "DeepSeek V4 Flash 0731 的指数从四十分升到五十分。最接近的对手得五十一分，但降价后每任务成本仍高约百分之六十。",
     },
     {
-      scene: { type: "flow", duration: 13, headline: "多步骤把小差距放大", steps: [{ label: "单步能力", detail: "一次回答只差几个百分点。" }, { label: "连续执行", detail: "多步骤成功率会连乘下降。" }, { label: "失败重试", detail: "中途失败需要重新支付 Token。" }, { label: "最终成本", detail: "能力不足直接变成额外支出。" }] },
-      narration: "Agent 会放大能力和成本差距。单步准确率百分之九十五和百分之九十，连续二十步后，成功率约为百分之三十六和百分之十二；失败重试还会继续增加支出。",
+      scene: { type: "flow", duration: 13, headline: "多步骤把小差距放大", steps: [{ label: "单步能力", detail: "准确率百分之九十五和百分之九十。" }, { label: "连续执行", detail: "二十步后约为百分之三十六和百分之十二。" }, { label: "失败重试", detail: "中途失败需要重新支付 Token。" }, { label: "最终成本", detail: "能力不足直接变成额外支出。" }] },
+      narration: "Agent 会放大能力和成本差距。单步能力的准确率分别为百分之九十五和百分之九十，连续执行二十步后，成功率约为百分之三十六和百分之十二；失败重试会继续增加最终成本。",
     },
     {
       scene: { type: "briefing_points", duration: 13, headline: "模型只是系统中的一个部件", source: "评测方法", title: "Harness会改变结果", summary: "同一个模型接入不同 Agent，耗时和 Token 消耗可能明显不同。", metrics: [{ label: "测试框架", value: "4 个" }, { label: "消耗差距", value: "约 4 倍" }], points: ["真实 Bug 修复测试中，四个 Agent 的消耗与耗时相差约四倍。", "统一 Harness 才能比较模型本身。", "业务使用仍要用自己的工具链复测。"] },
@@ -1559,7 +1563,7 @@ function createAiIndustrialDemandProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
-  const storyItem: HotItem = { ...item, title: "AI数据中心订单正在流向挖掘机和发电设备", contentType: "technical-article" };
+  const storyItem: HotItem = { ...item, title: item.title, contentType: "technical-article" };
   return createCuratedNewsProject(storyItem, [
     {
       scene: { type: "title", duration: 9, kicker: "产业链扩散", headline: storyItem.title, subhead: "服务器进机房前，先要平整土地、施工和接电", sources: ["工程机械", "备用发电", "工业设备"] },
@@ -1588,11 +1592,11 @@ function createShieldstralProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
-  const storyItem: HotItem = { ...item, title: "Mistral推出30亿参数Shieldstral，单张16GB显卡可运行", contentType: "news" };
+  const storyItem: HotItem = { ...item, title: item.title, contentType: "news" };
   return createCuratedNewsProject(storyItem, [
     {
-      scene: { type: "title", duration: 8, kicker: "内容审核模型", headline: storyItem.title, subhead: "审核政策写进输入，不必为每个场景重新训练", sources: ["3B 参数", "16GB 显存", "12 种语言"] },
-      narration: `${storyItem.title}。可直接配置审核规则。新闻日期：2026年8月5日。`,
+      scene: { type: "title", duration: 8, kicker: "内容审核模型", headline: storyItem.title, subhead: "用途：审核文本和图像内容，审核政策可以直接写进输入", sources: ["3B 参数", "16GB 显存", "12 种语言"] },
+      narration: `${storyItem.title}。新闻日期：2026年8月5日。`,
     },
     {
       scene: { type: "briefing_points", duration: 11, headline: "开放权重，面向本地部署", source: "公开规格", title: "小规模多模态审核", summary: "模型可处理文本，也可审核带可选文字的图像。", metrics: [{ label: "参数量", value: "3B" }, { label: "显存", value: "16GB" }, { label: "语言", value: "12 种" }], points: ["依据 Apache 2.0 许可证发布。", "单张十六 GB 显卡可运行。", "官方称效果可比七倍规模开放模型。"] },

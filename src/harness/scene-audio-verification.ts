@@ -137,9 +137,15 @@ function extractNumberUnits(text: string) {
     .filter((value) => value.length > 1);
 }
 
-function hasProtectedAcronymChunk(chunks: string[] | undefined, acronym: string) {
-  const expected = [...acronym].join("、");
-  return (chunks ?? []).some((chunk) => chunk.trim().replace(/[，。！？；：、,.!?;:\s]+$/u, "") === expected);
+function hasConnectedAcronymChunk(chunks: string[] | undefined, acronym: string, expectedText: string) {
+  const pattern = new RegExp([...acronym].join("\\s+"), "i");
+  const punctuatedPattern = new RegExp([...acronym].join("[、，,]\\s*"), "i");
+  const hasAdjacentSpeech = expectedText.replace(acronym, "").replace(/[，。！？；：、,.!?;:\s\d]+/gu, "").length > 0;
+  return (chunks ?? []).some((chunk) => {
+    if (!pattern.test(chunk) || punctuatedPattern.test(chunk)) return false;
+    if (!hasAdjacentSpeech) return true;
+    return chunk.replace(pattern, "").replace(/[，。！？；：、,.!?;:\s\d-]+/gu, "").length > 0;
+  });
 }
 
 function expectedEntities(project: VideoProject, segment: NarrationSegment) {
@@ -171,7 +177,7 @@ function characterRecall(expected: string, actual: string) {
 }
 
 function expectedAcronyms(text: string) {
-  return [...new Set(text.match(/\b(?:AI|AGI|API)\b/g) ?? [])];
+  return [...new Set(text.match(/(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])/g) ?? [])];
 }
 
 function normalizeAcronymHomophones(text: string) {
@@ -252,10 +258,10 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     const confidence = transcript.confidence ?? undefined;
     const acronyms = expectedAcronyms(expectedSynthesisText(segment));
     const unprotectedAcronym = segment.ttsProvider === "indextts"
-      ? acronyms.find((acronym) => !hasProtectedAcronymChunk(segment.providerSynthesisChunks, acronym))
+      ? acronyms.find((acronym) => !hasConnectedAcronymChunk(segment.providerSynthesisChunks, acronym, expectedSynthesisText(segment)))
       : undefined;
     if (unprotectedAcronym) {
-      issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${unprotectedAcronym} 没有作为独立合成单元生成。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { acronym: unprotectedAcronym, provider: segment.ttsProvider ?? "unknown", providerSynthesisChunks: segment.providerSynthesisChunks ?? [] } });
+      issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${unprotectedAcronym} 没有在同一连续语音片段中逐字母播报。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { acronym: unprotectedAcronym, provider: segment.ttsProvider ?? "unknown", providerSynthesisChunks: segment.providerSynthesisChunks ?? [], requiredReading: [...unprotectedAcronym].join(" ") } });
     }
     const expectedAnchor = expectedText.slice(0, Math.min(8, expectedText.length));
     const openingWindow = actualText.slice(0, expectedAnchor.length + 8);

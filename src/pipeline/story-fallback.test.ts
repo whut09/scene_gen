@@ -227,7 +227,23 @@ test("repository title screen displays the captured star count", () => {
   });
 
   assert.equal(project.scenes[0].type, "title");
-  if (project.scenes[0].type === "title") assert.match(project.scenes[0].subhead, /48,666 Stars/);
+  if (project.scenes[0].type === "title") {
+    assert.match(project.scenes[0].subhead, /^用途：/);
+    assert.ok(project.scenes[0].sources.includes("48,666 Stars"));
+    assert.ok(project.scenes[0].sources.some((value) => value.startsWith("适用：")));
+    assert.ok(project.scenes[0].sources.some((value) => value.startsWith("场景：")));
+  }
+});
+
+test("repository title screen never presents missing stars as zero", () => {
+  const project = createStoryProject({
+    id: "missing-stars", kind: "github", contentType: "repository", title: "loopx: agent runtime", url: "https://github.com/huangruiteng/loopx", source: "项目资料", summary: "Agent runtime", content: "Manage long-running agent tasks.", score: 1, tags: [], repo: "huangruiteng/loopx",
+  });
+  assert.equal(project.scenes[0].type, "title");
+  if (project.scenes[0].type === "title") {
+    assert.ok(project.scenes[0].sources.includes("Star 数据暂不可用"));
+    assert.equal(project.scenes[0].sources.some((value) => /0\s*Stars/i.test(value)), false);
+  }
 });
 
 test("repository fallback with a short project name passes synthesis readiness", () => {
@@ -469,7 +485,7 @@ test("MAGI-2 technical article is not misclassified as Seedance", () => {
     id: "magi-2", kind: "webpage", contentType: "technical-article", title: "全球首个千亿级MoE视频模型开源", url: "https://zhidx.com/p/582336.html", source: "智东西", summary: "MAGI-2 Preview", content: "The article also mentions Seedance 2.5. MAGI-2 has 114B total parameters and activates 6B per forward pass.", score: 1, tags: [],
   });
 
-  assert.equal(project.meta.title, "1140亿参数只激活60亿，MAGI-2 Preview正式发布并开源");
+  assert.equal(project.meta.title, "全球首个千亿级MoE视频模型开源");
   assert.equal(project.scenes.length, 5);
   assert.match(project.narration, /三千零七十二维.*十二个二百五十六维.*MagiMoE.*榜单排第六/s);
   assert.doesNotMatch(project.narration, /单次三十秒|三十张图片|多轮延长/);
@@ -477,10 +493,10 @@ test("MAGI-2 technical article is not misclassified as Seedance", () => {
 
 test("requested August articles use grounded URL-specific short-video structures", () => {
   const fixtures = [
-    { url: "https://www.tmtpost.com/8091801.html", title: "AI办公竞争不再围绕文件，而是争夺完整任务入口", type: "technical-article", scenes: 5, expected: /独立办公 Agent.*任务和价值交付.*流程和组织改造/s },
-    { url: "https://www.tmtpost.com/8091516.html", title: "Agent把模型竞争从单价改成每项任务性价比", type: "technical-article", scenes: 5, expected: /四十分升到五十分.*连续二十步.*统一 Harness/s },
-    { url: "https://www.tmtpost.com/8091864.html", title: "AI数据中心订单正在流向挖掘机和发电设备", type: "technical-article", scenes: 5, expected: /二百零五点四亿美元.*土地开发.*一百三十多万条行业知识/s },
-    { url: "https://www.ithome.com/0/985/886.htm", title: "Mistral推出30亿参数Shieldstral，单张16GB显卡可运行", type: "news", scenes: 4, expected: /2026年8月5日.*Instruct.*Softmax/s },
+    { url: "https://www.tmtpost.com/8091801.html", title: "大厂抢滩AI办公", type: "technical-article", scenes: 5, expected: /独立办公 Agent.*任务和价值交付.*流程和组织改造/s },
+    { url: "https://www.tmtpost.com/8091516.html", title: "毒圈缩圈：AI大模型的“斩杀线”还在上移", type: "technical-article", scenes: 5, expected: /四十分升到五十分.*连续执行二十步.*统一 Harness/s },
+    { url: "https://www.tmtpost.com/8091864.html", title: "AI带火挖掘机，土木狗有救了？", type: "technical-article", scenes: 5, expected: /二百零五点四亿美元.*土地开发.*一百三十多万条行业知识/s },
+    { url: "https://www.ithome.com/0/985/886.htm", title: "最强多模态内容审核开源 AI 模型：Mistral 推出 Shieldstral，单张 16GB GPU 可运行", type: "news", scenes: 4, expected: /2026年8月5日.*Instruct.*Softmax/s },
   ] as const;
 
   for (const fixture of fixtures) {

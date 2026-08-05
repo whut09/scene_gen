@@ -15,18 +15,21 @@ test("IndexTTS keeps a short title in one synthesis unit", () => {
   assert.deepEqual(splitIndexTtsText("Kimi Code，开源项目推荐。", 88), ["Kimi Code，开源项目推荐。"]);
 });
 
-test("IndexTTS protects standalone acronyms as isolated synthesis units", async () => {
+test("IndexTTS keeps acronyms connected to surrounding Mandarin", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "AI 和 AGI 通过 OpenAI API 接入模型。" });
 
   const providerText = indexTtsPronunciationInput(plan).text;
-  assert.equal(providerText, "A、I， 和 A、G、I， 通过 OpenAI A、P、I， 接入模型。");
-  assert.deepEqual(splitIndexTtsText(providerText), ["A、I，", "和", "A、G、I，", "通过 OpenAI", "A、P、I，", "接入模型。"]);
-  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v6-safe-product-punctuation");
+  assert.equal(providerText, "A I 和 A G I 通过 OpenAI A P I 接入模型。");
+  assert.deepEqual(splitIndexTtsText(providerText), [providerText]);
+  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v8-protected-pinyin");
 });
 
-test("IndexTTS isolates AI from a Chinese title instead of letting context merge the letters", () => {
+test("IndexTTS does not split AI or GB into standalone audio chunks", async () => {
+  const { plan } = await compilePronunciationPlan({ displayText: "AI 模型可在16GB显卡运行。" });
+  const providerText = indexTtsPronunciationInput(plan).text;
+  assert.equal(providerText, "A I 模型可在16G B显卡运行。");
   assert.deepEqual(
-    splitIndexTtsText("DeepSeek一天吞下八万亿Token，A、I，的白菜价时代来了。"),
-    ["DeepSeek一天吞下八万亿Token，", "A、I，", "的白菜价时代来了。"],
+    splitIndexTtsText(providerText),
+    [providerText],
   );
 });

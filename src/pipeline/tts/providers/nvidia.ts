@@ -29,7 +29,7 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-spelled-acronyms-v24";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-connected-acronyms-v25";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 export const NVIDIA_TTS_NORMALIZE_FILTER = "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB,areverse,silenceremove=start_periods=1:start_duration=0.04:start_threshold=-52dB,areverse,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse,loudnorm=I=-19:TP=-2:LRA=7";
 

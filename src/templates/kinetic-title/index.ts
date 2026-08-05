@@ -1,9 +1,9 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPublicationDate, projectSourceUrl, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPublicationDate, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
 
 export const kineticTitleTemplate: HtmlTemplateDefinition = {
   id: "kinetic-title",
-  version: "1.3.2",
+  version: "1.3.3",
   name: "Kinetic Title",
   description: "Oversized editorial typography with paced signal strips for hooks and conclusions.",
   engine: "html-video",
@@ -43,6 +43,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
     const titleSize = headlineFontSize(headline, 88, 60);
     const isGithubProject = project.sources.some((source) => source.kind === "github" || Boolean(source.repo));
     const repositoryUrl = isTitle ? projectSourceUrl(project) : "";
+    const repositoryStars = isTitle ? projectRepositoryStars(project) : "";
     const publicationDate = projectPublicationDate(project);
     const heroAsset = projectHeroAsset(project);
     const body =
@@ -54,6 +55,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
       '<h1 class="kt-title">' + escapeHtml(headline).replace(/\n/g, "<br />") + '</h1>' +
       '<div class="kt-rule"><i></i><i></i><i></i></div>' +
       '<p class="kt-support">' + escapeHtml(supporting) + '</p>' +
+      (repositoryStars ? '<div class="kt-stars">' + escapeHtml(repositoryStars) + '</div>' : '') +
       '<div class="kt-stamp">' + escapeHtml(repositoryUrl || (isGithubProject ? 'PROJECT / SIGNAL' : 'NEWS / SIGNAL')) + '</div>' +
       '</main>';
     const css =
@@ -67,6 +69,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
       '.kt-rule i{height:12px;background:#fff36a;transform-origin:left;animation:hv-width .8s .3s both;}' +
       '.kt-rule i:nth-child(2){background:#72f0ff;animation-delay:.45s}.kt-rule i:nth-child(3){background:#ff8bd7;animation-delay:.6s}' +
       '.kt-support{font-size:34px;max-width:850px;animation:hv-rise .55s .5s both;}' +
+      '.kt-stars{align-self:flex-start;margin-top:26px;padding:13px 20px;background:#fff36a;color:#083f99;font-size:28px;line-height:1;font-weight:950;animation:hv-rise .45s .62s both;}' +
       '.kt-stamp{position:absolute;left:0;right:0;bottom:4px;font-size:30px;line-height:1.2;font-weight:900;letter-spacing:.04em;color:rgba(255,255,255,.82);overflow-wrap:anywhere;}' +
       '.kt-research-stack{justify-content:flex-start;padding-top:220px}.kt-research-stack .kt-title{font-size:min(var(--kt-title-size),82px);max-width:900px}.kt-research-stack .kt-support{margin-top:28px;padding:30px;border-left:10px solid #fff36a;background:rgba(255,255,255,.12)}' +
       '.kt-agent-split{justify-content:flex-start;padding-top:700px}.kt-agent-split .kt-asset{top:64px;left:0;right:0;width:100%;height:560px}.kt-agent-split .kt-kicker{margin-bottom:18px}.kt-agent-split .kt-title{font-size:min(var(--kt-title-size),76px);max-width:880px}.kt-agent-split .kt-index{top:500px;right:-28px;font-size:330px}.kt-agent-split .kt-rule{width:48%;margin:30px 0 24px}.kt-agent-split .kt-support{margin-left:110px;max-width:790px;padding-left:28px;border-left:8px solid #72f0ff}' +

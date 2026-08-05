@@ -206,6 +206,7 @@ test("published video filename is derived from the Chinese homepage title", () =
 
 test("news source websites are scrubbed and blocked by the draft gate", async () => {
   assert.equal(scrubAttribution("据IT之家消息，模型今天正式发布。"), "模型今天正式发布。");
+  assert.equal(scrubAttribution("全球首个模型开源 - 智东西"), "全球首个模型开源");
   assert.equal(scrubAttribution("这是来自IT之家的报道。"), "这是。");
   assert.equal(scrubAttribution("潮新闻客户端 记者 李稀“零基础月入过万”"), "“零基础月入过万”");
   assert.equal(scrubAttribution("图源：网络截图 烧钱的真相"), "烧钱的真相");
@@ -219,11 +220,38 @@ test("news source websites are scrubbed and blocked by the draft gate", async ()
 test("repository videos display the address but reject it from narration", async () => {
   assert.equal(scrubGithubReference("GitHub 仓库：https://github.com/HKUDS/DeepTutor，地址 HKUDS/DeepTutor", ["HKUDS/DeepTutor"]), "开源项目 仓库：开源项目，地址 DeepTutor");
   const project = createFixtureProject();
-  project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "HKUDS/DeepTutor", url: "https://github.com/HKUDS/DeepTutor" };
+  project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "HKUDS/DeepTutor", url: "https://github.com/HKUDS/DeepTutor", metrics: { stars: 100 } };
   project.narration = `${project.narration} 项目托管在 GitHub，仓库地址是 HKUDS/DeepTutor。`;
   const result = await evaluateDraft(project, project.meta.durationSeconds, "");
   assert.equal(result.issues.some((issue) => issue.code === "repository_address_spoken"), true);
   assert.equal(result.issues.some((issue) => issue.code === "repository_address_missing"), false);
+});
+
+test("repository draft gate blocks zero stars and missing homepage context", async () => {
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "huangruiteng/loopx", url: "https://github.com/huangruiteng/loopx", metrics: { stars: 0 } };
+  project.meta.title = "loopx";
+  project.scenes[0] = { type: "title", duration: 10, kicker: "开源项目推荐", headline: "开源项目推荐：loopx", subhead: "智能体运行工具", sources: ["0 Stars"] };
+  project.narrationSegments![0].text = "开源项目推荐：loopx。它解决长期任务状态管理问题。";
+  project.narration = project.narrationSegments!.map((segment) => segment.text).join("\n");
+  const result = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "repository_star_count_invalid"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "repository_value_context_missing"), true);
+});
+
+test("draft gate preserves source titles and requires model purpose on the homepage", async () => {
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], title: "原始新闻标题", contentType: "news" };
+  project.meta.title = "重新概括的标题";
+  project.scenes[0] = { type: "title", duration: 10, kicker: "模型发布", headline: "重新概括的标题", subhead: "参数规模升级", sources: ["30B 参数"] };
+  const titleResult = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(titleResult.issues.some((issue) => issue.code === "source_title_not_preserved"), true);
+
+  project.sources[0] = { ...project.sources[0], title: "Mistral推出新模型" };
+  project.meta.title = "Mistral推出新模型";
+  project.scenes[0] = { type: "title", duration: 10, kicker: "模型发布", headline: project.meta.title, subhead: "参数规模升级", sources: ["30B 参数"] };
+  const purposeResult = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(purposeResult.issues.some((issue) => issue.code === "homepage_purpose_missing"), true);
 });
 
 test("repository synthesis gate rejects a short summary before TTS", () => {

@@ -43,6 +43,11 @@ Issue code 由注册表维护，同时声明默认分类、修复动作、是否
 - `empty_summary_close`：结尾只重复标题或前文；
 - `title_repeated_in_narration`：完整标题播报超过一次。
 - `repository_address_missing`：开源项目首屏未显示完整 `github.com/owner/repository` 地址。
+- `repository_star_count_invalid`：Star 数据缺失、为零或被错误回退为 `0 Stars`。
+- `repository_star_not_visible`：Star 数据有效，但标题模板没有在首屏安全区显示格式化后的真实数值。
+- `repository_value_context_missing`：开源项目首屏没有同时说明用途和适用场景。
+- `source_title_not_preserved`：视频标题或首页标题改写了原始文章标题。
+- `homepage_purpose_missing`：模型类首屏只展示参数，没有说明模型用于什么任务。
 - `repository_address_spoken`：旁白或 TTS 文本朗读了平台名、域名或 owner/repository；地址只允许显示。
 
 默认预算为新闻 32～45 秒、开源项目 40～55 秒、技术文章 50～70 秒。新闻和开源项目使用四屏短版，技术文章使用五屏解释版。
@@ -77,7 +82,7 @@ Semantic gate 不产生确定性的声调错误。Whisper 即使输出了正确�
 
 Pronunciation gate 只验证 `PronunciationPlan` 中 medium/high risk 的 span。确定的 `audio_pronunciation_mismatch` 必须携带实际音素或等价声学证据；没有 `actualPinyin`、对齐失败、低置信度或 verifier 不可用时只能产生 `verification_inconclusive`。
 
-高风险缩写必须进入受保护的 Provider 合成计划。例如 IndexTTS2 中的 `AI` 会被拆成独立合成单元，避免中文上下文吞音或连读。ASR 转写正确不能替代该前置保护。
+高风险缩写必须进入受保护的 Provider 合成计划。IndexTTS2 使用同一合成片段内的连续字母序列，例如 `A I办公`、`十六 G B显卡`；禁止使用顿号，也禁止把缩写单独切成 WAV，否则容易在字母之间或缩写与正文之间产生停顿。ASR 转写正确不能替代该前置保护。
 
 ## Video Gate
 

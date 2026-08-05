@@ -374,11 +374,25 @@ function githubReadmeItem(url: string, target: NonNullable<ReturnType<typeof git
     title: `${target.repo}：${description}`, url, source: "项目资料", summary: description,
     content: compactText(readme, 12000), publishedAt: new Date().toISOString(),
     score: scoreItem(joined, undefined, 1, config.keywords), tags: normalizeTags(joined, config.keywords).slice(0, 8),
-    repo: target.fullName, metrics: { stars: 0, forks: 0, issues: 0, language: "Unknown", license: "Unknown", branch: "HEAD", ...repositoryMetrics },
+    repo: target.fullName, metrics: { language: "Unknown", license: "Unknown", branch: "HEAD", ...repositoryMetrics },
   };
 }
 
 async function githubRepositoryMetricsFallback(target: NonNullable<ReturnType<typeof githubRepoFromUrl>>): Promise<GithubRepositoryMetrics> {
+  try {
+    const result = await runExternalProcess("gh", ["api", `repos/${target.fullName}`], { timeoutMs: 20_000, retries: 0 });
+    const parsed = JSON.parse(result.stdout.trim()) as { stargazers_count?: number; forks_count?: number; open_issues_count?: number; language?: string; license?: { spdx_id?: string }; default_branch?: string };
+    return {
+      ...(Number.isFinite(parsed.stargazers_count) ? { stars: Number(parsed.stargazers_count) } : {}),
+      ...(Number.isFinite(parsed.forks_count) ? { forks: Number(parsed.forks_count) } : {}),
+      ...(Number.isFinite(parsed.open_issues_count) ? { issues: Number(parsed.open_issues_count) } : {}),
+      language: parsed.language || "Unknown",
+      license: parsed.license?.spdx_id || "Unknown",
+      branch: parsed.default_branch || "main",
+    };
+  } catch {
+    // Continue to the system network fallback when gh is unavailable or unauthenticated.
+  }
   // The primary Node request has already failed; use the Windows system network stack instead of repeating it.
   if (process.platform !== "win32") return {};
   try {
@@ -386,7 +400,14 @@ async function githubRepositoryMetricsFallback(target: NonNullable<ReturnType<ty
     const script = `$ErrorActionPreference='Stop'; $repo=Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent'='scene-gen/0.1'; 'Accept'='application/vnd.github+json' } -Uri '${apiUrl}'; [pscustomobject]@{ stars=$repo.stargazers_count; forks=$repo.forks_count; issues=$repo.open_issues_count; language=$repo.language; license=$repo.license.spdx_id; branch=$repo.default_branch } | ConvertTo-Json -Compress`;
     const result = await runExternalProcess("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeoutMs: 20_000, retries: 0 });
     const parsed = JSON.parse(result.stdout.trim()) as { stars?: number; forks?: number; issues?: number; language?: string; license?: string; branch?: string };
-    return { stars: Number(parsed.stars ?? 0), forks: Number(parsed.forks ?? 0), issues: Number(parsed.issues ?? 0), language: parsed.language || "Unknown", license: parsed.license || "Unknown", branch: parsed.branch || "main" };
+    return {
+      ...(Number.isFinite(parsed.stars) ? { stars: Number(parsed.stars) } : {}),
+      ...(Number.isFinite(parsed.forks) ? { forks: Number(parsed.forks) } : {}),
+      ...(Number.isFinite(parsed.issues) ? { issues: Number(parsed.issues) } : {}),
+      language: parsed.language || "Unknown",
+      license: parsed.license || "Unknown",
+      branch: parsed.branch || "main",
+    };
   } catch {
     return {};
   }

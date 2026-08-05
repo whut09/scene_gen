@@ -39,6 +39,13 @@ export function projectSourceUrl(project: VideoProject) {
   return repositoryProjectUrl(project);
 }
 
+export function projectRepositoryStars(project: VideoProject) {
+  const stars = Number(project.sources.find((source) => source.kind === "github" || Boolean(source.repo))?.metrics?.stars);
+  return Number.isFinite(stars) && stars > 0
+    ? `${Math.round(stars).toLocaleString("en-US")} Stars`
+    : "";
+}
+
 export function headlineFontSize(text: string, max = 88, min = 58) {
   const length = text.replace(/\s+/g, "").length;
   if (length <= 16) return max;
