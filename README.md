@@ -1,507 +1,185 @@
 # Scene Gen
 
-跨进程和持久化协议的单一来源、issue 注册流程及 F5 JSON Schema 生成命令见 [`docs/PROTOCOL_SCHEMAS.md`](docs/PROTOCOL_SCHEMAS.md)。
+[![CI](https://github.com/whut09/scene_gen/actions/workflows/ci.yml/badge.svg)](https://github.com/whut09/scene_gen/actions/workflows/ci.yml)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-测试、离线 smoke 与 CI 命令见 [`TESTING.md`](TESTING.md)。
+Scene Gen 将新闻、技术文章或开源项目链接转换为中文竖屏视频。它负责内容抓取、事实约束、分镜规划、语音合成、HTML 动画渲染、音画同步和质量修复，最终输出可发布的 1080 x 1920 MP4。
 
-输入一篇新闻 URL，自动抓取正文、生成时长随新闻信息量自然变化的中文旁白与五段竖屏分镜，使用 F5-TTS 配音，默认经 HTML Video 模板精修并渲染为 1080x1920 MP4，并由质量 harness 检查脚本、音频、音画同步和最终视频。
+## 生成效果
 
-## 5 分钟安装
+以下画面直接从项目生成的 MP4 中抽取。
 
-要求 Node.js 20+ 和 FFmpeg。F5-TTS、CUDA 与 Whisper 只在对应 profile 中需要。
+| 新闻首屏 | 开源项目首屏 | 数据内容页 |
+| --- | --- | --- |
+| <img src="docs/assets/demo-news.jpg" width="260" alt="新闻视频首屏效果"> | <img src="docs/assets/demo-repository.jpg" width="260" alt="开源项目视频首屏效果"> | <img src="docs/assets/demo-data.jpg" width="260" alt="数据型内容页效果"> |
+
+## 核心能力
+
+- **多内容类型**：区分新闻、技术文章和开源项目，使用不同的标题、日期、叙事与合规规则。
+- **事实约束生成**：从来源构建 `FactLedger`，让标题、场景和旁白引用可追溯声明。
+- **中文语音前端**：分离字幕文本与合成文本，通过 `PronunciationPlan`、短语词典和 provider 适配处理多音字、缩写和专有名词。
+- **场景级渲染**：共享 Chromium，以有界并发录制独立场景，再由 FFmpeg 拼接和封装。
+- **质量 Harness**：对脚本、音频、发音、版式、画面、同步和最终媒体执行结构化质量门。
+- **局部修复**：音频问题只重建对应场景并 remux；画面问题只重录对应场景。
+- **内容寻址缓存**：跨 run 复用音频和场景视频，并使用 single-flight 避免并发重复生成。
+- **可恢复运行**：每次任务写入独立 run journal，支持从指定阶段恢复和强制重建。
+
+## 快速开始
+
+要求 Node.js 20+、FFmpeg/FFprobe 和 Playwright Chromium。生产配置还需要可用的 LLM 与 TTS provider。
 
 ```powershell
 npm.cmd install
 npm.cmd exec -- playwright install chromium
-Copy-Item .env.example .env
-npm.cmd run doctor -- --profile fast-preview
-npm.cmd run scene-gen -- plan --url "https://example.com/news" --profile fast-preview
-npm.cmd run scene-gen -- run --url "https://example.com/news" --profile fast-preview
+Copy-Item config/news-llm.example.json config/news-llm.local.json
+npm.cmd run doctor -- --profile production
 ```
 
-Linux/macOS 将 `npm.cmd` 换成 `npm`，复制配置使用 `cp .env.example .env`。第一次正式运行前建议先执行 `doctor` 和 `plan`；`plan` 只抓取文章并展示 provider、模板、成本权重和所需环境，不调用 LLM、TTS 或渲染器。
-
-`run` 也支持同样的计划模式：`npm.cmd run scene-gen -- run --url "新闻地址" --profile production --dry-run`。
-
-安装依赖后也可通过本地 bin 使用 `npm exec -- scene-gen doctor`。正式 CLI 提供：
-
-```text
-scene-gen doctor|plan|run|resume|migrate|check|feedback|cache|pronunciation|tts|audio
-```
-
-持久化文件使用逐版本迁移 reader。旧 run 在 resume 时会先备份 `run.json.vN.bak` 再自动升级；也可显式执行 `scene-gen migrate <run-id>`，同时迁移 manifest 引用的 ContentGraph 和 production report。格式版本、缓存 identity 版本和新增迁移步骤见 [`docs/PERSISTENCE_MIGRATIONS.md`](docs/PERSISTENCE_MIGRATIONS.md)。
-
-所有命令支持 `--help`，未知参数、拼写错误、缺失值、错误枚举和互斥选项会直接返回友好错误，不会静默忽略。
-
-## 配置 Profiles
-
-运行时配置会在 CLI 启动时合并 profile 与显式环境变量，经过 Zod 校验后递归冻结；阶段代码不再通过修改全局 `process.env` 传递配置。每次运行会把脱敏配置快照和哈希写入 `run.json`，resume 默认强制复用原配置；如需改变 profile 或影响运行的参数，必须增加 `--override-config`。设计和扩展约束见 [`docs/RUNTIME_CONFIG.md`](docs/RUNTIME_CONFIG.md)。
-
-- `local-f5`：本地 F5-TTS、CUDA、Whisper 和 HTML Video 完整链路。
-- `azure-free`：Azure Speech Neural TTS、月度字符硬预算和 HTML Video 渲染。
-- `openai-tts`：OpenAI 兼容 LLM/TTS，加本地 HTML Video 渲染。
-- `ci-offline`：关闭 LLM judge 与 ASR，使用离线检查设置。
-- `fast-preview`：Remotion、单轮 loop、无截图，适合快速预览。
-- `production`：严格质量门、HTML Video、三轮 loop 和 fail-fast。
-
-profile 文件位于 `config/profiles/`。环境变量中的显式配置优先于 profile 默认值。Windows 本机路径不要提交到通用配置；可复制 `config/profiles/windows-local-f5.example.json` 为 `windows-local-f5.local.json`，修改路径后使用 `--profile windows-local-f5.local`。`*.local.json` 已被 Git 忽略。
-
-Azure 免费 profile 使用 REST API，不引入 Azure SDK。设置 `AZURE_SPEECH_KEY` 和 `AZURE_SPEECH_REGION` 后运行 `scene-gen doctor --profile azure-free`，doctor 会检查配置、voices endpoint、指定 voice、当前月度字符用量和输出目录。默认 voice 为 `zh-CN-XiaoxiaoNeural`，输出为可直接进入现有 FFmpeg 流程的 `riff-24khz-16bit-mono-pcm`。`AZURE_TTS_MONTHLY_CHARACTER_BUDGET=500000` 是硬限制，达到上限后不会继续调用 Azure；中文汉字按两个预算字符估算，使用量保存在 `dist/cache/metadata/azure-tts-usage.json`。API key 会从 runtime config snapshot、run journal 和公开错误信息中移除。
-
-常用云语音诊断命令：
-
-```powershell
-npm.cmd run scene-gen -- tts providers --profile production
-npm.cmd run scene-gen -- tts quota --provider azure --profile azure-free
-npm.cmd run scene-gen -- tts smoke --provider azure --profile azure-free
-npm.cmd run scene-gen -- pronunciation inspect --text "系统完成核心模块重构" --profile azure-free
-npm.cmd run scene-gen -- audio verify --run <run-id> --scene 2
-```
-
-Azure F0 支持正式 Neural TTS 和显式 SAPI 拼音，适合 production 高风险多音字；Cloudflare MeloTTS 可用于低成本 preview，但不提供同等级显式音素控制；Edge TTS 是非官方接口，只允许 preview，不进入 production 默认链；F5 和 Windows 属于本地 fallback。所有云 provider 都受 hard limit 控制，未显式允许付费时不会越过免费预算。
-
-`PronunciationPlan` 将 `displayText`、`semanticText`、`synthesisText` 和发音 span 分离。字幕继续显示“重构”，Azure SSML 使用 `chong 2 - gou 4`，只有 provider 明确不支持 phoneme 时才允许把合成文本降级为“重新构建”。semantic ASR 负责内容、实体、数字和串屏；pronunciation verifier 负责音素证据，两者不可互相替代。
-
-## 一键生成
-
-```powershell
-npm.cmd run scene-gen -- run --url "https://example.com/news" --profile production
-```
-
-大模型配置分为两层：仓库提交 `config/news-llm.example.json`，其中 key 和 URL 固定为 `xx` 占位，模型名使用项目默认值；本机秘密写入 Git 忽略的 `config/news-llm.local.json`。新电脑只需创建 local 文件并填写 key 和 URL，模型名会自动继承：
+在 `config/news-llm.local.json` 中只填写本机密钥和 OpenAI 兼容接口地址。该文件已被 Git 忽略：
 
 ```json
 {
-  "NEWS_LLM_API_KEY": "你的 key",
-  "NEWS_LLM_BASE_URL": "https://你的 OpenAI 兼容接口/v1"
+  "NEWS_LLM_API_KEY": "your-key",
+  "NEWS_LLM_BASE_URL": "https://your-endpoint.example/v1"
 }
 ```
 
-质量 Judge 默认复用这组 NEWS LLM 凭据；只有需要单独的 Judge 服务时，才额外设置 `QUALITY_LLM_API_KEY` 和 `QUALITY_LLM_BASE_URL`。
-
-`config/news-llm.local.json`、`config/llm.local.json`、`.env` 和 `.env.local` 均不会提交。外部环境变量优先级最高，local 文件覆盖 example 文件；`xx`/`xxx` 占位不会进入运行时配置。
-
-默认行为：
-
-- 只处理输入 URL 对应的一篇新闻。
-- 默认以 100 秒作为编导参考，但不会强行压缩；常见成片会根据内容自然落在约 70 到 165 秒。
-- 生成 5 个逐段对应的新闻场景和旁白；首页显著展示新闻日期，标题垂直居中，第一段旁白先逐字播报完整标题，再播报新闻日期。
-- 使用 F5-TTS 的本地参考音色，每屏单独合成。
-- 仅在自然范围内微调语速，超过范围时允许视频变长或变短，并按处理后的真实音频边界切屏。
-- 默认使用 HTML Video 两级动态布局路由：先选场景模板，再按新闻语义选择模板内部变体；五屏至少三种构图，相邻场景不重复。
-- 输出 1080x1920 MP4。
-- 默认输出到项目内 `dist/output/`；本次运行的状态、项目、manifest、逐轮质量结果和最终报告统一输出到 `dist/runs/<run-id>/`。
-
-指定参数：
-
-```powershell
-npm.cmd run scene-gen -- run --url "新闻地址" --profile production --seconds 100 --iterations 2 --screenshots 0 --engine html-video --out-dir "dist/output" --notes "本次额外事实边界"
-```
-
-- `--seconds`：建议时长锚点，默认 100；不是硬限制，质量门默认接受约 0.7 到 1.65 倍的自然时长。
-- `--iterations`：脚本生成和质量修订的最大轮数，默认 4，范围 1 到 8；较高值用于按策略轨迹逐级升级，并仍受 token、TTS、渲染、成本和单 issue 配额限制。
-- `--screenshots`：最多抓取的网页截图数；默认 0，避免截图与统一背景不匹配。
-- `--engine`：`html-video` 为质量优先路径，`remotion` 为速度优先路径；一键命令默认 `html-video`。
-- `--out-dir`：MP4 输出目录。
-- `--notes`：本次新闻的额外事实校正或表达约束。
-- `--video-iterations`：最终视频检查与修复的最大轮数，默认 2，范围 1 到 3。音视频时长漂移会重新封装，空白帧或错误尺寸会强制重渲染。
-- `--quality-profile`：质量门槛配置。`balanced` 默认只阻止硬错误和环境阻塞，`strict` 也阻止 warning，`lenient` 保留 warning 但不阻止发布。可用 `QUALITY_BLOCKING_WARNING_CODES` 指定需要阻止发布的软问题 code。
-
-中断或失败后可以复用已有项目、音频和场景缓存：
-
-```powershell
-# 从 run.json 中最后失败的阶段继续
-npm.cmd run scene-gen -- resume "<run-id>"
-
-# 跳过抓取和脚本生成，从音频合成继续
-npm.cmd run scene-gen -- resume "<run-id>" --from-stage audio
-
-# 从渲染阶段继续，并强制绕过场景视频缓存
-npm.cmd run scene-gen -- resume "<run-id>" --force-stage render
-```
-
-可用阶段为 `ingest`、`draft`、`draft-gate`、`revise`、`synthesize`、`audio-gate`、`render`、`video-gate` 和 `publish`。`audio` 是 `synthesize` 的简写。每个阶段在 `run.json` 中记录 `status`、`inputHash`、`outputs`、`issues`、`metrics`、`durationMs`、`attempt` 和 `suggestedAction`。
-
-质量 issue 使用稳定协议：`code + stage + severity + sceneIndex + evidence + repairAction + retryable`。环境阻塞使用 `outcome=blocked`，不会伪装成内容质量失败。每轮局部修订还会在 `dist/runs/<run-id>/loop/` 保存项目哈希、问题签名、评分变化、scene/narration JSON Patch、修订原因、token/耗时和解决或新增的问题；连续两轮无变化会停止局部循环并升级到全局重写或终止。
-
-ASR 规范化词典位于 `config/asr/base.json`，项目或领域专用规则位于 `config/asr/<package>.json`。通过 `ASR_DOMAIN_PACKAGES=scene-gen,custom-domain` 组合加载，避免在质量检查函数中继续堆叠项目名规则。
-
-### TTS 多音字词典
-
-NVIDIA Build 的 Magpie Multilingual 托管服务当前提供两个原生普通话声线：`Magpie-Multilingual.ZH-CN.HouZhen` 和 `Magpie-Multilingual.ZH-CN.Siwei`。项目默认使用 `Siwei`；其他带 `ZH-CN` 前缀的跨语言复用声线不作为普通话默认。NVIDIA provider 会把当前 `PronunciationPlan` 中 medium/high 风险短语转换为 Riva `custom_dictionary`，随每个分段请求发送，例如 `重构 -> chong2 gou4`。worker 返回实际应用的短语列表，且 frontend version、voice 和 plan hash 都进入音频缓存 identity，避免继续复用旧声线或未下传词典的 WAV。
-
-ASR 词典只规范化 Whisper 转写结果，不会改变实际语音。F5-TTS 的短语发音词典位于 `config/tts/zh-CN.json`，在 Python 前端启动时通过 pypinyin 加载。例如“重构”固定为 `chong2 gou4`，而“重要”和“重量”保留 `zhong4`。
-
-合成前会为每个 narration segment 编译不可变的 `PronunciationPlan`：`displayText` 保持字幕和原文，`semanticText` 用于语义核对，`synthesisText` 仅供 TTS，`spans` 按显式覆盖、人工词典、`config/tts/domains/` 领域包、G2PW、pypinyin 的顺序生成。最长短语优先，因此“重载模型”不会被较短的“重载”覆盖。Azure 使用 SAPI phoneme SSML，F5 接收场景级 phrase dictionary；IndexTTS、CosyVoice 和 Edge 已有适配接口。
-
-设置 `G2PW_ENABLED=1` 可启动 `scripts/g2pw-worker.py` 的 ONNX CPU 常驻 worker。需要在独立 Python 环境安装 G2PW 及其 ONNX 运行依赖并配置 `G2PW_MODEL_DIR`；模型不可用或置信度低于 `G2PW_MIN_CONFIDENCE` 时不会静默采用，随后使用轻量常驻 pypinyin worker 回退。每个计划及其 `planHash` 会写入项目、run journal 的 synthesize outputs、loop audit 和 production report。
-
-新增多音字时，为 `entries` 添加 `phrase`、tone3 格式的 `pinyin`、`spokenFallback` 和 `enabled`。`spokenFallback` 只用于语音文本；设置 `TTS_USE_SPOKEN_FALLBACKS=1` 后，“重构”可回退播报为“重新构建”，项目 JSON、字幕和新闻原文仍保留“重构”。也可以直接在单个 `narrationSegment.ttsText` 中提供播报文本。
-
-当前文本实际命中的词典条目会参与 F5 分段音频缓存 key。修改“重构”只使包含该短语的 WAV 失效，不影响仅包含“重要”或普通文本的场景；模型、参考音频、参考文本、速度、NFE step 或前端版本变化仍会使对应 WAV 自动失效。可用 `TTS_PRONUNCIATION_LEXICON` 指向自定义词典，并通过 `npm run test:pronunciation` 在不使用 GPU 的情况下验证 pypinyin 前端。
-
-### F5 持久化 Worker
-
-F5 默认使用 `scripts/f5-worker.py` 的 JSON Lines 持久化 worker。模型、vocoder、参考音频、参考文本和发音词典在 worker 启动时只加载一次，后续每个分镜只发送文本与合成参数。旧的逐段 CLI 模式仍可通过 `F5_TTS_WORKER_MODE=cli` 临时启用，但已标记为 deprecated。
-
-- 单 GPU 默认 `F5_TTS_CONCURRENCY=1`，不会并行启动多个模型进程争抢显存。
-- 多 GPU 使用 `F5_TTS_DEVICES=cuda:0,cuda:1`，每张 GPU 启动一个串行 worker；`F5_TTS_CONCURRENCY` 可限制启用数量。
-- OpenAI TTS 默认并发为 4，Windows 本地 TTS 默认并发为 1；分别通过 `OPENAI_TTS_CONCURRENCY` 和 `LOCAL_TTS_CONCURRENCY` 调整。
-- 缓存检查、文本准备和 FFprobe 使用 `TTS_PREPROCESS_CONCURRENCY` 限流；FFmpeg 后处理使用 `TTS_FFMPEG_CONCURRENCY` 限流。
-- `workerStartupMs`、`modelLoadMs`、`queueWaitMs`、`synthesisMs`、缓存命中/未命中和生成/复用场景数会写入 run journal 与最终报告。
-
-worker 启动超时可调整 `F5_TTS_WORKER_READY_TIMEOUT_MS`，单次请求超时可调整 `F5_TTS_WORKER_REQUEST_TIMEOUT_MS`。worker 崩溃只按 `F5_TTS_WORKER_MAX_RESTARTS` 有限重启；父 Node 进程退出后，Python worker 会自行结束，避免残留 GPU 进程。调试协议或测试替身时可通过 `F5_TTS_WORKER_SCRIPT` 指定其他 worker 脚本。
-
-### 分镜级音频修复
-
-Audio gate 返回 `audio_pronunciation_mismatch`、`audio_scene_drift` 等可修复问题并携带 `sceneIndex` 时，harness 只强制重建对应分镜 WAV。未命中的分镜继续使用原缓存，随后重新拼接总旁白并更新时间轴。问题未提供 `sceneIndex` 时会明确重建全部音频，而不是静默复用旧缓存。
-
-每次局部修复使用稳定的 `cacheSalt`，salt 只写入受影响分镜的缓存身份。报告记录 `forcedAudioSceneIndexes`、`generatedAudioSceneIndexes`、`reusedAudioSceneIndexes` 和 `concatenatedAudio`。如果新音频没有改变分镜时长并且已有 `video-no-audio.mp4`，HTML Video 只执行 remux；如果时长变化，则复用并 retime 已缓存的分镜视频，不默认重新录屏。
-
-### HTML Video 并行渲染
-
-一次 `renderHtmlVideoProject()` 只启动一个 Chromium browser。需要录制的分镜各自创建隔离的 BrowserContext/Page，并通过 `HTML_RENDER_CONCURRENCY` 有界并发；缓存命中场景不会创建 context。实际并发还会受到 CPU 核数、可用内存、场景数量和 `HTML_RENDER_MEMORY_PER_JOB_MB` 的共同限制。
-
-每个并发 FFmpeg 编码任务最多使用 `floor(cpuCount / renderConcurrency)` 个线程，避免多个 x264 进程同时占满全部 CPU。编码预设由 `HTML_RENDER_PRESET` 控制：`fast-preview` 和 `ci-offline` 使用 `ultrafast`，`local-f5` 使用 `veryfast`，`production` 使用 `medium`。
-
-### 旁白时间戳同步
-
-TTS 完成后，合成阶段会复用逐场景 WAV，通过单次 Whisper 批量转写获取词级时间戳，再将画面中的标题、卡片和关键短语对齐为 `audioStartMs`、`audioEndMs` 与置信度。`content-graph.json` 中的 `syncCues` 会优先使用这些真实时间戳；HTML Video 在录制开始时按时间触发元素进入和关键词高亮，而不是按关键词数量平均分配时间。
-
-当 Whisper 不可用、没有返回 word timestamps、短语未匹配或置信度低于 `SPEECH_ALIGNMENT_CONFIDENCE_MIN` 时，只对该 cue 回退到原来的 ratio 估算，不会让 TTS 阶段失败。`SPEECH_ALIGNMENT_FUZZY_MIN` 控制模糊匹配下限，`SPEECH_ALIGNMENT_DISABLED=1` 可完全关闭。成功转写会保存在 `narrationSegments[].speechAlignment`，audio gate 直接复用，不会再次启动 Whisper。真实 cue 也进入视频场景内容寻址 cache key；默认按 `HTML_SYNC_CUE_CACHE_BUCKET_MS=120` 毫秒量化，忽略不可感知的 ASR 抖动，超过阈值的时间变化才使对应场景视频失效。
-
-渲染报告包含 `browserStartupMs`、`renderConcurrency`、缓存命中/实际录制分镜、逐分镜录制与编码耗时、`concatMs`、`muxMs` 和 `totalRenderMs`。某个分镜失败时，未开始任务会被取消，正在运行的 context 会完成清理，已成功场景缓存会保留，恢复运行只重建失败和未完成分镜。
-
-成功后会输出：
-
-```text
-dist/output/01-新闻标题.mp4
-dist/runs/<run-id>/run.json
-dist/runs/<run-id>/generation-result.json
-dist/runs/<run-id>/projects/01-新闻标题.json
-dist/runs/<run-id>/manifest.json
-dist/runs/<run-id>/quality/report.json
-dist/runs/<run-id>/quality/report.md
-dist/runs/<run-id>/quality/frame-1.jpg
-```
-
-## 工作原理
-
-```text
-新闻 URL
-  -> Readability 抓正文
-  -> 统一提取并格式化新闻发布日期，写入首页和首段旁白
-  -> 新闻 LLM 先生成 5 屏可见内容，再为每屏编写只复述或解释当前画面的旁白
-  -> Harness 检查事实硬规则、结构、字数和历史反馈
-  -> 不合格时把问题回传给下一轮生成
-  -> F5-TTS 每屏独立合成，只在自然语速范围内微调节奏
-  -> 回写真正的 narrationSegments 音频边界
-  -> Remotion 渲染竖屏视频
-  -> FFprobe + FFmpeg 检查音视频流、分辨率、时长和抽帧
-  -> 输出 MP4 与质量报告
-```
-
-新闻正文是唯一事实依据。脚本生成不得加入站外推断、作者或媒体署名、发布建议、无关动画说明；标题优先保留原新闻标题的核心卖点。
-
-## Agent Harness 与 Loop Engineering
-
-`scene-gen run` 本身就是生产 harness，分为三道质量门：
-
-1. Draft gate：检查中文标题、第一句话是否完整播报标题、新闻日期是否展示并播报、正式发布状态、5 屏与 5 段旁白、逐屏字数、禁词、场景数据完整度、旁白与当前画面字段重合度，以及旁白中是否出现画面未展示的数字；同时阻止 GitHub 指标与功能要点错配、定性能力图伪装成百分比图。可调用 LLM judge 给出事实忠实度、标题吸引力、信息密度、视觉结构、逐屏一致性和 TTS 可读性评分。
-2. Audio gate：检查 TTS 是否存在、时长是否处于合理弹性范围、旁白字数/秒是否自然、数字是否已转换为中文读法、每段音频起点和场景边界是否逐帧对齐；随后一次加载本地 Whisper，批量转写每个 scene 的独立音频片段，检查标题开场、文本覆盖率、实体召回率、数字与单位、发音词典短语和相邻场景串段。
-
-逐场景 ASR 的确定性结果写入 audio gate metrics。Whisper 使用生成 token 概率的几何平均值作为场景置信度，但汉字转写不能判断一二三四声：即使模型听到 `zhong4 gou4`，也可能仍输出“重构”。因此只有带 `actualPinyin`、音素候选和时间范围的声学验证结果才能生成 `audio_pronunciation_mismatch`。纯 Whisper 字符覆盖不足属于验证器分歧，优先重试或切换 ASR；lenient 模式记录 `verification_inconclusive` warning，不重复生成相同 TTS。语言错误、静音、截断、数字错误和明确音素错误仍会阻止发布。
-3. Video gate：使用 FFprobe 检查视频流、音频流、1080x1920、总时长与流偏差；每个 scene 分别抽取开头、中间和结尾三帧，结合文件完整性、亮度范围和边缘密度判断空白或低信息画面。同时读取 HTML 录制前生成的 DOM 视觉审计，检查安全区、字号、行长、对比度、越界、裁切、遮挡、关键文本、图片焦点风险、动画结论停留时间和旁白关键词出现时机。
-
-HTML renderer 会在共享 Chromium 中先把动画推进到结束状态完成 DOM audit，再重新加载页面进行正式录制。审计保存到场景工作目录的 `visual-audit.json`，并随视频场景缓存复用。修改视觉审计逻辑会通过 renderer version 自动使旧场景缓存失效。可选设置 `VIDEO_OCR_ENABLED=1` 并安装 Tesseract `chi_sim`/`eng` 数据，对每屏中间帧执行关键标题 OCR；OCR 环境缺失只记录环境 warning，不会被误判为内容质量失败。
-
-硬规则不通过时，harness 会把问题和改进要求传入下一轮。达到最大轮数仍不合格时会停止，不导出伪成片。LLM judge 的审美评分属于软建议，服务异常或评分偏低会记录到报告，但不会覆盖事实、时长和音画同步等硬门槛。
-
-每次执行都会在生成内容前创建 `dist/runs/<run-id>/run.json`。生成、draft gate、局部修订、TTS、audio gate、渲染和 video gate 的开始时间、完成状态、耗时、产物路径及错误都会原子写入该文件。即使 LLM、TTS、ASR 或渲染中途失败，也可以从 run journal 和 `evaluations/` 中查看失败现场。
-
-外部网络和进程操作使用统一的超时、取消和分类重试：HTTP 429、5xx、网络中断与明确的临时进程错误使用指数退避；Schema、事实和质量门错误不会盲目重试。按需可通过 `EXTERNAL_FETCH_TIMEOUT_MS`、`EXTERNAL_PROCESS_TIMEOUT_MS`、`HARNESS_DRAFT_TIMEOUT_MS`、`HARNESS_SYNTHESIZE_TIMEOUT_MS`、`HARNESS_RENDER_TIMEOUT_MS` 和 `HARNESS_VIDEO_GATE_TIMEOUT_MS` 调整上限。
-
-Harness 不再读取共享 manifest 的第一项。`generate-stories` 会写出本次运行专属的 `generation-result.json` 和 `manifest.json`，GitHub 缓存命中时也会把缓存项目复制到当前 run 目录后再返回，因此并发任务不会拿到其他 URL 的项目或修改原缓存项目。
-
-## 记录用户反馈
-
-把实际发布后发现的问题写入反馈库：
-
-```powershell
-npm.cmd run feedback:add -- --category title --severity high --issue "标题没有保留原新闻卖点" --desired "主标题优先使用新闻原题核心信息"
-```
-
-也可以使用 `--applies-to` 绑定 URL、阶段或类别；多个作用域用逗号分隔：
-
-```powershell
-npm.cmd run feedback:add -- --applies-to "url:https://example.com/news,stage:audio" --category audio --severity high --issue "第二屏语音和文字不一致" --desired "每屏独立生成旁白并按真实音频切屏"
-```
-
-运行时反馈保存在 `data/feedback/feedback.jsonl`，该文件不会提交。每条反馈记录稳定 `fingerprint`、作用域、试用/成功/失败次数、最近应用时间、前后质量分、过期时间和冲突关系。选择器使用 Beta(2,2) 贝叶斯平滑成功率与 90 天半衰期排序，过期、低置信度、上下文不匹配或被更高分反馈冲突淘汰的记录不会注入 prompt。旧 JSONL 会自动补齐默认字段，最终报告会保存更新后的反馈效果。完整协议见 [`docs/FEEDBACK_LEARNING.md`](docs/FEEDBACK_LEARNING.md)。
-
-可按内容领域、模板和 provider 限定反馈，并设置最低证据置信度与失效时间：
-
-```powershell
-npm.cmd run scene-gen -- feedback --issue "数据卡文字过密" --category layout --severity high --content-domains software --template-ids data-cards --provider-ids html-video --minimum-confidence 0.8 --expires-at 2026-12-31T23:59:59Z
-```
-
-## Windows 与 Linux 差异
-
-- Windows 命令示例使用 `npm.cmd`；Linux/macOS 使用 `npm`。
-- 虚拟环境 Python 会自动解析 Windows 的 `Scripts/python.exe` 和 Linux 的 `bin/python3`，也可通过 `F5_TTS_PYTHON`、`ASR_PYTHON` 显式覆盖。
-- Windows 可使用 `TTS_PROVIDER=local` 的 `System.Speech` 降级路径；Linux 建议使用 `local-f5` 或 `openai-tts`。
-- Windows 可用 `winget install Gyan.FFmpeg`，Ubuntu/Debian 可用 `sudo apt install ffmpeg`。
-- CUDA doctor 同时检查 `nvidia-smi` 和 Python 中的 `torch.cuda.is_available()`。
-
-## 大模型配置
-
-新闻总结使用独立配置：
-
-- 提交版：`config/news-llm.example.json`，只能写 `xxx`。
-- 本地版：`config/news-llm.local.json`，保存真实配置且被 Git 忽略。
-
-`config/news-llm.local.json`：
-
-```json
-{
-  "NEWS_LLM_API_KEY": "你的真实 key",
-  "NEWS_LLM_BASE_URL": "https://你的接口地址/v1",
-  "NEWS_LLM_MODEL": "你的模型名"
-}
-```
-
-质量 judge 默认复用新闻模型，也可以单独设置：
-
-```powershell
-$env:QUALITY_LLM_API_KEY="你的 key"
-$env:QUALITY_LLM_BASE_URL="https://你的接口地址/v1"
-$env:QUALITY_LLM_MODEL="你的模型名"
-```
-
-只运行确定性检查时：
-
-```powershell
-$env:QUALITY_LLM_DISABLED="1"
-```
-
-## F5-TTS 配置
-
-本地真实配置放在 `.env.local`，提交模板见 `.env.example`：
+默认 `production` profile 使用 NVIDIA TTS。将密钥写入 `.env.local`，不要提交：
 
 ```dotenv
-TTS_PROVIDER=f5
-TTS_FAIL_FAST=1
-F5_TTS_VENV=.venv-f5
-F5_TTS_MODEL=F5TTS_v1_Base
-F5_TTS_DEVICE=cuda
-F5_TTS_SPEED=1.45
-F5_TTS_UNIFORM_SPEED=1.25
-F5_TTS_NFE_STEP=16
-F5_TTS_REF_AUDIO=assets/voice-reference.wav
-F5_TTS_REF_TEXT=
-F5_TTS_HF_OFFLINE=1
-TTS_DURATION_POLICY=natural
-TTS_FIT_TARGET=0
-TTS_MIN_TEMPO=0.90
-TTS_MAX_TEMPO=1.22
-QUALITY_MIN_CHARS_PER_SECOND=6.3
-QUALITY_MAX_CHARS_PER_SECOND=11.5
-QUALITY_MAX_SEGMENT_SPEED_RATIO=1.35
-QUALITY_MAX_SEGMENT_SPEED_CV=0.16
-ASR_PYTHON=
-ASR_MODEL=openai/whisper-tiny
-ASR_LANGUAGE=chinese
-ASR_TITLE_COVERAGE_MIN=0.58
+NVIDIA_API_KEY=your-nvidia-api-key
 ```
 
-- `F5_TTS_REF_AUDIO` 决定克隆音色，建议使用干净、单人、无背景音乐的中文语音。
-- `F5_TTS_UNIFORM_SPEED` 控制整条视频所有场景，包括首屏标题和正文；默认 1.25，禁止标题慢、正文快。
-- TTS 合成前会把整数、小数、百分比、年份、带逗号数量和 `68+` 等表达转换成中文数词；英文项目名和技术名保留专用读音，转换后若仍有阿拉伯数字会停止生成。
-- `F5_TTS_REF_TEXT` 应与参考音频逐字一致；已有转写时必须填写，避免串词。
-- `F5_TTS_HF_OFFLINE=1` 强制使用本机 Hugging Face 缓存，避免生成时临时联网失败。
-- `TTS_DURATION_POLICY=natural` 让视频时长跟随 F5 原始音频，不再为了凑目标秒数整体变慢；只有显式设为 `fit` 时才启用 FFmpeg 节奏拟合。
-- `QUALITY_MIN_CHARS_PER_SECOND=6.3` 和 `QUALITY_MAX_CHARS_PER_SECOND=11.5` 限制整片旁白的绝对语速；`QUALITY_MAX_SEGMENT_SPEED_RATIO` 和 `QUALITY_MAX_SEGMENT_SPEED_CV` 检查逐屏语速倍率与离散度。
-- `ASR_*` 配置本地 Whisper 复听。实际音频没有识别出标题开头，或标题覆盖率低于阈值时，视频不会通过质量门。
-- F5 失败时直接停止，不会偷偷换成低质量系统语音。
-
-依赖本机已安装 FFmpeg、FFprobe、Python F5-TTS 环境；该 Python 环境还需包含 `torch` 和 `transformers`，并已缓存 `SWivid/F5-TTS`、`charactr/vocos-mel-24khz` 与 `openai/whisper-tiny`。
-
-## 单独复检视频
+先检查执行计划，再生成视频：
 
 ```powershell
-npm.cmd run scene-gen -- check --project "public/generated/stories/01-news.json" --video "dist/output/01-news.mp4" --seconds 100
+npm.cmd run scene-gen -- plan --url "https://example.com/article" --profile production
+npm.cmd run scene-gen -- run --url "https://example.com/article" --profile production
 ```
 
-该命令不会重新生成内容，只会重新执行 draft、audio、video 三层检查并产生新报告。
+最终视频写入 `dist/output/`，运行状态、阶段结果和质量报告写入 `dist/runs/<run-id>/`。
 
-## 其他命令
+Linux/macOS 将 `npm.cmd` 替换为 `npm`，复制文件使用 `cp`。完整安装、Provider 配置和平台差异见 [快速开始](docs/GETTING_STARTED.md)。
+
+## 工作流
+
+```mermaid
+flowchart LR
+    A["URL / Repository"] --> B["Ingest"]
+    B --> C["Fact Ledger"]
+    C --> D["Story Planning"]
+    D --> E["VideoProject"]
+
+    E --> F["PronunciationPlan"]
+    F --> G["TTS Providers"]
+    G --> H["Audio CAS"]
+
+    E --> I["Template Planner"]
+    I --> J["Chromium + FFmpeg"]
+    J --> K["Video Scene CAS"]
+
+    H --> L["Concat + Mux"]
+    K --> L
+    L --> M["Quality Harness"]
+    M -->|"pass"| N["Publish MP4"]
+    M -->|"scene-scoped repair"| F
+    M -->|"scene-scoped repair"| I
+```
+
+完整阶段为：
+
+```text
+ingest -> draft -> draft-gate -> revise -> synthesize
+       -> audio-gate -> render -> video-gate -> publish
+```
+
+架构边界、数据协议、缓存和修复回路见 [架构说明](docs/ARCHITECTURE.md)。
+
+## 常用命令
 
 ```powershell
-# 抓取热度最高的 3 条内容，生成 3 个独立项目
-npm.cmd run generate:stories -- --count 3 --screenshots 0
+# 查看命令和严格参数校验
+npm.cmd run scene-gen -- --help
 
-# 渲染 manifest 中的项目
-npm.cmd run render:stories
+# 只抓取和规划，不调用 LLM/TTS/渲染
+npm.cmd run scene-gen -- plan --url "<url>" --profile production
 
-# Remotion 本地预览
-npm.cmd run preview
+# 完整生成
+npm.cmd run scene-gen -- run --url "<url>" --profile production
 
-# 质量优先一键生成（默认）
-npm.cmd run scene-gen -- run --url "https://example.com/news" --engine html-video
+# 恢复失败任务
+npm.cmd run scene-gen -- resume "<run-id>"
 
-# 速度优先一键生成
-npm.cmd run scene-gen -- run --url "https://example.com/news" --engine remotion
+# 从音频阶段恢复，或强制重做渲染
+npm.cmd run scene-gen -- resume "<run-id>" --from-stage audio
+npm.cmd run scene-gen -- resume "<run-id>" --force-stage render
 
-# 生成 html-video compatible content graph 并渲染
-npm.cmd run render:html-video
-
-# 类型检查
-npm.cmd run lint:types
-```
-
-## 常见故障
-
-| 症状 | 处理方式 |
-| --- | --- |
-| `ffmpeg` 或 `ffprobe` unavailable | 安装 FFmpeg，并确认两个命令都在 `PATH` 中；重新运行 `npm run doctor`。 |
-| Playwright Chromium missing | 执行 `npm exec -- playwright install chromium`。 |
-| `torch.cuda.is_available() is false` | 检查 NVIDIA 驱动、CUDA 对应的 PyTorch 版本，或改用 `openai-tts` / `fast-preview`。 |
-| F5 model cache not found | 允许首次联网下载，或预下载模型后再设置 `F5_TTS_HF_OFFLINE=1`。 |
-| Whisper cache not found | 预下载 `ASR_MODEL`，或开发时使用 `ASR_DISABLED=1` / `ci-offline`。 |
-| API configuration incomplete | 设置 API key、model；自定义兼容服务再设置 base URL。 |
-| Output directory not writable / 磁盘不足 | 使用 `--out-dir` 指向可写目录，或清理 `dist/runs`、`dist/output` 和渲染缓存。 |
-| 拼错参数 | 执行 `npm run scene-gen -- <command> --help`；CLI 会列出允许的参数与枚举。 |
-
-## 产物生命周期与缓存清理
-
-- `dist/output/`：最终 MP4，长期保留或发布后归档。
-- `dist/runs/<run-id>/`：可恢复运行、journal、项目快照、质量报告和 loop audit；确认无需 resume 后可删除。
-- `dist/plans/`：`plan` / `--dry-run` 输出，可随时删除。
-- `public/generated/assets/`：GitHub 和网页真实素材缓存，删除后会重新下载。
-- `public/generated/html-video/`：场景渲染缓存，删除后会重新录制场景。
-- `public/generated/stories/`：生成项目缓存；删除前确认不再需要复用已有项目。
-
-PowerShell 清理临时运行与输出：
-
-```powershell
-Remove-Item -Recurse -Force dist/runs, dist/plans, dist/output -ErrorAction SilentlyContinue
-```
-
-Linux/macOS：
-
-```bash
-rm -rf dist/runs dist/plans dist/output
-```
-
-需要完全重建素材与渲染缓存时，再额外删除 `public/generated/assets` 和 `public/generated/html-video`。
-
-项目保留 Remotion 和 HTML Video 双渲染器。同一份 `VideoProject` 会导出 ContentGraph v2，由可解释模板选择器按场景意图、信息密度、画幅、时长和历史使用情况选择构图。详细设计见 `docs/html-video-integration.md`。
-
-生成阶段还会从全部来源构建声明级 `factLedger`。标题、每个场景和每段旁白通过 `claimIds` 引用来源证据；质量门会检查高风险动作、数字、限定词和多来源冲突，而不是只检查第一个来源中的数字字符串。协议和维护方式见 [`docs/FACT_LEDGER.md`](docs/FACT_LEDGER.md)。
-
-LLM draft 使用“候选规划 → 确定性否决与重排 → 最佳方案展开”的两阶段流程。不同 profile 默认生成 1、2 或 4 个候选，所有评分与否决原因写入项目和生产报告，详见 [`docs/STORY_PLANNING.md`](docs/STORY_PLANNING.md)。
-
-HTML 模板选择使用“规则候选过滤 → 历史质量重排 → 受控探索”。重排器综合内容领域、场景意图、字数和数据量、素材可用性、历史 blank/overflow/static 风险、质量分、用户反馈、渲染耗时与缓存命中率。运行结果追加到 `data/template-learning/outcomes.jsonl`，生产报告保存规则分、学习修正和最终分；维护与调参说明见 [`docs/TEMPLATE_LEARNING.md`](docs/TEMPLATE_LEARNING.md)。
-
-Provider 选择使用滚动运行历史计算成功率、P50/P95 延迟、timeout/重试率、实际单位成本、上下文质量、发音准确率、健康状态和连续失败次数。`fast-preview` 偏向低延迟，`production` 偏向质量与可靠性；不健康 API 会被主动淘汰，F5 出现显存压力或近期 CUDA OOM 时会降为单 worker 或切换 provider。每次候选分数和淘汰原因写入 production report，详见 [`docs/PROVIDER_SELECTION.md`](docs/PROVIDER_SELECTION.md)。
-
-RepairPlan 使用候选效用模型综合预计成功率、证据置信度、成本、耗时、风险和影响分镜范围。时长漂移会根据 FFprobe 证据在 remux、重拼接和局部重渲染之间选择，不再按 attempt 次数统一升级；候选分数和淘汰理由写入 run journal 与最终报告，详见 [`docs/REPAIR_PLANNING.md`](docs/REPAIR_PLANNING.md)。
-
-No-progress 会记录 prompt、模板 variant、provider、repair action、issue evidence 和策略实际成功率，并按局部约束、替代 prompt、模板、provider、扩大 dirty scope、全局重规划、人工确认逐级升级。token、TTS 重建、渲染分钟、预计成本和单 issue 修复次数均有预算闸门，详见 [`docs/LOOP_GOVERNANCE.md`](docs/LOOP_GOVERNANCE.md)。
-
-Draft Judge 使用 `measured`、`partially-measured`、`unavailable`、`not-required` 四态评分协议。Judge 不可用时不会再生成虚假的 100 分；production/strict 会阻止发布，fast-preview/lenient 可带明确 warning 降级。strict 默认执行两次评分，关键维度差异超过阈值会产生 `judge_unstable`。详见 [`docs/QUALITY_JUDGE.md`](docs/QUALITY_JUDGE.md)。
-
-## 安全约定
-
-- 不提交真实 API key、账号密码、`.env.local` 或 `*.local.json`。
-- 不提交生成的 MP4、WAV、网页截图、质量运行目录或运行时反馈。
-- example 配置只保留 `xxx` 占位符。
-
-
-## Visual Planner 与供应商注册表
-
-生成阶段会为每个场景写入独立的视觉生产计划，不再默认所有内容都只使用同一种网页模板。计划包含：
-
-- `visualPlan.source`：`programmatic`、`web-screenshot`、`stock-video`、`generated-image`、`generated-video`、`github-ui` 或 `mixed`。
-- `providerId` 和确定性的 fallback，用于记录实际供应商与降级路径。
-- `searchQueries`：供素材检索、网页证据或生成式素材使用的查询词。
-- `motionTargets` 和 `expectedMotionRatio`：供运动质量门判断画面是否过于静态。
-- `syncCues`：从当前屏可见文字与对应旁白中提取的同步关键词。配置 Whisper 后报告标记为 forced-alignment，否则使用稳定的估算时间点。
-
-供应商通过环境变量启用。未配置的外部供应商不会被调用，系统会回退到 HTML Video / Remotion：
-
-`PEXELS_API_KEY`、`PIXABAY_API_KEY`、`KLING_API_KEY`、`OPENAI_API_KEY`、`ASR_MODEL`。
-
-查看已有项目的生产计划：
-
-~~~powershell
-npm.cmd run production:inspect -- --project "public/generated/stories/<story>.json"
-~~~
-
-一键生成会在对应 HTML Video 目录和最终质量目录写出 `production-report.json`，其中记录模板、视觉来源、供应商启用状态、回退原因、同步关键词和估算外部成本。最终视频质量门还会以每秒两帧采样，报告 `activeMotionRatio`、`meanSceneChange` 和 `longestStaticRun`；连续静止时间过长时给出明确警告。
-
-
-### GitHub 真实素材缓存
-
-GitHub URL 输入会额外解析 README 中的非徽章图片，下载最多 `GITHUB_ASSET_LIMIT` 张到 `public/generated/assets/<owner>-<repo>/`。每个资产记录原始 URL、用途、Content-Type 和许可证提示。标题模板优先使用仓库自带 hero 图，同时保留真实仓库地址和 React/CSS 文字层；素材不可用时自动回退到程序化版式。
-
-运动检查现在按场景持续时间切片，除全片指标外还输出 `sceneMotionRatios` 与 `sceneLongestStaticRuns`。某一屏低运动超过阈值时，问题携带 `sceneIndex`，可只调整该模板或对应段落。
-## Global media cache
-
-Audio segments and HTML scene videos use a cross-run content-addressed cache under `dist/cache/audio/`, `dist/cache/video-scenes/`, and `dist/cache/metadata/`. Cache identities use content hashes and renderer/synthesis versions rather than paths or modification times. Writes are atomic and concurrent requests for the same key use a filesystem single-flight lock.
-
-```powershell
+# 检查和清理全局缓存
 npm.cmd run scene-gen -- cache inspect
 npm.cmd run scene-gen -- cache prune --max-age-days 30 --max-size-gb 20 --dry-run
-npm.cmd run scene-gen -- cache clear
+
+# 检查发音规划与已有视频
+npm.cmd run scene-gen -- pronunciation inspect --text "系统完成核心模块重构"
+npm.cmd run scene-gen -- check --project "<project.json>" --video "<video.mp4>"
 ```
 
-Active runs register references in `dist/runs/<run-id>/cache-refs.json`; prune never removes entries referenced by a running journal. Quality gates emit a structured `DirtyPlan`, so pronunciation failures rebuild only the affected audio scene plus audio concat/remux, blank or static frames rebuild only the affected video scene plus video concat/remux, and stream drift starts with remux only.
+## Profiles
 
-## 增量性能验证与排障
+| Profile | 用途 | 默认语音 | 渲染与质量策略 |
+| --- | --- | --- | --- |
+| `production` | 正式成片 | NVIDIA Magpie | HTML Video、严格质量门、多轮修复 |
+| `nvidia-api` | NVIDIA 云语音 | NVIDIA Magpie | HTML Video、balanced gate |
+| `indextts-local` | 固定本地音色 | IndexTTS2 | 单 GPU 串行语音、严格音色一致性 |
+| `local-f5` | 本地 F5 环境 | F5-TTS | CUDA、持久化 worker、HTML Video |
+| `openai-tts` | OpenAI 兼容语音 | OpenAI TTS | 云语音与本地渲染 |
+| `fast-preview` | 快速预览 | Cloudflare MeloTTS | 更高渲染并发、较少候选和循环 |
+| `ci-offline` | CI 与离线测试 | Mock | 不调用真实收费 API |
 
-云语音专项回归命令：
+Profile 文件位于 `config/profiles/`。运行时配置在 CLI 边界合并、经 Zod 校验后冻结；密钥不会写入 run journal。配置模型与扩展规则见 [RuntimeConfig](docs/RUNTIME_CONFIG.md)。
+
+## 质量与恢复
+
+Harness 将失败分为内容质量、音频结构、语义一致性、发音证据、视觉质量、音画同步和环境阻塞。每个 issue 使用稳定协议记录 `code`、`stage`、`severity`、`sceneIndex`、`evidence`、`repairAction` 与 `retryable`。
+
+修复由最小 `DirtyPlan` 驱动：
+
+- 发音或音频问题：重建目标 WAV、重新拼接旁白、复用画面并 remux。
+- 空白、溢出或静态画面：只重录目标场景、重新拼接画面并 remux。
+- 流时长漂移：优先只 remux。
+- 内容修订：根据 JSON Patch 计算受影响的音频和视频场景。
+
+系统会记录策略轨迹、成本、耗时、缓存命中和无进展证据，并在预算耗尽时要求人工确认。详细规则见 [质量 Harness](docs/QUALITY_HARNESS.md)。
+
+## 项目文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [快速开始](docs/GETTING_STARTED.md) | 安装、密钥、Provider、首个视频与平台差异 |
+| [架构说明](docs/ARCHITECTURE.md) | 模块边界、执行阶段、数据流、缓存和持久化 |
+| [质量 Harness](docs/QUALITY_HARNESS.md) | Draft/Audio/Video gate、Issue 与局部修复 |
+| [运行与维护](docs/OPERATIONS.md) | Doctor、恢复、缓存、性能和故障排查 |
+| [测试与 CI](TESTING.md) | 单元、离线、增量、Golden 和 CI 测试 |
+| [事实账本](docs/FACT_LEDGER.md) | 声明级事实引用与来源证据 |
+| [故事规划](docs/STORY_PLANNING.md) | 候选规划、确定性否决与重排 |
+| [Provider 选择](docs/PROVIDER_SELECTION.md) | 质量、延迟、成本和健康状态路由 |
+| [性能](docs/PERFORMANCE.md) | Worker、并发、缓存和 benchmark |
+| [协议与迁移](docs/PROTOCOL_SCHEMAS.md) | Zod 协议、JSON Schema 和版本迁移入口 |
+
+## 开发与验证
 
 ```powershell
-npm.cmd run test:azure-tts
-npm.cmd run test:pronunciation-plan
-npm.cmd run test:audio-verifier
-npm.cmd run test:cloud-routing
-npm.cmd run test:tts-incremental
-```
-
-`tests/integration/cloud-pronunciation-quality.test.ts` 使用固定五屏项目和 mock Azure，覆盖“重构、重复、重要、重量、函数重载、重载运输、银行、行走”、产品名、数字和版本号。cold run 只发出五次 Azure 请求；warm run 的 Azure、ASR 和音素 verifier 均不重复调用；scene 2 的 `zhong4 gou4` 证据只触发单屏音频重建、concat audio 和 remux；inconclusive 只重试 verifier；相同 F5 策略由 attempt ledger 拦截；Azure hard quota 用尽时不产生付费请求并切换 fallback。
-
-如果“重构”仍读错，依次检查：`pronunciation inspect` 是否输出 `chong2 gou4`、Azure SSML 是否包含 `chong 2 - gou 4`、audio cache key 是否使用最新 `planHash`、`tts quota` 是否导致 provider fallback，以及 `audio verify` 是否返回具有 `actualPinyin` 的声学证据。仅有 Whisper 汉字“重构”不能证明读音正确或错误。
-
-确认没有重复生成时，检查 run report 中的 `ttsRequestCount`、`asrRequestCount`、`pronunciationVerificationCount`、`avoidedTtsRegenerationCount` 和 `cacheHitRatio`。warm run 应为零云请求；局部修复应只有目标 scene 一次 TTS 请求，且 video scene 录制次数为零。
-
-正式的多音字、`text`/`ttsText`、持久化 F5 worker、单 GPU 并发、HTML scene 并发、局部音视频修复、内容寻址缓存、Windows/Linux 差异和故障排查文档见 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)。
-
-```powershell
-npm.cmd run doctor
-npm.cmd run test:worker
+npm.cmd run lint:types
+npm.cmd run test:unit
+npm.cmd run test:offline
 npm.cmd run test:incremental
-npm.cmd run benchmark:media
+npm.cmd run test:golden
+npm.cmd run test:ci
 ```
 
-`test:incremental` 使用固定五屏、mock F5 和 mock HTML recorder 验证 cold run、warm run、scene 2 音频修复、scene 3 空白帧修复、仅 remux，以及发音词典定向失效。`benchmark:media` 才输出本机真实耗时；CI 不使用不稳定的严格耗时断言。
+测试默认使用 mock provider 和 FFmpeg fixture，不会调用真实收费 API。Playwright Golden 测试首次运行前需要安装 Chromium。
 
-## 本次音频与模板修复说明
+## License
 
-- `TTS_LEADING_SILENCE_SECONDS` 默认是 `1.2` 秒：片头先保留短静音，避免 NVIDIA Riva 首个汉字被截断；可在本地 `.env.local` 调整为 `1.0`～`2.0`，不改变字幕时间线之外的正文内容。
-- NVIDIA 合成前仅对语音文本把 `AI` 规范化为“人工智能”，展示文本、字幕和文章原文仍保留 `AI`。该前端版本变化会自动使旧音频缓存失效。
-- 首屏 ASR 不再把低置信度的开头差异直接判为 TTS 错误；`audio_opening_mismatch` 会优先重试验证器、切换 ASR 或注入热词，避免同一音频无效重建。
-- 编辑统计卡片对长文本启用分级字号、换行和安全溢出检查；视觉审计现在同时检查文本自身和父容器的裁切，发现 `content_clipped` 后才进入模板修复。
-- 新闻 fallback 项目仍会运行 draft 事实门禁；如果 LLM 不可用，媒体文件可以成功生成，但报告中的事实、限定词或高风险谓词问题必须人工处理，不能把“媒体生成成功”当成“内容审核通过”。
-
-### 排查开头漏读
-
-1. 先执行 `scene-gen check --run <run-id>`，确认音频流存在并查看 `audio_opening_mismatch` 证据。
-2. 若只涉及首词漏读，优先保留片头静音并重跑验证，不要立刻全量重合成。
-3. 只有验证器提供明确声学证据时，才对目标 scene 执行局部音频重建。
-4. 修改 NVIDIA 前端规范化或发音规则后，确认新的 `frontendVersion` 已进入缓存 key。
-
-### 排查画面缺块或文字裁切
-
-使用 `scene-gen check --run <run-id>` 查看 `content_clipped`、`blank_frame` 和 sceneIndex；修复后只强制重渲染对应 scene。不要删除全局缓存，除非模板版本或全局 CSS 确实发生变化。
+本项目采用 [MIT License](LICENSE)。第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
