@@ -254,6 +254,22 @@ test("draft gate preserves source titles and requires model purpose on the homep
   assert.equal(purposeResult.issues.some((issue) => issue.code === "homepage_purpose_missing"), true);
 });
 
+test("news date is visible on the rendered homepage while technical articles stay dateless", async () => {
+  const news = createFixtureProject();
+  news.sources[0] = { ...news.sources[0], contentType: "news", publishedAt: "2026年8月5日" };
+  news.narrationSegments![0].text = `${news.meta.title}。新闻日期：2026年8月5日。真正变化是完成任务的步骤减少。`;
+  news.narration = news.narrationSegments![0].text;
+  const newsResult = await evaluateDraft(news, news.meta.durationSeconds, "");
+  assert.equal(newsResult.issues.some((issue) => issue.code === "news_date_missing"), false);
+  assert.equal(newsResult.issues.some((issue) => issue.code === "news_date_not_spoken"), false);
+  assert.equal(newsResult.issues.some((issue) => issue.code === "news_date_not_visible"), false);
+
+  const article = createFixtureProject();
+  article.sources[0] = { ...article.sources[0], contentType: "technical-article", publishedAt: "2026年8月5日" };
+  const articleResult = await evaluateDraft(article, article.meta.durationSeconds, "");
+  assert.equal(articleResult.issues.some((issue) => issue.code.startsWith("news_date_")), false);
+});
+
 test("repository synthesis gate rejects a short summary before TTS", () => {
   const project = createFixtureProject();
   project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "codecrafters-io/build-your-own-x", url: "https://github.com/codecrafters-io/build-your-own-x" };

@@ -28,14 +28,16 @@ test("proper-name guard accepts numeric speech normalization without translation
   assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "tts_proper_name_translated"), false);
 });
 
-test("AI convention accepts explicit provider letter spelling", () => {
+test("local provider gate rejects separated AI letters and accepts a connected reading", () => {
   const project = {
     meta: { title: "AI-For-Beginners", createdAt: "2026-07-30T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 5, sourceCount: 1 },
     narration: "AI-For-Beginners 是人工智能入门课程。",
-    narrationSegments: [{ sceneIndex: 0, text: "AI-For-Beginners 是人工智能入门课程。", providerSynthesisText: "A、I， For Beginners 是人工智能入门课程。" }],
+    narrationSegments: [{ sceneIndex: 0, text: "AI-For-Beginners 是人工智能入门课程。", providerSynthesisText: "A I For Beginners 是人工智能入门课程。", ttsProvider: "indextts" }],
     scenes: [{ type: "title" as const, duration: 5, kicker: "fixture", headline: "AI-For-Beginners", subhead: "fixture", sources: ["fixture"] }],
     sources: [],
   } satisfies VideoProject;
 
-  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "tts_ai_expanded"), false);
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected"), true);
+  project.narrationSegments![0].providerSynthesisText = "诶艾 For Beginners 是人工智能入门课程。";
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected"), false);
 });

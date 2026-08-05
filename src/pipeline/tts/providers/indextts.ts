@@ -8,7 +8,7 @@ import type { PronunciationPlan } from "../../pronunciation/schema";
 import { probeDuration, run } from "../process";
 import { concatNarrationSegments } from "../postprocess";
 
-export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v8-protected-pinyin";
+export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v9-connected-mandarin-acronyms";
 type WorkerResult = { requestId: string; status: "succeeded"; outputPath: string; synthesisMs: number };
 
 class IndexTtsWorker {

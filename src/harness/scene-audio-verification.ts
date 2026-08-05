@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { runExternalProcess } from "../pipeline/external-operation";
+import { connectedMandarinAcronym } from "../pipeline/pronunciation/provider-adapters";
 import { prepareF5SynthesisText } from "../pipeline/tts";
 import type { NarrationSegment, VideoProject } from "../pipeline/types";
 import { fromRoot } from "../pipeline/utils";
@@ -138,13 +139,12 @@ function extractNumberUnits(text: string) {
 }
 
 function hasConnectedAcronymChunk(chunks: string[] | undefined, acronym: string, expectedText: string) {
-  const pattern = new RegExp([...acronym].join("\\s+"), "i");
-  const punctuatedPattern = new RegExp([...acronym].join("[、，,]\\s*"), "i");
+  const reading = connectedMandarinAcronym(acronym);
   const hasAdjacentSpeech = expectedText.replace(acronym, "").replace(/[，。！？；：、,.!?;:\s\d]+/gu, "").length > 0;
   return (chunks ?? []).some((chunk) => {
-    if (!pattern.test(chunk) || punctuatedPattern.test(chunk)) return false;
+    if (!chunk.includes(reading)) return false;
     if (!hasAdjacentSpeech) return true;
-    return chunk.replace(pattern, "").replace(/[，。！？；：、,.!?;:\s\d-]+/gu, "").length > 0;
+    return chunk.replace(reading, "").replace(/[，。！？；：、,.!?;:\s\d-]+/gu, "").length > 0;
   });
 }
 
@@ -190,7 +190,7 @@ function normalizeAcronymHomophones(text: string) {
 function transcriptSpellsAcronymAsLetters(text: string, acronym: string) {
   const asciiTranscript = normalizeAcronymHomophones(text).toUpperCase().replace(/[^A-Z]/g, "");
   if (asciiTranscript.includes(acronym)) return true;
-  return acronym === "AI" && /[诶欸][爱艾愛]/.test(text);
+  return text.includes(connectedMandarinAcronym(acronym)) || (acronym === "AI" && /[诶欸][爱艾愛]/.test(text));
 }
 
 function hasTimedTransliteratedTitle(
@@ -261,7 +261,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       ? acronyms.find((acronym) => !hasConnectedAcronymChunk(segment.providerSynthesisChunks, acronym, expectedSynthesisText(segment)))
       : undefined;
     if (unprotectedAcronym) {
-      issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${unprotectedAcronym} 没有在同一连续语音片段中逐字母播报。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { acronym: unprotectedAcronym, provider: segment.ttsProvider ?? "unknown", providerSynthesisChunks: segment.providerSynthesisChunks ?? [], requiredReading: [...unprotectedAcronym].join(" ") } });
+      issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${unprotectedAcronym} 没有连续播报。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { acronym: unprotectedAcronym, provider: segment.ttsProvider ?? "unknown", providerSynthesisChunks: segment.providerSynthesisChunks ?? [], requiredReading: connectedMandarinAcronym(unprotectedAcronym) } });
     }
     const expectedAnchor = expectedText.slice(0, Math.min(8, expectedText.length));
     const openingWindow = actualText.slice(0, expectedAnchor.length + 8);
@@ -276,7 +276,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     }
     const missingAcronym = acronyms.find((acronym) => !transcriptSpellsAcronymAsLetters(transcript.text, acronym));
     if (missingAcronym && typeof confidence === "number" && confidence >= semanticMinimumConfidence) {
-      issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏没有完整读出缩写 ${missingAcronym}，必须逐字母播报。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedAcronym: missingAcronym, transcript: transcript.text, asrConfidence: confidence, requiredReading: [...missingAcronym].join(" ") } });
+      issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏没有连续完整读出缩写 ${missingAcronym}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedAcronym: missingAcronym, transcript: transcript.text, asrConfidence: confidence, requiredReading: connectedMandarinAcronym(missingAcronym) } });
     }
     const expectedLanguage = options.expectedLanguage?.toLowerCase();
     const detectedLanguage = transcript.detectedLanguage?.toLowerCase();

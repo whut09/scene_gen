@@ -317,10 +317,22 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "value_revealed_too_late", message: `视频过半前只覆盖 ${(earlyClaimCoverage * 100).toFixed(0)}% 的事实价值。`, evidence: { earlyClaimCoverage, earlyClaimCount: earlyClaims.size, totalClaimCount: allClaims.size } });
     revisionNotes.push("在视频前半段覆盖至少 70% 的核心事实，把边界和补充说明留到后半段。");
   }
+  const firstScene = project.scenes[0];
+  const coverDecision = productionDecisions[0]?.templateSelection;
+  const coverTemplate = coverDecision ? getTemplateById(coverDecision.templateId) : undefined;
+  const coverHtml = firstScene && coverTemplate
+    ? coverTemplate.renderHtml({
+      project,
+      scene: firstScene,
+      sceneIndex: 0,
+      width: project.meta.width,
+      height: project.meta.height,
+      variantId: coverDecision.variantId,
+    })
+    : "";
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   const repositoryName = repositoryProjectName(project);
   if (repositoryName) {
-    const firstScene = project.scenes[0];
     const firstVisibleText = firstScene ? sceneVisibleText(firstScene) : "";
     if (!firstVisibleText.includes("开源项目推荐") || !firstVisibleText.includes(repositoryName)) {
       issues.push({ severity: "error", code: "repository_recommendation_missing", message: `首屏必须包含“开源项目推荐：${repositoryName}”。`, sceneIndex: 0 });
@@ -331,18 +343,6 @@ export async function evaluateDraft(
       revisionNotes.push(`将视频标题恢复为项目原名 ${repositoryName}，不要翻译或改写。`);
     }
     const repositoryUrl = repositoryProjectUrl(project);
-    const coverDecision = productionDecisions[0]?.templateSelection;
-    const coverTemplate = coverDecision ? getTemplateById(coverDecision.templateId) : undefined;
-    const coverHtml = firstScene && coverTemplate
-      ? coverTemplate.renderHtml({
-        project,
-        scene: firstScene,
-        sceneIndex: 0,
-        width: project.meta.width,
-        height: project.meta.height,
-        variantId: coverDecision.variantId,
-      })
-      : "";
     if (!repositoryUrl || !coverHtml.includes(repositoryUrl)) {
       issues.push({ severity: "error", code: "repository_address_missing", message: "开源项目首屏必须清晰展示完整仓库地址。", sceneIndex: 0, evidence: { repositoryUrl: repositoryUrl || "missing" } });
       revisionNotes.push("在首屏安全区展示 github.com/owner/repository，地址只用于画面识别。 ");
@@ -403,9 +403,15 @@ export async function evaluateDraft(
   if (isNewsProject(project) && !publicationDate) {
     issues.push({ severity: "error", code: "news_date_missing", message: "新闻项目缺少可展示的发布日期。" });
     revisionNotes.push("为新闻来源补充 publishedAt，并在首页显著展示新闻日期。 ");
-  } else if (isNewsProject(project) && publicationDate && !normalizeText(firstNarration).includes(normalizeText(publicationDate))) {
-    issues.push({ severity: "error", code: "news_date_not_spoken", message: "第一段旁白没有播报首页展示的新闻日期。", sceneIndex: 0 });
-    revisionNotes.push("标题播报完成后，紧接着播报新闻日期。 ");
+  } else if (isNewsProject(project) && publicationDate) {
+    if (!coverHtml.includes(publicationDate)) {
+      issues.push({ severity: "error", code: "news_date_not_visible", message: "新闻发布日期没有显示在首屏。", sceneIndex: 0, evidence: { publicationDate, templateId: coverDecision?.templateId ?? "missing" } });
+      revisionNotes.push("在首屏安全区显著显示精确到天的新闻发布日期。 ");
+    }
+    if (!normalizeText(firstNarration).includes(normalizeText(publicationDate))) {
+      issues.push({ severity: "error", code: "news_date_not_spoken", message: "第一段旁白没有播报首页展示的新闻日期。", sceneIndex: 0 });
+      revisionNotes.push("标题播报完成后，紧接着播报新闻日期。 ");
+    }
   }
   const titleChineseCount = (project.meta.title.match(/[\u4e00-\u9fff]/g) ?? []).length;
   if (!repositoryProjectName(project) && titleChineseCount < 6) {

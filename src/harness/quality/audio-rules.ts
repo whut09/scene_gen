@@ -1,6 +1,7 @@
 import type { RuntimeConfig } from "../../config/runtime-config";
 import { getRuntimeConfig } from "../../config/runtime-config";
 import type { VideoProject } from "../../pipeline/types";
+import { connectedMandarinAcronym } from "../../pipeline/pronunciation/provider-adapters";
 import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { pronounceYearDigits } from "../../pipeline/tts/text-normalization";
 import { canonicalSpeechText } from "../speech-normalization";
@@ -36,6 +37,15 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
   for (const segment of project.narrationSegments ?? []) {
     const synthesisInput = segment.providerSynthesisText?.trim() || segment.ttsText?.trim() || segment.text;
     const prepared = prepareF5SynthesisText(synthesisInput);
+    if ((segment.ttsProvider === "indextts" || segment.ttsProvider === "nvidia") && segment.providerSynthesisText) {
+      for (const acronym of new Set(segment.text.match(/(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])/g) ?? [])) {
+        const requiredReading = connectedMandarinAcronym(acronym);
+        const separatedLetters = new RegExp([...acronym].join("[\\s、，,。.;；:-]+"), "i");
+        if (!segment.providerSynthesisText.includes(requiredReading) || separatedLetters.test(segment.providerSynthesisText)) {
+          issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${acronym} 的最终 TTS 输入没有连续发音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { acronym, requiredReading, provider: segment.ttsProvider, providerSynthesisText: segment.providerSynthesisText } });
+        }
+      }
+    }
     for (const match of segment.text.matchAll(/(\d+)\s*[\/／]\s*(\d+)/g)) {
       const [, numerator, denominator] = match;
       const expected = `${prepareF5SynthesisText(denominator)}分之${prepareF5SynthesisText(numerator)}`;

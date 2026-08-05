@@ -53,6 +53,7 @@ export const issueRegistry = {
   title_repeated_in_narration: define("hard", "revise-scenes", true),
   news_date_not_spoken: define("hard", "revise-scenes", true),
   news_date_missing: define("hard", "regenerate-draft", true),
+  news_date_not_visible: define("hard", "switch-template", true),
   title_not_chinese_summary: define("hard", "regenerate-draft", true),
   title_fact_claims_missing: define("hard", "regenerate-draft", true),
   narration_fact_claims_missing: define("hard", "regenerate-draft", true),

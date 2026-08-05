@@ -19,15 +19,15 @@ test("IndexTTS keeps acronyms connected to surrounding Mandarin", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "AI 和 AGI 通过 OpenAI API 接入模型。" });
 
   const providerText = indexTtsPronunciationInput(plan).text;
-  assert.equal(providerText, "A I 和 A G I 通过 OpenAI A P I 接入模型。");
+  assert.equal(providerText, "诶艾 和 诶吉艾 通过 OpenAI 诶批艾 接入模型。");
   assert.deepEqual(splitIndexTtsText(providerText), [providerText]);
-  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v8-protected-pinyin");
+  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v9-connected-mandarin-acronyms");
 });
 
 test("IndexTTS does not split AI or GB into standalone audio chunks", async () => {
-  const { plan } = await compilePronunciationPlan({ displayText: "AI 模型可在16GB显卡运行。" });
+  const { plan } = await compilePronunciationPlan({ displayText: "AI 模型可在16GB GPU运行。" });
   const providerText = indexTtsPronunciationInput(plan).text;
-  assert.equal(providerText, "A I 模型可在16G B显卡运行。");
+  assert.equal(providerText, "诶艾 模型可在16吉比 吉批优运行。");
   assert.deepEqual(
     splitIndexTtsText(providerText),
     [providerText],

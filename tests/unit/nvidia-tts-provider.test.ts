@@ -17,7 +17,7 @@ test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin fronten
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-connected-acronyms-v25");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-connected-acronyms-v26");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, nvidiaStableSynthesisText(plan));
   assert.equal(identity.speed, 1.25);
@@ -77,7 +77,7 @@ test("NVIDIA stable synthesis text forces high-risk Mandarin fallbacks", async (
 
 test("NVIDIA stable synthesis text spells standalone acronyms without changing product names", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "AI 和 AGI 通过 OpenAI API 接入模型。" });
-  assert.equal(nvidiaStableSynthesisText(plan), "A I 和 A G I 通过 OpenAI A P I 接入模型。");
+  assert.equal(nvidiaStableSynthesisText(plan), "诶艾 和 诶吉艾 通过 OpenAI 诶批艾 接入模型。");
   assert.equal(plan.displayText, "AI 和 AGI 通过 OpenAI API 接入模型。");
 });
 
