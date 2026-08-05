@@ -304,11 +304,21 @@ test("Azure TTS enforces provider concurrency and monthly character budget", { c
   let active = 0;
   let maximumActive = 0;
   let calls = 0;
+  let releaseFirstPair!: () => void;
+  const firstPairReady = new Promise<void>((resolve) => { releaseFirstPair = resolve; });
   const server = await mockServer(async (_request, response) => {
     calls += 1;
     active += 1;
     maximumActive = Math.max(maximumActive, active);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    if (calls <= 2) {
+      if (active === 2) releaseFirstPair();
+      await Promise.race([
+        firstPairReady,
+        new Promise<never>((_resolve, reject) => {
+          setTimeout(() => reject(new Error("Azure concurrency test did not start two requests.")), 5_000).unref();
+        }),
+      ]);
+    }
     active -= 1;
     response.end(wavBuffer());
   });
