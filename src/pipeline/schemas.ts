@@ -60,7 +60,7 @@ export const storyPlanVisualSchema = z.enum(["title", "briefing", "chart", "flow
 export const storyPlanCandidateSchema = z.object({
   id: z.string().min(1), angle: z.string().min(1), title: z.string().min(1), titleClaimIds: z.array(z.string().min(1)).min(1),
   estimatedSeconds: z.number().positive(),
-  scenes: z.array(z.object({ visual: storyPlanVisualSchema, purpose: z.string().min(1), focus: z.string().min(1), claimIds: z.array(z.string().min(1)).min(1) })).length(5),
+  scenes: z.array(z.object({ visual: storyPlanVisualSchema, purpose: z.string().min(1), focus: z.string().min(1), claimIds: z.array(z.string().min(1)).min(1) })).min(4).max(5),
 });
 export const storyPlanResponseSchema = z.object({ candidates: z.array(storyPlanCandidateSchema).min(1).max(4) });
 const storyPlanRankingSchema = z.object({

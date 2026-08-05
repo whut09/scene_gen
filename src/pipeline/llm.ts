@@ -4,6 +4,7 @@ import { fetchWithRetry } from "./external-operation";
 import { attachFactReferences, buildFactLedger } from "./fact-ledger";
 import { planStoryCandidates } from "./story-planner";
 import type { StoryPlanCandidate, StoryPlanningAudit } from "./types";
+import { allocateSceneDurations, contentDurationPolicy, contentTypeForProject } from "./content-strategy";
 
 function cleanStrings(values: unknown, limit: number) {
   if (!Array.isArray(values)) return [];
@@ -171,19 +172,19 @@ export function normalizeDirectedStoryPayload(value: unknown, selectedPlan: Stor
   return payload;
 }
 
-function createDirectedProject(project: VideoProject, directed: DirectedStory, selectedPlan: StoryPlanCandidate, planningAudit: StoryPlanningAudit) {
+function createDirectedProject(
+  project: VideoProject,
+  directed: DirectedStory,
+  selectedPlan: StoryPlanCandidate,
+  planningAudit: StoryPlanningAudit,
+  targetSeconds: number,
+) {
   const sections = directed.sections;
-  if (!sections || sections.length !== 5 || sections.some((section) => !section.narration?.trim())) {
+  if (!sections || sections.length !== selectedPlan.scenes.length || sections.some((section) => !section.narration?.trim())) {
     return project;
   }
 
-  const isGithubProject = project.sources[0]?.kind === "github";
   const title = isChineseSummaryTitle(directed.title) ? directed.title.trim() : project.meta.title;
-  const titleSection = sections[0];
-  const briefingSection = sections[1];
-  const chartSection = sections[2];
-  const flowSection = sections[3];
-  const outroSection = sections[4];
   const colors = ["#fff36a", "#72f0ff", "#ff8bd7", "#8aff9a"];
   const labels = inferEditorialLabels(project);
   const groundText = sourceGroundingTransform(project);
@@ -200,78 +201,44 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory, s
   const directedClaimIds = [...titleClaimIds, ...sections.flatMap((section) => section.claimIds ?? [])];
   const unknownClaimIds = directedClaimIds.filter((claimId) => !knownClaimIds.has(claimId));
   if (unknownClaimIds.length > 0) throw new Error(`Directed story referenced unknown fact claims: ${[...new Set(unknownClaimIds)].join(", ")}`);
-  const scenes: VideoScene[] = [
-    {
-      type: "title",
-      duration: 12,
-      kicker: groundText(titleSection.kicker?.trim() || labels.kicker),
-      headline: formatCoverHeadline(title),
-      subhead: titleSection.subhead?.trim() || titleSection.summary?.trim() || project.sources[0]?.summary || "",
-      sources: cleanStrings(titleSection.keywords, 3).length
-        ? cleanStrings(titleSection.keywords, 3)
-        : ["模型能力", "科学推理", "开放边界"],
-      claimIds: titleSection.claimIds,
-    },
-    {
-      type: "briefing_points",
-      duration: 20,
-      headline: briefingSection.headline?.trim() || labels.briefing,
-      source: "核心事实",
-      title,
-      summary: briefingSection.summary?.trim() || project.sources[0]?.summary || "",
-      metrics: (briefingSection.metrics ?? [])
-        .filter((metric) => metric.label && metric.value)
-        .slice(0, 3)
-        .map((metric) => ({ label: metric.label!.trim(), value: metric.value!.trim() })),
-      points: cleanStrings(briefingSection.points, 4),
-      claimIds: briefingSection.claimIds,
-    },
-    {
-      type: "signal_chart",
-      duration: 20,
-      headline: chartSection.headline?.trim() || labels.chart,
-      bars: (chartSection.bars ?? [])
-        .filter((bar) => bar.label && bar.detail)
-        .slice(0, 4)
-        .map((bar, index) => ({
-          label: bar.label!.trim(),
-          value: Math.max(10, Math.min(100, Number(bar.value ?? 70))),
-          detail: bar.detail!.trim(),
-          color: colors[index % colors.length],
-        })),
-      claimIds: chartSection.claimIds,
-    },
-    {
-      type: "flow",
-      duration: 20,
-      headline: flowSection.headline?.trim() || labels.flow,
-      steps: (flowSection.steps ?? [])
-        .filter((step) => step.label && step.detail)
-        .slice(0, 4)
-        .map((step) => ({ label: step.label!.trim(), detail: step.detail!.trim() })),
-      claimIds: flowSection.claimIds,
-    },
-    {
-      type: "outro",
-      duration: 18,
-      headline: outroSection.headline?.trim() || labels.outro,
-      bullets: cleanStrings(outroSection.bullets, 4),
-      claimIds: outroSection.claimIds,
-    },
-  ];
-  if (
-    scenes[1].type !== "briefing_points" ||
-    scenes[1].metrics.length < 2 ||
-    scenes[1].points.length < 2 ||
-    scenes[2].type !== "signal_chart" ||
-    scenes[2].bars.length < 3 ||
-    scenes[3].type !== "flow" ||
-    scenes[3].steps.length < 3 ||
-    scenes[4].type !== "outro" ||
-    scenes[4].bullets.length < 2
-  ) {
-    return project;
-  }
+  const durations = allocateSceneDurations(targetSeconds, selectedPlan.scenes.map((scene) => scene.visual));
+  const scenes = sections.map((section, sceneIndex): VideoScene | undefined => {
+    const visual = selectedPlan.scenes[sceneIndex].visual;
+    const common = { duration: durations[sceneIndex], claimIds: section.claimIds };
+    if (visual === "title") {
+      return {
+        ...common,
+        type: "title",
+        kicker: groundText(section.kicker?.trim() || labels.kicker),
+        headline: formatCoverHeadline(title),
+        subhead: section.subhead?.trim() || section.summary?.trim() || project.sources[0]?.summary || "",
+        sources: cleanStrings(section.keywords, 3).length ? cleanStrings(section.keywords, 3) : ["核心结果", "事实证据", "适用边界"],
+      };
+    }
+    if (visual === "briefing") {
+      const metrics = (section.metrics ?? []).filter((metric) => metric.label && metric.value).slice(0, 3)
+        .map((metric) => ({ label: metric.label!.trim(), value: metric.value!.trim() }));
+      const points = cleanStrings(section.points, 4);
+      if (metrics.length < 2 || points.length < 2) return undefined;
+      return { ...common, type: "briefing_points", headline: section.headline?.trim() || labels.briefing, source: "核心事实", title, summary: section.summary?.trim() || project.sources[0]?.summary || "", metrics, points };
+    }
+    if (visual === "chart") {
+      const bars = (section.bars ?? []).filter((bar) => bar.label && bar.detail).slice(0, 4).map((bar, index) => ({
+        label: bar.label!.trim(), value: Math.max(10, Math.min(100, Number(bar.value ?? 70))), detail: bar.detail!.trim(), color: colors[index % colors.length],
+      }));
+      if (bars.length < 3) return undefined;
+      return { ...common, type: "signal_chart", headline: section.headline?.trim() || labels.chart, bars };
+    }
+    if (visual === "flow") {
+      const steps = (section.steps ?? []).filter((step) => step.label && step.detail).slice(0, 4).map((step) => ({ label: step.label!.trim(), detail: step.detail!.trim() }));
+      if (steps.length < 3) return undefined;
+      return { ...common, type: "flow", headline: section.headline?.trim() || labels.flow, steps };
+    }
+    const bullets = cleanStrings(section.bullets, 4);
+    if (bullets.length < 2) return undefined;
+    return { ...common, type: "outro", headline: section.headline?.trim() || labels.outro, bullets };
+  });
+  if (scenes.some((scene) => !scene)) return project;
 
   const narrationSegments = sections.map((section, sceneIndex) => {
     const narration = section.narration!.replace(/\s+/g, " ").trim();
@@ -281,7 +248,7 @@ function createDirectedProject(project: VideoProject, directed: DirectedStory, s
       claimIds: section.claimIds,
     };
   });
-  const groundedScenes = mapGeneratedStrings(scenes, groundText);
+  const groundedScenes = mapGeneratedStrings(scenes as VideoScene[], groundText);
   const groundedNarrationSegments = narrationSegments.map((segment) => ({ ...segment, text: groundText(segment.text) }));
   const durationSeconds = groundedScenes.reduce((sum, scene) => sum + scene.duration, 0);
   return attachFactReferences({
@@ -310,7 +277,8 @@ export async function improveWithOpenAI(
 
   const model = process.env.NEWS_LLM_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
   const baseUrl = process.env.NEWS_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-  const targetSeconds = options?.targetSeconds ?? 90;
+  const contentPolicy = contentDurationPolicy(contentTypeForProject(project));
+  const targetSeconds = options?.targetSeconds ?? contentPolicy.targetSeconds;
   let planning;
   try {
     planning = await planStoryCandidates({ project, apiKey, baseUrl, model, targetSeconds, editorialNotes: options?.editorialNotes });
@@ -319,18 +287,23 @@ export async function improveWithOpenAI(
     return project;
   }
   const isGithubProject = project.sources[0]?.kind === "github";
-  const targetChars = Math.max(650, Math.min(1100, Math.round(targetSeconds * 8.5)));
+  const targetChars = Math.max(240, Math.min(560, Math.round(targetSeconds * 7.2)));
+  const plannedVisuals = planning.selected.scenes.map((scene) => scene.visual);
   const guidance = [
     "你是 AI 科技竖屏短视频的资深新闻编导。",
     "只返回 JSON，不要 Markdown。",
     `总旁白建议约 ${targetChars} 个汉字；${targetSeconds} 秒只是时长参考，不要为了凑时长增加信息或强行压缩语速。`,
-    "必须输出 title 和 sections；sections 恰好 5 个，visual 顺序固定为 title、briefing、chart、flow、outro。",
+    `必须输出 title 和 sections；sections 恰好 ${plannedVisuals.length} 个，visual 顺序固定为 ${plannedVisuals.join("、")}。`,
     "selectedPlan 已通过确定性检查。必须逐字使用 selectedPlan.title，并严格按 selectedPlan.scenes 的 angle、focus 和 claimIds 展开，不得切换叙事角度或新增事实。",
     "factLedger 是唯一声明级事实账本。title 必须返回 titleClaimIds；每个 section 必须返回 claimIds，且只能引用 factLedger 中存在、能够直接支持当前画面和旁白的 id。",
     "高风险表述（发布、开放、领先、提升、增长、降低等）必须引用 evidenceText 明确包含该动作的 claim；不得把可能、部分用户、实验结果、仅、尚未等限定词省略。",
     "每个 section 必须有 narration。先确定该 section 的所有画面字段，再写旁白；旁白只能复述、串联或简要解释当前 section 屏幕上实际可见的信息。",
     "禁止在旁白中加入当前屏幕没有呈现的新数据、新案例、新结论或额外背景；需要讲的信息必须先写进该 section 的可视字段。",
-    "逐屏旁白长度：title 70-130 字，briefing 120-200 字，chart 110-190 字，flow 110-190 字，outro 80-150 字。宁可让视频自然变长或变短，也不要堆字。",
+    "首屏直接使用结果、冲突或反常识事实作为钩子，不说“今天介绍”“这条新闻讲的是”，完整标题最多播报一次。标题后必须立刻说明为什么值得看。",
+    "前 6 秒必须给出核心价值；视频过半前覆盖至少 70% 的关键结论和事实，不得把主要卖点留到结尾。",
+    "按痛点、结果、证据、适用者组织信息。每屏只表达一个新结论；后屏不得换句话重复前屏；结尾必须补充限制、选择建议或适用边界。",
+    "逐屏旁白长度：title 25-55 字，briefing 65-100 字，chart 60-95 字，flow 60-95 字，outro 40-75 字。删除空泛背景、来源播报、重复标题和总结套话。",
+    "每个关键证据必须有对应可视字段。优先使用真实截图、运行结果、数据对比或输入输出流程，避免连续抽象描述超过 8 秒。",
     "不要出现新闻怎么跟进、如何发布、适合做视频、作者、编辑、站点、媒体来源等无关内容。",
     isGithubProject
       ? "这是GitHub项目拆解，不是热点发布新闻。README和仓库元数据是唯一依据，重点解释项目解决什么问题、核心工作流、技能结构、支持平台和适用边界。outro只能使用README明确写出的安装差异、使用方式、方法论定位或适用对象；README没有限制条件时就总结适用场景，不得虚构隐私、联网、环境变量或性能边界。"
@@ -345,7 +318,7 @@ export async function improveWithOpenAI(
     "briefing 场景提供 summary、3 个 metrics、3 到 4 个 points；旁白逐项概括这些字段，不扩展屏幕外事实。",
     "chart 场景提供 4 个 bars，每个含 label、value、detail。原文有真实可比数字时才把 value 当数据展示；原文只有定性原则时，value仅供布局计算，画面使用无百分比的排序卡，旁白不得提到评分、百分比或内容权重。",
     "flow 场景提供 4 个 steps，每个含 label、detail；旁白严格按这 4 步的顺序讲解。",
-    "outro 场景提供 3 个 bullets，必须包含限制条件或后续验证项；旁白只总结这 3 条，不另起新观点。",
+    "outro 场景提供 2 到 3 个 bullets，必须包含限制条件、适用者或选择建议；旁白不能只是重新概括标题。",
     options?.forbidAttribution
       ? "所有画面和旁白都不得出现作者、编辑、量子位、QbitAI、新浪、腾讯新闻或来源归属字眼。"
       : "",
@@ -399,7 +372,7 @@ export async function improveWithOpenAI(
 
   try {
     const audit = { ...planning.audit, expansionTokens: data.usage?.total_tokens ?? 0 };
-    return createDirectedProject(project, directedStorySchema.parse(normalizeDirectedStoryPayload(JSON.parse(content), planning.selected)), planning.selected, audit);
+    return createDirectedProject(project, directedStorySchema.parse(normalizeDirectedStoryPayload(JSON.parse(content), planning.selected)), planning.selected, audit, targetSeconds);
   } catch (error) {
     console.warn(`[llm] invalid directed story: ${(error as Error).message}`);
     return project;

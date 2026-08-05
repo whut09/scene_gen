@@ -48,8 +48,8 @@ test("generated repository recommendation follows the promotion structure", asyn
   assert.deepEqual(value.scenes.map((scene) => scene.headline), [
     "开源项目推荐：voicebox",
     "先看它替你省掉什么麻烦",
-    "真正值得关注的三点",
-    "最快怎么开始",
-    "什么人值得用，什么情况别急",
+    "核心价值、证据和使用前提",
+    "怎么开始，什么情况别急",
   ]);
+  assert.equal(value.meta.durationSeconds >= 40 && value.meta.durationSeconds <= 55, true);
 });

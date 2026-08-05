@@ -14,6 +14,7 @@ import { migrateRunArtifacts } from "../persistence/run-migration";
 import { readRunJournalFile } from "../harness/run-journal";
 import { compilePronunciationPlan } from "../pipeline/pronunciation/compiler";
 import { buildAzurePronunciationSsml } from "../pipeline/tts/providers/azure-ssml";
+import { defaultTargetSecondsForUrl } from "../pipeline/content-strategy";
 import { azureTts } from "../pipeline/tts/providers/azure";
 import { listProviders } from "../production/provider-registry";
 import { providerQuotaStatus } from "../production/provider-quota";
@@ -204,7 +205,7 @@ async function planFromOptions(options: Record<string, string | number | boolean
     url: String(options.url),
     profile,
     runtimeConfig,
-    targetSeconds: Number(options.seconds ?? 100),
+    targetSeconds: Number(options.seconds ?? defaultTargetSecondsForUrl(String(options.url))),
     engine: runtimeConfig.rendering.engine,
     screenshots: runtimeConfig.rendering.screenshotLimit,
     outputDir: runtimeConfig.rendering.outputDir,
@@ -382,7 +383,7 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
   if (command === "check") {
     assertPositive("seconds", parsed.options.seconds);
     const runtimeConfig = await createRuntimeConfig(profileName);
-    const report = await runWithRuntimeConfig(runtimeConfig, () => runManualCheck({ projectPath: String(parsed.options.project), videoPath: String(parsed.options.video), targetSeconds: Number(parsed.options.seconds ?? 100) }));
+    const report = await runWithRuntimeConfig(runtimeConfig, () => runManualCheck({ projectPath: String(parsed.options.project), videoPath: String(parsed.options.video), targetSeconds: Number(parsed.options.seconds ?? 45) }));
     console.log(parsed.options.json ? JSON.stringify(report, null, 2) : `Check ${report.passed ? "passed" : "failed"}\nReport: ${report.reportPath}`);
     if (!report.passed) process.exitCode = 2;
     return;

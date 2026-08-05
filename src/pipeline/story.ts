@@ -788,7 +788,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: { type: "title", duration: 10, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`, subhead: `${profile.theme} · ${repositoryStars(item)}`, sources: ["一句话用途", "社区关注", repositoryStars(item)] },
-      narration: `开源项目推荐：${name}。它${profile.theme}。先用一个边界清晰的小任务验证效果，再决定是否放进日常工作流。`,
+      narration: `开源项目推荐：${name}。它直接解决${profile.theme}。`,
     },
     {
       scene: {
@@ -796,11 +796,11 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
         metrics: proofMetrics,
         points: [promotion.problem, promotion.benefit, `直接收益：${profile.capability}`],
       },
-      narration: limitNarration(`${promotion.problem}直接收益是${profile.capability}。`, 120),
+      narration: limitNarration(`${promotion.problem}直接收益是${profile.capability}。`, 100),
     },
     {
       scene: {
-        type: "news_stack", duration: 16, headline: "真正值得关注的三点",
+        type: "news_stack", duration: 16, headline: "核心价值、证据和使用前提",
         items: promotion.highlights.map((highlight, index) => ({
           title: ["核心结果", "最短路径", "使用前提"][index],
           summary: highlight.replace(/^[^：]+：/u, ""),
@@ -809,33 +809,20 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           tags: [profile.topics[index] ?? "项目能力"],
         })),
       },
-      narration: limitNarration(`真正值得关注的是${profile.capability}。下面从核心结果、最短路径和使用前提三个方面判断它是否适合你。`, 115),
+      narration: limitNarration(`判断它是否值得用，主要看三点：${promotion.highlights.join("；")}。`, 105),
     },
     {
       scene: {
-        type: "flow", duration: 17, headline: "最快怎么开始", steps: [
-          ...(profile.steps ?? [
-            { label: "明确问题", detail: compactSentence(profile.theme, 38) },
-            { label: "准备输入", detail: compactSentence(profile.workflow, 38) },
-            { label: "最小验证", detail: compactSentence(profile.capability, 38) },
-            { label: "核对边界", detail: compactSentence(profile.boundaries, 38) },
-          ]),
-        ],
-      },
-      narration: limitNarration(`最快开始分四步：明确问题、准备输入、最小验证、核对边界。${profile.workflow}。`, 120),
-    },
-    {
-      scene: {
-        type: "outro", duration: 15, headline: "什么人值得用，什么情况别急", bullets: [
+        type: "outro", duration: 15, headline: "怎么开始，什么情况别急", bullets: [
+          `开始：${promotion.firstStep}`,
           `推荐：${promotion.audience}。`,
-          `先试：${promotion.firstStep}`,
           `注意：${profile.boundaries}。`,
         ],
       },
-      narration: limitNarration(`如果你是${promotion.audience}，这个项目值得从一个小任务开始试。${profile.boundaries}。`, 120),
+      narration: limitNarration(`最快开始：${promotion.firstStep.replace(/[。！？!?]+$/u, "")}。注意：${profile.boundaries.replace(/[。！？!?]+$/u, "")}。`, 130),
     },
   ];
-  const scenes = applySectionDurations(sections, Math.min(100, Math.max(60, Number(process.env.STORY_MAX_SECONDS ?? 80))), 60);
+  const scenes = applySectionDurations(sections, Math.min(55, Math.max(40, Number(process.env.STORY_MAX_SECONDS ?? 48))), 40);
   const factLedger = buildFactLedger([item]);
   const claimIds = (sceneIndex: number) => {
     const selected = factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2);
@@ -935,7 +922,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["\u95ee\u9898", "\u65b9\u6cd5", "\u8fb9\u754c"],
           },
-          narration: `\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f\uff1a${title}\u3002${coverSummary}`,
+          narration: `${title}\u3002关键是，${coverSummary}`,
         },
         {
           scene: {
@@ -1083,7 +1070,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["事实", "影响", "边界"],
           },
-          narration: `这条新闻讲的是：${title}。${coverSummary}`,
+          narration: `${title}。关键是，${coverSummary}`,
         },
         {
           scene: {

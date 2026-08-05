@@ -45,6 +45,7 @@ import { generatedAudioSceneIndexes, nextAudioLoopIteration, shouldSynthesizeAud
 import { addTemplateExclusions, affectedVideoScenes } from "./agent/video-loop";
 import { publishAgentRun } from "./agent/publish";
 import { PronunciationAttemptLedger, phraseFingerprint, type PronunciationAttemptLedgerState, type PronunciationStrategy } from "../production/tts-routing";
+import { defaultTargetSecondsForUrl } from "../pipeline/content-strategy";
 
 
 async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undefined, runtimeConfig: RuntimeConfig) {
@@ -93,7 +94,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
   } else {
     if (typeof args.url !== "string") throw new Error('Usage: scene-gen run --url "https://example.com/news" or scene-gen resume <run-id>');
     url = args.url;
-    targetSeconds = Number(args.seconds ?? 100);
+    targetSeconds = Number(args.seconds ?? defaultTargetSecondsForUrl(url));
     maxIterations = Math.max(1, Math.min(8, Number(args.iterations ?? runtimeConfig.retry.maxIterations)));
     outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : runtimeConfig.rendering.outputDir;
     screenshotLimit = Number(args.screenshots ?? runtimeConfig.rendering.screenshotLimit);

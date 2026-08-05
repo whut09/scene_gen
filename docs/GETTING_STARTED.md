@@ -129,7 +129,7 @@ npm.cmd run scene-gen -- run --url "https://example.com/article" --profile produ
 npm.cmd run scene-gen -- run `
   --url "<url>" `
   --profile production `
-  --seconds 80 `
+  --seconds 45 `
   --iterations 3 `
   --video-iterations 3 `
   --engine html-video `
@@ -137,6 +137,7 @@ npm.cmd run scene-gen -- run `
 ```
 
 - `--seconds` 是编辑目标，不是强行拉伸音频的硬时长；
+- 不传 `--seconds` 时，新闻默认 40 秒、开源项目默认 48 秒、技术文章默认 60 秒；
 - `--notes` 添加本次运行的事实边界或编辑要求；
 - `--dry-run` / `--plan-only` 只展示计划；
 - `--ignore-cache` 忽略项目缓存，媒体缓存仍由具体阶段规则管理；

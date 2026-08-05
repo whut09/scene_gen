@@ -8,8 +8,8 @@ import { storyPlanResponseSchema } from "./schemas";
 import type { FactLedger, StoryPlanCandidate, StoryPlanRanking, StoryPlanningAudit, VideoProject } from "./types";
 import { fromRoot } from "./utils";
 import { recordProviderOutcome } from "../production/provider-stats";
+import { storyVisualSequence } from "./content-strategy";
 
-const expectedVisuals = ["title", "briefing", "chart", "flow", "outro"] as const;
 const historySchema = z.object({ fingerprint: z.string().length(64), succeeded: z.boolean(), scoreDelta: z.number().default(0), createdAt: z.string() });
 type HistoryEntry = z.infer<typeof historySchema>;
 
@@ -42,7 +42,7 @@ function normalizeStoryPlanVisual(value: unknown) {
   return value;
 }
 
-function normalizeStoryPlanPayload(value: unknown) {
+function normalizeStoryPlanPayload(value: unknown, expectedVisuals: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const payload = value as { candidates?: unknown };
   if (!Array.isArray(payload.candidates)) return value;
@@ -54,7 +54,7 @@ function normalizeStoryPlanPayload(value: unknown) {
       return {
         ...candidate,
         scenes: Array.isArray(item.scenes)
-          ? item.scenes.map((scene, index) => scene && typeof scene === "object" && !Array.isArray(scene) ? { ...scene, visual: ["title", "briefing", "chart", "flow", "outro"][index] ?? normalizeStoryPlanVisual((scene as { visual?: unknown }).visual) } : scene)
+          ? item.scenes.map((scene, index) => scene && typeof scene === "object" && !Array.isArray(scene) ? { ...scene, visual: expectedVisuals[index] ?? normalizeStoryPlanVisual((scene as { visual?: unknown }).visual) } : scene)
           : item.scenes,
       };
     }),
@@ -69,10 +69,19 @@ function historyScore(fingerprint: string, history: HistoryEntry[]) {
   return clamp(successRate * 80 + 20 + averageDelta * 0.5);
 }
 
-export function rankStoryPlanCandidates(candidates: StoryPlanCandidate[], ledger: FactLedger, targetSeconds: number, history: HistoryEntry[] = []) {
+export function rankStoryPlanCandidates(
+  candidates: StoryPlanCandidate[],
+  ledger: FactLedger,
+  targetSeconds: number,
+  history: HistoryEntry[] = [],
+  expectedVisuals: readonly string[] = candidates[0]?.scenes.length === 4
+    ? ["title", "briefing", "flow", "outro"]
+    : ["title", "briefing", "chart", "flow", "outro"],
+) {
   const knownClaims = new Map(ledger.claims.map((claim) => [claim.id, claim]));
   return candidates.map((candidate): StoryPlanRanking => {
     const rejectedReasons: string[] = [];
+    if (candidate.scenes.length !== expectedVisuals.length) rejectedReasons.push(`scene-count:${candidate.scenes.length}/${expectedVisuals.length}`);
     const allClaimIds = [...candidate.titleClaimIds, ...candidate.scenes.flatMap((scene) => scene.claimIds)];
     const unknownClaims = [...new Set(allClaimIds.filter((claimId) => !knownClaims.has(claimId)))];
     if (unknownClaims.length) rejectedReasons.push(`unknown-claims:${unknownClaims.join(",")}`);
@@ -87,6 +96,10 @@ export function rankStoryPlanCandidates(candidates: StoryPlanCandidate[], ledger
     });
     const focusSet = new Set(candidate.scenes.map((scene) => compact(scene.focus)));
     if (focusSet.size !== candidate.scenes.length) rejectedReasons.push("duplicate-scene-focus");
+    const coreClaimIds = new Set(candidate.scenes.flatMap((scene) => scene.claimIds));
+    const earlyClaimIds = new Set(candidate.scenes.slice(0, Math.ceil(candidate.scenes.length / 2)).flatMap((scene) => scene.claimIds));
+    const earlyClaimCoverage = coreClaimIds.size ? earlyClaimIds.size / coreClaimIds.size : 1;
+    if (earlyClaimCoverage < 0.7) rejectedReasons.push(`core-value-too-late:${earlyClaimCoverage.toFixed(2)}`);
     if (candidate.estimatedSeconds < targetSeconds * 0.65 || candidate.estimatedSeconds > targetSeconds * 1.45) rejectedReasons.push("estimated-duration-out-of-range");
     const titleEvidence = candidate.titleClaimIds.map((id) => knownClaims.get(id)?.evidenceText ?? "").join(" ");
     const unsupportedTitlePredicates = highRiskPredicatesInText(candidate.title).filter((predicate) => !titleEvidence.includes(predicate));
@@ -96,7 +109,7 @@ export function rankStoryPlanCandidates(candidates: StoryPlanCandidate[], ledger
     const factCoverage = clamp((usedClaims.size / Math.max(1, Math.min(ledger.claims.length, 12))) * 100);
     const titleLength = compact(candidate.title).length;
     const titleHook = clamp(100 - Math.abs(22 - titleLength) * 4 + (highRiskPredicatesInText(candidate.title).length ? 6 : 0));
-    const informationDiversity = clamp((focusSet.size / 5) * 100);
+    const informationDiversity = clamp((focusSet.size / Math.max(1, candidate.scenes.length)) * 100);
     const visualFeasibility = clamp(100 - candidate.scenes.reduce((sum, scene) => sum + Math.max(0, compact(scene.focus).length - 34), 0) * 2);
     const ttsReadability = clamp(100 - (candidate.title.match(/[A-Z0-9_.+-]{5,}/g)?.length ?? 0) * 12 - Math.max(0, titleLength - 30) * 4);
     const fingerprint = storyPlanFingerprint(candidate);
@@ -134,6 +147,7 @@ export async function planStoryCandidates(input: {
   if (!input.project.factLedger) throw new Error("Story planning requires factLedger.");
   const profile = process.env.SCENE_GEN_PROFILE ?? "custom";
   const requestedCandidates = resolveStoryPlanCandidateCount(profile);
+  const expectedVisuals = storyVisualSequence(input.project);
   const started = Date.now();
   const response = await fetchWithRetry(`${input.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -147,7 +161,9 @@ export async function planStoryCandidates(input: {
           "你是短视频故事规划器，只返回 JSON，不展开完整旁白。",
           `生成恰好 ${requestedCandidates} 个彼此明显不同的候选，返回 { candidates: [...] }。`,
           "每个候选包含 id、angle、title、titleClaimIds、estimatedSeconds 和 scenes。",
-          "scenes 恰好五项，visual 顺序固定为 title、briefing、chart、flow、outro；每项包含 purpose、focus、claimIds。",
+          `scenes 恰好 ${expectedVisuals.length} 项，visual 顺序固定为 ${expectedVisuals.join("、")}；每项包含 purpose、focus、claimIds。`,
+          "短版必须在前两屏交付主要价值，首屏是结果或冲突钩子，后续只保留能提供证据、用途或边界的新信息。",
+          "前半段 scenes 的 claimIds 必须覆盖整个候选至少 70% 的核心 claimIds；后半段只补充使用方式、限制和边界，可以复用前面的 claimIds。",
           "所有 claimIds 必须来自 factLedger。标题和 focus 不得加入账本外事实，不得省略来源限定词。",
           "候选之间必须改变叙事角度和各屏 focus，禁止仅改写措辞。不要输出 narration、metrics、bars、steps 或 bullets。",
         ].join("\n") },
@@ -163,9 +179,9 @@ export async function planStoryCandidates(input: {
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { total_tokens?: number } };
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new Error("Story planning returned no content.");
-    const candidates = storyPlanResponseSchema.parse(normalizeStoryPlanPayload(JSON.parse(content))).candidates;
+    const candidates = storyPlanResponseSchema.parse(normalizeStoryPlanPayload(JSON.parse(content), expectedVisuals)).candidates;
     if (candidates.length !== requestedCandidates) throw new Error(`Story planning returned ${candidates.length}/${requestedCandidates} candidates.`);
-    const rankings = rankStoryPlanCandidates(candidates, input.project.factLedger, input.targetSeconds, await readHistory());
+    const rankings = rankStoryPlanCandidates(candidates, input.project.factLedger, input.targetSeconds, await readHistory(), expectedVisuals);
     const selected = rankings.find((ranking) => ranking.rejectedReasons.length === 0);
     if (!selected) throw new Error(`Every story plan was deterministically rejected: ${rankings.map((ranking) => `${ranking.candidate.id}[${ranking.rejectedReasons.join(",")}]`).join("; ")}`);
     const tokens = payload.usage?.total_tokens ?? 0;

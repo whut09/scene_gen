@@ -18,6 +18,7 @@ import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifyScene
 import { analyzeFrameVisual } from "../frame-visual-analysis";
 import { readVisualAuditFile } from "../../html-video/visual-audit";
 import { callQualityJudge, expectedJudgeScoreKeys, type QualityJudgeAttempt } from "./judge-client";
+import { contentDurationPolicy, contentTypeForProject } from "../../pipeline/content-strategy";
 
 const ASR_TRADITIONAL_TO_SIMPLIFIED: Record<string, string> = {
   獎: "奖", 攝: "摄", 銷: "销", 認: "认", 賽: "赛", 獲: "获", 與: "与", 為: "为",
@@ -55,17 +56,45 @@ function sceneVisibleText(scene: VideoScene) {
   }
 }
 
-function narrationLimits(scene: VideoScene, repository: boolean) {
-  if (repository) {
-    if (scene.type === "title") return { min: 35, max: 110 };
-    if (scene.type === "briefing_points") return { min: 50, max: 145 };
-    if (scene.type === "outro") return { min: 45, max: 125 };
-    return { min: 45, max: 135 };
+function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof contentTypeForProject>) {
+  if (contentType === "repository") {
+    if (scene.type === "title") return { min: 25, max: 65 };
+    if (scene.type === "briefing_points") return { min: 40, max: 105 };
+    if (scene.type === "outro") return { min: 35, max: 130 };
+    return { min: 40, max: 100 };
   }
-  if (scene.type === "title") return { min: 55, max: 150 };
-  if (scene.type === "briefing_points") return { min: 90, max: 220 };
-  if (scene.type === "outro") return { min: 65, max: 170 };
-  return { min: 85, max: 210 };
+  if (contentType === "technical-article") {
+    if (scene.type === "title") return { min: 30, max: 80 };
+    if (scene.type === "briefing_points") return { min: 55, max: 130 };
+    if (scene.type === "outro") return { min: 40, max: 95 };
+    return { min: 55, max: 120 };
+  }
+  if (scene.type === "title") return { min: 25, max: 65 };
+  if (scene.type === "briefing_points") return { min: 45, max: 110 };
+  if (scene.type === "outro") return { min: 35, max: 80 };
+  return { min: 45, max: 105 };
+}
+
+const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|最多|至少/;
+
+function textTokens(value: string) {
+  const compact = normalizeText(value);
+  const tokens = new Set<string>();
+  for (let index = 0; index < compact.length - 1; index += 2) tokens.add(compact.slice(index, index + 2));
+  return tokens;
+}
+
+function textSimilarity(left: string, right: string) {
+  const leftTokens = textTokens(left);
+  const rightTokens = textTokens(right);
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  return union ? intersection / union : 0;
+}
+
+function firstValueIndex(value: string) {
+  const match = EARLY_VALUE_PATTERN.exec(value);
+  return match?.index ?? -1;
 }
 
 function visibleTokenCoverage(visibleText: string, narration: string) {
@@ -121,10 +150,13 @@ export async function evaluateDraft(
   const revisionNotes: string[] = [];
   const source = project.sources[0];
   const repository = Boolean(repositoryProjectName(project));
+  const contentType = contentTypeForProject(project);
+  const contentPolicy = contentDurationPolicy(contentType);
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const naturalDuration = config.tts.durationPolicy === "natural";
-  const minimumChars = Math.round(targetSeconds * (repository ? 3.5 : naturalDuration ? 4.8 : 6));
-  const maximumChars = Math.round(targetSeconds * (repository ? 6 : 11));
+  const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.2 : 4.8));
+  const maximumChars = Math.round(targetSeconds * (contentType === "technical-article" ? 9 : 8.2));
+  const plannedDurationSeconds = project.scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const templateGraph = buildHtmlVideoContentGraph(project);
   const productionDecisions = buildProductionDecisions(project);
   const visualSourceCount = new Set(productionDecisions.map((decision) => decision.visualPlan.source)).size;
@@ -203,8 +235,24 @@ export async function evaluateDraft(
     }
   }
 
-  if (project.scenes.length !== 5 || project.narrationSegments?.length !== project.scenes.length) {
-    issues.push({ severity: "error", code: "scene_segment_mismatch", message: "必须是 5 个场景和 5 段对应旁白。" });
+  if (project.scenes.length !== contentPolicy.sceneCount || project.narrationSegments?.length !== project.scenes.length) {
+    issues.push({ severity: "error", code: "scene_segment_mismatch", message: `${contentType} 短视频必须是 ${contentPolicy.sceneCount} 个场景，并与旁白逐段对应。` });
+  }
+  if (targetSeconds < contentPolicy.minimumSeconds || targetSeconds > contentPolicy.hardMaximumSeconds || plannedDurationSeconds > contentPolicy.hardMaximumSeconds) {
+    issues.push({
+      severity: "error",
+      code: "platform_duration_mismatch",
+      message: `${contentType} 建议 ${contentPolicy.minimumSeconds}-${contentPolicy.maximumSeconds} 秒，硬上限 ${contentPolicy.hardMaximumSeconds} 秒；当前目标 ${targetSeconds} 秒，画面 ${plannedDurationSeconds} 秒。`,
+      evidence: {
+        contentType,
+        targetSeconds,
+        plannedDurationSeconds,
+        recommendedMinimumSeconds: contentPolicy.minimumSeconds,
+        recommendedMaximumSeconds: contentPolicy.maximumSeconds,
+        hardMaximumSeconds: contentPolicy.hardMaximumSeconds,
+      },
+    });
+    revisionNotes.push(`将视频压缩到 ${contentPolicy.minimumSeconds}-${contentPolicy.maximumSeconds} 秒，只保留钩子、关键证据、实际用途和边界。`);
   }
   if (narrationChars < minimumChars) {
     issues.push({ severity: "error", code: "narration_short", message: `旁白仅 ${narrationChars} 字，目标至少 ${minimumChars} 字。` });
@@ -233,9 +281,30 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "narration_punctuation_unbalanced", message: "Narration contains unmatched brackets or quotation marks that may produce TTS artifacts." });
     revisionNotes.push("Remove unmatched brackets and quotation marks before synthesis.");
   }
-  if (normalizedTitle.length >= 4 && normalizedOpening.split(normalizedTitle).length - 1 > 1) {
-    issues.push({ severity: "error", code: "title_spoken_repeated", message: "首屏旁白重复播报主标题，只允许完整播报一次。", sceneIndex: 0 });
+  if (normalizedTitle.length >= 4 && normalizeText(project.narration).split(normalizedTitle).length - 1 > 1) {
+    issues.push({ severity: "error", code: "title_repeated_in_narration", message: "旁白重复播报主标题，只允许完整播报一次。", sceneIndex: 0 });
     revisionNotes.push("首屏只播报一次完整标题，删除后续重复标题。");
+  }
+
+  const compactNarration = project.narration.replace(/\s+/g, "");
+  const earlyWindow = compactNarration.slice(0, Math.max(36, Math.round(6 * 7)));
+  const valueIndex = firstValueIndex(compactNarration);
+  if (valueIndex < 0) {
+    issues.push({ severity: "error", code: "hook_value_missing", message: "开场没有结果、冲突、痛点或用户收益钩子。", sceneIndex: 0 });
+    revisionNotes.push("标题后立刻给出结果、冲突、痛点或用户收益，不要用背景介绍开场。");
+  } else if (!EARLY_VALUE_PATTERN.test(earlyWindow)) {
+    issues.push({ severity: "error", code: "value_revealed_too_late", message: "核心价值在开场 6 秒之后才出现。", sceneIndex: 0, evidence: { valueCharacterIndex: valueIndex, earlyWindowCharacters: earlyWindow.length } });
+    revisionNotes.push("把第一个核心卖点提前到开场 6 秒内。");
+  }
+
+  const segmentClaims = (project.narrationSegments ?? []).map((segment) => new Set(segment.claimIds ?? []));
+  const allClaims = new Set(segmentClaims.flatMap((claims) => [...claims]));
+  const halfwaySceneCount = Math.max(1, Math.ceil(project.scenes.length / 2));
+  const earlyClaims = new Set(segmentClaims.slice(0, halfwaySceneCount).flatMap((claims) => [...claims]));
+  const earlyClaimCoverage = allClaims.size ? earlyClaims.size / allClaims.size : 1;
+  if (project.storyPlanning && earlyClaimCoverage < 0.7) {
+    issues.push({ severity: "error", code: "value_revealed_too_late", message: `视频过半前只覆盖 ${(earlyClaimCoverage * 100).toFixed(0)}% 的事实价值。`, evidence: { earlyClaimCoverage, earlyClaimCount: earlyClaims.size, totalClaimCount: allClaims.size } });
+    revisionNotes.push("在视频前半段覆盖至少 70% 的核心事实，把边界和补充说明留到后半段。");
   }
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   const repositoryName = repositoryProjectName(project);
@@ -268,7 +337,7 @@ export async function evaluateDraft(
         code: "repository_promotion_structure_missing",
         message: `开源项目推荐缺少：${missingPromotionSections.map((section) => section.label).join("、")}。`,
       });
-      revisionNotes.push("按用户痛点、一句话收益、可信亮点、最短上手路径、适用人群与边界重写五屏项目推荐，删除空泛功能罗列。");
+      revisionNotes.push("按用户痛点、一句话收益、可信证据、最短上手路径、适用人群与边界重写项目推荐，删除空泛功能罗列。");
     }
   }
   if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(publicProjectText, repositoryAddresses)) {
@@ -307,7 +376,7 @@ export async function evaluateDraft(
     const segment = project.narrationSegments?.[index];
     if (!segment) return;
     const narrationLength = segment.text.replace(/\s+/g, "").length;
-    const limits = narrationLimits(scene, repository);
+    const limits = narrationLimits(scene, contentType);
     if (narrationLength > limits.max) {
       issues.push({ severity: "error", code: "scene_narration_overloaded", message: `第 ${index + 1} 屏旁白 ${narrationLength} 字，超过当前画面建议上限 ${limits.max} 字。`, sceneIndex: index });
       revisionNotes.push(`压缩第 ${index + 1} 屏旁白，只复述该屏可见字段，不要扩展屏幕外内容。`);
@@ -327,6 +396,42 @@ export async function evaluateDraft(
       revisionNotes.push(`将第 ${index + 1} 屏旁白中的数字同步到画面，或从旁白删除。`);
     }
   });
+
+  const redundantPairs: Array<[number, number, number]> = [];
+  for (let left = 0; left < project.scenes.length; left += 1) {
+    for (let right = left + 1; right < project.scenes.length; right += 1) {
+      const similarity = textSimilarity(sceneVisibleText(project.scenes[left]), sceneVisibleText(project.scenes[right]));
+      if (similarity >= 0.66) redundantPairs.push([left, right, Number(similarity.toFixed(3))]);
+    }
+  }
+  if (redundantPairs.length > 0) {
+    issues.push({ severity: "error", code: "scene_information_redundant", message: "不同场景重复表达同一组信息。", evidence: { pairs: redundantPairs.map(([left, right, similarity]) => `${left}:${right}:${similarity}`) } });
+    revisionNotes.push("合并重复场景，每屏只保留一个新的结论或证据。");
+  }
+
+  const authenticVisualCount = productionDecisions.filter((decision) => decision.visualPlan.source !== "programmatic").length
+    + (project.screenshots?.length ?? 0)
+    + (project.assets?.filter((asset) => asset.role === "evidence" || asset.role === "demo").length ?? 0);
+  if (plannedDurationSeconds > 30 && authenticVisualCount === 0) {
+    issues.push({ severity: "error", code: "weak_visual_proof", message: "整条视频没有真实截图、运行结果、数据证据或产品素材。", evidence: { authenticVisualCount, plannedDurationSeconds } });
+    revisionNotes.push("至少为一个关键结论加入真实截图、运行结果、输入输出对比或来源证据。");
+  }
+
+  const visualStateCount = productionDecisions.reduce((sum, decision) => sum + 1 + decision.syncCues.length, 0);
+  const visualChangeIntervalSeconds = plannedDurationSeconds / Math.max(1, visualStateCount);
+  if (visualChangeIntervalSeconds > 4) {
+    issues.push({ severity: "error", code: "low_visual_change_rate", message: `平均 ${visualChangeIntervalSeconds.toFixed(1)} 秒才发生一次有效视觉变化。`, evidence: { visualStateCount, visualChangeIntervalSeconds } });
+    revisionNotes.push("每 2 到 4 秒安排一次关键词高亮、数据进入、局部推进或证据切换，不要依赖频繁整屏跳切。");
+  }
+
+  const finalNarration = project.narrationSegments?.at(-1)?.text ?? "";
+  const previousNarration = project.narrationSegments?.slice(0, -1).map((segment) => segment.text).join(" ") ?? "";
+  const closeSimilarity = textSimilarity(finalNarration, `${project.meta.title} ${previousNarration}`);
+  const addsDecisionValue = /限制|边界|适合|不适合|建议|优先|风险|注意|取决于|值得|可以|不能|不应|先/.test(finalNarration);
+  if (finalNarration && closeSimilarity >= 0.58 && !addsDecisionValue) {
+    issues.push({ severity: "error", code: "empty_summary_close", message: "结尾只是重复标题或前文，没有提供限制、选择建议或适用边界。", sceneIndex: project.scenes.length - 1, evidence: { closeSimilarity } });
+    revisionNotes.push("结尾补充限制、选择建议、适用者或验证边界，不要再次概括标题。");
+  }
 
   const qualityProfile: QualityProfile = { name: config.quality.profile, blockWarnings: config.quality.profile === "strict", blockingWarningCodes: [...config.quality.blockingWarningCodes] };
   const requestedJudgeSamples = config.llm.quality.samples;
@@ -428,6 +533,16 @@ export async function evaluateDraft(
     metrics: {
       narrationChars,
       targetSeconds,
+      contentType,
+      recommendedMinimumSeconds: contentPolicy.minimumSeconds,
+      recommendedMaximumSeconds: contentPolicy.maximumSeconds,
+      hardMaximumSeconds: contentPolicy.hardMaximumSeconds,
+      plannedDurationSeconds,
+      earlyClaimCoverage: Number(earlyClaimCoverage.toFixed(3)),
+      authenticVisualCount,
+      visualStateCount,
+      visualChangeIntervalSeconds: Number(visualChangeIntervalSeconds.toFixed(3)),
+      redundantScenePairCount: redundantPairs.length,
       ...(scoreAverage === undefined ? {} : { scoreAverage: Number(scoreAverage.toFixed(1)) }),
       ...(scoreMinimum === undefined ? {} : { scoreMinimum }),
       scoreStatus,

@@ -15,6 +15,8 @@ import { videoProjectSchema } from "./schemas";
 import { ensureNewsDateNarration, ensureTitleSpokenFirst, normalizeProjectDatePrecision } from "./news-date";
 import { projectHomepageTitle, provisionalVideoFileName } from "./output-naming";
 import { ensureRepositoryProjectIdentity } from "./repository-project";
+import { contentDurationPolicy, resolveContentTargetSeconds } from "./content-strategy";
+import { contentTypeForItem } from "./content-type";
 
 loadDotEnv();
 
@@ -162,6 +164,39 @@ function fitProjectDuration(project: VideoProject, seconds: number) {
   } satisfies VideoProject;
 }
 
+function compactProjectScenes(project: VideoProject, maximumScenes: number) {
+  if (project.scenes.length <= maximumScenes) return project;
+  const priorities: Record<VideoProject["scenes"][number]["type"], number> = {
+    title: 100,
+    outro: 90,
+    web_screenshot_zoom: 8,
+    briefing_points: 7,
+    flow: 6,
+    signal_chart: 5,
+    news_stack: 4,
+    github_pulse: 4,
+    timeline: 3,
+  };
+  const selectedIndexes = project.scenes
+    .map((scene, index) => ({ index, priority: priorities[scene.type] }))
+    .sort((left, right) => right.priority - left.priority || left.index - right.index)
+    .slice(0, maximumScenes)
+    .map((item) => item.index)
+    .sort((left, right) => left - right);
+  const narrationSegments = selectedIndexes.flatMap((originalIndex, sceneIndex) => {
+    const segment = project.narrationSegments?.find((item) => item.sceneIndex === originalIndex) ?? project.narrationSegments?.[originalIndex];
+    return segment ? [{ ...segment, sceneIndex }] : [];
+  });
+  const scenes = selectedIndexes.map((index) => project.scenes[index]);
+  return {
+    ...project,
+    scenes,
+    narrationSegments,
+    narration: narrationSegments.map((segment) => segment.text).join("\n"),
+    meta: { ...project.meta, durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0) },
+  } satisfies VideoProject;
+}
+
 function scrubProject(value: unknown, key = "", repositoryAddresses: string[] = []): unknown {
   if (typeof value === "string") {
     if (["url", "src"].includes(key)) return value;
@@ -179,6 +214,7 @@ function scrubProject(value: unknown, key = "", repositoryAddresses: string[] = 
 
 for (const [index, item] of items.entries()) {
   const storyNo = index + 1;
+  const effectiveTargetSeconds = resolveContentTargetSeconds(item, targetSeconds);
   console.log(`\n[story ${storyNo}/${items.length}] ${item.title}`);
 
   const [screenshots, assets] = await Promise.all([
@@ -192,16 +228,18 @@ for (const [index, item] of items.entries()) {
     screenshots,
     index: storyNo,
   });
-  project = fitProjectDuration(project, targetSeconds ?? project.meta.durationSeconds);
+  project = fitProjectDuration(project, effectiveTargetSeconds);
   if (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1") {
     project = await improveWithOpenAI(project, {
-      targetSeconds,
+      targetSeconds: effectiveTargetSeconds,
       forbidAttribution: true,
       editorialNotes,
     });
   } else {
     console.log("[repository] using deterministic repository draft; set REPOSITORY_LLM_EXPANSION=1 to opt into LLM expansion.");
   }
+  project = compactProjectScenes(project, contentDurationPolicy(contentTypeForItem(item)).sceneCount);
+  project = fitProjectDuration(project, effectiveTargetSeconds);
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   project = scrubProject(project, "", repositoryAddresses) as VideoProject;
   project = normalizeProjectDatePrecision(project);

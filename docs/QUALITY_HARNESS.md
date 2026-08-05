@@ -32,6 +32,19 @@ Issue code 由注册表维护，同时声明默认分类、修复动作、是否
 - 预计时长、语速、信息密度和视觉可实现性；
 - LLM Judge 的 measured、partially-measured、unavailable 状态。
 
+短视频内容门禁使用稳定 issue code：
+
+- `hook_value_missing`：开场没有结果、冲突、痛点或用户收益；
+- `value_revealed_too_late`：核心价值未在 6 秒内出现，或视频过半前未覆盖 70% 关键事实；
+- `platform_duration_mismatch`：内容时长超出对应类型预算；
+- `scene_information_redundant`：不同场景换句话重复同一信息；
+- `weak_visual_proof`：缺少真实截图、运行结果、数据证据或产品素材；
+- `low_visual_change_rate`：平均超过 4 秒没有有效视觉状态变化；
+- `empty_summary_close`：结尾只重复标题或前文；
+- `title_repeated_in_narration`：完整标题播报超过一次。
+
+默认预算为新闻 32～45 秒、开源项目 40～55 秒、技术文章 50～70 秒。新闻和开源项目使用四屏短版，技术文章使用五屏解释版。
+
 确定性规则可以直接否决候选。Judge 不可用时不会伪造 100 分；strict/production 按配置阻止发布或要求人工确认。
 
 ## Audio Gate

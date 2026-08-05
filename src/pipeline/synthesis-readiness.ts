@@ -1,5 +1,6 @@
 import type { VideoProject, VideoScene } from "./types";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion } from "./story";
+import { contentDurationPolicy } from "./content-strategy";
 
 export interface SynthesisReadinessIssue {
   code: string;
@@ -26,10 +27,10 @@ function repositoryName(project: VideoProject) {
 }
 
 function sceneNarrationMinimum(scene: VideoScene) {
-  if (scene.type === "title") return 35;
-  if (scene.type === "briefing_points") return 50;
-  if (scene.type === "outro") return 45;
-  return 45;
+  if (scene.type === "title") return 25;
+  if (scene.type === "briefing_points") return 40;
+  if (scene.type === "outro") return 35;
+  return 40;
 }
 
 function scenePublicText(scene: VideoScene) {
@@ -45,7 +46,9 @@ export function synthesisTargetSeconds(project: VideoProject, requestedSeconds?:
   const requested = requestedSeconds && Number.isFinite(requestedSeconds) && requestedSeconds > 0
     ? requestedSeconds
     : project.meta.durationSeconds;
-  return repository ? Math.min(100, Math.max(60, requested)) : requested;
+  if (!repository) return requested;
+  const policy = contentDurationPolicy("repository");
+  return Math.min(policy.maximumSeconds, Math.max(policy.minimumSeconds, requested));
 }
 
 export function projectSynthesisReadinessIssues(project: VideoProject, targetSeconds: number): SynthesisReadinessIssue[] {
@@ -54,13 +57,14 @@ export function projectSynthesisReadinessIssues(project: VideoProject, targetSec
 
   const issues: SynthesisReadinessIssue[] = [];
   const segments = project.narrationSegments ?? [];
-  if (project.scenes.length !== 5 || segments.length !== project.scenes.length) {
-    issues.push({ code: "scene_segment_mismatch", message: "Repository videos require five scenes with five narration segments." });
+  const policy = contentDurationPolicy("repository");
+  if (project.scenes.length !== policy.sceneCount || segments.length !== project.scenes.length) {
+    issues.push({ code: "scene_segment_mismatch", message: `Repository videos require ${policy.sceneCount} scenes with matching narration segments.` });
     return issues;
   }
 
   const narrationChars = compactText(project.narration).length;
-  const minimumChars = Math.ceil(targetSeconds * 3.5);
+  const minimumChars = Math.ceil(targetSeconds * 4.2);
   if (narrationChars < minimumChars) {
     issues.push({
       code: "narration_short",

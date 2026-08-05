@@ -14,22 +14,20 @@ test("fixed article is directed by a mocked OpenAI-compatible response", async (
     sections: [
       { claimIds: [claimIds[0]], narration: "本次更新先说明离线质量门禁。", kicker: "工程更新", subhead: "固定文章离线集成测试", keywords: ["离线", "质量", "视频"] },
       { claimIds: [claimIds[1]], narration: "第一步验证固定文章事实。", headline: "固定事实进入结构化脚本", summary: "文章明确描述模板、缓存和门禁改进。", metrics: [{ label: "模式", value: "离线" }, { label: "输入", value: "固定文章" }], points: ["不访问真实模型", "保留文章事实"] },
-      { claimIds: [claimIds[1]], narration: "第二步比较三个验证层。", headline: "三个验证层覆盖关键边界", bars: [{ label: "单元", value: 80, detail: "纯函数与规则" }, { label: "媒体", value: 70, detail: "音视频门禁" }, { label: "模板", value: 60, detail: "截图与安全区" }] },
-      { claimIds: [claimIds[1]], narration: "第三步串联生成检查发布。", headline: "离线流程串联关键阶段", steps: [{ label: "生成", detail: "模拟模型响应" }, { label: "检查", detail: "运行质量门禁" }, { label: "发布", detail: "输出可审计结果" }] },
+      { claimIds: [claimIds[1]], narration: "第二步串联生成检查发布。", headline: "离线流程串联关键阶段", steps: [{ label: "生成", detail: "模拟模型响应" }, { label: "检查", detail: "运行质量门禁" }, { label: "发布", detail: "输出可审计结果" }] },
       { claimIds: [claimIds[1]], narration: "最终结论是离线测试可以稳定复现。", headline: "离线验证降低回归风险", bullets: ["固定输入便于复现", "模拟响应不消耗 API"] },
     ],
   };
   const planningResponse = { candidates: [
     {
-      id: "duplicate-plan", angle: "重复屏幕", title: "重复的候选方案", titleClaimIds: [claimIds[0]], estimatedSeconds: 90,
-      scenes: ["title", "briefing", "chart", "flow", "outro"].map((visual) => ({ visual, purpose: "重复", focus: "完全相同的屏幕重点", claimIds: [claimIds[0]] })),
+      id: "duplicate-plan", angle: "重复屏幕", title: "重复的候选方案", titleClaimIds: [claimIds[0]], estimatedSeconds: 40,
+      scenes: ["title", "briefing", "flow", "outro"].map((visual) => ({ visual, purpose: "重复", focus: "完全相同的屏幕重点", claimIds: [claimIds[0]] })),
     },
     {
-      id: "evidence-plan", angle: "从离线验证到发布闭环", title: expansionResponse.title, titleClaimIds: [claimIds[0]], estimatedSeconds: 90,
+      id: "evidence-plan", angle: "从离线验证到发布闭环", title: expansionResponse.title, titleClaimIds: [claimIds[0]], estimatedSeconds: 40,
       scenes: [
         { visual: "title", purpose: "建立开场", focus: "离线质量门禁升级", claimIds: [claimIds[0]] },
         { visual: "briefing", purpose: "解释事实", focus: "固定文章进入结构化脚本", claimIds: [claimIds[1]] },
-        { visual: "chart", purpose: "比较层次", focus: "单元媒体模板三层验证", claimIds: [claimIds[1]] },
         { visual: "flow", purpose: "串联流程", focus: "生成检查输出闭环", claimIds: [claimIds[1]] },
         { visual: "outro", purpose: "给出结论", focus: "离线复现与回归风险", claimIds: [claimIds[1]] },
       ],
@@ -61,14 +59,14 @@ test("fixed article is directed by a mocked OpenAI-compatible response", async (
   process.env.NEWS_LLM_MODEL = "offline-mock";
   process.env.STORY_PLAN_CANDIDATES = "2";
   try {
-    const result = await improveWithOpenAI(createFixtureProject(), { targetSeconds: 90 });
+    const result = await improveWithOpenAI(createFixtureProject(), { targetSeconds: 40 });
     const planningRequest = JSON.parse(requestBodies[0]) as { model?: string; messages?: Array<{ content?: string }> };
     const expansionRequest = JSON.parse(requestBodies[1]) as { messages?: Array<{ content?: string }> };
     assert.equal(requestBodies.length, 2);
     assert.equal(planningRequest.model, "offline-mock");
     assert.match(planningRequest.messages?.at(-1)?.content ?? "", /factLedger/);
     assert.match(expansionRequest.messages?.at(-1)?.content ?? "", /selectedPlan/);
-    assert.equal(result.scenes.length, 5);
+    assert.equal(result.scenes.length, 4);
     assert.equal(result.meta.title, expansionResponse.title);
     assert.equal(result.narrationSegments?.[0].text.startsWith(expansionResponse.title), true);
     assert.equal(result.scenes[1].type, "briefing_points");

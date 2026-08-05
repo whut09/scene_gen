@@ -199,7 +199,7 @@ test("technical article fallback uses explainer structure without news wording",
   assert.equal(project.narrationSegments?.[0]?.ttsText?.includes("\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f"), false);
 });
 
-test("repository fallback produces a complete five-scene project without platform promotion", () => {
+test("repository fallback produces a complete four-scene short project without platform promotion", () => {
   const item: HotItem = {
     id: "repository-fallback", kind: "github", contentType: "repository", title: "build-your-own-x: curated implementation guides",
     url: "https://github.com/codecrafters-io/build-your-own-x", source: "项目资料", summary: "step-by-step guides for re-creating technologies from scratch",
@@ -208,14 +208,14 @@ test("repository fallback produces a complete five-scene project without platfor
   };
   const project = createStoryProject(item);
   assert.equal(project.meta.title, "build-your-own-x");
-  assert.equal(project.scenes.length, 5);
-  assert.equal(project.narrationSegments?.length, 5);
+  assert.equal(project.scenes.length, 4);
+  assert.equal(project.narrationSegments?.length, 4);
   assert.equal(project.scenes[0].type, "title");
   assert.equal(project.scenes[0].headline, "开源项目推荐：build-your-own-x");
   assert.equal(project.narrationSegments?.[0].text.startsWith("开源项目推荐：build-your-own-x"), true);
   assert.equal(project.narrationSegments?.[0].ttsText?.startsWith("开源项目推荐：Build Your Own X"), true);
   assert.ok(project.narration.replace(/\s/g, "").length >= 240);
-  assert.ok(project.meta.durationSeconds >= 50 && project.meta.durationSeconds <= 100);
+  assert.ok(project.meta.durationSeconds >= 40 && project.meta.durationSeconds <= 55);
   assert.match(project.narration, /省掉什么麻烦|最费时间/);
   assert.doesNotMatch(project.narration, /重点环节是|项目资料列出的实践主题|先确认输入、规则和预期结果/);
   assert.equal(containsForbiddenGithubReference([project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" "), [item.repo ?? ""]), false);
@@ -236,7 +236,7 @@ test("repository fallback with a short project name passes synthesis readiness",
     source: "项目资料", summary: "Workflow automation platform", content: "Build and deploy workflow automation and AI agents.", score: 1, tags: [], repo: "n8n-io/n8n", metrics: { stars: 120_000 },
   });
 
-  assert.deepEqual(projectSynthesisReadinessIssues(project, 80), []);
+  assert.deepEqual(projectSynthesisReadinessIssues(project, 48), []);
 });
 
 test("template learning cannot reintroduce adjacent template repeats", () => {
@@ -266,7 +266,7 @@ test("MetaGPT repository draft explains the user problem and practical workflow"
 
   assert.match(project.narrationSegments![0].text, /软件想法/);
   assert.match(project.narrationSegments![1].text, /自然语言需求/);
-  assert.match(project.narrationSegments![3].text, /一句话说明要做什么/);
+  assert.match(project.narration, /一句话说明要做什么/);
 });
 
 test("OfficeCLI repository draft explains direct office-file use", () => {
@@ -276,7 +276,7 @@ test("OfficeCLI repository draft explains direct office-file use", () => {
 
   assert.match(project.narrationSegments![0].text, /文档、表格和演示文稿/);
   assert.match(project.narrationSegments![1].text, /办公文件/);
-  assert.match(project.narrationSegments![3].text, /汇总表格/);
+  assert.match(project.narration, /汇总和生成演示材料/);
 });
 
 test("AI-For-Beginners repository draft explains the structured learning curriculum", () => {
@@ -287,7 +287,7 @@ test("AI-For-Beginners repository draft explains the structured learning curricu
   assert.equal(project.meta.title, "AI-For-Beginners");
   assert.match(project.narrationSegments![0].text, /人工智能入门课程/);
   assert.match(project.narrationSegments![1].text, /十二周、二十四课/);
-  assert.match(project.narrationSegments![3].text, /选择语言.*学习概念.*测验和实验/);
+  assert.match(project.narration, /十二周、二十四课.*测验和实验/s);
   assert.doesNotMatch(project.narration, /文档、表格和演示文稿/);
 });
 
@@ -298,7 +298,7 @@ test("ESP32-Bit-Pirate repository draft explains multi-protocol hardware analysi
 
   assert.match(project.narrationSegments![0].text, /多协议硬件调试与分析工具/);
   assert.match(project.narrationSegments![1].text, /I2C.*SPI.*UART.*CAN/);
-  assert.match(project.narrationSegments![3].text, /确认开发板电压和引脚.*刷入固件.*网页终端/);
+  assert.match(project.narration, /确认开发板电压和引脚.*刷入固件/s);
   assert.doesNotMatch(project.narration, /文档、表格和演示文稿/);
 });
 
@@ -310,9 +310,9 @@ test("Bifrost repository draft explains the model gateway and direct setup path"
   assert.match(project.narrationSegments![0].text, /模型网关/);
   assert.match(project.narrationSegments![1].text, /二十三家以上模型服务/);
   assert.match(project.narrationSegments![2].text, /故障切换.*负载均衡.*语义缓存/);
-  assert.match(project.narrationSegments![3].text, /启动网关.*配置模型服务和密钥.*接口地址/);
+  assert.match(project.narration, /启动网关.*密钥权限.*故障切换/s);
   assert.doesNotMatch(project.narrationSegments!.map((segment) => segment.text).join(" "), /选择主题|阅读结构|下面看/);
-  assert.ok(project.narrationSegments!.every((segment) => segment.text.length <= 125));
+  assert.ok(project.narrationSegments!.every((segment) => segment.text.length <= 130));
 });
 
 test("T3 Code repository draft explains its coding-agent workspace", () => {
@@ -323,7 +323,7 @@ test("T3 Code repository draft explains its coding-agent workspace", () => {
   assert.equal(project.meta.title, "t3code");
   assert.match(project.narrationSegments![0].text, /网页和桌面工作台/);
   assert.match(project.narrationSegments![1].text, /统一图形界面/);
-  assert.match(project.narrationSegments![3].text, /安装并登录.*启动 T3 Code.*选择项目/);
+  assert.match(project.narration, /安装并登录.*代码智能体.*确认权限/s);
   assert.doesNotMatch(project.narration, /选择主题|阅读结构/);
 });
 
@@ -335,7 +335,7 @@ test("speech-to-speech repository draft explains the realtime voice pipeline", (
   assert.equal(project.meta.title, "speech-to-speech");
   assert.match(project.narrationSegments![0].text, /低延迟语音智能体/);
   assert.match(project.narrationSegments![1].text, /语音活动检测.*语音识别.*大模型.*语音合成/);
-  assert.match(project.narrationSegments![3].text, /实时服务.*真实对话.*延迟/);
+  assert.match(project.narration, /选择语音识别、大模型和语音合成后端.*实际延迟/s);
   assert.doesNotMatch(project.narration, /选择主题|阅读结构/);
 });
 
@@ -347,7 +347,7 @@ test("aisuite repository draft explains provider switching and agent tools", () 
   assert.equal(project.meta.title, "aisuite");
   assert.match(project.narrationSegments![0].text, /一套 Python 接口/);
   assert.match(project.narrationSegments![1].text, /修改模型名称.*切换供应商/);
-  assert.match(project.narrationSegments![3].text, /供应商扩展.*统一客户端.*工具/);
+  assert.match(project.narration, /供应商扩展.*工具执行.*权限/s);
   assert.doesNotMatch(project.narration, /选择主题|阅读结构/);
 });
 
@@ -359,7 +359,7 @@ test("Kaneo repository draft explains simple self-hosted project management", ()
   assert.equal(project.meta.title, "kaneo");
   assert.equal(project.scenes[0].headline, "开源项目推荐：kaneo");
   assert.match(project.narrationSegments![1].text, /任务、进度和负责人/);
-  assert.match(project.narrationSegments![3].text, /Docker Compose.*PostgreSQL.*创建项目/);
+  assert.match(project.narration, /安装 Docker.*备份.*访问控制/s);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
 });
 
@@ -371,7 +371,7 @@ test("copilot-sdk repository draft explains embedded coding agents", () => {
   assert.equal(project.meta.title, "copilot-sdk");
   assert.equal(project.scenes[0].headline, "开源项目推荐：copilot-sdk");
   assert.match(project.narrationSegments![1].text, /任务规划、工具调用和文件修改/);
-  assert.match(project.narrationSegments![3].text, /项目语言安装.*创建客户端和会话.*工具权限/s);
+  assert.match(project.narration, /项目语言安装.*限制目录、命令、密钥和审批范围/s);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
 });
 
@@ -383,7 +383,7 @@ test("DeerFlow repository draft explains long-running agent work", () => {
   assert.equal(project.meta.title, "deer-flow");
   assert.equal(project.scenes[0].headline, "开源项目推荐：deer-flow");
   assert.match(project.narrationSegments![1].text, /子智能体、长期记忆、沙箱、工具和可扩展技能/);
-  assert.match(project.narrationSegments![3].text, /安装向导.*安全的沙箱.*具体研究或代码任务/s);
+  assert.match(project.narration, /Python、Node\.js.*沙箱和最小权限/s);
   assert.doesNotMatch(project.narration, /火山|方舟|github\.com|GitHub|仓库地址/i);
 });
 
@@ -395,7 +395,7 @@ test("awesome-systematic-trading repository draft stays educational and grounded
   assert.equal(project.meta.title, "awesome-systematic-trading");
   assert.equal(project.scenes[0].headline, "开源项目推荐：awesome-systematic-trading");
   assert.match(project.narrationSegments![1].text, /回测框架、交易库、数据工具/);
-  assert.match(project.narrationSegments![3].text, /历史数据.*收益、回撤和交易成本.*模拟或实盘/s);
+  assert.match(project.narration, /历史数据验证.*不是投资建议/s);
   assert.match(project.narration, /不是投资建议/);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
 });
@@ -408,7 +408,7 @@ test("Voice-Pro repository draft explains the end-to-end dubbing workflow", () =
   assert.equal(project.meta.title, "voice-pro");
   assert.equal(project.scenes[0].headline, "开源项目推荐：voice-pro");
   assert.match(project.narrationSegments![1].text, /视频下载、语音分离、字幕识别、跨语言翻译和文本转语音/);
-  assert.match(project.narrationSegments![3].text, /导入.*分离人声.*识别文本.*生成配音/s);
+  assert.match(project.narration, /导入.*分离人声.*音色克隆必须获得授权/s);
   assert.match(project.narration, /音色克隆必须获得授权/);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
 });
@@ -421,7 +421,7 @@ test("Ansible repository draft explains agentless infrastructure automation", ()
   assert.equal(project.meta.title, "ansible");
   assert.equal(project.scenes[0].headline, "开源项目推荐：ansible");
   assert.match(project.narrationSegments![1].text, /人和机器都能读懂的任务文件.*配置管理、应用部署/);
-  assert.match(project.narrationSegments![3].text, /安装 Ansible.*SSH.*playbook.*测试机器/s);
+  assert.match(project.narration, /安装 Ansible.*生产使用前.*回滚方案/s);
   assert.match(project.narration, /无需安装专用代理/);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
 });
@@ -466,9 +466,9 @@ test("SenseNova U1.5 news profile keeps preview status and 4K scope", () => {
 
 test("requested repository profiles explain direct use and practical boundaries", () => {
   const fixtures = [
-    { repo: "jamiepine/voicebox", title: "voicebox: local-first AI voice studio", content: "Local-first voice studio with voice cloning, 23 languages, 7 TTS engines, global dictation and story editor.", expected: /二十三种语言.*七种语音引擎.*声音克隆必须获得本人授权/s },
-    { repo: "esengine/DeepSeek-Reasonix", title: "DeepSeek-Reasonix: coding agent", content: "DeepSeek-native coding agent, reasonix.toml, static Go binary and stdio JSON-RPC tools.", expected: /reasonix setup.*模型服务.*工具可以执行命令和修改文件/s },
-    { repo: "firecrawl/pdf-inspector", title: "pdf-inspector: fast PDF classifier", content: "Classifies TextBased, Scanned, ImageBased or Mixed PDF files with position-aware extraction without OCR.", expected: /文本型、扫描型、图片型或混合型.*对扫描页或异常页再转交光学识别/s },
+    { repo: "jamiepine/voicebox", title: "voicebox: local-first AI voice studio", content: "Local-first voice studio with voice cloning, 23 languages, 7 TTS engines, global dictation and story editor.", expected: /七种语音引擎.*二十三种语言.*声音克隆必须获得本人授权/s },
+    { repo: "esengine/DeepSeek-Reasonix", title: "DeepSeek-Reasonix: coding agent", content: "DeepSeek-native coding agent, reasonix.toml, static Go binary and stdio JSON-RPC tools.", expected: /静态 Go 程序.*模型服务.*工具可以执行命令和修改文件/s },
+    { repo: "firecrawl/pdf-inspector", title: "pdf-inspector: fast PDF classifier", content: "Classifies TextBased, Scanned, ImageBased or Mixed PDF files with position-aware extraction without OCR.", expected: /文本型、扫描型、图片型或混合型.*扫描件仍需其他工具/s },
     { repo: "lyogavin/airllm", title: "airllm: run large models with small GPU memory", content: "Load one layer at a time. Run 70B with 4GB and 405B with 8GB of GPU memory.", expected: /四 GB 左右显存.*低显存不等于高速度/s },
   ];
 
@@ -479,8 +479,8 @@ test("requested repository profiles explain direct use and practical boundaries"
 
     assert.equal(project.meta.title, name);
     assert.equal(project.scenes[0].headline, `开源项目推荐：${name}`);
-    assert.equal(project.scenes.length, 5);
-    assert.ok(project.meta.durationSeconds >= 60 && project.meta.durationSeconds <= 100);
+    assert.equal(project.scenes.length, 4);
+    assert.ok(project.meta.durationSeconds >= 40 && project.meta.durationSeconds <= 55);
     assert.match(project.narration, fixture.expected);
     assert.equal(containsForbiddenGithubReference(visibleText, [fixture.repo]), false);
   }
