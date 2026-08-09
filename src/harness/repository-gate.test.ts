@@ -25,7 +25,7 @@ test("repository draft gate requires recommendation banner and original name", a
 test("repository draft gate accepts the canonical recommendation opening", async () => {
   const value = project();
   value.meta.title = "ai-agent-book";
-  value.scenes[0] = { type: "title", duration: value.scenes[0].duration, kicker: "开源项目推荐", headline: "开源项目推荐：ai-agent-book", subhead: "面向非技术读者的智能体实践", sources: ["项目资料"] };
+  value.scenes[0] = { type: "title", duration: value.scenes[0].duration, kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：ai-agent-book", subhead: "面向非技术读者的智能体实践", sources: ["项目资料"] };
   value.narrationSegments![0].text = "开源项目推荐：ai-agent-book。它帮助非技术读者理解智能体的用途和实践方法。";
   value.narration = value.narrationSegments![0].text;
 
@@ -33,6 +33,7 @@ test("repository draft gate accepts the canonical recommendation opening", async
 
   assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_spoken_first"), false);
   assert.equal(result.issues.some((issue) => issue.code === "title_not_spoken_first"), false);
+  assert.equal(result.issues.some((issue) => issue.code === "repository_date_spoken"), false);
 });
 
 test("generated repository recommendation follows the promotion structure", async () => {
@@ -46,7 +47,7 @@ test("generated repository recommendation follows the promotion structure", asyn
 
   assert.equal(result.issues.some((issue) => issue.code === "repository_promotion_structure_missing"), false);
   assert.deepEqual(value.scenes.map((scene) => scene.headline), [
-    "开源项目推荐：voicebox",
+    "今日开源热点趋势项目推荐：voicebox",
     "先看它替你省掉什么麻烦",
     "核心价值、证据和使用前提",
     "怎么开始，什么情况别急",

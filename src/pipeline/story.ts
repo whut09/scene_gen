@@ -2,7 +2,7 @@
 
 import { buildFactLedger, claimIdsForText, sceneFactText } from "./fact-ledger";
 import { contentTypeForItem } from "./content-type";
-import { repositorySynthesisText } from "./repository-project";
+import { REPOSITORY_HOMEPAGE_PREFIX, repositoryHomepageTitle, repositoryNarrationTitle, repositorySynthesisText } from "./repository-project";
 
 const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15"];
 
@@ -182,7 +182,7 @@ function compactSentence(text: string, max = 72) {
   return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
 }
 
-function limitNarration(text: string, maxCharacters = 110) {
+export function limitNarration(text: string, maxCharacters = 110) {
   if (text.length <= maxCharacters) return text;
   const chunks = splitArticleIntoSemanticChunks(text, maxCharacters);
   const selected: string[] = [];
@@ -192,7 +192,102 @@ function limitNarration(text: string, maxCharacters = 110) {
     selected.push(chunk);
     length += chunk.length;
   }
-  return selected.join("") || `${text.slice(0, maxCharacters).replace(/[，、：；]+$/u, "")}。`;
+  const limited = selected.join("") || text.slice(0, maxCharacters);
+  return /[，、：；;,]$/u.test(limited)
+    ? `${limited.replace(/[，、：；;,]+$/u, "")}。`
+    : limited;
+}
+
+function normalizedNarrationSentence(value: string) {
+  return value
+    .replace(/[\s\u3000]+/gu, "")
+    .replace(/[。！？!?；;，,：:]+$/gu, "")
+    .toLowerCase();
+}
+
+function removeAdjacentRepeatedSentences(text: string) {
+  const sentences = text.match(/[^。！？!?；;]+[。！？!?；;]?/gu) ?? [text];
+  const result: string[] = [];
+  for (const sentence of sentences) {
+    const normalized = normalizedNarrationSentence(sentence);
+    if (!normalized) continue;
+    const previous = result.at(-1);
+    if (previous && normalized === normalizedNarrationSentence(previous)) continue;
+    result.push(sentence.trim());
+  }
+  return result.join("");
+}
+
+export function cleanNarrationNoise(text: string) {
+  let cleaned = text
+    .replace(/(?:GPT|Wa|Chat|Sol)\s*\.\.\./gi, "")
+    .replace(/\.{3,}|…{1,}/gu, "")
+    .replace(/(?:Chat优化版|Coding热辣滚烫|好你个奥特曼|但事实上)(?:[。！？!?，,；;]?)/gu, "")
+    .replace(/\s*[|｜]\s*/gu, "，")
+    .replace(/\s+/gu, " ")
+    .trim();
+  cleaned = removeAdjacentRepeatedSentences(cleaned);
+  cleaned = cleaned
+    .replace(/[，,：:；;]+([。！？!?])/gu, "$1")
+    .replace(/[，,：:；;]+$/gu, "")
+    .trim();
+  if (!cleaned) return "";
+  return /[。！？!?]$/u.test(cleaned) ? cleaned : `${cleaned}。`;
+}
+
+function removeRepeatedTitle(text: string, title: string) {
+  if (!title) return text;
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(escaped, "giu"), "").replace(/^\s*[。！？!?，,：:]+/u, "").trim();
+}
+
+export function compactProjectNarration(project: VideoProject) {
+  if (!project.narrationSegments?.length) return project;
+  const contentType = project.sources[0] ? contentTypeForItem(project.sources[0]) : "news";
+  const title = project.meta.title;
+  const focusedNews = /首个全国产10万卡AI超集群|Jeff Dean挥别谷歌48小时首秀/u.test(title);
+  const datePattern = /新闻日期：[^。！？!?]+[。！？!?]?/gu;
+  let dateKept = false;
+  const narrationSegments = project.narrationSegments.map((segment) => {
+    const scene = project.scenes[segment.sceneIndex];
+    const maximumCharacters = contentType === "repository"
+      ? scene?.type === "title" ? 72 : scene?.type === "outro" ? 70 : 68
+      : focusedNews ? scene?.type === "title" ? 100 : scene?.type === "outro" ? 100 : 115
+      : scene?.type === "title" ? 72 : scene?.type === "outro" ? 58 : 62;
+    let sourceText = segment.text;
+    const sceneSubhead = scene && "subhead" in scene && typeof scene.subhead === "string" ? scene.subhead : undefined;
+    if (segment.sceneIndex === 0 && sceneSubhead && /新闻日期：[^。]+。/u.test(sourceText)) {
+      const date = sourceText.match(/新闻日期：[^。]+。/u)?.[0] ?? "";
+      const withoutDate = sourceText.replace(date, "").replace(/关键是，[^。]+。?$/u, "").trim();
+      const titleOnly = normalizedNarrationSentence(withoutDate) === normalizedNarrationSentence(title);
+      const opening = titleOnly ? `${withoutDate}${sceneSubhead.replace(/[。！？!?]+$/u, "")}。` : withoutDate;
+      sourceText = `${limitNarration(opening, maximumCharacters - date.length)}${date}`;
+    }
+    sourceText = cleanNarrationNoise(sourceText);
+    if (contentType !== "repository" && segment.sceneIndex > 0) sourceText = removeRepeatedTitle(sourceText, title);
+    if (contentType !== "repository") {
+      const dates = sourceText.match(datePattern) ?? [];
+      if (dates.length > 0) {
+        if (dateKept) sourceText = sourceText.replace(datePattern, "");
+        else dateKept = true;
+      }
+    }
+    const text = limitNarration(sourceText, maximumCharacters);
+    if (text === segment.text) return segment;
+    return {
+      ...segment,
+      text,
+      ttsText: undefined,
+      providerSynthesisText: undefined,
+      providerSynthesisChunks: undefined,
+      pronunciationPlan: undefined,
+    };
+  });
+  return {
+    ...project,
+    narrationSegments,
+    narration: narrationSegments.map((segment) => segment.text).join("\n"),
+  } satisfies VideoProject;
 }
 
 function articleFacts(item: HotItem) {
@@ -454,6 +549,146 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^ChinaTextbook$/i.test(name)) {
+    return {
+      theme: "集中查找和阅读中国小学、初中教材资源",
+      capability: "按年级和学科整理教材文件，让家长、学生、教师和海外华人家庭更容易定位需要的课本",
+      workflow: "先按小学或初中选择年级，再进入数学等学科目录，打开对应上下册文件；使用前核对教材版本、适用地区和更新情况",
+      boundaries: "它是教材资料索引，不替代学校课程和教师指导；不同地区教材版本可能不同，下载、传播和打印前还要核对版权与当地规定",
+      topics: ["教材检索", "年级分类", "学科学习", "海外中文教育", "版本核对", "公益资源"],
+      metrics: [{ label: "主要范围", value: "小学、初中教材" }, { label: "查找方式", value: "年级与学科目录" }],
+      narration: [
+        "开源项目推荐：ChinaTextbook。它集中整理国内中小学教材，让你按年级和学科直接查找需要的课本。",
+        "项目按小学、初中、年级和学科组织教材文件，家长、学生、教师以及海外华人家庭，都能沿着目录找到对应上下册。",
+        "使用时先确认孩子所在年级和教材版本，再进入对应学科查看文件；它更适合查资料、预习和辅助学习，不是完整在线课程。",
+        "不同地区可能使用不同版本，内容更新也不一定同步。正式使用前要核对学校要求，下载、打印和传播时还要遵守版权规定。",
+      ],
+    };
+  }
+  if (/^authentik$/i.test(name)) {
+    return {
+      theme: "给多个内部应用统一管理登录、账号和访问权限",
+      capability: "自建一个现代身份提供方，为不同应用提供单点登录，可接入 SAML、OAuth、OpenID Connect、LDAP 和 RADIUS",
+      workflow: "先用 Docker Compose 在测试环境部署，再接入一个低风险应用验证登录；确认用户、分组和权限规则后，逐步迁移其他系统",
+      boundaries: "身份系统属于关键基础设施，部署前必须设计备份、高可用、管理员恢复和升级方案；配置错误可能让所有接入应用无法登录",
+      topics: ["单点登录", "身份管理", "应用接入", "权限控制", "自托管", "企业安全"],
+      metrics: [{ label: "协议范围", value: "SAML、OIDC、LDAP" }, { label: "部署方式", value: "Docker、Kubernetes" }],
+      narration: [
+        "开源项目推荐：authentik。它把多个应用的登录和权限统一到一个入口，员工不用记住一堆账号密码。",
+        "它可以自建单点登录入口，把账号、分组和访问策略集中管理；员工登录一次，就能按权限进入多个内部应用。",
+        "小团队可以先用 Docker Compose 接一个测试应用；规模更大时再考虑 Kubernetes，并按用户、团队和应用设置访问规则。",
+        "身份服务一旦停机，可能影响所有接入系统。上线前必须准备备份、高可用、管理员恢复和升级回滚方案，并先从低风险应用迁移。",
+      ],
+    };
+  }
+  if (/^openwork$/i.test(name)) {
+    return {
+      theme: "把一套人工智能工作流复用到不同工具、同事和电脑上",
+      capability: "通过统一的 MCP 接口共享技能、插件、连接服务和工作流，让兼容的智能体直接搜索并执行团队已经配置好的能力",
+      workflow: "先在桌面端建立工作区并连接需要的服务，再把 OpenWork MCP 添加到现有智能体；用一个低风险任务验证搜索能力、执行结果和权限",
+      boundaries: "共享工作流会同时放大权限和数据风险；连接邮箱、办公套件或内部服务前，要限制成员、团队、模型供应商和每项能力的访问范围",
+      topics: ["工作流共享", "MCP 接入", "团队协作", "技能复用", "服务连接", "权限管理"],
+      metrics: [{ label: "桌面系统", value: "macOS、Windows、Linux" }, { label: "核心接口", value: "统一 MCP" }],
+      narration: [
+        "开源项目推荐：openwork。它让一套人工智能工作流在不同工具、同事和电脑上直接复用，避免重复配置。",
+        "它把技能、插件、MCP 连接和办公服务放进统一工作区，再通过一个 MCP 接口提供给兼容的智能体使用。",
+        "个人可以先连接一个常用服务并测试搜索和执行；团队则能发布能力、分配成员权限，并统一管理模型和连接配置。",
+        "共享能力也会放大权限风险。接入邮箱、文档和内部系统前，要限制可用成员、执行范围和敏感操作，并保留人工确认与审计。",
+      ],
+    };
+  }
+  if (/^witr$/i.test(name)) {
+    return {
+      theme: "快速查清一个进程、端口、容器或文件到底是谁启动的",
+      capability: "沿着父子进程、命令行、端口占用和容器关系回溯启动链，直接回答为什么它在运行、由谁启动以及如何定位源头",
+      workflow: "先输入进程号、端口号、容器名或文件路径，再查看启动链和命令参数；确认来源后再决定停止服务、修改配置还是修复启动脚本",
+      boundaries: "它适合本机和服务器排障，但结果依赖操作系统权限与可见的进程信息；生产环境执行停止或删除操作前仍要人工确认",
+      topics: ["进程排障", "端口定位", "容器追踪", "启动链", "命令行分析", "服务器维护"],
+      metrics: [{ label: "可追踪对象", value: "进程、端口、容器、文件" }, { label: "核心结果", value: "还原启动链" }],
+      problemPoints: ["遇到异常端口或后台进程时，系统工具往往只告诉你它占用了什么，却不告诉你为什么会启动。", "witr 沿着进程和命令关系回溯到准确的启动链，帮助你找到真正的配置或父进程。", "排障时可以直接从端口、进程、容器或文件反查，减少逐层猜测。"],
+      steps: [
+        { label: "选择入口", detail: "输入进程号、端口号、容器名或文件路径。" },
+        { label: "查看链路", detail: "检查父子进程、命令参数和启动来源。" },
+        { label: "确认原因", detail: "判断是服务管理器、脚本、容器还是用户操作启动。" },
+        { label: "谨慎处理", detail: "确认影响范围后再停止服务或修改启动配置。" },
+      ],
+      narration: [
+        "开源项目推荐：witr。端口被占用、进程莫名启动时，它能直接追溯是谁把它启动起来，少走弯路。",
+        "输入进程、端口、容器或文件，witr 会串起父子进程、命令参数和启动链，先找到源头再处理，还能确认服务管理器与脚本的关系。",
+        "它适合服务器排障和本机调试：先查清链路，再决定改配置、停服务还是修复启动脚本，也适合快速定位异常文件锁。",
+        "它依赖系统权限和可见的进程信息；涉及生产服务时，停止或删除操作仍要人工确认，并先在测试环境验证。",
+      ],
+    };
+  }
+  if (/^swarm-forge$/i.test(name)) {
+    return {
+      theme: "让多个编码智能体在隔离环境里并行处理任务",
+      capability: "把每个智能体放进独立的 tmux 会话和 Git worktree，让它们可以同时改代码、运行测试，再把结果集中检查",
+      workflow: "先准备一个任务清单，为每个任务分配独立 worktree；启动多个智能体并观察会话输出，最后逐个检查 diff、测试和合并冲突",
+      boundaries: "并行不等于结果自动正确；任务之间如果修改同一接口仍会冲突，密钥、生产命令和最终合并必须限制权限并人工复核",
+      topics: ["多智能体协作", "tmux 会话", "Git worktree", "并行编码", "测试检查", "冲突处理"],
+      metrics: [{ label: "隔离方式", value: "独立 worktree" }, { label: "运行方式", value: "tmux 多会话" }],
+      problemPoints: ["让多个编码智能体同时工作时，文件互相覆盖和上下文混乱是最常见的问题。", "swarm-forge 用 tmux 会话和独立 worktree 隔离每个任务，再集中查看结果。", "它适合把互不依赖的修复、测试和资料任务并行推进。"],
+      steps: [
+        { label: "拆分任务", detail: "把目标拆成互不依赖、可以单独验收的小任务。" },
+        { label: "建立隔离", detail: "为每个任务创建独立的 worktree 和 tmux 会话。" },
+        { label: "并行执行", detail: "启动智能体并持续查看日志、改动和测试结果。" },
+        { label: "集中复核", detail: "逐个检查 diff，处理冲突后再合并有效结果。" },
+      ],
+      narration: [
+        "开源项目推荐：swarm-forge。想让多个编码智能体并行干活，又不想互相覆盖文件，可以看它，尤其适合小团队试验。",
+        "它给每个任务分配独立的 tmux 会话和 Git worktree，让智能体各改各的代码，结果再集中检查；一个终端就能切换会话并查看进度。",
+        "适合并行处理修复、测试和资料任务；前提是先拆清边界，再用 diff 和测试筛掉冲突结果。",
+        "并行不会自动保证正确，生产命令、密钥和最终合并仍必须限制权限并人工复核；先用互不依赖的小任务试跑，再逐步扩大。",
+      ],
+    };
+  }
+  if (/^grok2api$/i.test(name)) {
+    return {
+      theme: "把 Grok Web、Grok Build 和 Grok Console 账号池接成统一 API 网关",
+      capability: "用 OpenAI 和 Anthropic 兼容接口对外提供模型调用，同时管理多账号、额度同步、模型路由、故障切换和管理后台",
+      workflow: "先部署网关并设置加密密钥，再连接可用账号池；同步模型和额度后创建客户端密钥，把现有应用的接口地址切到网关并检查路由结果",
+      boundaries: "它依赖上游账号、登录状态、网络和合规授权；账号池、代理、额度和媒体任务会让运维更复杂，不能把网关当成官方服务替代品",
+      topics: ["Grok 账号池", "统一 API", "模型路由", "额度同步", "故障切换", "管理后台"],
+      metrics: [{ label: "接口兼容", value: "OpenAI、Anthropic" }, { label: "上游通道", value: "Build、Web、Console" }],
+      problemPoints: ["同时使用 Grok Web、Build 和 Console 时，账号、额度和接口格式很难统一维护。", "grok2api 把多个上游账号池接成统一 API，并提供路由、额度同步和故障切换。", "已有 OpenAI 或 Anthropic 客户端通常只需调整网关地址和访问密钥。"],
+      steps: [
+        { label: "部署网关", detail: "准备配置文件、数据库和不可替换的加密密钥。" },
+        { label: "连接账号", detail: "按授权方式接入 Build、Web 或 Console 账号池。" },
+        { label: "配置路由", detail: "同步模型与额度，设置模型路线和故障切换规则。" },
+        { label: "接入应用", detail: "创建客户端密钥，改接口地址并检查调用审计。" },
+      ],
+      narration: [
+        "开源项目推荐：grok2api。它把多个 Grok 账号池接成一个可调用的 API 网关，减少应用适配工作。",
+        "它统一管理 Grok Web、Build 和 Console 的账号、额度和模型路线，还能保留管理后台和调用审计；已有兼容客户端通常只需改网关地址。",
+        "团队可以先部署网关、连接账号，再把已有应用的接口地址切过来；故障时还能按规则切换线路，便于集中运维。",
+        "它依赖上游账号和网络环境，账号授权、代理、额度和合规风险都需要自己负责，不能当成官方服务替代品；部署后还要保护客户端密钥和凭据加密密钥。",
+      ],
+    };
+  }
+  if (/^semantica$/i.test(name)) {
+    return {
+      theme: "把分散资料组织成可追溯的上下文图和决策知识",
+      capability: "从文档和结构化数据中建立知识图谱、上下文关系和决策溯源，并可检查冲突、追踪来源和执行面向业务的查询",
+      workflow: "先导入一小批资料，定义实体和关系，再检查生成的上下文图与来源；用一个真实决策问题验证结果，最后扩大数据范围并保留审计链",
+      boundaries: "图谱质量取决于输入资料、实体定义和关系抽取；敏感资料要先做权限隔离，关键决策不能只依赖自动生成的关系或结论",
+      topics: ["知识图谱", "上下文管理", "决策溯源", "冲突检测", "来源审计", "结构化资料"],
+      metrics: [{ label: "核心结构", value: "上下文图" }, { label: "可核对性", value: "来源与决策溯源" }],
+      problemPoints: ["团队资料分散在文档、表格和对话里，普通搜索很难解释结论来自哪里。", "semantica 把资料组织成上下文图和知识关系，并保留决策溯源。", "用户可以围绕一个业务问题查看相关实体、冲突信息和证据来源。"],
+      steps: [
+        { label: "整理资料", detail: "先选一批权限边界清楚、内容稳定的资料。" },
+        { label: "建立关系", detail: "检查实体、关系和来源是否符合业务定义。" },
+        { label: "验证问题", detail: "用一个真实问题追溯答案涉及的证据和冲突。" },
+        { label: "扩大范围", detail: "确认质量后再增加资料，并保留变更审计记录。" },
+      ],
+      narration: [
+        "开源项目推荐：semantica。它解决团队资料很多，却说不清结论来自哪里的难题，适合需要审计的知识工作。",
+        "它把文档和结构化数据组织成上下文图、知识关系和决策溯源，还能帮助发现冲突信息并保留核对入口；每个答案都能回到关联实体和证据。",
+        "适合知识库、研究和业务决策：先导入小批资料，再检查实体关系、证据来源和冲突；先用一个真实问题验证，再扩大资料范围。",
+        "图谱质量取决于资料和关系定义；敏感数据要隔离，关键决策不能只依赖自动抽取结果，仍要保留人工复核。",
+      ],
+    };
+  }
   if (/awesome-systematic-trading|systematic trading|quantitative trading|algorithmic trading/i.test(`${name} ${item.title} ${content}`)) {
     return {
       theme: "整理系统化交易研究与实践资料的量化投资资源清单",
@@ -786,6 +1021,75 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       topics: topics.length ? topics : ["三维渲染", "人工智能模型", "数据库", "网络协议栈", "操作系统", "编程语言"],
     };
   }
+  if (/prime-agent|self-improving RLM|recursive language model|continual harness|persistent REPL/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "让长时间运行的代码和研究任务保持上下文、记忆与执行进度",
+      capability: "用持久 REPL、递归子智能体和持续 harness 反复执行任务，并把证据、记忆和可复用技能保留下来",
+      workflow: "先给出一个明确的代码或研究目标，再让主智能体拆分子任务；每轮检查 REPL 输出和证据，确认结果后再继续迭代或交接",
+      boundaries: "它适合需要连续运行和多轮修正的复杂任务，不适合只问一句话的即时问答；长任务仍需要限制工具权限、成本和最终交付权限",
+      topics: ["长任务执行", "持久 REPL", "递归子智能体", "持续改进", "记忆与技能", "证据核对"],
+      metrics: [{ label: "核心机制", value: "Recursive RLM" }, { label: "任务类型", value: "长时间代码任务" }],
+      narration: [
+        "开源项目推荐：prime-agent。它解决长时间代码任务容易丢上下文、重复劳动的问题。",
+        "它用持久 REPL、递归子智能体和持续 harness 保留任务状态，并根据测试和证据继续改进。",
+        "最短路径是先给一个可检查的目标，再拆分子任务；每轮核对文件改动、测试结果和 REPL 输出。",
+        "它适合长时间开发和研究，不适合只问一句话的即时问答；工具权限、成本和最终交付仍需人工控制。",
+      ],
+      problemPoints: ["复杂代码任务经常因为上下文丢失和重复劳动中断。", "Prime Agent 用持久 REPL 和递归子智能体保持任务状态，并根据证据继续改进。", "它更适合长时间开发、研究和需要多轮验证的工作。"],
+      steps: [
+        { label: "定义目标", detail: "先给出一个边界清晰、可以检查结果的代码或研究目标。" },
+        { label: "拆分任务", detail: "让主智能体把目标拆给递归子智能体，并保留每轮输出。" },
+        { label: "检查证据", detail: "核对测试、文件改动和 REPL 结果，不接受没有证据的结论。" },
+        { label: "继续迭代", detail: "把有效经验沉淀为记忆或技能，再推进下一轮工作。" },
+      ],
+    };
+  }
+  if (/mirofish|multi-agent prediction|parallel digital world|swarm intelligence|independent personalities/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "用多智能体模拟观察新闻、政策或市场信号可能引发的连锁反应",
+      capability: "把一条种子信息扩展成具有独立人格、长期记忆和行为逻辑的数字世界，让多个智能体互动后呈现潜在结果",
+      workflow: "先输入新闻、政策草案或金融信号，再设定参与者和场景；运行多智能体互动，观察关键事件如何演化，并把结果当作假设进行复盘",
+      boundaries: "它适合做舆情推演、策略假设和研究辅助，不是现实世界的预测保证；模拟设定、数据质量和模型偏差都必须单独核查",
+      topics: ["多智能体模拟", "新闻推演", "政策分析", "群体互动", "长期记忆", "结果复盘"],
+      metrics: [{ label: "模拟方式", value: "平行数字世界" }, { label: "输入信号", value: "新闻、政策、市场" }],
+      narration: [
+        "开源项目推荐：MiroFish。它解决单个模型只能给静态预测、看不到多方互动的问题。",
+        "它把新闻、政策或市场信号变成有独立人格和记忆的多智能体系统，再观察它们如何互动。",
+        "使用时先输入一条种子信息，设定参与者和规则，再记录关键节点、不同发展路径和对比结果。",
+        "它适合研究人员做舆情推演和策略假设，不是现实预测保证；模拟设定、数据质量和模型偏差都要复核。",
+      ],
+      problemPoints: ["单个模型通常只能给出静态判断，难以展示多方互动后的变化。", "MiroFish 从一条新闻或政策信号出发，构造多个有独立行为逻辑的智能体。", "用户可以观察不同参与者互动后的可能路径，再比较自己的策略假设。"],
+      steps: [
+        { label: "准备信号", detail: "输入一条新闻、政策草案或市场信息，明确想观察的问题。" },
+        { label: "设定角色", detail: "检查参与者、人格、记忆和行为规则是否符合研究假设。" },
+        { label: "运行模拟", detail: "让多个智能体互动，记录关键节点和分叉结果。" },
+        { label: "复盘结论", detail: "把模拟结果当作假设，结合真实数据验证，不把它当成确定预测。" },
+      ],
+    };
+  }
+  if (/autogpt|AI agents that finish the work|visual builder|agent marketplace|on demand.*schedule.*trigger/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把需要反复跟进的目标交给可以执行完整流程的智能体",
+      capability: "用户用自然语言描述结果，AutoGPT 就能构建、运行并报告一个包含工具、步骤和触发条件的任务流程",
+      workflow: "先写清楚目标、输入和验收结果，再选择现成智能体或用可视化构建器配置步骤；运行后检查过程报告，必要时安排定时或事件触发",
+      boundaries: "它适合自动化研究、内容处理和重复业务流程，不适合未经审核就执行付款、删除数据或对外发送；敏感操作必须保留权限和人工确认",
+      topics: ["目标驱动执行", "可视化构建", "工具调用", "定时触发", "过程报告", "权限审核"],
+      metrics: [{ label: "运行方式", value: "按需、定时、触发" }, { label: "核心结果", value: "完成并报告任务" }],
+      narration: [
+        "开源项目推荐：AutoGPT。它解决复杂工作需要人工拆步骤、反复跟进和汇总的问题。",
+        "用户直接描述目标，系统负责调用工具、构建并运行完整流程，最后返回过程和结果报告。",
+        "最短路径是写清输入、输出和验收标准，再选择工具和触发方式，先用小任务检查执行过程。",
+        "它适合研究、内容处理和重复业务；付款、删数据和对外发送等高风险动作必须保留人工审核。",
+      ],
+      problemPoints: ["复杂工作如果全靠人工拆步骤、跟进和汇总，容易漏掉中间环节。", "AutoGPT 让用户直接描述结果，再由智能体执行流程并返回报告。", "它适合把重复任务变成可复用流程，但关键动作仍要经过权限和人工审核。"],
+      steps: [
+        { label: "描述结果", detail: "写清楚目标、输入、输出格式和什么算完成。" },
+        { label: "配置流程", detail: "选择智能体或用可视化工具安排步骤、工具和触发方式。" },
+        { label: "小范围运行", detail: "先用无敏感数据试跑，查看过程记录和最终报告。" },
+        { label: "设置审核", detail: "对外发送、写入生产系统和高风险操作保留人工确认。" },
+      ],
+    };
+  }
   if (/coding agent|code cli|read and edit code|run shell commands/i.test(`${item.title} ${content}`)) {
     return {
       theme: "围绕终端代码任务工作的智能编程工具",
@@ -813,11 +1117,11 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: {
-        type: "title", duration: 10, kicker: "开源项目推荐", headline: `开源项目推荐：${name}`,
-        subhead: `用途：${compactSentence(profile.capability, 52)}`,
+        type: "title", duration: 10, kicker: REPOSITORY_HOMEPAGE_PREFIX, headline: repositoryHomepageTitle(name),
+        subhead: `用途：${compactSentence(profile.capability, 44)}；适用场景：${profile.topics.slice(0, 2).join("、")}`,
         sources: [repositoryStars(item), `适用：${compactSentence(promotion.audience, 18)}`, `场景：${profile.topics.slice(0, 2).join("、")}`],
       },
-      narration: narration?.[0] ?? `开源项目推荐：${name}。它直接解决${profile.theme}。`,
+      narration: narration?.[0] ?? `${repositoryNarrationTitle(name)}。它直接解决${profile.theme}。`,
     },
     {
       scene: {
@@ -882,6 +1186,9 @@ export function createStoryProject(
   if (/tmtpost\.com\/8091864/i.test(clean.url)) return createAiIndustrialDemandProject(clean, options);
   if (/ithome\.com\/0\/985\/886/i.test(clean.url)) return createShieldstralProject(clean, options);
   if (/qbitai\.com\/2026\/08\/465215/i.test(clean.url) || /Qwen3\.8/i.test(joinedContent)) return createQwen38Project(clean, options);
+  if (/ithome\.com\/0\/986\/936/i.test(clean.url)) return createNeonRetrievalModelProject(clean, options);
+  if (/qbitai\.com\/2026\/08\/467879/i.test(clean.url)) return createChatGptFreeUpgradeProject(clean, options);
+  if (/qbitai\.com\/2026\/08\/467877/i.test(clean.url)) return createWan30DocumentVideoProject(clean, options);
   if (/ithome\.com\/0\/985\/044/i.test(clean.url) || /SenseNova\s*U1\.5-Lite-Preview/i.test(joinedContent)) return createSenseNovaU15Project(clean, options);
   if (/zhidx\.com\/p\/582336/i.test(clean.url) || /MAGI-2 Preview/i.test(`${clean.title} ${clean.summary ?? ""}`)) return createSandMagi2Project(clean, options);
   if (/不可取代|薪资奴役|高自主性|不可受雇/i.test(joinedContent)) return createAiCareerIndependenceProject(clean, options);
@@ -891,6 +1198,8 @@ export function createStoryProject(
   if (/第\s*23\s*届\s*ChinaJoy|第\s*二十三\s*届\s*ChinaJoy|14\s*万平方米|火龙漫剧/i.test(joinedContent)) return createChinaJoyAiProject(clean, options);
   if (/Seedance\s*2\.5/i.test(`${clean.title} ${clean.summary ?? ""}`)) return createSeedance25Project(clean, options);
   if (/DeepSeek-V4-Flash/i.test(joinedContent) && /V4-Pro/i.test(joinedContent)) return createDeepSeekV4FlashProject(clean, options);
+  if (/baijiahao\.baidu\.com\/s\?id=1873013937251230205/i.test(clean.url) || /首个全国产10万卡AI超集群/i.test(joinedContent)) return createNationalComputeClusterProject(clean, options);
+  if (/tmtpost\.com\/8096544/i.test(clean.url) || /Jeff Dean挥别谷歌48小时首秀/i.test(joinedContent)) return createJeffDeanNextDecadeProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
   }
@@ -1185,8 +1494,13 @@ function createCuratedNewsProject(
   item: HotItem,
   sections: Array<{ scene: VideoScene; narration: string }>,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+  duration?: { maxSeconds?: number; minSeconds?: number },
 ): VideoProject {
-  const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 80));
+  const scenes = applySectionDurations(
+    sections,
+    duration?.maxSeconds ?? Number(process.env.STORY_MAX_SECONDS ?? 80),
+    duration?.minSeconds ?? 55,
+  );
   const project = {
     meta: {
       title: speechFriendlyTitle(item.title),
@@ -1208,6 +1522,56 @@ function createCuratedNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createNationalComputeClusterProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "算力基础设施", headline: shortTitle(title, 42), subhead: "十万卡级国产超集群投用，算力开始跨区域统一调度", sources: ["十万卡级", "国产算力", "全国联网"] },
+      narration: title + "。关键不是卡数，而是国产算力开始按全国网络统一调度。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "从集群规模到实际任务", source: "报道事实", title: "科学计算与智能计算共用底座", summary: "首个全国产十万卡人工智能超集群正式投用，支持二十六个领域的三百多种计算任务。", metrics: [{ label: "集群规模", value: "十万卡级" }, { label: "覆盖领域", value: "26 个" }, { label: "计算任务", value: "300 多种" }], points: ["科学计算和智能计算在同一套算力底座上协同。", "目前覆盖二十六个领域。", "已经支持三百多种计算任务。"] },
+      narration: "这套十万卡集群把科学计算和智能计算放在同一底座，已经支持二十六个领域、三百多种计算任务。",
+    },
+    {
+      scene: { type: "flow", duration: 15, headline: "算力扩容正在改变研发周期", steps: [{ label: "训练提速", detail: "超大模型训练时间从约一年压缩到约半年。" }, { label: "统一匹配", detail: "不同地区的空闲算力按任务需求调度。" }, { label: "跨区域连接", detail: "算力资源不再局限于单个园区。" }] },
+      narration: "最直接的变化是训练提速：超大模型训练时间有望从约一年压缩到约半年；异地算力也能统一匹配。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "全国算力网从扩容走向协同", bullets: ["超过六成算力已纳入统一监测。", "闲置资源需要被精准匹配。", "利用率和产业效果比峰值更重要。"] },
+      narration: "真正要看的不是峰值，而是利用率。超过六成已纳入统一监测，能否稳定服务产业，才决定这张网的价值。",
+    },
+  ], options, { maxSeconds: 54, minSeconds: 46 });
+}
+
+function createJeffDeanNextDecadeProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "AI for Science", headline: shortTitle(title, 42), subhead: "下一个十年：让 AI 把科学发现变成可重复、可并行的实验循环", sources: ["Discovery Loop", "AI for Science", "科学自动化"] },
+      narration: title + "。他的答案是：AI不只回答问题，还要自动推进科学实验。",
+    },
+    {
+      scene: { type: "flow", duration: 16, headline: "Discovery Loop 自动推进实验", steps: [{ label: "提出假设", detail: "把科学问题转成可检验的方向。" }, { label: "设计与执行", detail: "调用工具完成实验。" }, { label: "评估反馈", detail: "根据结果调整下一轮。" }, { label: "并行探索", detail: "淘汰低价值方向。" }] },
+      narration: "具体做法是让AI提出假设、设计并执行实验，再根据结果调整下一轮，同时并行淘汰低价值方向。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 16, headline: "目标是把科学研发提速一个数量级", source: "公开对谈", title: "从机器学习扩展到真实科学", summary: "自动实验闭环先用于机器学习研发，再扩展到芯片、药物和清洁能源。", metrics: [{ label: "目标", value: "约 10 倍提速" }, { label: "起点", value: "机器学习研发" }, { label: "扩展", value: "真实科学实验" }], points: ["芯片和硬件设计。", "药物发现。", "清洁能源研究。"] },
+      narration: "这套闭环先用于机器学习研发，随后扩展到芯片设计、药物发现和清洁能源，目标是把实验速度提升一个数量级。",
+    },
+    {
+      scene: { type: "outro", duration: 15, headline: "小团队也能追逐前沿科学", bullets: ["云计算提供可租用的大规模算力。", "小团队只需聚焦一个科学目标。", "安全治理必须由人负责，最终结果需要人工检查。"] },
+      narration: "云计算让小团队也能租用大规模算力，团队只需聚焦一个科学目标。但安全治理必须由人负责，最终结果也需要人工检查。",
+    },
+  ], options, { maxSeconds: 56, minSeconds: 48 });
 }
 
 function createClaudeSecurityIncidentProject(
@@ -1406,6 +1770,81 @@ function createLoopGraphEngineeringProject(
     {
       scene: { type: "outro", duration: 16, headline: "只在任务确实可拆时使用 Graph", bullets: ["适合可拆分、可独立验证的复杂任务。", "简单或强顺序任务优先保留 Loop。", "从最小图开始，持续观察状态、成本和恢复效果。"] },
       narration: "选择标准应该回到任务本身。能拆分、能独立验证、需要并行或故障恢复时，Graph 才有价值；简单任务和强顺序任务，Loop 往往更直接。工程上应从能可靠完成任务的最小图开始，持续观察路由、状态、成本和恢复效果。",
+    },
+  ], options);
+}
+
+function createNeonRetrievalModelProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 9, kicker: "开源检索模型", headline: title, subhead: "用途：让智能体更便宜地搜索企业文档；适合知识库和检索任务", sources: ["4B 参数", "文档搜索", "成本约为 1/100"] },
+      narration: `${title}。这款四 B 模型专门让智能体更便宜地搜索文档，新闻日期：2026年8月7日。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "它解决的是智能体搜索太贵", source: "公开信息", title: "从找到文档到找到正确上下文", summary: "模型负责判断该搜什么，文档库负责提供检索位置。", metrics: [{ label: "模型规模", value: "4B" }, { label: "任务", value: "文档搜索" }], points: ["把复杂问题拆成多个查询。", "根据搜索结果决定下一步。", "适合企业知识库和研究型 Agent。"] },
+      narration: "它解决的是智能体搜索太贵：模型会把复杂问题拆成小查询，根据结果决定下一步，再找到能支撑答案的文档和段落。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 10, headline: "公开验证中，搜索质量超过对照模型", bars: [{ label: "后训练模型", value: 1.447, detail: "公开验证平均分 1.447。", color: "#18b7a5" }, { label: "GPT-5.6 Sol", value: 1.369, detail: "对照结果为 1.369。", color: "#7c6cff" }, { label: "GPT-5.4", value: 1.377, detail: "另一组对照为 1.377。", color: "#facc15" }] },
+      narration: "在公开验证中，这款模型平均分一点四四七，高于 GPT 五点六 Sol 的一点三六九和 GPT 五点四的一点三七七；评测只针对文档搜索，不能代表所有任务。",
+    },
+    {
+      scene: { type: "outro", duration: 9, headline: "适合知识库，不是通用模型替代品", bullets: ["先用自己的文档验证召回和引用。", "重点观察延迟、成本和答案准确率。", "复杂任务仍要保留人工复核。"] },
+      narration: "它更适合企业知识库和检索型 Agent。落地前先用自己的文档验证召回、引用和延迟，别把一次专项评测直接当成通用能力证明。",
+    },
+  ], options);
+}
+
+function createChatGptFreeUpgradeProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 9, kicker: "产品更新", headline: title, subhead: "免费用户可使用新版聊天模型，但图片和文件额度仍有限", sources: ["免费版", "聊天模式", "功能分批推送"] },
+      narration: `${title}。免费用户现在可以使用新版聊天模型，聊天次数限制取消，但图片和文件额度仍然保留；新闻日期：2026年8月7日。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 11, headline: "变化首先发生在免费聊天入口", source: "产品信息", title: "默认模型与聊天额度调整", summary: "免费用户获得新版模型的聊天访问，功能会在一周内陆续推送。", metrics: [{ label: "覆盖对象", value: "免费用户" }, { label: "聊天额度", value: "取消次数限制" }, { label: "推送方式", value: "分批开放" }], points: ["默认模型切换到新版。", "日常问答不再受原有次数限制。", "不同账号的到账时间可能不同。"] },
+      narration: "变化首先发生在免费聊天入口：默认模型切换到新版，日常问答不再受原有次数限制，但功能会分批推送，不同账号的到账时间可能不同。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 10, headline: "付费用户得到的是更稳定的回答风格", source: "模型更新说明", title: "回答更聚焦，复杂任务更完整", summary: "新版会根据问题调整回答详细程度，减少格式堆砌和无效附和。", metrics: [{ label: "简单问题", value: "直接回答" }, { label: "复杂任务", value: "补充上下文" }, { label: "重点", value: "事实与质量" }], points: ["快速问题优先给结论。", "规划、研究和写作保留必要上下文。", "回答不再为了显得完整而堆格式。"] },
+      narration: "新版的核心改进不是把每次回答写得更长，而是按问题调整详细程度：简单问题直接给结论，规划、研究和写作保留必要上下文，减少格式堆砌和无效附和。",
+    },
+    {
+      scene: { type: "outro", duration: 8, headline: "免费不等于所有功能无限", bullets: ["聊天额度放开。", "图片生成和文件上传仍有限制。", "复杂任务仍要看实际稳定性。"] },
+      narration: "结论很简单：免费聊天更宽松了，但图片生成、文件上传等功能仍有限制。它适合日常问答和轻量研究，重要结论仍要自己核对。",
+    },
+  ], options);
+}
+
+function createWan30DocumentVideoProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 9, kicker: "视频生成模型", headline: title, subhead: "用途：把文档和演示材料变成带叙事的完整视频", sources: ["文档输入", "完整故事", "公测版本"] },
+      narration: `${title}。它把文档和演示材料直接变成完整视频，新闻日期：2026年8月7日。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 11, headline: "输入不再局限于提示词", source: "产品信息", title: "文档可以直接进入生成流程", summary: "支持 doc、xls、ppt、pdf 和 md 等常见格式。", metrics: [{ label: "输入格式", value: "DOC、XLS、PPT" }, { label: "补充格式", value: "PDF、MD" }, { label: "目标", value: "完整叙事" }], points: ["先读取文档结构和要点。", "再把内容组织成镜头和段落。", "适合课程、汇报和产品说明。"] },
+      narration: "它的关键变化是输入方式：文档、表格、演示稿、PDF 和 Markdown 都能直接进入生成流程，系统先读取结构，再组织镜头和旁白，适合课程、汇报和产品说明。",
+    },
+    {
+      scene: { type: "flow", duration: 10, headline: "从单个镜头走向连续故事", steps: [{ label: "读取", detail: "提取文档中的结构和重点。" }, { label: "规划", detail: "把重点安排成连续段落。" }, { label: "生成", detail: "保持人物和画面逻辑。" }, { label: "调整", detail: "按提示修改时长和节奏。" }] },
+      narration: "生成流程会先读取内容，再规划段落和镜头，最后保持人物与画面逻辑。智能时长功能还能根据提示推荐更合适的片段长度，减少反复试错。",
+    },
+    {
+      scene: { type: "outro", duration: 8, headline: "公测阶段先验证内容一致性", bullets: ["适合文档转视频和快速演示。", "复杂材料仍要检查事实和画面。", "人物、文字和节奏需要逐段复核。"] },
+      narration: "它更适合把长文档快速变成可看的初稿。公测阶段不要只看画面是否清晰，还要逐段检查事实、文字、人物一致性和旁白节奏。",
     },
   ], options);
 }

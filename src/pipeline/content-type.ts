@@ -1,6 +1,12 @@
 import type { ContentType, HotItem } from "./types";
 
-const knownNewsUrlPatterns = [/ithome\.com\//i, /36kr\.com\/p\//i, /qbitai\.com\/\d{4}\/\d{2}\//i];
+const knownNewsUrlPatterns = [
+  /ithome\.com\//i,
+  /36kr\.com\/p\//i,
+  /qbitai\.com\/\d{4}\/\d{2}\//i,
+  /baijiahao\.baidu\.com\/s/i,
+  /tmtpost\.com\/8096544(?:\.html)?/i,
+];
 
 const technicalArticleUrlPatterns = [
   /cloud\.tencent\.com\/developer\/article\//i,

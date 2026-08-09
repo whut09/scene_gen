@@ -10,6 +10,8 @@ test("developer article URLs are classified as technical articles", () => {
 
 test("ordinary reports remain news", () => {
   assert.equal(classifyWebpageContent("https://example.com/news/launch", "Company launches product", "The company announced a product today."), "news");
+  assert.equal(classifyWebpageContent("https://baijiahao.baidu.com/s?id=1873013937251230205", "首个十万卡集群投用", "算力网络开始运行。"), "news");
+  assert.equal(classifyWebpageContent("https://www.tmtpost.com/8096544.html", "公开对谈", "介绍未来趋势。"), "news");
 });
 
 test("webpage extraction survives malformed inline styles", () => {

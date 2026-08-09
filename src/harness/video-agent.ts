@@ -4,6 +4,8 @@ import type { QualityEvaluation, QualityIssue } from "./quality";
 import type { StoryManifestItem } from "../pipeline/story-manifest";
 import { readStoryManifest } from "../pipeline/story-manifest";
 import type { VideoProject } from "../pipeline/types";
+import { compactProjectNarration } from "../pipeline/story";
+import { videoProjectSchema } from "../pipeline/schemas";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJsonAtomic } from "../pipeline/utils";
 import { RunJournalStore } from "./run-journal";
 import { runStage } from "./stage-runner";
@@ -249,7 +251,8 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
           task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: revisionSceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue) => `${issue.message}\nevidence=${JSON.stringify(issue.evidence)}`), ...gate.value.evaluation.revisionNotes]), promptStrategy: draftStrategy?.promptStrategy, providerStrategy: draftStrategy?.providerStrategy, resultPath: revisionResultPath, signal: stageSignal }),
           describe: () => ({ outputs: { projectPath: state.story!.projectPath }, suggestedAction: "revise-scenes" }),
         });
-        state.project = revision.value.project;
+        state.project = compactProjectNarration(revision.value.project);
+        await writeJsonAtomic(state.story!.projectPath, videoProjectSchema.parse(state.project));
         const audit = createLoopAudit({ iteration, stage: "draft", before: beforeRevision, after: state.project, evaluation: gate.value.evaluation, durationMs: revision.result.durationMs, usage: revision.value.usage });
         current.audits = [...(current.audits ?? []), audit];
         await persistLoopAudit(journal, runDir, audit);

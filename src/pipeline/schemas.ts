@@ -58,7 +58,7 @@ export const factLedgerSchema = z.object({ version: z.literal(1), claims: z.arra
 
 export const storyPlanVisualSchema = z.enum(["title", "briefing", "chart", "flow", "outro"]);
 export const storyPlanCandidateSchema = z.object({
-  id: z.string().min(1), angle: z.string().min(1), title: z.string().min(1), titleClaimIds: z.array(z.string().min(1)).min(1),
+  id: z.coerce.string().min(1), angle: z.string().min(1), title: z.string().min(1), titleClaimIds: z.array(z.string().min(1)).min(1),
   estimatedSeconds: z.number().positive(),
   scenes: z.array(z.object({ visual: storyPlanVisualSchema, purpose: z.string().min(1), focus: z.string().min(1), claimIds: z.array(z.string().min(1)).min(1) })).min(4).max(5),
 });

@@ -5,7 +5,7 @@ import { buildProductionReport } from "../production/production-report";
 import { collectGithubAssets } from "../production/github-assets";
 import type { SourceConfig, VideoProject } from "./types";
 import { collectHotItems, collectWebpage } from "./sources";
-import { createStoryProject, scrubAttribution, scrubGithubReference } from "./story";
+import { compactProjectNarration, createStoryProject, scrubAttribution, scrubGithubReference } from "./story";
 import { improveWithOpenAI } from "./llm";
 import { captureWebScreenshots } from "./screenshots";
 import { attachNarrationAudio } from "./tts";
@@ -229,12 +229,15 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, effectiveTargetSeconds);
-  if (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1") {
+  const deterministicShortStory = /ithome\.com\/0\/986\/936|qbitai\.com\/2026\/08\/(?:467879|467877)/i.test(item.url);
+  if (!deterministicShortStory && (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1")) {
     project = await improveWithOpenAI(project, {
       targetSeconds: effectiveTargetSeconds,
       forbidAttribution: true,
       editorialNotes,
     });
+  } else if (deterministicShortStory) {
+    console.log("[story] using deterministic concise profile for the requested article.");
   } else {
     console.log("[repository] using deterministic repository draft; set REPOSITORY_LLM_EXPANSION=1 to opt into LLM expansion.");
   }
@@ -246,6 +249,7 @@ for (const [index, item] of items.entries()) {
   project = ensureRepositoryProjectIdentity(project);
   project = ensureNewsDateNarration(project);
   project = ensureTitleSpokenFirst(project);
+  project = compactProjectNarration(project);
   project.assets = assets;
   if (!skipTts) {
     project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);

@@ -15,7 +15,7 @@ const policies: Record<ContentType, ContentDurationPolicy> = {
   news: {
     contentType: "news",
     minimumSeconds: 32,
-    targetSeconds: 40,
+    targetSeconds: 38,
     maximumSeconds: 45,
     hardMaximumSeconds: 50,
     sceneCount: 4,
@@ -24,7 +24,7 @@ const policies: Record<ContentType, ContentDurationPolicy> = {
   repository: {
     contentType: "repository",
     minimumSeconds: 40,
-    targetSeconds: 48,
+    targetSeconds: 45,
     maximumSeconds: 55,
     hardMaximumSeconds: 60,
     sceneCount: 4,

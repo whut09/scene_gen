@@ -1,6 +1,7 @@
 import type { VideoProject, VideoScene } from "./types";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion } from "./story";
 import { contentDurationPolicy } from "./content-strategy";
+import { repositoryHomepageTitle, repositoryNarrationTitle } from "./repository-project";
 
 export interface SynthesisReadinessIssue {
   code: string;
@@ -85,13 +86,13 @@ export function projectSynthesisReadinessIssues(project: VideoProject, targetSec
   });
 
   const firstScene = project.scenes[0];
-  if (firstScene?.type !== "title" || firstScene.headline !== `开源项目推荐：${repository}`) {
+  if (firstScene?.type !== "title" || firstScene.headline !== repositoryHomepageTitle(repository)) {
     issues.push({ code: "repository_recommendation_missing", message: "The first repository scene must show the canonical recommendation banner." });
   }
   if (project.meta.title !== repository) {
     issues.push({ code: "repository_name_not_canonical", message: "Repository video metadata must keep the original project name." });
   }
-  if (!compactText(segments[0]?.text ?? "").startsWith(compactText(`开源项目推荐：${repository}`))) {
+  if (!compactText(segments[0]?.text ?? "").startsWith(compactText(repositoryNarrationTitle(repository)))) {
     issues.push({ code: "repository_name_not_spoken_first", sceneIndex: 0, message: "The first narration must begin with the canonical recommendation title and original repository name." });
   }
 

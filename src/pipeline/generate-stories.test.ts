@@ -40,7 +40,7 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
       type: "title",
       duration: 10,
       kicker: "TEST",
-      headline: `开源项目推荐：${projectName}`,
+      headline: `今日开源热点趋势项目推荐：${projectName}`,
       subhead: "Cache fixture",
       sources: [repo],
     }],

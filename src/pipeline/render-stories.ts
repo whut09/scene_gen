@@ -39,8 +39,8 @@ try {
     const project = videoProjectSchema.parse(await readJson<unknown>(story.projectPath)) as VideoProject;
     const audioGate = await evaluateAudio(project, project.meta.durationSeconds, controller.signal);
     if (!audioGate.passed) {
-      const issues = audioGate.issues
-        .filter((issue) => issue.severity === "error")
+      const blockingIssues = audioGate.issues.filter((issue) => issue.severity === "error");
+      const issues = (blockingIssues.length > 0 ? blockingIssues : audioGate.issues)
         .map((issue) => `${issue.code}${issue.sceneIndex === undefined ? "" : `@scene-${issue.sceneIndex + 1}`}`)
         .join(", ");
       throw new Error(`Audio gate blocked rendering for ${project.meta.title}: ${issues || "unknown audio failure"}.`);

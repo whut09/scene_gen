@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { projectSynthesisReadinessIssues } from "./synthesis-readiness";
-import { createStoryProject, scrubAttribution, splitArticleIntoSemanticChunks } from "./story";
+import { cleanNarrationNoise, compactProjectNarration, createStoryProject, scrubAttribution, splitArticleIntoSemanticChunks } from "./story";
 import type { HotItem } from "./types";
 import { containsForbiddenGithubReference } from "./story";
 import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
@@ -32,6 +32,47 @@ test("general news fallback creates five grounded scenes", () => {
   assert.equal(project.meta.title.includes("AI"), true);
   assert.equal(project.narrationSegments?.some((segment) => segment.ttsText?.includes("AI")), true);
   assert.equal(project.narrationSegments?.[0].ttsText?.includes("这条新闻讲的是"), false);
+});
+
+test("national compute cluster news keeps deployment, workload and network implications", () => {
+  const project = createStoryProject({
+    id: "compute-cluster", kind: "webpage", contentType: "news",
+    title: "视频丨首个全国产10万卡AI超集群投用 全国算力一张网加速成形",
+    url: "https://baijiahao.baidu.com/s?id=1873013937251230205", source: "核心事实",
+    summary: "首个全国产10万卡人工智能超集群正式投用。",
+    content: "峰值能力相当于全人类持续计算200年，支持26个领域300多种任务。万亿级模型训练从一年缩短到半年。智能算力同比增长177%，超过六成算力纳入统一监测。",
+    publishedAt: "2026年8月9日", score: 1, tags: [],
+  });
+
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /二十六个领域、三百多种计算任务/);
+  assert.match(project.narration, /一年压缩到约半年/);
+  assert.match(project.narration, /超过六成已纳入统一监测/);
+  assert.match(project.narration, /统一调度/);
+  assert.doesNotMatch(project.narration, /记者从|工作人员告诉/);
+  assert.ok(project.narrationSegments!.every((segment) => segment.text.length <= 65));
+});
+
+test("Jeff Dean news explains the next decade through an automated science loop", () => {
+  const project = createStoryProject({
+    id: "jeff-dean", kind: "webpage", contentType: "news",
+    title: "Jeff Dean挥别谷歌48小时首秀：我眼中AI的下一个十年",
+    url: "https://www.tmtpost.com/8096544.html", source: "核心事实",
+    summary: "Jeff Dean 首次完整阐述 Discovery Loop。",
+    content: "Discovery Loop 把提出假设、设计实验、执行、评估和反馈串成闭环，并行运行实验，再扩展到硬件设计、药物发现和清洁能源。",
+    publishedAt: "2026年8月9日", score: 1, tags: [],
+  });
+
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /提出假设、设计并执行实验/);
+  assert.match(project.narration, /根据结果调整下一轮/);
+  assert.match(project.narration, /芯片设计、药物发现和清洁能源/);
+  assert.match(project.narration, /实验速度提升一个数量级/);
+  assert.match(project.narration, /小团队也能租用大规模算力/);
+  assert.match(project.narration, /安全治理必须由人负责/);
+  assert.match(project.narration, /最终结果也需要人工检查/);
+  assert.doesNotMatch(project.narration, /峰会|主办|协办|众神云集/);
+  assert.ok(project.narrationSegments!.every((segment) => segment.text.length <= 65));
 });
 
 test("semantic article chunks never end with a dangling conjunction", () => {
@@ -211,7 +252,7 @@ test("repository fallback produces a complete four-scene short project without p
   assert.equal(project.scenes.length, 4);
   assert.equal(project.narrationSegments?.length, 4);
   assert.equal(project.scenes[0].type, "title");
-  assert.equal(project.scenes[0].headline, "开源项目推荐：build-your-own-x");
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：build-your-own-x");
   assert.equal(project.narrationSegments?.[0].text.startsWith("开源项目推荐：build-your-own-x"), true);
   assert.equal(project.narrationSegments?.[0].ttsText?.startsWith("开源项目推荐：Build Your Own X"), true);
   assert.ok(project.narration.replace(/\s/g, "").length >= 240);
@@ -232,6 +273,23 @@ test("repository title screen displays the captured star count", () => {
     assert.ok(project.scenes[0].sources.includes("48,666 Stars"));
     assert.ok(project.scenes[0].sources.some((value) => value.startsWith("适用：")));
     assert.ok(project.scenes[0].sources.some((value) => value.startsWith("场景：")));
+  }
+});
+
+test("featured repositories reveal their concrete use immediately after the spoken project title", () => {
+  const fixtures = [
+    { repo: "TapXWorld/ChinaTextbook", name: "ChinaTextbook", content: "Chinese primary and middle school textbooks grouped by grade and subject.", expected: /直接查找需要的课本/ },
+    { repo: "goauthentik/authentik", name: "authentik", content: "Identity provider with SSO, SAML, OIDC and LDAP.", expected: /登录和权限统一到一个入口/ },
+    { repo: "different-ai/openwork", name: "openwork", content: "Shared AI workflows and MCP services for teams.", expected: /工作流.*直接复用/ },
+  ];
+
+  for (const fixture of fixtures) {
+    const project = createStoryProject({
+      id: fixture.name, kind: "github", contentType: "repository", title: fixture.name,
+      url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content,
+      score: 1, tags: [], repo: fixture.repo, metrics: { stars: 100 },
+    });
+    assert.match(project.narrationSegments?.[0]?.text ?? "", fixture.expected);
   }
 });
 
@@ -373,7 +431,7 @@ test("Kaneo repository draft explains simple self-hosted project management", ()
   });
 
   assert.equal(project.meta.title, "kaneo");
-  assert.equal(project.scenes[0].headline, "开源项目推荐：kaneo");
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：kaneo");
   assert.match(project.narrationSegments![1].text, /任务、进度和负责人/);
   assert.match(project.narration, /安装 Docker.*备份.*访问控制/s);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
@@ -385,7 +443,7 @@ test("copilot-sdk repository draft explains embedded coding agents", () => {
   });
 
   assert.equal(project.meta.title, "copilot-sdk");
-  assert.equal(project.scenes[0].headline, "开源项目推荐：copilot-sdk");
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：copilot-sdk");
   assert.match(project.narrationSegments![1].text, /任务规划、工具调用和文件修改/);
   assert.match(project.narration, /项目语言安装.*限制目录、命令、密钥和审批范围/s);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
@@ -397,7 +455,7 @@ test("DeerFlow repository draft explains long-running agent work", () => {
   });
 
   assert.equal(project.meta.title, "deer-flow");
-  assert.equal(project.scenes[0].headline, "开源项目推荐：deer-flow");
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：deer-flow");
   assert.match(project.narrationSegments![1].text, /子智能体、长期记忆、沙箱、工具和可扩展技能/);
   assert.match(project.narration, /Python、Node\.js.*沙箱和最小权限/s);
   assert.doesNotMatch(project.narration, /火山|方舟|github\.com|GitHub|仓库地址/i);
@@ -409,7 +467,7 @@ test("awesome-systematic-trading repository draft stays educational and grounded
   });
 
   assert.equal(project.meta.title, "awesome-systematic-trading");
-  assert.equal(project.scenes[0].headline, "开源项目推荐：awesome-systematic-trading");
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：awesome-systematic-trading");
   assert.match(project.narrationSegments![1].text, /回测框架、交易库、数据工具/);
   assert.match(project.narration, /历史数据验证.*不是投资建议/s);
   assert.match(project.narration, /不是投资建议/);
@@ -422,7 +480,7 @@ test("Voice-Pro repository draft explains the end-to-end dubbing workflow", () =
   });
 
   assert.equal(project.meta.title, "voice-pro");
-  assert.equal(project.scenes[0].headline, "开源项目推荐：voice-pro");
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：voice-pro");
   assert.match(project.narrationSegments![1].text, /视频下载、语音分离、字幕识别、跨语言翻译和文本转语音/);
   assert.match(project.narration, /导入.*分离人声.*音色克隆必须获得授权/s);
   assert.match(project.narration, /音色克隆必须获得授权/);
@@ -435,7 +493,7 @@ test("Ansible repository draft explains agentless infrastructure automation", ()
   });
 
   assert.equal(project.meta.title, "ansible");
-  assert.equal(project.scenes[0].headline, "开源项目推荐：ansible");
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：ansible");
   assert.match(project.narrationSegments![1].text, /人和机器都能读懂的任务文件.*配置管理、应用部署/);
   assert.match(project.narration, /安装 Ansible.*生产使用前.*回滚方案/s);
   assert.match(project.narration, /无需安装专用代理/);
@@ -523,10 +581,63 @@ test("requested repository profiles explain direct use and practical boundaries"
     const visibleText = [project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" ");
 
     assert.equal(project.meta.title, name);
-    assert.equal(project.scenes[0].headline, `开源项目推荐：${name}`);
+    assert.equal(project.scenes[0].headline, `今日开源热点趋势项目推荐：${name}`);
     assert.equal(project.scenes.length, 4);
     assert.ok(project.meta.durationSeconds >= 40 && project.meta.durationSeconds <= 55);
     assert.match(project.narration, fixture.expected);
     assert.equal(containsForbiddenGithubReference(visibleText, [fixture.repo]), false);
+  }
+});
+
+test("cleans truncated and repeated narration before synthesis", () => {
+  assert.equal(
+    cleanNarrationNoise("GPT...。Chat中的5.6 Sol明显提升。Chat中的5.6 Sol明显提升。好你个奥特曼。"),
+    "Chat中的5.6 Sol明显提升。",
+  );
+});
+
+test("compacts news without repeating dates or truncated fragments", () => {
+  const project = createStoryProject({
+    id: "chatgpt-news", kind: "webpage", contentType: "news", title: "ChatGPT 免费版升级",
+    url: "https://www.qbitai.com/2026/08/467879.html", source: "核心事实", summary: "免费用户获得新能力。",
+    content: "免费用户获得新能力。复杂任务回答更完整。", publishedAt: "2026-08-07", score: 1, tags: [],
+  });
+  project.narrationSegments = project.narrationSegments?.map((segment, index) => ({
+    ...segment,
+    text: index === 0 ? "ChatGPT 免费版升级。新闻日期：2026年8月7日。" : `2026年8月7日。GPT...。场景${index}给出新事实。`,
+  }));
+  project.narration = project.narrationSegments?.map((segment) => segment.text).join("\n") ?? "";
+  const compacted = compactProjectNarration(project);
+  assert.equal((compacted.narration.match(/新闻日期：2026年8月7日/g) ?? []).length, 1);
+  assert.doesNotMatch(compacted.narration, /\.\.\.|GPT\.\.\./);
+});
+
+test("requested repository profiles generate project-specific narration", () => {
+  const fixtures = [
+    { repo: "PrimeIntellect-ai/prime-agent", content: "A self-improving RLM agent with persistent REPL, recursive subagents and continual harness.", expected: /持久 REPL|递归子智能体/ },
+    { repo: "666ghj/MiroFish", content: "Multi-agent prediction engine builds a parallel digital world with swarm intelligence and independent personalities.", expected: /平行数字世界|多智能体/ },
+    { repo: "Significant-Gravitas/AutoGPT", content: "AI agents that finish the work with a visual builder, marketplace, schedules and triggers.", expected: /可视化构建|完整流程/ },
+  ];
+  const narrations = fixtures.map((fixture) => {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo, metrics: { stars: 1000 } });
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|将项目资料中的核心功能和使用路径组织为可查阅的工作流/);
+    return project.narration;
+  });
+  assert.equal(new Set(narrations).size, fixtures.length);
+});
+
+test("current repository requests use project-specific value propositions", () => {
+  const fixtures = [
+    { repo: "TapXWorld/ChinaTextbook", content: "Chinese school textbooks organized by grade and subject for primary and middle school.", expected: /中小学教材.*年级和学科/s },
+    { repo: "goauthentik/authentik", content: "Open-source Identity Provider for SSO with SAML, OAuth2, OIDC, LDAP and RADIUS.", expected: /单点登录.*账号.*访问策略/s },
+    { repo: "different-ai/openwork", content: "Desktop app for sharing AI workflows, skills, plugins and MCP connections across teams and tools.", expected: /工作流.*MCP.*团队/s },
+  ];
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo, metrics: { stars: 1000 } });
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|将项目资料中的核心功能和使用路径组织为可查阅的工作流/);
   }
 });

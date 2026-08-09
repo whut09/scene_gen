@@ -287,7 +287,7 @@ export async function improveWithOpenAI(
     return project;
   }
   const isGithubProject = project.sources[0]?.kind === "github";
-  const targetChars = Math.max(240, Math.min(560, Math.round(targetSeconds * 7.2)));
+  const targetChars = Math.max(190, Math.min(420, Math.round(targetSeconds * 5.8)));
   const plannedVisuals = planning.selected.scenes.map((scene) => scene.visual);
   const guidance = [
     "你是 AI 科技竖屏短视频的资深新闻编导。",
@@ -302,7 +302,7 @@ export async function improveWithOpenAI(
     "首屏直接使用结果、冲突或反常识事实作为钩子，不说“今天介绍”“这条新闻讲的是”，完整标题最多播报一次。标题后必须立刻说明为什么值得看。",
     "前 6 秒必须给出核心价值；视频过半前覆盖至少 70% 的关键结论和事实，不得把主要卖点留到结尾。",
     "按痛点、结果、证据、适用者组织信息。每屏只表达一个新结论；后屏不得换句话重复前屏；结尾必须补充限制、选择建议或适用边界。",
-    "逐屏旁白长度：title 25-55 字，briefing 65-100 字，chart 60-95 字，flow 60-95 字，outro 40-75 字。删除空泛背景、来源播报、重复标题和总结套话。",
+    "逐屏旁白长度：title 25-50 字，briefing 45-70 字，chart 45-65 字，flow 45-65 字，outro 35-55 字。只保留钩子、两个到三个关键证据、实际影响和必要边界；删除空泛背景、来源播报、重复标题和总结套话。",
     "每个关键证据必须有对应可视字段。优先使用真实截图、运行结果、数据对比或输入输出流程，避免连续抽象描述超过 8 秒。",
     "不要出现新闻怎么跟进、如何发布、适合做视频、作者、编辑、站点、媒体来源等无关内容。",
     isGithubProject

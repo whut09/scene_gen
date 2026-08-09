@@ -1,5 +1,16 @@
 import type { VideoProject } from "./types";
 
+export const REPOSITORY_HOMEPAGE_PREFIX = "今日开源热点趋势项目推荐";
+export const REPOSITORY_NARRATION_PREFIX = "开源项目推荐";
+
+export function repositoryHomepageTitle(name: string) {
+  return `${REPOSITORY_HOMEPAGE_PREFIX}：${name}`;
+}
+
+export function repositoryNarrationTitle(name: string) {
+  return `${REPOSITORY_NARRATION_PREFIX}：${name}`;
+}
+
 function repositoryName(project: VideoProject) {
   const source = project.sources[0];
   if (!source || source.kind !== "github") return "";
@@ -30,6 +41,7 @@ function narrationBody(value: string) {
 }
 
 export function repositorySynthesisName(name: string) {
+  if (name.toLowerCase() === "mirofish") return "米若菲什";
   return name
     .split(/([-_.]+)/)
     .map((part) => /^[A-Za-z0-9]+$/.test(part) ? part.charAt(0).toUpperCase() + part.slice(1) : part)
@@ -49,11 +61,11 @@ export function ensureRepositoryProjectIdentity(project: VideoProject): VideoPro
   if (!name || !project.narrationSegments?.[0]) return project;
 
   const first = project.narrationSegments[0];
-  const openingTitle = `开源项目推荐：${name}`;
+  const openingTitle = repositoryNarrationTitle(name);
   const openingBody = narrationBody(first.text);
   const opening = `${openingTitle}。${openingBody}`.trim();
   const scenes = project.scenes.map((scene, index) => index === 0 && scene.type === "title"
-    ? { ...scene, kicker: "开源项目推荐", headline: `开源项目推荐：${name}` }
+    ? { ...scene, kicker: REPOSITORY_HOMEPAGE_PREFIX, headline: repositoryHomepageTitle(name) }
     : scene);
   const narrationSegments = project.narrationSegments.map((segment, index) => {
     const text = index === 0 ? opening : segment.text;

@@ -1,5 +1,6 @@
 import type { VideoProject } from "./types";
 import { contentTypeForItem } from "./content-type";
+import { repositoryNarrationTitle } from "./repository-project";
 
 export function isNewsProject(project: VideoProject) {
   const source = project.sources[0];
@@ -28,6 +29,22 @@ export function projectNewsDate(project: VideoProject) {
 
 function compact(value: string) {
   return value.replace(/\s+/g, "").replace(/[：:，,。.!！?？_\-]/g, "");
+}
+
+export function projectRepositoryDate(project: VideoProject) {
+  const source = project.sources[0];
+  if (!source || contentTypeForItem(source) !== "repository") return "";
+  const chineseDate = project.meta.createdAt.match(/^(20\d{2})年(\d{1,2})月(\d{1,2})日$/);
+  const date = chineseDate
+    ? new Date(Date.UTC(Number(chineseDate[1]), Number(chineseDate[2]) - 1, Number(chineseDate[3])))
+    : new Date(project.meta.createdAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
 }
 
 
@@ -75,7 +92,7 @@ export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {
   const repository = project.sources.find((source) => source.kind === "github");
   const repositoryName = repository?.repo?.split("/").filter(Boolean).at(-1) ?? "";
   const isRepositoryOpening = Boolean(repositoryName);
-  const title = (repositoryName ? `开源项目推荐：${repositoryName}` : project.meta.title.trim()).replace(/[\u3002\uff01\uff1f?]+$/u, "");
+  const title = (repositoryName ? repositoryNarrationTitle(repositoryName) : project.meta.title.trim()).replace(/[\u3002\uff01\uff1f?]+$/u, "");
   if (!title || !segments?.[0]) return project;
   const first = segments[0];
   const spoken = first.ttsText ?? first.text;

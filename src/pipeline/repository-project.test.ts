@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { expectedVideoFileName, projectHomepageTitle } from "./output-naming";
 import { ensureRepositoryProjectIdentity, repositoryProjectName } from "./repository-project";
-import { ensureTitleSpokenFirst } from "./news-date";
+import { ensureTitleSpokenFirst, projectRepositoryDate } from "./news-date";
 import type { VideoProject } from "./types";
 
 function fixture(): VideoProject {
@@ -21,11 +21,13 @@ test("repository identity uses the original repository name", () => {
   const normalized = ensureRepositoryProjectIdentity(project);
   assert.equal(normalized.meta.title, "text-to-cad");
   assert.equal(normalized.scenes[0].type, "title");
-  assert.equal((normalized.scenes[0] as Extract<typeof normalized.scenes[number], { type: "title" }>).headline, "开源项目推荐：text-to-cad");
+  assert.equal((normalized.scenes[0] as Extract<typeof normalized.scenes[number], { type: "title" }>).headline, "今日开源热点趋势项目推荐：text-to-cad");
   assert.match(normalized.narrationSegments![0].text, /^开源项目推荐：text-to-cad。/u);
-  assert.equal(projectHomepageTitle(normalized), "开源项目推荐：text-to-cad");
-  assert.equal(expectedVideoFileName(normalized), "开源项目推荐：text-to-cad.mp4");
+  assert.equal(projectHomepageTitle(normalized), "今日开源热点趋势项目推荐：text-to-cad");
+  assert.equal(expectedVideoFileName(normalized), "今日开源热点趋势项目推荐：text-to-cad.mp4");
+  assert.equal(projectRepositoryDate(normalized), "2026年7月22日");
   assert.match(normalized.narrationSegments![0].ttsText ?? "", /^开源项目推荐：Text To Cad。/u);
+  assert.doesNotMatch(normalized.narration, /2026年7月22日|推荐日期/u);
 });
 
 test("repository synthesis text is refreshed from the public project name", () => {
@@ -37,6 +39,12 @@ test("repository synthesis text is refreshed from the public project name", () =
 
   assert.match(normalized.narrationSegments![0].ttsText ?? "", /^开源项目推荐：Kimi Code。/u);
   assert.doesNotMatch(normalized.narrationSegments![0].ttsText ?? "", /过期/u);
+});
+
+test("repository date remains available after display-date normalization", () => {
+  const project = fixture();
+  project.meta.createdAt = "2026年8月9日";
+  assert.equal(projectRepositoryDate(project), "2026年8月9日");
 });
 
 test("repository synthesis alias survives the title-first normalization", () => {
