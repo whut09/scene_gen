@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, projectPublicationDate, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, projectPublicationDate, projectPublicationDateLabel, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
 
 export const boldSignalTemplate: HtmlTemplateDefinition = {
   id: "bold-signal",
@@ -44,13 +44,14 @@ export const boldSignalTemplate: HtmlTemplateDefinition = {
     const headline = isTitle ? scene.headline : scene.type === "outro" ? scene.headline : sceneHeadline(scene);
     const titleSize = headlineFontSize(headline, 88, 60);
     const publicationDate = projectPublicationDate(project);
+    const publicationDateLabel = projectPublicationDateLabel(project);
     const repositoryUrl = isTitle ? projectSourceUrl(project) : "";
     const repositoryStars = isTitle ? projectRepositoryStars(project) : "";
     const sub = isTitle ? scene.subhead : scene.type === "outro" ? scene.bullets.join(" / ") : "";
     const body = `<div class="bs-motion" aria-hidden="true"><i></i><i></i><i></i></div>
     <main class="hv-main bs-main" style="display:grid;align-content:center;inset:120px 58px 120px;">
       ${isTitle && publicationDate ? `<section style="display:grid;gap:8px;justify-self:start;margin-bottom:34px;padding:18px 24px;background:#fff36a;color:#083f99;">
-        <small style="font-size:22px;font-weight:850;letter-spacing:.08em;">新闻日期</small>
+        <small style="font-size:22px;font-weight:850;letter-spacing:.08em;">${escapeHtml(publicationDateLabel)}</small>
         <strong style="font-size:46px;line-height:1;font-weight:950;">${escapeHtml(publicationDate)}</strong>
       </section>` : ""}
       <div class="hv-kicker">${escapeHtml(isTitle ? scene.kicker : "Final Signal")}</div>

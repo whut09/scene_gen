@@ -6,8 +6,8 @@ import type { VideoProject, VideoScene } from "../../pipeline/types";
 import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
-import { isNewsProject, projectNewsDate } from "../../pipeline/news-date";
-import { repositoryProjectName, repositoryProjectUrl } from "../../pipeline/repository-project";
+import { isNewsProject, projectNewsDate, projectRepositoryDate } from "../../pipeline/news-date";
+import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryProjectName, repositoryProjectUrl } from "../../pipeline/repository-project";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
@@ -75,7 +75,7 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
   return { min: 45, max: 105 };
 }
 
-const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|失控|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|最多|至少/;
+const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|失控|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|全球第|总参数|激活参数/;
 
 function textTokens(value: string) {
   const compact = normalizeText(value);
@@ -101,16 +101,16 @@ function visibleTokenCoverage(visibleText: string, narration: string) {
   const visible = normalizeText(visibleText);
   const spoken = normalizeText(narration);
   const tokens = new Set<string>();
-  for (const match of visible.matchAll(/[a-z][a-z0-9.-]+|\d+(?:\.\d+)?%?|[\u4e00-\u9fff]{2,}/gi)) {
+  for (const match of spoken.matchAll(/[a-z][a-z0-9.-]+|\d+(?:\.\d+)?%?|[\u4e00-\u9fff]{2,}/gi)) {
     const token = match[0].toLowerCase();
     if (/^[\u4e00-\u9fff]+$/.test(token) && token.length > 3) {
-      for (let index = 0; index < token.length - 1; index += 2) tokens.add(token.slice(index, index + 2));
+      for (let index = 0; index < token.length - 1; index += 1) tokens.add(token.slice(index, index + 2));
     } else {
       tokens.add(token);
     }
   }
   if (tokens.size === 0) return 1;
-  const matched = [...tokens].filter((token) => spoken.includes(token)).length;
+  const matched = [...tokens].filter((token) => visible.includes(token)).length;
   return matched / tokens.size;
 }
 
@@ -281,7 +281,7 @@ export async function evaluateDraft(
   }
   const firstScenePurposeText = project.scenes[0] ? sceneVisibleText(project.scenes[0]) : "";
   const isModelRelease = /(?:模型|MAGI|Shieldstral|Mistral)/i.test(project.meta.title) && /(?:发布|推出|开源|参数|Preview)/i.test(project.meta.title);
-  if (isModelRelease && !/(?:用途|用于|用来|可用于|审核|生成|处理|完成)/u.test(firstScenePurposeText)) {
+  if (isModelRelease && !/(?:用途|用于|用来|可用于|审核|生成|处理|完成|推理|生图|图像|浏览器|智能体)/u.test(firstScenePurposeText)) {
     issues.push({ severity: "error", code: "homepage_purpose_missing", message: "模型类视频首屏必须直接说明模型是做什么的。", sceneIndex: 0 });
     revisionNotes.push("在首屏副标题写清模型用途和直接使用场景，不要只展示参数。 ");
   }
@@ -292,13 +292,36 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "narration_punctuation_unbalanced", message: "Narration contains unmatched brackets or quotation marks that may produce TTS artifacts." });
     revisionNotes.push("Remove unmatched brackets and quotation marks before synthesis.");
   }
-  if (normalizedTitle.length >= 4 && normalizeText(project.narration).split(normalizedTitle).length - 1 > 1) {
+  const narratedRepositoryName = repositoryProjectName(project);
+  const narratedTitle = normalizeText(narratedRepositoryName ? repositoryNarrationTitle(narratedRepositoryName) : project.meta.title);
+  if (narratedTitle.length >= 4 && normalizeText(project.narration).split(narratedTitle).length - 1 > 1) {
     issues.push({ severity: "error", code: "title_repeated_in_narration", message: "旁白重复播报主标题，只允许完整播报一次。", sceneIndex: 0 });
     revisionNotes.push("首屏只播报一次完整标题，删除后续重复标题。");
   }
+  const narrationTexts = (project.narrationSegments ?? []).map((segment) => segment.text).filter(Boolean);
+  const narrationJoined = narrationTexts.join(" ");
+  if (/(?:\.\.\.|…+)/u.test(narrationJoined)) {
+    issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含未完成的截断片段。", evidence: { fragments: narrationJoined.match(/[^。！？!?]{0,18}(?:\.\.\.|…+)[^。！？!?]{0,18}/gu) ?? [] } });
+    revisionNotes.push("删除 LLM 截断碎片，确保每个场景以完整句子结束。");
+  }
+  const sentenceCounts = new Map<string, number>();
+  for (const segmentText of narrationTexts) {
+    for (const sentence of segmentText.split(/[。！？!?；;]/u).map((value) => normalizeText(value)).filter((value) => value.length >= 10)) {
+      sentenceCounts.set(sentence, (sentenceCounts.get(sentence) ?? 0) + 1);
+    }
+  }
+  const repeatedSentences = [...sentenceCounts.entries()].filter(([, count]) => count > 1).map(([sentence]) => sentence).slice(0, 5);
+  if (repeatedSentences.length > 0) {
+    issues.push({ severity: "error", code: "narration_noise_repeated", message: "旁白重复播报相同句子或信息片段。", evidence: { repeatedSentences } });
+    revisionNotes.push("每个事实只播报一次，删除相邻或跨场景重复句。");
+  }
+  if (repositoryProjectName(project) && /围绕实际开发任务整理的开源工具|将项目资料中的核心功能和使用路径组织为可查阅的工作流/u.test(narrationJoined)) {
+    issues.push({ severity: "error", code: "repository_narration_generic", message: "开源项目旁白落入通用模板，未说明该项目的独特用途。", evidence: { repository: repositoryProjectName(project) } });
+    revisionNotes.push("根据项目 README 重写痛点、结果、使用场景和限制，禁止使用通用占位文案。");
+  }
 
   const compactNarration = project.narration.replace(/\s+/g, "");
-  const earlyWindow = compactNarration.slice(0, Math.max(36, Math.round(6 * 7)));
+  const earlyWindow = compactNarration.slice(0, Math.max(36, Math.round(6 * 7) + 2));
   const valueIndex = firstValueIndex(compactNarration);
   if (valueIndex < 0) {
     issues.push({ severity: "error", code: "hook_value_missing", message: "开场没有结果、冲突、痛点或用户收益钩子。", sceneIndex: 0 });
@@ -331,12 +354,17 @@ export async function evaluateDraft(
     })
     : "";
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
+  const spokenProjectText = [
+    project.narration,
+    ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
+  ].join(" ");
   const repositoryName = repositoryProjectName(project);
   if (repositoryName) {
     const firstVisibleText = firstScene ? sceneVisibleText(firstScene) : "";
-    if (!firstVisibleText.includes("开源项目推荐") || !firstVisibleText.includes(repositoryName)) {
-      issues.push({ severity: "error", code: "repository_recommendation_missing", message: `首屏必须包含“开源项目推荐：${repositoryName}”。`, sceneIndex: 0 });
-      revisionNotes.push(`首屏添加“开源项目推荐：${repositoryName}”，并保留项目原名。`);
+    const homepageTitle = repositoryHomepageTitle(repositoryName);
+    if (firstScene?.type !== "title" || firstScene.headline !== homepageTitle) {
+      issues.push({ severity: "error", code: "repository_recommendation_missing", message: `首屏必须完整显示“${homepageTitle}”。`, sceneIndex: 0 });
+      revisionNotes.push(`首屏标题改为“${homepageTitle}”，并保留项目原名。`);
     }
     if (project.meta.title !== repositoryName) {
       issues.push({ severity: "error", code: "repository_name_not_canonical", message: `开源项目标题必须使用项目原名 ${repositoryName}。` });
@@ -366,10 +394,24 @@ export async function evaluateDraft(
       issues.push({ severity: "error", code: "repository_value_context_missing", message: `开源项目首屏缺少：${missingRepositoryContext.join("、")}。`, sceneIndex: 0 });
       revisionNotes.push("首屏同时写清项目用途、解决的问题和适用场景。 ");
     }
-    const canonicalOpening = `开源项目推荐：${repositoryName}`;
+    const canonicalOpening = repositoryNarrationTitle(repositoryName);
     if (!normalizeText(firstNarration).startsWith(normalizeText(canonicalOpening))) {
       issues.push({ severity: "error", code: "repository_name_not_spoken_first", message: `首屏旁白必须先完整播报“${canonicalOpening}”。`, sceneIndex: 0 });
       revisionNotes.push(`首句完整播报“${canonicalOpening}”，然后进入项目用途。`);
+    }
+    const repositoryDate = projectRepositoryDate(project);
+    if (!repositoryDate) {
+      issues.push({ severity: "error", code: "repository_date_missing", message: "开源项目缺少可展示的推荐日期。", sceneIndex: 0 });
+      revisionNotes.push("为开源项目保留生成日期，并在首屏显示精确到天的推荐日期。");
+    } else {
+      if (!coverHtml.includes(repositoryDate) || !coverHtml.includes("推荐日期")) {
+        issues.push({ severity: "error", code: "repository_date_not_visible", message: "开源项目推荐日期没有显示在首屏。", sceneIndex: 0, evidence: { repositoryDate, templateId: coverDecision?.templateId ?? "missing" } });
+        revisionNotes.push("在首屏安全区显示推荐日期，精确到天。");
+      }
+      if (normalizeText(spokenProjectText).includes(normalizeText(repositoryDate)) || /推荐日期/u.test(spokenProjectText)) {
+        issues.push({ severity: "error", code: "repository_date_spoken", message: "开源项目推荐日期只允许显示，不得进入旁白或 TTS。", sceneIndex: 0, evidence: { repositoryDate } });
+        revisionNotes.push("从 narration、ttsText 和 providerSynthesisText 删除推荐日期，只保留首屏视觉日期。");
+      }
     }
     const promotionHeadlines = project.scenes.slice(1).map((scene) => sceneVisibleText(scene));
     const missingPromotionSections = [
@@ -387,10 +429,6 @@ export async function evaluateDraft(
       revisionNotes.push("按用户痛点、一句话收益、可信证据、最短上手路径、适用人群与边界重写项目推荐，删除空泛功能罗列。");
     }
   }
-  const spokenProjectText = [
-    project.narration,
-    ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
-  ].join(" ");
   if (project.sources.some((source) => source.kind === "github") && containsForbiddenGithubReference(spokenProjectText, repositoryAddresses)) {
     issues.push({ severity: "error", code: "repository_address_spoken", message: "开源项目仓库地址只能显示在首屏，不得出现在旁白或 TTS 合成文本中。", sceneIndex: 0 });
     revisionNotes.push("保留首屏仓库地址，但从旁白、ttsText 和 providerSynthesisText 中删除平台名、域名及 owner/repository。 ");
@@ -419,7 +457,8 @@ export async function evaluateDraft(
     revisionNotes.push("将主标题改写为14到30个汉字的中文事实总结，英文仅保留必要专有名。 ");
   }
   const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
-  if (/正式发布|正式推出|对外推出|即日起.{0,80}开放/.test(sourceText) && !/正式发布|正式推出|对外推出|即日起.{0,80}开放/.test(project.narration)) {
+  const releaseStatusPattern = /正式发布|正式推出|对外推出|即日起.{0,80}开放|(?:开启|进入|开放)公测/;
+  if (releaseStatusPattern.test(sourceText) && !releaseStatusPattern.test(project.narration)) {
     issues.push({ severity: "error", code: "release_status_weakened", message: "原文的正式发布或开放状态被弱化。" });
     revisionNotes.push("首段直接复述原文的正式发布状态、开放渠道和用户范围。 ");
   }

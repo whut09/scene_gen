@@ -123,6 +123,13 @@ export class HtmlSceneRenderError extends Error {
   }
 }
 
+function assertVisualAuditPassed(audit: SceneVisualAudit) {
+  const errors = audit.issues.filter((issue) => issue.severity === "error");
+  if (errors.length > 0) {
+    throw new Error(`Visual audit blocked scene ${audit.sceneIndex}: ${errors.map((issue) => issue.code).join(", ")}`);
+  }
+}
+
 export function createHtmlVideoCacheKey(input: {
   scene: VideoScene;
   templateId: string;
@@ -407,6 +414,7 @@ async function recordHtmlFrame({
     await waitForFonts(page);
     await installSyncCueAnimations(page, syncCues, durationSec);
     visualAudit = await inspectSceneDom(page, { sceneIndex, width, height, durationSec, headline: headline ?? "", syncCues });
+    assertVisualAuditPassed(visualAudit);
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForFonts(page);
     await installSyncCueAnimations(page, syncCues, durationSec);
@@ -679,6 +687,7 @@ export async function renderHtmlVideoProject(
         }
         const visualAudit = sceneVisualAuditSchema.safeParse(cached.details.visualAudit);
         if (visualAudit.success) {
+          assertVisualAuditPassed(visualAudit.data);
           await writeFile(cachePath, JSON.stringify({ cacheKey, detectedMotionSec, durationSec: node.durationSec, visualAudit: visualAudit.data }), "utf8");
           metrics.cacheHitScenes.push(node.sceneIndex);
           cachedFrame = { sceneIndex: node.sceneIndex, id: node.id, htmlPath, videoPath, durationSec: node.durationSec, templateId: template.id, detectedMotionSec, visualAudit: visualAudit.data };
@@ -741,6 +750,7 @@ export async function renderHtmlVideoProject(
             : 0;
           const visualAudit = sceneVisualAuditSchema.safeParse(cacheResult.metadata.details.visualAudit);
           const resolvedVisualAudit = visualAudit.success ? visualAudit.data : emptyVisualAudit(item.node.sceneIndex, project.meta.width, project.meta.height, item.node.durationSec);
+          assertVisualAuditPassed(resolvedVisualAudit);
           await writeFile(item.cachePath, JSON.stringify({ cacheKey: item.cacheKey, detectedMotionSec, durationSec: item.node.durationSec, visualAudit: resolvedVisualAudit }), "utf8");
           (cacheResult.generated ? metrics.renderedScenes : metrics.cacheHitScenes).push(item.node.sceneIndex);
           return { sceneIndex: item.node.sceneIndex, id: item.node.id, htmlPath: item.htmlPath, videoPath: item.videoPath, durationSec: item.node.durationSec, templateId: item.templateId, detectedMotionSec, visualAudit: resolvedVisualAudit } satisfies RenderedFrame;

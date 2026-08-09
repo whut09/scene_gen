@@ -64,8 +64,12 @@ export async function inspectSceneDom(page: Page, input: {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
     const parseColor = (value: string) => {
-      const match = value.match(/rgba?\((\d+(?:\.\d+)?)[, ]+(\d+(?:\.\d+)?)[, ]+(\d+(?:\.\d+)?)(?:[, /]+(\d+(?:\.\d+)?))?\)/i);
-      return match ? { red: Number(match[1]), green: Number(match[2]), blue: Number(match[3]), alpha: match[4] === undefined ? 1 : Number(match[4]) } : null;
+      const rgb = value.match(/rgba?\((\d+(?:\.\d+)?)[, ]+(\d+(?:\.\d+)?)[, ]+(\d+(?:\.\d+)?)(?:[, /]+(\d+(?:\.\d+)?))?\)/i);
+      if (rgb) return { red: Number(rgb[1]), green: Number(rgb[2]), blue: Number(rgb[3]), alpha: rgb[4] === undefined ? 1 : Number(rgb[4]) };
+      const hex = value.match(/#([0-9a-f]{6}|[0-9a-f]{3})(?![0-9a-f])/i);
+      if (!hex) return null;
+      const raw = hex[1].length === 3 ? hex[1].split("").map((part) => part + part).join("") : hex[1];
+      return { red: Number.parseInt(raw.slice(0, 2), 16), green: Number.parseInt(raw.slice(2, 4), 16), blue: Number.parseInt(raw.slice(4, 6), 16), alpha: 1 };
     };
     const luminance = (color: { red: number; green: number; blue: number }) => {
       const values = [color.red, color.green, color.blue].map((channel) => {
@@ -79,16 +83,23 @@ export async function inspectSceneDom(page: Page, input: {
       const dark = Math.min(luminance(foreground), luminance(background));
       return (bright + 0.05) / (dark + 0.05);
     };
-    const effectiveBackground = (element: Element) => {
+    const effectiveBackgrounds = (element: Element) => {
       let current: Element | null = element;
       while (current) {
         const style = getComputedStyle(current);
-        if (style.backgroundImage !== "none") return null;
         const parsed = parseColor(style.backgroundColor);
-        if (parsed && parsed.alpha >= 0.95) return parsed;
+        if (parsed && parsed.alpha >= 0.95) return { colors: [parsed], verifiable: true };
+        if (style.backgroundImage !== "none") {
+          if (/url\(/i.test(style.backgroundImage)) return { colors: [], verifiable: false };
+          const colors = [...style.backgroundImage.matchAll(/(?:rgba?\([^)]*\)|#[0-9a-f]{3,8})/gi)]
+            .map((match) => parseColor(match[0]))
+            .filter((color): color is NonNullable<typeof color> => Boolean(color));
+          if (colors.length > 0) return { colors, verifiable: true };
+        }
         current = current.parentElement;
       }
-      return parseColor(getComputedStyle(document.body).backgroundColor);
+      const bodyColor = parseColor(getComputedStyle(document.body).backgroundColor);
+      return bodyColor ? { colors: [bodyColor], verifiable: true } : { colors: [], verifiable: false };
     };
     const visibleTextElements = [...document.querySelectorAll<HTMLElement>("body *")].filter((element) => {
       if (element.closest('[aria-hidden="true"]')) return false;
@@ -139,11 +150,14 @@ export async function inspectSceneDom(page: Page, input: {
         clippingAncestor = clippingAncestor.parentElement;
       }
       const foreground = parseColor(style.color);
-      const background = effectiveBackground(element);
-      if (foreground && background) {
-        const ratio = contrastRatio(foreground, background);
+      const backgroundResult = effectiveBackgrounds(element);
+      if (foreground && backgroundResult.colors.length > 0) {
+        const ratio = Math.min(...backgroundResult.colors.map((background) => contrastRatio(foreground, background)));
         const minimumRatio = fontSize >= 28 || Number(style.fontWeight) >= 700 ? 3 : 4.5;
         if (ratio < minimumRatio) issues.push({ code: "text_contrast_low", severity: "error", message: `文本对比度 ${ratio.toFixed(2)} 低于 ${minimumRatio}：${text.slice(0, 40)}`, evidence: { text: text.slice(0, 80), contrastRatio: Number(ratio.toFixed(2)), minimumRatio } });
+      }
+      if (foreground && !backgroundResult.verifiable && primary) {
+        issues.push({ code: "text_contrast_unverifiable", severity: "error", message: "关键文字的背景无法可靠测量", evidence: { text: text.slice(0, 80), background: style.backgroundImage.slice(0, 120) } });
       }
       return { element, rect, text, primary };
     });

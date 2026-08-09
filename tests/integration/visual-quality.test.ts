@@ -61,6 +61,28 @@ test("DOM audit detects readability, clipping and timing problems", { timeout: 3
   }
 });
 
+test("DOM audit rejects unverifiable image backgrounds behind key text", { timeout: 30_000 }, async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 360, height: 640 } });
+    await page.setContent(`<!doctype html><style>
+      body{margin:0;background:#102a43;color:#fff}
+      main{position:absolute;inset:40px;background-image:url("data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=")}
+      h1{font-size:32px;color:#fff}
+    </style><main><h1>关键结论</h1></main>`);
+    const audit = await inspectSceneDom(page, {
+      sceneIndex: 0,
+      width: 360,
+      height: 640,
+      durationSec: 4,
+      headline: "关键结论",
+    });
+    assert.ok(audit.issues.some((issue) => issue.code === "text_contrast_unverifiable"));
+  } finally {
+    await browser.close();
+  }
+});
+
 test("HTML renderer persists scene visual audit before recording", { timeout: 60_000 }, async () => {
   const workDir = await mkdtemp(path.join(tmpdir(), "scene-gen-render-visual-audit-"));
   try {

@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectPublicationDate, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectPublicationDate, projectPublicationDateLabel, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
 
 export const generalEditorialTemplate: HtmlTemplateDefinition = {
   id: "general-editorial",
@@ -38,6 +38,7 @@ export const generalEditorialTemplate: HtmlTemplateDefinition = {
   renderHtml: ({ project, scene, width, height, variantId }) => {
     const headline = sceneHeadline(scene);
     const publicationDate = projectPublicationDate(project);
+    const publicationDateLabel = projectPublicationDateLabel(project);
     let body = "";
     if (scene.type === "title") {
       const size = headlineFontSize(scene.headline, 92, 62);
@@ -46,7 +47,7 @@ export const generalEditorialTemplate: HtmlTemplateDefinition = {
       body = `<main class="hv-main ge-main ge-cover">
         <div class="ge-section">今日焦点 · 深度解读</div>
         <div class="ge-issue">NO. 01</div>
-        ${publicationDate ? `<div class="ge-date"><small>新闻日期</small><strong>${escapeHtml(publicationDate)}</strong></div>` : ""}
+        ${publicationDate ? `<div class="ge-date"><small>${escapeHtml(publicationDateLabel)}</small><strong>${escapeHtml(publicationDate)}</strong></div>` : ""}
         <h1 style="font-size:${size}px">${escapeHtml(scene.headline).replace(/\n/g, "<br />")}</h1>
         <div class="ge-rule"></div>
         <p class="ge-deck">${escapeHtml(scene.subhead)}</p>

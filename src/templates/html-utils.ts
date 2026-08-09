@@ -1,6 +1,6 @@
 import type { VideoProject } from "../pipeline/types";
 import type { VideoScene } from "../pipeline/types";
-import { projectNewsDate } from "../pipeline/news-date";
+import { projectNewsDate, projectRepositoryDate } from "../pipeline/news-date";
 import { repositoryProjectUrl } from "../pipeline/repository-project";
 
 export function escapeHtml(value: unknown) {
@@ -32,7 +32,11 @@ export function projectHeroAsset(project: VideoProject) {
 }
 
 export function projectPublicationDate(project: VideoProject) {
-  return projectNewsDate(project);
+  return projectNewsDate(project) || projectRepositoryDate(project);
+}
+
+export function projectPublicationDateLabel(project: VideoProject) {
+  return projectRepositoryDate(project) ? "推荐日期" : "新闻日期";
 }
 
 export function projectSourceUrl(project: VideoProject) {
@@ -88,8 +92,33 @@ export function commonHtml({
 }) {
   const themeCss =
     theme === "paper"
-      ? "body{color:#123b56}.hv-kicker{color:#ff5f5f}h1{color:#062f50;text-shadow:none}p{color:#31546c}"
+      ? "body{color:#123b56}.hv-kicker{color:#b4232f}h1{color:#062f50;text-shadow:none}p{color:#31546c}"
       : "";
+  const accessibilityCss = `
+    body:not(.hv-theme-paper) .hv-main h1,
+    body:not(.hv-theme-paper) .hv-main h2,
+    body:not(.hv-theme-paper) .hv-main h3,
+    body:not(.hv-theme-paper) .hv-main p,
+    body:not(.hv-theme-paper) .hv-main li,
+    body:not(.hv-theme-paper) .hv-main dd { color:#f8fbff !important; text-shadow:0 2px 4px rgba(0,0,0,.42); }
+    body:not(.hv-theme-paper) .hv-card,
+    body:not(.hv-theme-paper) .pf-card,
+    body:not(.hv-theme-paper) .df-node { background:rgba(3,20,43,.88) !important; border-color:rgba(255,255,255,.42) !important; }
+    body.hv-theme-paper .hv-main h1,
+    body.hv-theme-paper .hv-main h2,
+    body.hv-theme-paper .hv-main h3 { color:#102a43 !important; text-shadow:none; }
+    body.hv-theme-paper .hv-main p,
+    body.hv-theme-paper .hv-main li,
+    body.hv-theme-paper .hv-main dd { color:#17324d !important; text-shadow:none; }
+    body.hv-theme-paper .hv-card,
+    body.hv-theme-paper .es-lead,
+    body.hv-theme-paper .es-points li,
+    body.hv-theme-paper .es-news,
+    body.hv-theme-paper .ir-card { background:rgba(255,255,255,.96) !important; }
+    body.hv-theme-paper .es-points li,
+    body.hv-theme-paper .es-news,
+    body.hv-theme-paper .ir-card { border-color:rgba(16,42,67,.36) !important; }
+  `;
 
   const paletteCss: Record<VisualPalette, { a: string; b: string; c: string; paper: string }> = {
     ocean: { a: "#0847d7", b: "#0876ca", c: "#00a6bb", paper: "#eef7ff" },
@@ -101,10 +130,10 @@ export function commonHtml({
   const colors = paletteCss[palette];
   const background =
     theme === "paper"
-      ? `linear-gradient(145deg,#fbf7ed 0%,${colors.paper} 45%,#fffdf8 100%)`
+      ? "#fbf7ed"
       : theme === "dark"
-        ? "radial-gradient(circle at 25% 18%,rgba(95,230,255,.2),transparent 30%),linear-gradient(150deg,#07111f,#122f52 55%,#121212)"
-        : `radial-gradient(circle at 20% 18%,rgba(255,255,255,.22),transparent 26%),radial-gradient(circle at 82% 14%,rgba(255,255,255,.16),transparent 30%),linear-gradient(180deg,${colors.a} 0%,${colors.b} 48%,${colors.c} 100%)`;
+        ? "#07111f"
+        : colors.a;
 
   return `<!doctype html>
 <html>
@@ -213,11 +242,12 @@ export function commonHtml({
     @keyframes hv-card-scan { 0%, 58% { transform: translateX(0); opacity: 0; } 66% { opacity: 1; } 84%, 100% { transform: translateX(520%); opacity: 0; } }
     ${themeCss}
     ${extraCss}
+    ${accessibilityCss}
     .hv-main { left: var(--safe-left) !important; right: var(--safe-right) !important; }
     .hv-main, .hv-main * { max-width: 100%; }
   </style>
 </head>
-<body>
+<body class="hv-theme-${theme}">
   <div class="hv-root">
     ${chrome ? `<header class="hv-top"><span class="hv-brand">SG</span><span>${escapeHtml(title)}</span><span>HTML Video</span></header>` : ""}
     ${body}

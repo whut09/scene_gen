@@ -27,6 +27,11 @@ test("number pronunciation converts common Chinese news formats", () => {
   assert.match(text, /四点零/);
 });
 
+test("number pronunciation uses natural spoken forms for age groups and thousands", () => {
+  const text = prepareF5SynthesisText("90后奶爸，平均每分钟算力成本2000元，另一个方案2025元。");
+  assert.equal(text, "九零后奶爸，平均每分钟算力成本两千元，另一个方案两千零二十五元。");
+});
+
 test("number pronunciation expands slash fractions before TTS", () => {
   const text = prepareF5SynthesisText("AI 只接手了 1/5 的工作，另有 3／8 的任务自动完成。");
   assert.match(text, /五分之一/);
@@ -196,7 +201,7 @@ test("published video filename is derived from the Chinese homepage title", () =
   assert.equal(titleBasedVideoPath("E:/output/news-qbitai-v2.mp4", "数字员工正式进入企业流程"), path.join("E:/output", "数字员工正式进入企业流程.mp4"));
   assert.equal(provisionalVideoFileName("OpenRouter", "cached-project"), "openrouter.mp4");
   assert.throws(() => videoFileNameFromTitle("OpenRouter"), /Chinese characters/);
-  assert.equal(homepageTitleBasedVideoPath("E:/output/old.mp4", "开源项目推荐：ai-agent-book"), path.join("E:/output", "开源项目推荐：ai-agent-book.mp4"));
+  assert.equal(homepageTitleBasedVideoPath("E:/output/old.mp4", "今日开源热点趋势项目推荐：ai-agent-book"), path.join("E:/output", "今日开源热点趋势项目推荐：ai-agent-book.mp4"));
   const project = createFixtureProject();
   project.meta.title = "内部项目标题";
   project.scenes[0] = { ...project.scenes[0], type: "title", headline: "视频首页标题" };
@@ -231,7 +236,7 @@ test("repository draft gate blocks zero stars and missing homepage context", asy
   const project = createFixtureProject();
   project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "huangruiteng/loopx", url: "https://github.com/huangruiteng/loopx", metrics: { stars: 0 } };
   project.meta.title = "loopx";
-  project.scenes[0] = { type: "title", duration: 10, kicker: "开源项目推荐", headline: "开源项目推荐：loopx", subhead: "智能体运行工具", sources: ["0 Stars"] };
+  project.scenes[0] = { type: "title", duration: 10, kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：loopx", subhead: "智能体运行工具", sources: ["0 Stars"] };
   project.narrationSegments![0].text = "开源项目推荐：loopx。它解决长期任务状态管理问题。";
   project.narration = project.narrationSegments!.map((segment) => segment.text).join("\n");
   const result = await evaluateDraft(project, project.meta.durationSeconds, "");
@@ -275,7 +280,7 @@ test("repository synthesis gate rejects a short summary before TTS", () => {
   project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "codecrafters-io/build-your-own-x", url: "https://github.com/codecrafters-io/build-your-own-x" };
   project.meta.title = "build-your-own-x";
   project.scenes = Array.from({ length: 4 }, () => ({ ...project.scenes[0] })).map((scene, index) => index === 0
-    ? { ...scene, type: "title", kicker: "开源项目推荐", headline: "开源项目推荐：build-your-own-x", subhead: "学习项目" }
+    ? { ...scene, type: "title", kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：build-your-own-x", subhead: "学习项目" }
     : scene);
   project.narrationSegments = project.scenes.map((_, index) => ({ sceneIndex: index, text: index === 0 ? "build-your-own-x，开源项目推荐。" : "简短介绍。" }));
   project.narration = project.narrationSegments.map((segment) => segment.text).join("\n");
@@ -298,7 +303,7 @@ test("repository synthesis gate permits a complete canonical project", () => {
     "最后需要注意，工具不能替代测试、评审和安全检查。把它用于重复性的定位、整理和初稿工作更合适；涉及发布、权限或关键业务逻辑时，仍应由开发者核实变更并完成验证。",
   ];
   project.scenes = Array.from({ length: 4 }, () => ({ ...project.scenes[0] })).map((scene, index) => index === 0
-    ? { ...scene, type: "title", kicker: "开源项目推荐", headline: "开源项目推荐：kimi-code", subhead: "代码工作流工具", sources: ["项目资料"] }
+    ? { ...scene, type: "title", kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：kimi-code", subhead: "代码工作流工具", sources: ["项目资料"] }
     : scene);
   project.narrationSegments = narration.map((text, sceneIndex) => ({ sceneIndex, text }));
   project.narration = narration.join("\n");
