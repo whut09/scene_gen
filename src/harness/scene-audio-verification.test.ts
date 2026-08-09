@@ -55,6 +55,47 @@ test("semantic ASR ignores provider-only phoneme tokens when tts text is availab
   assert.equal(result.issues.some((item) => item.sceneIndex === 1 && item.code === "audio_semantic_mismatch"), false);
 });
 
+test("semantic ASR accepts equivalent Mandarin number and homophone transcriptions", () => {
+  const project = projectFixture();
+  project.narrationSegments![0].text = "首个全国产十万卡AI超集群投用。新闻日期二零二六年八月九日。";
+  project.narrationSegments![1].text = "峰值能力相当于全人类持续计算二百年。";
+  project.narrationSegments![2].text = "超过六成算力已经纳入统一监测。";
+  project.narrationSegments![2].claimIds = [];
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "首个全国产十万卡AI超级群投用。新文日期二零二六年八月九日。", confidence: 0.95 },
+    { sceneIndex: 1, text: "峰值能力相当于全人类持续计算两百年。", confidence: 0.95 },
+    { sceneIndex: 2, text: "超过六成算力已经纳入统一监测。", confidence: 0.95 },
+  ]);
+
+  assert.equal(result.issues.some((item) => item.code === "audio_number_mismatch" || item.code === "audio_semantic_mismatch"), false);
+});
+
+test("semantic ASR accepts the homophone transcription for result review", () => {
+  const project = projectFixture();
+  project.narrationSegments![2].text = "安全、治理和结果复核不能交给AI。";
+  project.narrationSegments![2].claimIds = [];
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: "安全、治理和结果符合不能交给AI。", confidence: 0.95 },
+  ]);
+
+  assert.equal(result.issues.some((item) => item.sceneIndex === 2 && item.code === "audio_semantic_mismatch"), false);
+});
+
+test("semantic ASR accepts the traditional homophone transcription for result review", () => {
+  const project = projectFixture();
+  project.narrationSegments![2].text = "安全、治理和结果复核不能交给AI。";
+  project.narrationSegments![2].claimIds = [];
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: "安全、治理和結果符合不能交給AI。", confidence: 0.95 },
+  ]);
+
+  assert.equal(result.issues.some((item) => item.sceneIndex === 2 && item.code === "audio_semantic_mismatch"), false);
+});
+
 test("AI entity verification rejects expansion to the Mandarin semantic form", () => {
   const project = projectFixture();
   project.narrationSegments![2].text = "AI 系统完成验证。";
@@ -104,7 +145,7 @@ test("AI acronym verification accepts a spelled letter transcript", () => {
   assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 0), false);
 });
 
-test("IndexTTS acronym gate rejects separated letters and accepts connected Mandarin readings", () => {
+test("IndexTTS acronym gate rejects separated letters and accepts glossary spelling", () => {
   const project = projectFixture();
   project.narrationSegments![0] = {
     ...project.narrationSegments![0], text: "AI 正在改变开发流程。", ttsText: "AI 正在改变开发流程。",
@@ -117,8 +158,8 @@ test("IndexTTS acronym gate rejects separated letters and accepts connected Mand
   ];
   assert.ok(verifySceneTranscripts(project, transcripts).issues.some((item) => item.code === "audio_acronym_plan_unprotected" && item.sceneIndex === 0));
 
-  project.narrationSegments![0].providerSynthesisText = "诶艾正在改变开发流程。";
-  project.narrationSegments![0].providerSynthesisChunks = ["诶艾正在改变开发流程。"];
+  project.narrationSegments![0].providerSynthesisText = "A-I正在改变开发流程。";
+  project.narrationSegments![0].providerSynthesisChunks = ["A-I正在改变开发流程。"];
   assert.equal(verifySceneTranscripts(project, transcripts).issues.some((item) => item.code === "audio_acronym_plan_unprotected" && item.sceneIndex === 0), false);
 });
 
@@ -256,6 +297,30 @@ test("moderate confidence ASR does not masquerade as a semantic TTS failure", ()
   assert.ok(result.issues.some((item) => item.code === "verification_inconclusive"));
 });
 
+test("traditional Chinese ASR transcript matches simplified narration", () => {
+  const project = projectFixture();
+  project.narrationSegments![1].text = "相当于全人类持续计算二百年，现在支持新材料、创新药等领域的计算任务。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
+    { sceneIndex: 1, text: "相當於全人類持續計算二百年，現在支持新材料、創新藥等領域的計算任務。", confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+
+  assert.equal(result.issues.some((item) => item.sceneIndex === 1 && item.code === "audio_semantic_mismatch"), false);
+});
+
+test("traditional and near-homophone ASR output does not reject complete access-control narration", () => {
+  const project = projectFixture();
+  project.narrationSegments![2].text = "身份服务一旦停机，可能影响所有接入系统。上线前必须准备备份、高可用、管理员恢复和升级回滚方案，并先从低风险应用迁移。";
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: project.narrationSegments![0].text, confidence: 0.95 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: "身份服務一旦停機，可能影響所有接入系統。上線前必須準備備份、高可用、管理員恢復和升級毀滾方案，並先從低風險應用簽移。", confidence: 0.95 },
+  ]);
+
+  assert.equal(result.issues.some((item) => item.sceneIndex === 2 && item.code === "audio_semantic_mismatch"), false);
+});
+
 test("explicit production confidence threshold overrides a lower environment value", () => {
   const project = projectFixture();
   const result = verifySceneTranscripts(project, project.narrationSegments!.map((segment) => ({ sceneIndex: segment.sceneIndex, text: segment.text, confidence: 0.78 })), { minimumConfidence: 0.8 });
@@ -339,6 +404,20 @@ test("scene ASR blocks unexpected synthesized prefixes and repeated phrases", ()
   project.meta.title = "给人工智能发工号";
   const result = verifySceneTranscripts(project, [{ sceneIndex: 0, text: "两给人工智能发工号号号并纳入组织流程", confidence: 0.92, detectedLanguage: "zh", languageConfidence: 0.99 }], { expectedLanguage: "zh", minimumConfidence: 0.65 });
   assert.ok(result.issues.some((item) => item.code === "audio_scene_opening_artifact"));
+  assert.ok(result.issues.some((item) => item.code === "audio_repeated_phrase"));
+});
+
+test("scene ASR blocks a Latin product token repeated twice", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "GPT-5.6 Sol 获得回答质量升级。" }];
+  project.meta.title = "GPT-5.6 Sol 升级";
+  const result = verifySceneTranscripts(project, [{
+    sceneIndex: 0,
+    text: "GPT-5.6 Sol Sol 获得回答质量升级。",
+    confidence: 0.95,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  }], { expectedLanguage: "zh", minimumConfidence: 0.84 });
   assert.ok(result.issues.some((item) => item.code === "audio_repeated_phrase"));
 });
 

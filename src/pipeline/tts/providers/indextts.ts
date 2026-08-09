@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
+import path from "node:path";
 import { getOrCreateMediaCache } from "../../../cache/media-cache";
 import { getRuntimeConfig, type RuntimeConfig } from "../../../config/runtime-config";
 import { indexTtsPronunciationInput } from "../../pronunciation/provider-adapters";
@@ -8,7 +9,7 @@ import type { PronunciationPlan } from "../../pronunciation/schema";
 import { probeDuration, run } from "../process";
 import { concatNarrationSegments } from "../postprocess";
 
-export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v9-connected-mandarin-acronyms";
+export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v11-glossary-no-default-g2pw-worker";
 type WorkerResult = { requestId: string; status: "succeeded"; outputPath: string; synthesisMs: number };
 
 class IndexTtsWorker {
@@ -23,7 +24,7 @@ class IndexTtsWorker {
     if (this.ready) return this.ready;
     this.ready = new Promise<void>((resolve, reject) => {
       const cfg = this.config.tts.indextts;
-      const child = spawn(cfg.python, [cfg.workerScript, "--root", cfg.root, "--model-dir", cfg.modelDir, "--ref-audio", cfg.refAudio], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      const child = spawn(cfg.python, [cfg.workerScript, "--root", cfg.root, "--model-dir", cfg.modelDir, "--ref-audio", cfg.refAudio, "--glossary", path.resolve(cfg.glossary)], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       this.child = child;
       const readyTimer = setTimeout(() => reject(new Error("IndexTTS2 worker ready timeout")), cfg.readyTimeoutMs);
       readyTimer.unref();
@@ -36,7 +37,7 @@ class IndexTtsWorker {
           const line = this.buffer.slice(0, newline).trim();
           this.buffer = this.buffer.slice(newline + 1);
           if (!line) continue;
-          let message: ({ type: string; requestId?: string; status?: string; error?: string } & Partial<WorkerResult>) | undefined;
+          let message: ({ type: string; requestId?: string; status?: string; error?: string; glossaryHash?: string } & Partial<WorkerResult>) | undefined;
           try {
             message = JSON.parse(line) as { type: string; requestId?: string; status?: string; error?: string } & Partial<WorkerResult>;
           } catch {
@@ -44,7 +45,11 @@ class IndexTtsWorker {
           }
           if (message.type === "ready") {
             clearTimeout(readyTimer);
-            resolve();
+            void readFile(cfg.glossary).then((content) => {
+              const expectedHash = createHash("sha256").update(content).digest("hex");
+              if (message?.glossaryHash !== expectedHash) reject(new Error("IndexTTS2 worker loaded a different pronunciation glossary."));
+              else resolve();
+            }, reject);
           }
           if (message.type !== "result" || !message.requestId) continue;
           const pending = this.pending.get(message.requestId);
@@ -147,10 +152,11 @@ export async function indexTts(input: { plan: PronunciationPlan; outputPath: str
   const referenceDurationSeconds = await probeDuration(config.tts.indextts.refAudio);
   if (referenceDurationSeconds < config.tts.indextts.minimumReferenceSeconds) throw new Error(`IndexTTS2 reference audio must be at least ${config.tts.indextts.minimumReferenceSeconds}s; received ${referenceDurationSeconds.toFixed(2)}s.`);
   const referenceAudioHash = createHash("sha256").update(await readFile(config.tts.indextts.refAudio)).digest("hex");
+  const glossaryHash = createHash("sha256").update(await readFile(config.tts.indextts.glossary)).digest("hex");
   const seedIdentity = createHash("sha256").update(`${input.plan.planHash}:${input.cacheSalt ?? ""}`).digest("hex");
   const seedOffset = Number.parseInt(seedIdentity.slice(0, 8), 16);
   const seed = (config.tts.indextts.seed + seedOffset) & 0x7FFFFFFF;
-  const identity = { provider: "indextts", model: "IndexTTS2", text: pronunciation.text, synthesisChunks, pronunciationPlanHash: input.plan.planHash, referenceAudioHash, referenceDurationSeconds, useRandom: false, seed, topP: config.tts.indextts.topP, topK: config.tts.indextts.topK, temperature: config.tts.indextts.temperature, repetitionPenalty: config.tts.indextts.repetitionPenalty, tempo: config.tts.indextts.tempo, loudnessLufs: config.tts.indextts.loudnessLufs, truePeakDb: config.tts.indextts.truePeakDb, frontendVersion: INDEXTTS_FRONTEND_VERSION, cacheSalt: input.cacheSalt ?? "" };
+  const identity = { provider: "indextts", model: "IndexTTS2", text: pronunciation.text, synthesisChunks, pronunciationPlanHash: input.plan.planHash, glossaryHash, referenceAudioHash, referenceDurationSeconds, useRandom: false, seed, topP: config.tts.indextts.topP, topK: config.tts.indextts.topK, temperature: config.tts.indextts.temperature, repetitionPenalty: config.tts.indextts.repetitionPenalty, tempo: config.tts.indextts.tempo, loudnessLufs: config.tts.indextts.loudnessLufs, truePeakDb: config.tts.indextts.truePeakDb, frontendVersion: INDEXTTS_FRONTEND_VERSION, cacheSalt: input.cacheSalt ?? "" };
   const cacheKey = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
   let result: WorkerResult | undefined;
   const cached = await getOrCreateMediaCache({

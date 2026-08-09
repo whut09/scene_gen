@@ -409,7 +409,7 @@ async function synthesizeF5WithGlobalCache(input: {
 async function pronunciationPlanFor(text: string, segment?: NarrationSegment, signal?: AbortSignal) {
   const config = getRuntimeConfig().tts.pronunciation;
   if (config.g2pwEnabled && !g2pwClient) g2pwClient = new G2pwWorkerClient({ python: config.g2pwPython, script: config.g2pwScript, modelDir: config.g2pwModelDir, readyTimeoutMs: config.g2pwReadyTimeoutMs, requestTimeoutMs: config.g2pwRequestTimeoutMs });
-  if (!pypinyinClient) pypinyinClient = new G2pwWorkerClient({ python: config.g2pwPython, script: config.g2pwScript, readyTimeoutMs: config.g2pwReadyTimeoutMs, requestTimeoutMs: config.g2pwRequestTimeoutMs, pypinyinOnly: true });
+  if (config.g2pwEnabled && !pypinyinClient) pypinyinClient = new G2pwWorkerClient({ python: config.g2pwPython, script: config.g2pwScript, readyTimeoutMs: config.g2pwReadyTimeoutMs, requestTimeoutMs: config.g2pwRequestTimeoutMs, pypinyinOnly: true });
   return compilePronunciationPlan({
     displayText: segment?.text ?? text,
     semanticText: segment?.text ?? text,
@@ -418,7 +418,7 @@ async function pronunciationPlanFor(text: string, segment?: NarrationSegment, si
     domain: config.domain,
     g2pw: config.g2pwEnabled ? g2pwClient : undefined,
     g2pwMinimumConfidence: config.g2pwMinimumConfidence,
-    pypinyinFallback: async (value) => (await pypinyinClient!.pypinyin(value, { signal })).map((prediction) => ({ phrase: prediction.phrase, start: prediction.start, end: prediction.end, expectedPinyin: prediction.pinyin, source: "pypinyin", confidence: prediction.confidence, risk: "low", providerOverrides: {} })),
+    pypinyinFallback: config.g2pwEnabled ? async (value) => (await pypinyinClient!.pypinyin(value, { signal })).map((prediction) => ({ phrase: prediction.phrase, start: prediction.start, end: prediction.end, expectedPinyin: prediction.pinyin, source: "pypinyin", confidence: prediction.confidence, risk: "low", providerOverrides: {} })) : undefined,
     signal,
   });
 }

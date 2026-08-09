@@ -2,17 +2,22 @@ import type { PronunciationPlan, PronunciationSpan } from "./schema";
 
 export type PronunciationProvider = "azure" | "f5" | "indextts" | "cosyvoice" | "edge" | "openai" | "local";
 
-const MANDARIN_LETTER_READINGS: Record<string, string> = {
-  A: "诶", B: "比", C: "西", D: "迪", E: "伊", F: "艾弗", G: "吉", H: "艾尺", I: "艾", J: "杰", K: "开", L: "艾勒", M: "艾姆",
-  N: "恩", O: "欧", P: "批", Q: "丘", R: "阿尔", S: "艾丝", T: "提", U: "优", V: "维", W: "达不溜", X: "艾克斯", Y: "歪", Z: "贼德",
-};
+const SPELLED_ACRONYMS = new Set(["AI", "AGI", "API", "GPU", "GB", "LLM", "ASR", "TTS", "RAG", "SDK", "CLI", "CI", "CD", "OCR"]);
+const standaloneAcronymPattern = /(?<![A-Za-z])([A-Z]{2,5}|ai|agi|api|gpu|gb|llm|asr|tts|rag|sdk|cli|ci|cd|ocr)(?![A-Za-z])/g;
 
-export function connectedMandarinAcronym(acronym: string) {
-  return [...acronym.toUpperCase()].map((letter) => MANDARIN_LETTER_READINGS[letter] ?? letter).join("");
+export function spelledLatinAcronym(acronym: string) {
+  return [...acronym.toUpperCase()].join("-");
 }
 
-export function replaceAcronymsWithConnectedMandarin(text: string) {
-  return text.replace(/(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])/g, connectedMandarinAcronym);
+export function acronymsRequiringSpelledLetters(text: string) {
+  return [...new Set([...text.matchAll(standaloneAcronymPattern)].map((match) => match[1].toUpperCase()).filter((value) => SPELLED_ACRONYMS.has(value)))];
+}
+
+export function replaceAcronymsWithSpelledLetters(text: string) {
+  return text.replace(standaloneAcronymPattern, (match) => {
+    const upper = match.toUpperCase();
+    return SPELLED_ACRONYMS.has(upper) ? spelledLatinAcronym(upper) : match;
+  });
 }
 
 export function escapeXml(value: string) {
@@ -50,7 +55,7 @@ export function indexTtsPronunciationInput(plan: PronunciationPlan) {
       protectedPinyin.set(marker, pinyin);
       return `${value.slice(0, span.start)}${marker}${value.slice(span.end)}`;
     }, plan.synthesisText);
-  let text = replaceAcronymsWithConnectedMandarin(textWithProtectedPinyin);
+  let text = replaceAcronymsWithSpelledLetters(textWithProtectedPinyin);
   for (const [marker, pinyin] of protectedPinyin) text = text.replaceAll(marker, pinyin);
   return { text, mixedPinyin, pronunciationPlanHash: plan.planHash };
 }

@@ -15,19 +15,19 @@ test("IndexTTS keeps a short title in one synthesis unit", () => {
   assert.deepEqual(splitIndexTtsText("Kimi Code，开源项目推荐。", 88), ["Kimi Code，开源项目推荐。"]);
 });
 
-test("IndexTTS keeps acronyms connected to surrounding Mandarin", async () => {
+test("IndexTTS uses official glossary-compatible acronym spelling", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "AI 和 AGI 通过 OpenAI API 接入模型。" });
 
   const providerText = indexTtsPronunciationInput(plan).text;
-  assert.equal(providerText, "诶艾 和 诶吉艾 通过 OpenAI 诶批艾 接入模型。");
+  assert.equal(providerText, "A-I 和 A-G-I 通过 OpenAI A-P-I 接入模型。");
   assert.deepEqual(splitIndexTtsText(providerText), [providerText]);
-  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v9-connected-mandarin-acronyms");
+  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v11-glossary-no-default-g2pw-worker");
 });
 
 test("IndexTTS does not split AI or GB into standalone audio chunks", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "AI 模型可在16GB GPU运行。" });
   const providerText = indexTtsPronunciationInput(plan).text;
-  assert.equal(providerText, "诶艾 模型可在16吉比 吉批优运行。");
+  assert.equal(providerText, "A-I 模型可在16G-B G-P-U运行。");
   assert.deepEqual(
     splitIndexTtsText(providerText),
     [providerText],

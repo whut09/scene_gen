@@ -49,7 +49,7 @@ Issue code 由注册表维护，同时声明默认分类、修复动作、是否
 - `source_title_not_preserved`：视频标题或首页标题改写了原始文章标题。
 - `homepage_purpose_missing`：模型类首屏只展示参数，没有说明模型用于什么任务。
 - `news_date_not_visible`：新闻有发布日期，但所选标题模板没有在首屏安全区显示到天的日期。
-- `audio_acronym_plan_unprotected`：本地 TTS 的最终输入必须使用连续字母读音；`AI`、`GB`、`GPU` 分别使用 `诶艾`、`吉比`、`吉批优`，禁止 `A I`、`G B` 等带空格或标点的拆分方式。
+- `audio_acronym_plan_unprotected`：本地 TTS 的最终输入必须使用模型 glossary 支持的连续字母读音；`AI`、`GB`、`GPU` 分别使用 `A-I`、`G-B`、`G-P-U`。禁止中文谐音以及 `A I`、`G B` 等空格拆分方式。
 - `repository_address_spoken`：旁白或 TTS 文本朗读了平台名、域名或 owner/repository；地址只允许显示。
 
 默认预算为新闻 32～45 秒、开源项目 40～55 秒、技术文章 50～70 秒。新闻和开源项目使用四屏短版，技术文章使用五屏解释版。

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 
-export const MAX_VOICE_PITCH_SPREAD_SEMITONES = 3;
+// Scene-level median F0 is affected by sentence prosody. Keep the gate for
+// clear speaker changes while allowing ordinary Mandarin intonation movement.
+export const MAX_VOICE_PITCH_SPREAD_SEMITONES = 4.5;
 
 export interface AcousticVoiceProfile {
   index: number;

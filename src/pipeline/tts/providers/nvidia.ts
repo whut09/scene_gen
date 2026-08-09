@@ -5,7 +5,7 @@ import path from "node:path";
 import { getRuntimeConfig, type RuntimeConfig } from "../../../config/runtime-config";
 import { getOrCreateMediaCache } from "../../../cache/media-cache";
 import { loadTtsPronunciationLexicon } from "../../tts-pronunciation";
-import { replaceAcronymsWithConnectedMandarin } from "../../pronunciation/provider-adapters";
+import { replaceAcronymsWithSpelledLetters } from "../../pronunciation/provider-adapters";
 import type { PronunciationPlan } from "../../pronunciation/schema";
 import { concatNarrationSegments } from "../postprocess";
 import { probeDuration, run } from "../process";
@@ -30,7 +30,7 @@ export interface NvidiaWorkerRequest {
   customDictionary?: Record<string, string>;
 }
 
-export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-connected-acronyms-v26";
+export const NVIDIA_TTS_FRONTEND_VERSION = "nvidia-magpie-mandarin-hyphenated-acronyms-v28";
 export const NVIDIA_TTS_MAX_CHUNK_CHARACTERS = 80;
 export const NVIDIA_TTS_NORMALIZE_FILTER = "silenceremove=start_periods=1:start_duration=0.025:start_threshold=-52dB,areverse,silenceremove=start_periods=1:start_duration=0.04:start_threshold=-52dB,areverse,afade=t=in:st=0:d=0.015,areverse,afade=t=in:st=0:d=0.04,areverse,loudnorm=I=-19:TP=-2:LRA=7";
 
@@ -95,7 +95,7 @@ export function nvidiaHttpFallbackText(plan: PronunciationPlan, text = plan.synt
 }
 
 export function nvidiaStableSynthesisText(plan: PronunciationPlan, text = plan.synthesisText) {
-  return replaceAcronymsWithConnectedMandarin(nvidiaHttpFallbackText(plan, text));
+  return replaceAcronymsWithSpelledLetters(nvidiaHttpFallbackText(plan, text));
 }
 
 export function nvidiaTtsCacheIdentity(input: { plan: PronunciationPlan; cacheSalt?: string }, config: RuntimeConfig) {

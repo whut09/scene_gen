@@ -334,7 +334,7 @@ test("structural gate accepts normal scene-level pitch variation", async () => {
     await writeFile(audioPath, sineWavBuffer([120, 128]));
     const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: goodProbe });
     assert.equal(result.issues.some((issue) => issue.code === "audio_acoustic_voice_drift"), false);
-    assert.ok(Number(result.metrics.acousticVoiceSpreadSemitones) < 3);
+    assert.ok(Number(result.metrics.acousticVoiceSpreadSemitones) < 4.5);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

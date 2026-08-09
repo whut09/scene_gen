@@ -1,4 +1,4 @@
-import argparse, contextlib, json, os, random, sys, time
+import argparse, contextlib, hashlib, json, os, random, sys, time
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--root", required=True)
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--ref-audio", required=True)
+    parser.add_argument("--glossary", required=True)
     args = parser.parse_args()
     root = Path(args.root).resolve()
     sys.path.insert(0, str(root))
@@ -31,7 +32,11 @@ def main():
     with contextlib.redirect_stdout(sys.stderr):
         aux = ensure_models_available(model_dir)
         tts = IndexTTS2(cfg_path=str(Path(model_dir) / "config.yaml"), model_dir=model_dir, use_fp16=True, use_cuda_kernel=False, use_deepspeed=False, aux_paths=aux)
-    emit({"type": "ready", "modelLoadMs": round((time.perf_counter() - started) * 1000), "model": "IndexTTS2", "fixedReference": True})
+        glossary_path = Path(args.glossary).resolve()
+        if not tts.normalizer.load_glossary_from_yaml(str(glossary_path)):
+            raise RuntimeError(f"IndexTTS2 glossary could not be loaded: {glossary_path}")
+    glossary_hash = hashlib.sha256(glossary_path.read_bytes()).hexdigest()
+    emit({"type": "ready", "modelLoadMs": round((time.perf_counter() - started) * 1000), "model": "IndexTTS2", "fixedReference": True, "glossaryHash": glossary_hash})
     for line in sys.stdin:
         request = {}
         try:

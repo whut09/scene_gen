@@ -1,7 +1,7 @@
 import type { RuntimeConfig } from "../../config/runtime-config";
 import { getRuntimeConfig } from "../../config/runtime-config";
 import type { VideoProject } from "../../pipeline/types";
-import { connectedMandarinAcronym } from "../../pipeline/pronunciation/provider-adapters";
+import { acronymsRequiringSpelledLetters, spelledLatinAcronym } from "../../pipeline/pronunciation/provider-adapters";
 import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { pronounceYearDigits } from "../../pipeline/tts/text-normalization";
 import { canonicalSpeechText } from "../speech-normalization";
@@ -37,10 +37,13 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
   for (const segment of project.narrationSegments ?? []) {
     const synthesisInput = segment.providerSynthesisText?.trim() || segment.ttsText?.trim() || segment.text;
     const prepared = prepareF5SynthesisText(synthesisInput);
+    if (segment.pronunciationPlan && segment.pronunciationPlan.displayText !== segment.text) {
+      issues.push({ severity: "error", code: "tts_derived_text_stale", message: `第 ${segment.sceneIndex + 1} 屏展示文本已修改，但发音计划仍来自旧文本。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { displayText: segment.text, plannedDisplayText: segment.pronunciationPlan.displayText, pronunciationPlanHash: segment.pronunciationPlan.planHash } });
+    }
     if ((segment.ttsProvider === "indextts" || segment.ttsProvider === "nvidia") && segment.providerSynthesisText) {
-      for (const acronym of new Set(segment.text.match(/(?<![A-Za-z])[A-Z]{2,5}(?![A-Za-z])/g) ?? [])) {
-        const requiredReading = connectedMandarinAcronym(acronym);
-        const separatedLetters = new RegExp([...acronym].join("[\\s、，,。.;；:-]+"), "i");
+      for (const acronym of acronymsRequiringSpelledLetters(segment.text)) {
+        const requiredReading = spelledLatinAcronym(acronym);
+        const separatedLetters = new RegExp([...acronym].join("[\\s、，,。.;；:]+"), "i");
         if (!segment.providerSynthesisText.includes(requiredReading) || separatedLetters.test(segment.providerSynthesisText)) {
           issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${acronym} 的最终 TTS 输入没有连续发音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { acronym, requiredReading, provider: segment.ttsProvider, providerSynthesisText: segment.providerSynthesisText } });
         }
@@ -63,9 +66,15 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
     const normalizedTitle = project.meta.title.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
     const normalizedSynthesis = synthesisInput.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
     if (segment.sceneIndex === 0 && normalizedTitle.length >= 4 && normalizedSynthesis.split(normalizedTitle).length - 1 > 1) issues.push({ severity: "error", code: "title_spoken_repeated", message: "The opening TTS text repeats the full title.", sceneIndex: 0, repairAction: "revise-scenes", retryable: true, evidence: { title: project.meta.title, synthesisText: synthesisInput } });
-    for (const year of segment.text.match(/(?<!\d)(?:19|20)\d{2}(?!\d)/g) ?? []) {
+    for (const year of segment.text.match(/(?<!\d)(?:19|20)\d{2}(?!\d|元|块|美元|人民币)/g) ?? []) {
       const expected = pronounceYearDigits(year);
       if (!prepared.includes(expected)) issues.push({ severity: "error", code: "tts_year_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏年份 ${year} 必须逐位读作 ${expected}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { year, expected, synthesisText: prepared } });
+    }
+    for (const match of segment.text.matchAll(/(?<!\d)90后/g)) {
+      if (!prepared.includes("九零后")) issues.push({ severity: "error", code: "tts_contextual_number_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏“90后”必须读作“九零后”。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { phrase: match[0], expected: "九零后", synthesisText: prepared } });
+    }
+    for (const match of segment.text.matchAll(/(?<!\d)2000(?=元|块|美元|人民币)/g)) {
+      if (!prepared.includes("两千")) issues.push({ severity: "error", code: "tts_contextual_number_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏“${match[0]}”必须按金额读作“两千”。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { phrase: match[0], expected: "两千", synthesisText: prepared } });
     }
   }
   return issues;

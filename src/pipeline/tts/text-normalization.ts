@@ -28,7 +28,8 @@ function chineseSection(value: number) {
     }
     if (pendingZero) result += "零";
     const omitLeadingOne = digit === 1 && divisor === 10 && !result;
-    result += `${omitLeadingOne ? "" : CHINESE_DIGITS[String(digit)]}${units[index]}`;
+    const spokenDigit = digit === 2 && divisor >= 100 && !result ? "两" : CHINESE_DIGITS[String(digit)];
+    result += `${omitLeadingOne ? "" : spokenDigit}${units[index]}`;
     pendingZero = false;
   }
   return result || "零";
@@ -79,6 +80,8 @@ export function removeLoneSurrogates(text: string) {
 export function prepareF5SynthesisText(text: string) {
   const trimmed = applyTtsSpokenFallbacks(removeLoneSurrogates(text)).trim();
   const pronounceable = trimmed
+    .replace(/(?<!\d)90后/g, "九零后")
+    .replace(/(?<!\d)2000(?=元|块|美元|人民币)/g, "两千")
     .replace(/\bAB\b/g, "A、B")
     .replace(/\bMOS\b/g, "M、O、S")
     .replace(/^曝/u, "爆料称：")
@@ -99,7 +102,8 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/next-ai-draw-io/gi, "奈克斯特，人工智能绘图工具，")
     .replace(/Next[.]js/gi, "Next JS")
     .replace(/draw[.]io/gi, "Draw IO")
-    .replace(/ChatGPT/gi, "聊天 GPT，")
+    .replace(/ChatGPT/gi, "恰特 G-P-T")
+    .replace(/\bSol\b/gi, "索尔")
     .replace(/Codex(?![，、。！？；：,.!?;:])/gi, "Codex，")
     .replace(/OpenAI/gi, "欧盆艾，")
     .replace(/Prompt/gi, "提示词")
@@ -108,7 +112,7 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/(\d+)\s*[:\uff1a]\s*(\d+)/g, (_, left: string, right: string) => `${numberToChinese(left)}\u6bd4${numberToChinese(right)}`)
     .replace(/(\d+(?:[.]\d+)?)\s*%/g, (_, value: string) => `百分之${numberToChinese(value)}`)
     .replace(/(\d+)\+(?=\D|$)/g, (_, value: string) => `${numberToChinese(value)}以上`)
-    .replace(/(?<!\d)((?:19|20)\d{2})(?!\d)/g, (_, value: string) => pronounceYearDigits(value))
+    .replace(/(?<!\d)((?:19|20)\d{2})(?!\d|元|块|美元|人民币)/g, (_, value: string) => pronounceYearDigits(value))
     .replace(/\d+(?:[.]\d+)?/g, (value) => numberToChinese(value));
   if (/\d/.test(pronounceable)) {
     throw new Error(`TTS number normalization left Arabic digits: ${pronounceable.match(/\d+/g)?.join(", ")}`);

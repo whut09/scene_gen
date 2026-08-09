@@ -4,7 +4,12 @@
   "env": {
     "TTS_PROVIDER": "indextts",
     "TTS_PROVIDER_FALLBACK": "nvidia",
+    "INDEXTTS_ROOT": "../models/index-tts",
+    "INDEXTTS_MODEL_DIR": "../models/index-tts/checkpoints",
+    "INDEXTTS_PYTHON": "../models/index-tts/.venv-system/Scripts/python.exe",
+    "INDEXTTS_REF_AUDIO": "../models/index-tts/local/mandarin-siwei-reference.wav",
     "INDEXTTS_CONCURRENCY": "1",
+    "INDEXTTS_GLOSSARY": "config/tts/indextts-glossary.yaml",
     "INDEXTTS_MIN_REFERENCE_SECONDS": "5",
     "INDEXTTS_MIN_SPEAKER_SIMILARITY": "0.77",
     "INDEXTTS_SEED": "20260721",
