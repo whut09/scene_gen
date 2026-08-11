@@ -56,6 +56,32 @@ function sceneVisibleText(scene: VideoScene) {
   }
 }
 
+const repositoryDomainPatterns = {
+  stock: [
+    /股票/u, /证券/u, /(?:^|\W)stock(?:s| market)?(?:\W|$)/i, /行情/u, /K\s*线/iu,
+    /A\s*股/iu, /港股/u, /美股/u, /量化/u, /回测/u, /买卖点/u, /决策看板/u,
+  ],
+  pcb: [
+    /电路板/u, /自动走线/u, /板图/u, /禁布区/u, /板厂/u, /高速信号/u,
+    /printed circuit board/i, /autorout(?:er|ing)/i, /freerouting/i, /(?:^|\W)pcb(?:\W|$)/i,
+  ],
+} as const;
+
+type RepositoryDomain = keyof typeof repositoryDomainPatterns;
+
+function repositoryDomainScores(text: string) {
+  return Object.fromEntries(Object.entries(repositoryDomainPatterns).map(([domain, patterns]) => [
+    domain,
+    patterns.filter((pattern) => pattern.test(text)).length,
+  ])) as Record<RepositoryDomain, number>;
+}
+
+function dominantRepositoryDomain(text: string) {
+  const scores = repositoryDomainScores(text);
+  const ranked = (Object.entries(scores) as Array<[RepositoryDomain, number]>).sort((left, right) => right[1] - left[1]);
+  return ranked[0][1] >= 2 && ranked[0][1] > ranked[1][1] ? { domain: ranked[0][0], scores } : null;
+}
+
 function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof contentTypeForProject>) {
   if (contentType === "repository") {
     if (scene.type === "title") return { min: 25, max: 65 };
@@ -369,6 +395,36 @@ export async function evaluateDraft(
     if (project.meta.title !== repositoryName) {
       issues.push({ severity: "error", code: "repository_name_not_canonical", message: `开源项目标题必须使用项目原名 ${repositoryName}。` });
       revisionNotes.push(`将视频标题恢复为项目原名 ${repositoryName}，不要翻译或改写。`);
+    }
+    const sourceDomain = dominantRepositoryDomain([
+      source?.repo ?? "", source?.title ?? "", source?.summary ?? "", (source?.content ?? "").slice(0, 1200),
+    ].join(" "));
+    const repositoryOutputText = [
+      project.narration,
+      ...project.scenes.map((scene) => sceneVisibleText(scene)),
+    ].join(" ");
+    const outputScores = repositoryDomainScores(repositoryOutputText);
+    const outputDomain = dominantRepositoryDomain(repositoryOutputText);
+    const conflictingDomain = sourceDomain
+      ? (Object.keys(repositoryDomainPatterns) as RepositoryDomain[]).find((domain) => (
+          domain !== sourceDomain.domain
+          && outputScores[domain] >= 3
+          && outputScores[domain] >= sourceDomain.scores[domain] + 2
+        ))
+      : undefined;
+    if (sourceDomain && conflictingDomain) {
+      issues.push({
+        severity: "error",
+        code: "repository_domain_mismatch",
+        message: `项目来源属于 ${sourceDomain.domain}，但生成内容混入了 ${conflictingDomain} 领域。`,
+        evidence: {
+          sourceDomain: sourceDomain.domain,
+          outputDomain: outputDomain?.domain ?? conflictingDomain,
+          sourceSignals: Object.entries(sourceDomain.scores).map(([domain, score]) => `${domain}:${score}`),
+          outputSignals: Object.entries(outputScores).map(([domain, score]) => `${domain}:${score}`),
+        },
+      });
+      revisionNotes.push("重新读取项目标题、摘要和 README，只保留来源支持的用途、工作流和限制，禁止套用其他项目画像。");
     }
     const repositoryUrl = repositoryProjectUrl(project);
     if (!repositoryUrl || !coverHtml.includes(repositoryUrl)) {

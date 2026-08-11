@@ -823,7 +823,41 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       ],
     };
   }
-  if (/freerouting|autorout(?:er|ing)|printed circuit board|\bpcb\b/i.test(`${name} ${item.title} ${content}`)) {
+  const repositoryIdentity = `${name} ${item.title} ${item.summary}`;
+  if (
+    /股票|证券|stock|quant(?:itative)?|行情|A股|港股|美股|ETF/i.test(repositoryIdentity)
+    && /分析|analysis|行情|K\s*线|回测|买卖点|决策|量化/i.test(`${repositoryIdentity} ${content.slice(0, 4000)}`)
+  ) {
+    return {
+      theme: "自动汇总多市场行情和新闻，生成可复核的股票分析报告",
+      capability: "聚合 A 股、港股、美股等市场的行情、K 线、技术指标、新闻、公告和基本面数据，再由大模型生成决策看板、风险提示和定时推送",
+      workflow: "先配置自选股和至少一个模型服务，选择可用行情与新闻数据源；运行单次分析核对数据和风险提示后，再启用定时任务和消息推送",
+      boundaries: "分析结果只适合作为研究辅助，不构成投资建议；免费数据源可能延迟或限流，买卖决定必须结合原始行情、公告和个人风险承受能力复核",
+      topics: ["多市场行情", "股票分析", "决策看板", "风险提示", "定时任务", "自动推送"],
+      metrics: [{ label: "市场范围", value: "A股、港股、美股等" }, { label: "输出", value: "决策看板" }],
+      problemPoints: [
+        "每天手工查看行情、K 线、新闻和公告很耗时间，而且不同市场的数据分散在多个入口。",
+        `${name} 把多源数据汇总成一份可复核的分析报告，并自动标出趋势、风险和需要继续核对的信息。`,
+        "它适合维护自选股、需要定时复盘和消息推送的个人研究者，但不能替代独立投资判断。",
+      ],
+      steps: [
+        { label: "配置自选股", detail: "填入要跟踪的股票代码，并选择对应市场。" },
+        { label: "连接数据", detail: "配置行情、新闻和至少一个可用模型服务。" },
+        { label: "核对报告", detail: "先运行一次，检查行情时间、公告、风险和结论依据。" },
+        { label: "定时推送", detail: "确认结果可靠后，再启用计划任务和通知渠道。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它能自动汇总多市场行情和新闻，生成每天可复核的股票分析报告。`,
+        "如果你每天要手工查看行情、K 线、新闻和公告，这个项目可以把 A 股、港股、美股等市场的数据集中起来，再生成趋势、买卖点、风险警报和决策看板。",
+        "使用时先配置自选股和模型服务，再选择行情与新闻数据源。先跑一次检查数据时间和结论依据，确认可靠后，才能启用定时分析，并推送到常用通知渠道。",
+        "它适合维护自选股和定时复盘，但分析结果不构成投资建议。免费数据源可能延迟或限流，真正买卖前仍要核对原始行情、公司公告和个人风险。",
+      ],
+    };
+  }
+  if (
+    /freerouting|autorout(?:er|ing)|printed circuit board|\bpcb\b/i.test(repositoryIdentity)
+    && /route|routing|走线|布线|电路板|board/i.test(`${repositoryIdentity} ${content.slice(0, 2000)}`)
+  ) {
     return {
       theme: "自动规划电路板走线",
       capability: "在间距、层数和禁布区约束下寻找可行路径",

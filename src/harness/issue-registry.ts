@@ -54,6 +54,7 @@ export const issueRegistry = {
   narration_noise_repeated: define("hard", "revise-scenes", true),
   narration_truncated_fragment: define("hard", "revise-scenes", true),
   repository_narration_generic: define("hard", "regenerate-draft", true),
+  repository_domain_mismatch: define("hard", "regenerate-draft", true),
   news_date_not_spoken: define("hard", "revise-scenes", true),
   news_date_missing: define("hard", "regenerate-draft", true),
   news_date_not_visible: define("hard", "switch-template", true),

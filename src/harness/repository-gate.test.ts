@@ -54,3 +54,49 @@ test("generated repository recommendation follows the promotion structure", asyn
   ]);
   assert.equal(value.meta.durationSeconds >= 40 && value.meta.durationSeconds <= 55, true);
 });
+
+test("stock analysis repository cannot fall through to the PCB profile", async () => {
+  const value = createStoryProject({
+    id: "daily-stock-analysis",
+    kind: "github",
+    contentType: "repository",
+    title: "daily_stock_analysis: LLM-powered multi-market stock analysis system",
+    url: "https://github.com/ZhuLinsen/daily_stock_analysis",
+    source: "项目资料",
+    summary: "多市场股票智能分析系统，支持行情、新闻、决策看板和自动推送。",
+    content: "覆盖 A股、港股、美股、K 线、技术指标、公告、基本面和回测。示例新闻可能提到 AI PCB 微钻领域公司。",
+    score: 1,
+    tags: [],
+    repo: "ZhuLinsen/daily_stock_analysis",
+    metrics: { stars: 61_667 },
+  });
+
+  assert.match(value.narration, /多市场行情|股票分析报告/);
+  assert.doesNotMatch(value.narration, /电路板|自动走线|板厂/);
+
+  const result = await evaluateDraft(value, value.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "repository_domain_mismatch"), false);
+});
+
+test("repository gate rejects stock sources rendered with PCB narration", async () => {
+  const value = createStoryProject({
+    id: "daily-stock-analysis",
+    kind: "github",
+    contentType: "repository",
+    title: "daily_stock_analysis: multi-market stock analysis",
+    url: "https://github.com/ZhuLinsen/daily_stock_analysis",
+    source: "项目资料",
+    summary: "多市场股票分析、行情、K线和决策看板。",
+    content: "覆盖 A股、港股、美股、行情、K线、回测、买卖点和风险提示。",
+    score: 1,
+    tags: [],
+    repo: "ZhuLinsen/daily_stock_analysis",
+    metrics: { stars: 61_667 },
+  });
+  const wrongNarration = "开源项目推荐：daily_stock_analysis。它自动规划电路板走线，导入板图后设置禁布区，并检查高速信号和板厂规则。";
+  value.narration = wrongNarration;
+  value.narrationSegments = value.narrationSegments?.map((segment, index) => ({ ...segment, text: index === 0 ? wrongNarration : "自动走线完成后，还要核对板图和电路板生产规则。" }));
+
+  const result = await evaluateDraft(value, value.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "repository_domain_mismatch"), true);
+});
