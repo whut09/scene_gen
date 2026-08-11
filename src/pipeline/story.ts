@@ -252,7 +252,10 @@ export function compactProjectNarration(project: VideoProject) {
     const scene = project.scenes[segment.sceneIndex];
     const maximumCharacters = contentType === "repository"
       ? scene?.type === "title" ? 72 : scene?.type === "outro" ? 70 : 68
-      : focusedNews ? scene?.type === "title" ? 100 : scene?.type === "outro" ? 100 : 115
+      : contentType === "technical-article"
+        ? scene?.type === "title" ? 80 : scene?.type === "briefing_points" ? 130 : scene?.type === "outro" ? 95 : 120
+      : focusedNews
+        ? scene?.type === "title" ? 80 : scene?.type === "briefing_points" ? 110 : scene?.type === "outro" ? 80 : 105
       : scene?.type === "title" ? 72 : scene?.type === "outro" ? 58 : 62;
     let sourceText = segment.text;
     const sceneSubhead = scene && "subhead" in scene && typeof scene.subhead === "string" ? scene.subhead : undefined;

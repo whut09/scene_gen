@@ -87,6 +87,10 @@ async function captureOne(browser: Browser, item: HotItem, index: number): Promi
   });
   page.setDefaultTimeout(12000);
   page.setDefaultNavigationTimeout(18000);
+  await page.route("**/*", async (route) => {
+    if (route.request().resourceType() === "font") await route.abort();
+    else await route.continue();
+  });
 
   try {
     const url = captureUrl(item);
