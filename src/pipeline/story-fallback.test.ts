@@ -641,3 +641,25 @@ test("current repository requests use project-specific value propositions", () =
     assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|将项目资料中的核心功能和使用路径组织为可查阅的工作流/);
   }
 });
+
+test("GPT Image report keeps complete connected narration near sixty seconds", () => {
+  const project = createStoryProject({
+    id: "gpt-image",
+    kind: "webpage",
+    contentType: "news",
+    title: "OpenAI全新GPT Image突袭，碾压Image 2，塑料感终于消失",
+    url: "https://www.36kr.com/p/3933115490368647",
+    source: "网站来源",
+    summary: "OpenAI又要放大招了",
+    content: "mona-lisa-1进入匿名盲测，测试者发现SynthID水印。公开对比显示人物质感和复杂信息图表现提升，但官方尚未确认。",
+    publishedAt: "2026年8月10日",
+    score: 1,
+    tags: [],
+  });
+
+  assert.equal(project.scenes.length, 4);
+  assert.equal(project.meta.durationSeconds >= 58 && project.meta.durationSeconds <= 60, true);
+  assert.equal(project.narrationSegments?.every((segment) => /[。！？]$/u.test(segment.text)), true);
+  assert.equal(project.narration.includes("当时。"), false);
+  assert.match(project.narration, /官方没有确认模型身份/);
+});

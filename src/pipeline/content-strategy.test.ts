@@ -8,10 +8,11 @@ import {
 } from "./content-strategy";
 
 test("content duration defaults favor short social videos", () => {
-  assert.equal(defaultTargetSecondsForUrl("https://www.36kr.com/p/123"), 38);
+  assert.equal(defaultTargetSecondsForUrl("https://www.36kr.com/p/123"), 60);
   assert.equal(defaultTargetSecondsForUrl("https://github.com/example/project"), 45);
   assert.equal(defaultTargetSecondsForUrl("https://cloud.tencent.com/developer/article/123"), 60);
   assert.deepEqual(contentDurationPolicy("news").visuals, ["title", "briefing", "flow", "outro"]);
+  assert.equal(contentDurationPolicy("news").hardMaximumSeconds, 65);
   assert.equal(contentDurationPolicy("repository").hardMaximumSeconds, 60);
 });
 

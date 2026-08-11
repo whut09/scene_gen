@@ -549,6 +549,38 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^agency-agents$/i.test(name)) {
+    return {
+      theme: "按任务直接调用专业人工智能角色，而不是每次从零编写提示词",
+      capability: "提供覆盖前端、后端、设计、营销和社区运营等岗位的专用角色，每个角色都带有工作流程、交付物和检查标准",
+      workflow: "先按部门或任务选择一个角色，再安装到兼容的编程或智能体工具中；给出明确目标后，按角色的流程检查代码、方案或运营交付物",
+      boundaries: "角色文件能提供分工和流程，但不会自动保证结果正确；涉及代码合并、交付、账号权限和业务判断时仍要人工审核",
+      topics: ["专业角色库", "任务分工", "工作流程", "交付检查", "多工具安装", "团队协作"],
+      metrics: [{ label: "角色定位", value: "专业岗位智能体" }, { label: "系统支持", value: "Windows、macOS、Linux" }],
+      narration: [
+        "开源项目推荐：agency-agents。它把前端、后端、设计、营销等专业岗位做成可直接调用的人工智能角色。",
+        "普通提示词容易漏步骤，这个项目给每个角色补上专业能力、工作流程、交付物和检查标准，让任务分工更接近真实团队。",
+        "使用时先按部门或任务挑一个角色，再安装到兼容工具中；写清目标后，就能让它按固定流程产出代码、方案或运营材料。",
+        "它适合需要稳定分工的个人和团队，但角色模板不会自动保证正确。代码合并、交付、权限和业务决策仍要人工审核。",
+      ],
+    };
+  }
+  if (/^ComfyUI$/i.test(name)) {
+    return {
+      theme: "用可视化节点精确控制图片、视频、音频和三维内容的生成流程",
+      capability: "把模型、提示词、控制条件和后处理连接成可复用节点工作流，可以局部重算、复用模板，并接入应用接口",
+      workflow: "先安装桌面版或本地环境，载入一个模板工作流；替换模型和输入后运行，再逐个节点调整参数并保存为可复用流程",
+      boundaries: "复杂工作流仍受模型授权、显存、节点兼容性和自定义插件质量影响；导入第三方工作流前要检查节点来源和资源占用",
+      topics: ["节点工作流", "图像生成", "视频生成", "局部重算", "模板复用", "本地部署"],
+      metrics: [{ label: "创作范围", value: "图像、视频、音频、3D" }, { label: "核心界面", value: "可视化节点图" }],
+      narration: [
+        "开源项目推荐：ComfyUI。它直接解决图片、视频、音频和三维内容难以精细复用的问题，用可视化节点控制完整生成流程。",
+        "你可以把模型、提示词、参考图和后处理连接成节点图，只重算发生变化的部分，并把复杂流程保存成模板反复使用。",
+        "最快的上手方式是安装桌面版或本地环境，先载入一个模板，替换模型和输入，再逐个节点调整参数并保存工作流。",
+        "它适合需要精细控制和批量复用的创作者。复杂流程仍受显存、模型授权和插件兼容性影响，导入第三方节点前要检查来源。",
+      ],
+    };
+  }
   if (/^ChinaTextbook$/i.test(name)) {
     return {
       theme: "集中查找和阅读中国小学、初中教材资源",
@@ -1186,13 +1218,17 @@ export function createStoryProject(
   if (/tmtpost\.com\/8091864/i.test(clean.url)) return createAiIndustrialDemandProject(clean, options);
   if (/ithome\.com\/0\/985\/886/i.test(clean.url)) return createShieldstralProject(clean, options);
   if (/qbitai\.com\/2026\/08\/465215/i.test(clean.url) || /Qwen3\.8/i.test(joinedContent)) return createQwen38Project(clean, options);
+  if (/ithome\.com\/0\/987\/720/i.test(clean.url)) return createQwenOpenPlatformProject(clean, options);
   if (/ithome\.com\/0\/986\/936/i.test(clean.url)) return createNeonRetrievalModelProject(clean, options);
   if (/qbitai\.com\/2026\/08\/467879/i.test(clean.url)) return createChatGptFreeUpgradeProject(clean, options);
   if (/qbitai\.com\/2026\/08\/467877/i.test(clean.url)) return createWan30DocumentVideoProject(clean, options);
   if (/ithome\.com\/0\/985\/044/i.test(clean.url) || /SenseNova\s*U1\.5-Lite-Preview/i.test(joinedContent)) return createSenseNovaU15Project(clean, options);
   if (/zhidx\.com\/p\/582336/i.test(clean.url) || /MAGI-2 Preview/i.test(`${clean.title} ${clean.summary ?? ""}`)) return createSandMagi2Project(clean, options);
   if (/不可取代|薪资奴役|高自主性|不可受雇/i.test(joinedContent)) return createAiCareerIndependenceProject(clean, options);
-  if (/Astra|菲尔兹奖级|非sofic|十项.*数学|数学难题/i.test(joinedContent) || /36kr\.com\/p\/3921682068172419/i.test(clean.url)) return createAiMathBreakthroughProject(clean, options);
+  const headlineContext = `${clean.title} ${clean.summary}`;
+  const isAiMathStory = /菲尔兹奖级|非sofic|十项.*数学|数学难题/i.test(headlineContext)
+    || (/\bAstra\b/i.test(headlineContext) && /数学|证明|群论|几何|Lean\s*4/i.test(headlineContext));
+  if (isAiMathStory || /36kr\.com\/p\/3921682068172419/i.test(clean.url)) return createAiMathBreakthroughProject(clean, options);
   if (/141006|十四万一千零六|三家外部机构|测试环境.*公网/i.test(joinedContent)) return createClaudeSecurityIncidentProject(clean, options);
   if (/150\s*亩芝麻|一百五十亩芝麻|氟磺胺草醚/i.test(joinedContent)) return createAiPesticideIncidentProject(clean, options);
   if (/第\s*23\s*届\s*ChinaJoy|第\s*二十三\s*届\s*ChinaJoy|14\s*万平方米|火龙漫剧/i.test(joinedContent)) return createChinaJoyAiProject(clean, options);
@@ -1200,6 +1236,7 @@ export function createStoryProject(
   if (/DeepSeek-V4-Flash/i.test(joinedContent) && /V4-Pro/i.test(joinedContent)) return createDeepSeekV4FlashProject(clean, options);
   if (/baijiahao\.baidu\.com\/s\?id=1873013937251230205/i.test(clean.url) || /首个全国产10万卡AI超集群/i.test(joinedContent)) return createNationalComputeClusterProject(clean, options);
   if (/tmtpost\.com\/8096544/i.test(clean.url) || /Jeff Dean挥别谷歌48小时首秀/i.test(joinedContent)) return createJeffDeanNextDecadeProject(clean, options);
+  if (/36kr\.com\/p\/3933115490368647/i.test(clean.url) || /mona-lisa-1/i.test(joinedContent)) return createGptImageMonaLisaProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
   }
@@ -1251,7 +1288,21 @@ function createGeneralNewsProject(
         : "这条新闻的关键，是一个行业变量正在从表层事件变成结构性变化。";
   const articleSentences = splitArticleIntoSemanticChunks(item.content ?? item.summary);
   const sentenceAt = (index: number) => articleSentences[index] ?? articleSentences[index % Math.max(1, articleSentences.length)] ?? summary;
-  const narrationAt = (start: number, count = 2) => Array.from({ length: count }, (_, offset) => sentenceAt(start + offset)).join("");
+  const narrationAt = (start: number, count = 2) => {
+    const selected = Array.from({ length: count }, (_, offset) => sentenceAt(start + offset));
+    let narration = selected.join("");
+    let offset = count;
+    while (narration.replace(/\s+/g, "").length < 45 && offset < count + 3) {
+      const candidate = sentenceAt(start + offset);
+      if (candidate && !selected.includes(candidate)) {
+        selected.push(candidate);
+        narration += candidate;
+      }
+      offset += 1;
+    }
+    if (narration.replace(/\s+/g, "").length < 45 && summary && !narration.includes(summary)) narration += summary;
+    return narration;
+  };
   const coverSummary = compactSentence(summary, 72);
 
   const sections: Array<{ scene: VideoScene; narration: string }> = isTechnicalArticle
@@ -1413,7 +1464,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["事实", "影响", "边界"],
           },
-          narration: `${title}。关键是，${coverSummary}`,
+          narration: `${title}。这次真正改变的是：${coverSummary}`,
         },
         {
           scene: {
@@ -1522,6 +1573,49 @@ function createCuratedNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createGptImageMonaLisaProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: {
+        type: "title", duration: 12, kicker: "图像模型新信号", headline: shortTitle(title, 42),
+        subhead: "匿名模型进入盲测，真实感和复杂画面表现成为焦点", sources: ["匿名盲测", "同提示对比", "尚未官宣"],
+      },
+      narration: `${title}。真正值得关注的不是“碾压”两个字，而是一款代号 mona-lisa-1 的匿名模型，正在盲测中展示更自然的质感和更复杂的画面控制。`,
+    },
+    {
+      scene: {
+        type: "briefing_points", duration: 17, headline: "为什么外界猜测它来自 OpenAI", source: "公开测试",
+        title: "匿名模型进入 LM Arena", summary: "测试者发现生成结果带有 SynthID 水印，但官方身份仍未确认。",
+        metrics: [{ label: "测试方式", value: "匿名盲测" }, { label: "身份状态", value: "尚未官宣" }],
+        points: ["模型以 mona-lisa-1 的代号进入 LM Arena。", "测试者在生成图中检测到 SynthID 水印。", "现有证据只能支持外界猜测，不能当作正式发布。"],
+      },
+      narration: "它先以匿名身份进入 LM Arena。测试者把生成图交给验证工具后，发现了 SynthID 水印，因此推测它可能来自 OpenAI。但这仍是公开测试线索，官方没有确认模型身份，也没有公布正式版本和上线时间。",
+    },
+    {
+      scene: {
+        type: "flow", duration: 17, headline: "提升集中在三个可见结果",
+        steps: [
+          { label: "人物质感", detail: "同一提示对比中，皮肤和材质更自然，塑料感减弱。" },
+          { label: "复杂内容", detail: "网页界面、信息图和人体拆解图能容纳更多细节。" },
+          { label: "艺术表达", detail: "光影、色彩和氛围的层次更丰富。" },
+        ],
+      },
+      narration: "从公开的同提示对比看，变化主要有三点。第一，人物皮肤和材质更自然，过去常见的塑料感有所减弱；第二，网页界面、信息图和人体拆解图能容纳更多细节；第三，艺术画面的光影、色彩和氛围层次更完整。",
+    },
+    {
+      scene: {
+        type: "outro", duration: 14, headline: "效果更强，不等于已经正式发布",
+        bullets: ["测试内容显示知识更新可能停留在 2025 年。", "它可能只是同代模型的新检查点。", "最终能力、价格和上线时间仍要等官方信息。"],
+      },
+      narration: "不过现在还不能把它当成最终版。日期测试显示，它的知识更新可能仍停留在二零二五年，更像同代模型的新检查点，而不是彻底换代。结论很明确：画质提升已经出现，但正式名称、价格、上线时间和最终能力，都要等官方发布后再判断。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 58 });
 }
 
 function createNationalComputeClusterProject(
@@ -1876,6 +1970,31 @@ function createQwen38Project(
       narration: "对使用者来说，最重要的不是追逐单项分数，而是拿自己的代码、文档和长任务验证稳定性、延迟与准确率。百万上下文不代表关键信息一定不会遗漏，长时间执行也需要预算、权限和停止条件。高风险结论仍应由专业人员复核。",
     },
   ], options);
+}
+
+function createQwenOpenPlatformProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "服务接入", headline: title, subhead: "把租房、寄快递和理财等服务放进对话流程", sources: ["手机", "PC", "AI 眼镜"] },
+      narration: `${title}。真正的变化，是用户可以在对话里直接调用租房、寄快递和理财等服务，不必反复切换应用。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "开放平台先解决服务入口问题", source: "平台信息", title: "生态伙伴可以接入独立智能体", summary: "平台面向生态伙伴和开发者开放手机、PC 与 AI 眼镜三类终端服务接入。", metrics: [{ label: "终端", value: "手机 / PC / AI 眼镜" }, { label: "伙伴", value: "十多个领域" }, { label: "入口", value: "@服务或智能体" }], points: ["第三方可以创建独立对话空间。", "用户可以通过 @相关服务或点击智能体进入。", "首批伙伴覆盖物流、居住、本地生活、理财和汽车等领域。"] },
+      narration: "平台面向生态伙伴和开发者开放手机、PC、AI 眼镜三类终端接入。第三方可以创建独立对话空间，用户通过 @相关服务或点击智能体进入；首批覆盖物流、居住、本地生活、理财和汽车等十多个领域。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "一次对话可以串起完整服务", steps: [{ label: "提出需求", detail: "直接说清楚要租房、寄件或查询服务。" }, { label: "理解规划", detail: "智能体结合上下文整理下一步。" }, { label: "调用服务", detail: "进入伙伴提供的专业流程。" }, { label: "完成办理", detail: "在授权范围内完成咨询、推荐或履约。" }] },
+      narration: "它的实际用法不是多一个聊天窗口，而是把服务流程接进对话。用户先说清需求，智能体理解并规划，再调用伙伴的专业能力；例如寄件时，可以记住地址，减少重复填写，最后在授权范围内完成办理。",
+    },
+    {
+      scene: { type: "outro", duration: 8, headline: "接入越深，权限边界越重要", bullets: ["适合已有服务和智能体的开发团队。", "先从一个低风险流程验证授权与履约。", "涉及账户、支付和订单时保留人工确认。"] },
+      narration: "它适合已经有服务能力、想减少用户操作步骤的团队。接入账户、支付和订单前，要先用低风险流程验证授权、日志和履约结果，高风险动作仍需人工确认。",
+    },
+  ], options, { maxSeconds: 50, minSeconds: 45 });
 }
 
 function createSenseNovaU15Project(
