@@ -642,6 +642,20 @@ test("current repository requests use project-specific value propositions", () =
   }
 });
 
+test("current repository batch uses grounded project-specific profiles", () => {
+  const fixtures = [
+    { repo: "3b1b/manim", content: "Animation engine for explanatory math videos using Python, OpenGL and FFmpeg.", expected: /数学.*动画.*Python/s },
+    { repo: "stablyai/orca", content: "ADE for a fleet of parallel coding agents in isolated worktrees with diff review and mobile monitoring.", expected: /编码智能体.*worktree.*diff/s },
+    { repo: "paperclipai/paperclip", content: "Open-source orchestration to manage agents at work with goals, roles, budgets, governance and cost tracking.", expected: /智能体.*目标.*预算.*权限/s },
+  ];
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo, metrics: { stars: 1000 } });
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|电路板走线/);
+  }
+});
+
 test("GPT Image report keeps complete connected narration near sixty seconds", () => {
   const project = createStoryProject({
     id: "gpt-image",
