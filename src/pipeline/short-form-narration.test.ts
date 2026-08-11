@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactProjectNarration } from "./story";
+import { compactProjectNarration, limitNarration } from "./story";
 import type { VideoProject } from "./types";
 
 test("short-form narration compacts complete sentences and invalidates derived TTS fields", () => {
@@ -72,4 +72,10 @@ test("technical article compaction preserves enough connected narration", () => 
   assert.ok(compacted.narration.replace(/\s+/g, "").length >= 252);
   assert.ok(compacted.narrationSegments![0].text.length <= 80);
   assert.ok(compacted.narrationSegments![4].text.length <= 95);
+});
+
+test("narration limiter never creates a one-word fragment", () => {
+  const limited = limitNarration("它适合愿意写 Python 的教师和创作者，公式渲染还可能需要 LaTeX。", 28);
+  assert.match(limited, /[。！？!?]$/u);
+  assert.doesNotMatch(limited, /(?:创|试了|关键是)[。！？!?]$/u);
 });

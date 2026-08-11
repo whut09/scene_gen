@@ -229,7 +229,7 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, effectiveTargetSeconds);
-  const deterministicShortStory = /ithome\.com\/0\/986\/936|qbitai\.com\/2026\/08\/(?:467879|467877)|36kr\.com\/p\/3933115490368647/i.test(item.url);
+  const deterministicShortStory = /ithome\.com\/0\/(?:986\/936|988\/286)|qbitai\.com\/2026\/08\/(?:467879|467877)|36kr\.com\/p\/(?:3933115490368647|3934784382958726)|techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(item.url);
   if (!deterministicShortStory && (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1")) {
     project = await improveWithOpenAI(project, {
       targetSeconds: effectiveTargetSeconds,

@@ -139,7 +139,7 @@ export function scrubAttribution(text: string) {
   forbiddenSourceAttribution.lastIndex = 0;
   return text
     .replace(forbiddenSourceAttribution, "")
-    .replace(/作者\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_ -]{0,24}/g, "")
+    .replace(/(^|[。！？\s])作者(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "$1")
     .replace(/编辑(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "")
     .replace(/来源\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_. -]{0,32}/g, "")
     .replace(/图源\s*[：:|｜]?\s*[^，。！？；;\s]{0,32}/g, "")
@@ -192,7 +192,12 @@ export function limitNarration(text: string, maxCharacters = 110) {
     selected.push(chunk);
     length += chunk.length;
   }
-  const limited = selected.join("") || text.slice(0, maxCharacters);
+  let limited = selected.join("");
+  if (!limited) {
+    const boundary = text.slice(0, maxCharacters).match(/^.*[。！？!?；;]/u)?.[0]
+      ?? text.slice(0, maxCharacters).match(/^.*[，、：:,]/u)?.[0];
+    limited = boundary?.trim() || `${text.slice(0, Math.max(1, maxCharacters - 1)).trim()}。`;
+  }
   return /[，、：；;,]$/u.test(limited)
     ? `${limited.replace(/[，、：；;,]+$/u, "")}。`
     : limited;
@@ -575,7 +580,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
         `开源项目推荐：${name}。它直接解决数学公式和几何推导难以精确做成动画的问题。`,
         "普通剪辑软件很难表现公式怎样一步步变形。Manim 把公式、坐标、图形和镜头运动写成 Python 场景，每次修改都能重新渲染，特别适合数学教学和科普视频。",
         "上手时先安装 manimgl 和 FFmpeg，运行示例确认环境，再创建 Scene，逐步加入图形、公式与动画。先用低质量预览检查节奏，最后再输出正式视频。",
-        "要注意，这个仓库是 ManimGL，不是社区版 Manim，安装包和接口不能混用。它适合愿意写 Python 的教师和创作者，公式渲染还可能需要 LaTeX。",
+        "注意：这里是 ManimGL，不是社区版 Manim，安装包和接口不能混用。它适合会写 Python 的教师和创作者。",
       ],
     };
   }
@@ -1355,6 +1360,9 @@ export function createStoryProject(
   if (/baijiahao\.baidu\.com\/s\?id=1873013937251230205/i.test(clean.url) || /首个全国产10万卡AI超集群/i.test(joinedContent)) return createNationalComputeClusterProject(clean, options);
   if (/tmtpost\.com\/8096544/i.test(clean.url) || /Jeff Dean挥别谷歌48小时首秀/i.test(joinedContent)) return createJeffDeanNextDecadeProject(clean, options);
   if (/36kr\.com\/p\/3933115490368647/i.test(clean.url) || /mona-lisa-1/i.test(joinedContent)) return createGptImageMonaLisaProject(clean, options);
+  if (/36kr\.com\/p\/3934784382958726/i.test(clean.url)) return createClaudeRiemannRecordProject(clean, options);
+  if (/ithome\.com\/0\/988\/286/i.test(clean.url)) return createMaiImage26Project(clean, options);
+  if (/techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(clean.url)) return createClaudeInvisibleWatermarkProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
   }
@@ -1657,6 +1665,81 @@ function createGeneralNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createClaudeRiemannRecordProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 11, kicker: "数学研究新纪录", headline: shortTitle(title, 42), subhead: "没有证明黎曼猜想，但把关键零点比例纪录从 41.67% 提高到 67.25%", sources: ["67.25%", "约 60 个子智能体", "仍非完整证明"] },
+      narration: title + "。真正的突破不是证明猜想，而是把临界线上零点比例的纪录，从百分之四十一点六七提高到百分之六十七点二五。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 17, headline: "先分清突破和完整证明", source: "研究结果", title: "刷新相关零点比例下界", summary: "黎曼猜想本身仍未被证明，论文推进的是一个重要相关问题。", metrics: [{ label: "原纪录", value: "41.67%" }, { label: "新纪录", value: "67.25%" }, { label: "完整证明", value: "尚未完成" }], points: ["此前三十七年，人类数学家只把相关纪录推进约零点八个百分点。", "新结果一次提高约二十五点六个百分点。", "这不能表述为黎曼猜想已经被证明。"] },
+      narration: "必须先说清边界：黎曼猜想仍然没有被证明。Claude 推进的是一个重要相关问题。此前三十七年，这项纪录只增加约零点八个百分点，这次则一次提高约二十五点六个百分点。",
+    },
+    {
+      scene: { type: "flow", duration: 17, headline: "约六十个子智能体如何协作", steps: [{ label: "并行探索", detail: "不同子智能体分别提出数学方向。" }, { label: "计算验证", detail: "编写程序并检查数值结果。" }, { label: "交叉审查", detail: "专门寻找推导中的错误。" }, { label: "整理证明", detail: "把有效思路汇总成论文草稿。" }] },
+      narration: "第二轮研究持续约一天半，由大约六十个子智能体并行探索。它们分别提出思路、编写程序、检查数值、阅读论文，再互相挑错。最终只有少数方向贡献了核心数学想法。",
+    },
+    {
+      scene: { type: "outro", duration: 15, headline: "意义在研究流程，不在夸大结论", bullets: ["开放数学问题开始进入多智能体协作。", "计算、检索和审查被放进同一研究循环。", "新证明仍需独立数学审查和复核。"] },
+      narration: "这项工作的意义，是人工智能开始参与没有标准答案的开放数学研究，而不只是做竞赛题。但论文结论仍需要独立数学审查，不能把刷新纪录说成破解了黎曼猜想。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 58 });
+}
+
+function createMaiImage26Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 11, kicker: "文生图模型更新", headline: shortTitle(title, 42), subhead: "三周内继续迭代，综合排名从第十位升到第二位", sources: ["Elo 1336", "提升 79 分", "文本渲染提升 91 分"] },
+      narration: title + "。三周内继续迭代后，综合排名从第十位升到第二位，最明显的进步来自文本渲染和三维图像。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 17, headline: "排名和评分同时上升", bars: [{ label: "综合评分", value: 79, detail: "Elo 评分达到一千三百三十六分，较上一版提升七十九分。", color: "#18b7a5" }, { label: "文本渲染", value: 91, detail: "文本渲染单项提升九十一分。", color: "#7c6cff" }, { label: "综合排名", value: 90, detail: "从第十位升到第二位。", color: "#facc15" }] },
+      narration: "新模型的 Elo 评分达到一千三百三十六分，比二点五版本提高七十九分。其中文本渲染单项提高九十一分，综合排名也从第十位跃升到第二位。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 17, headline: "进步不只发生在一个类别", source: "公开评测", title: "三维、动漫、商业设计和文字同步提升", summary: "三维成像与建模升至第一位，多个内容类别升至第二位。", metrics: [{ label: "3D 成像", value: "第 1 位" }, { label: "动漫幻想", value: "第 2 位" }, { label: "商业设计", value: "第 2 位" }], points: ["支持多参考图融合。", "文本描述与图像区域的关联更准确。", "输出格式和分辨率控制更细。"] },
+      narration: "细分类别里，三维成像与建模升到第一位；动漫幻想、商业设计和文本渲染都升到第二位。模型还加强了多参考图融合、语义对应和输出控制。",
+    },
+    {
+      scene: { type: "outro", duration: 15, headline: "榜单上升不等于所有任务都更强", bullets: ["公开榜单反映偏好测试结果。", "中文长文本和品牌一致性仍需实测。", "真实工作流还要比较速度、成本和稳定性。"] },
+      narration: "但榜单第二不代表所有任务都更强。中文长文本、品牌一致性、复杂提示的稳定性，以及真实生成速度和成本，仍要在具体工作流里单独测试。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 58 });
+}
+
+function createClaudeInvisibleWatermarkProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject({ ...item, contentType: "technical-article" }, [
+    {
+      scene: { type: "title", duration: 11, kicker: "技术文章", headline: shortTitle(title, 42), subhead: "把可检测特征嵌入文本结构，不在画面上显示标签", sources: ["文本水印", "C2PA 元数据", "检测边界"] },
+      narration: title + "。关键不是在文字旁边加标签，而是把可检测特征写进文本结构，同时给生成文件附加来源元数据。",
+    },
+    {
+      scene: { type: "flow", duration: 17, headline: "两种内容使用两套标记", steps: [{ label: "生成文本", detail: "算法把统计特征嵌入词语选择和文本结构。" }, { label: "轻度编辑", detail: "复制、粘贴或少量修改后仍可能被识别。" }, { label: "生成文件", detail: "图片等文件附加 C2PA 数字签名元数据。" }, { label: "检测工具", detail: "第三方通过配套工具检查标记。" }] },
+      narration: "文本部分使用特殊算法，把统计特征嵌入词语选择和底层结构，尽量不改变含义和阅读体验。图片等生成文件则使用 C2PA 数字签名元数据记录来源。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 17, headline: "水印能说明什么，不能说明什么", source: "技术边界", title: "检测到水印不等于证明原作者", summary: "它只能说明内容经过相关模型处理，不能单独证明内容由模型从零创作。", metrics: [{ label: "轻度编辑", value: "可能保留" }, { label: "大幅改写", value: "可能丢失" }, { label: "作者身份", value: "不能证明" }], points: ["翻译、重述、混合文本可能破坏标记。", "短文本或格式转换也可能无法检测。", "检测结果需要结合上下文和其他证据。"] },
+      narration: "边界同样重要。大幅改写、翻译、重述或混合文本，都可能让水印丢失。即使检测到水印，也只能说明内容经过模型处理，不能证明它完全由模型原创。",
+    },
+    {
+      scene: { type: "outro", duration: 15, headline: "它提高追溯能力，但不是最终裁决", bullets: ["检测工具和公开规则决定可用性。", "误报、漏报和跨平台兼容仍需验证。", "发布判断不能只依赖单一水印结果。"] },
+      narration: "所以，隐形水印更像一条追溯线索，不是最终裁决。真正能否落地，还要看检测工具是否开放、误报和漏报多高，以及不同平台能否识别同一套标准。",
+    },
+  ], options, { maxSeconds: 65, minSeconds: 58 });
 }
 
 function createCuratedNewsProject(

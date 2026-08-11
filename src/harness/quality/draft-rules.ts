@@ -330,6 +330,13 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含未完成的截断片段。", evidence: { fragments: narrationJoined.match(/[^。！？!?]{0,18}(?:\.\.\.|…+)[^。！？!?]{0,18}/gu) ?? [] } });
     revisionNotes.push("删除 LLM 截断碎片，确保每个场景以完整句子结束。");
   }
+  const danglingFragmentPattern = /(?:^|[。！？!?])(?:关键是|真正改变的是|要知道|如今|此前|其中|最后|所以|但是|以及|例如|除文本外|值得注意的是|此前报道|试了|创)[。！？!?]/gu;
+  const danglingFragments = narrationTexts.flatMap((text) => text.match(danglingFragmentPattern) ?? []);
+  const unpunctuatedSegments = narrationTexts.filter((text) => !/[。！？!?]$/u.test(text.trim()));
+  if (danglingFragments.length > 0 || unpunctuatedSegments.length > 0) {
+    issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含残句或未完整结束的场景文本。", evidence: { fragments: [...danglingFragments, ...unpunctuatedSegments].slice(0, 8) } });
+    revisionNotes.push("删除独立的连接词和残句，并确保每个场景以完整句子结束。");
+  }
   const sentenceCounts = new Map<string, number>();
   for (const segmentText of narrationTexts) {
     for (const sentence of segmentText.split(/[。！？!?；;]/u).map((value) => normalizeText(value)).filter((value) => value.length >= 10)) {

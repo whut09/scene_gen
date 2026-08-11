@@ -657,6 +657,39 @@ test("current repository batch uses grounded project-specific profiles", () => {
   }
 });
 
+test("current news batch uses grounded complete deterministic profiles", () => {
+  const fixtures = [
+    {
+      url: "https://www.36kr.com/p/3934784382958726",
+      title: "突发，Claude首破黎曼猜想新纪录",
+      type: "news" as const,
+      content: "临界线上零点比例从41.67%提高到67.25%，黎曼猜想仍未被证明，约60个子智能体并行研究。",
+      expected: /百分之四十一点六七.*百分之六十七点二五.*仍然没有被证明/s,
+    },
+    {
+      url: "https://www.ithome.com/0/988/286.htm",
+      title: "三周一更：微软 MAI-Image-2.6 发布，一举跃升 Arena 文生图模型榜第二位",
+      type: "news" as const,
+      content: "Elo评分1336分，提升79分，文本渲染提升91分，三维成像与建模升至第一位。",
+      expected: /一千三百三十六分.*七十九分.*文本渲染.*九十一分/s,
+    },
+    {
+      url: "https://www.techweb.com.cn/it/2026-08-11/2978138.shtml",
+      title: "Anthropic为Claude文本添加隐形水印 防范AI内容冒充原创",
+      type: "technical-article" as const,
+      content: "文本结构嵌入统计特征，生成文件使用C2PA元数据，大幅改写可能丢失水印。",
+      expected: /文本结构.*C2PA.*不能证明.*原创/s,
+    },
+  ];
+  for (const fixture of fixtures) {
+    const project = createStoryProject({ id: fixture.title, kind: "webpage", contentType: fixture.type, title: fixture.title, url: fixture.url, source: "核心事实", summary: fixture.content, content: fixture.content, publishedAt: "2026年8月11日", score: 1, tags: [] });
+    assert.equal(project.scenes.length, 4);
+    assert.match(project.narration, fixture.expected);
+    assert.equal(project.narrationSegments?.every((segment) => /[。！？!?]$/u.test(segment.text)), true);
+    assert.doesNotMatch(project.narration, /(?:^|[。！？!?])(?:关键是|要知道|如今|此前|试了|创)[。！？!?]/u);
+  }
+});
+
 test("GPT Image report keeps complete connected narration near sixty seconds", () => {
   const project = createStoryProject({
     id: "gpt-image",
