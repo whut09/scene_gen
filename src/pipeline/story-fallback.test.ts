@@ -653,6 +653,7 @@ test("current repository batch uses grounded project-specific profiles", () => {
     const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo, metrics: { stars: 1000 } });
     assert.match(project.narration, fixture.expected);
     assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|电路板走线/);
+    assert.match(project.narrationSegments?.[0]?.text ?? "", /直接|解决|避免|统一/);
   }
 });
 
