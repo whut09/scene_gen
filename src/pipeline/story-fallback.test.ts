@@ -662,4 +662,9 @@ test("GPT Image report keeps complete connected narration near sixty seconds", (
   assert.equal(project.narrationSegments?.every((segment) => /[。！？]$/u.test(segment.text)), true);
   assert.equal(project.narration.includes("当时。"), false);
   assert.match(project.narration, /官方没有确认模型身份/);
+
+  const compacted = compactProjectNarration(project);
+  assert.doesNotMatch(compacted.narration, /第[一二三四五六七八九十]。/u);
+  assert.match(compacted.narration, /网页界面、信息图和人体拆解图/);
+  assert.match(compacted.narration, /正式名称、价格、上线时间和最终能力/);
 });

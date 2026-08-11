@@ -245,7 +245,7 @@ export function compactProjectNarration(project: VideoProject) {
   if (!project.narrationSegments?.length) return project;
   const contentType = project.sources[0] ? contentTypeForItem(project.sources[0]) : "news";
   const title = project.meta.title;
-  const focusedNews = /首个全国产10万卡AI超集群|Jeff Dean挥别谷歌48小时首秀/u.test(title);
+  const focusedNews = contentType === "news" && project.meta.durationSeconds >= 55;
   const datePattern = /新闻日期：[^。！？!?]+[。！？!?]?/gu;
   let dateKept = false;
   const narrationSegments = project.narrationSegments.map((segment) => {
