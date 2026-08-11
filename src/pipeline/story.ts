@@ -1618,16 +1618,16 @@ function createGptImageMonaLisaProject(
     {
       scene: {
         type: "title", duration: 12, kicker: "图像模型新信号", headline: shortTitle(title, 42),
-        subhead: "匿名模型进入盲测，真实感和复杂画面表现成为焦点", sources: ["匿名盲测", "同提示对比", "尚未官宣"],
+        subhead: "匿名模型进入盲测，真实感和复杂画面表现成为焦点", sources: ["mona-lisa-1", "同提示对比", "尚未官宣"],
       },
-      narration: `${title}。真正值得关注的不是“碾压”两个字，而是一款代号 mona-lisa-1 的匿名模型，正在盲测中展示更自然的质感和更复杂的画面控制。`,
+      narration: `${title}。mona-lisa-1 在盲测中展示更自然的质感。`,
     },
     {
       scene: {
         type: "briefing_points", duration: 17, headline: "为什么外界猜测它来自 OpenAI", source: "公开测试",
         title: "匿名模型进入 LM Arena", summary: "测试者发现生成结果带有 SynthID 水印，但官方身份仍未确认。",
         metrics: [{ label: "测试方式", value: "匿名盲测" }, { label: "身份状态", value: "尚未官宣" }],
-        points: ["模型以 mona-lisa-1 的代号进入 LM Arena。", "测试者在生成图中检测到 SynthID 水印。", "现有证据只能支持外界猜测，不能当作正式发布。"],
+        points: ["模型以 mona-lisa-1 的代号进入 LM Arena。", "测试者在生成图中检测到 SynthID 水印。", "现有证据只能支持外界猜测，官方身份仍未确认。"],
       },
       narration: "它先以匿名身份进入 LM Arena。测试者把生成图交给验证工具后，发现了 SynthID 水印，因此推测它可能来自 OpenAI。但这仍是公开测试线索，官方没有确认模型身份，也没有公布正式版本和上线时间。",
     },
@@ -1644,10 +1644,10 @@ function createGptImageMonaLisaProject(
     },
     {
       scene: {
-        type: "outro", duration: 14, headline: "效果更强，不等于已经正式发布",
-        bullets: ["测试内容显示知识更新可能停留在 2025 年。", "它可能只是同代模型的新检查点。", "最终能力、价格和上线时间仍要等官方信息。"],
+        type: "outro", duration: 14, headline: "效果提升已经出现，身份仍待确认",
+        bullets: ["测试内容显示知识更新可能停留在 2025 年。", "它可能只是同代模型的新检查点。", "最终能力、价格和公开时间仍要等官方信息。"],
       },
-      narration: "不过现在还不能把它当成最终版。日期测试显示，它的知识更新可能仍停留在二零二五年，更像同代模型的新检查点，而不是彻底换代。结论很明确：画质提升已经出现，但正式名称、价格、上线时间和最终能力，都要等官方发布后再判断。",
+      narration: "效果提升已经出现，但它还不是最终版。知识更新时间可能停留在二零二五年，更像同代模型的新检查点。正式名称、价格、公开时间和最终能力，仍要等官方确认。",
     },
   ], options, { maxSeconds: 60, minSeconds: 58 });
 }
