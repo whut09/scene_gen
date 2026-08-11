@@ -12,6 +12,7 @@ function shortTitle(title: string, max = 34) {
 
 function speechFriendlyText(text: string) {
   return text
+    .replace(/\bClaude\b/gi, "克劳德")
     .replace(/\bCOO\b/gi, "首席运营官")
     .replace(/HappyHorse/gi, "活动主办方")
     .replace(/HorsePower/gi, "人工智能影像大赛");
@@ -1675,7 +1676,7 @@ function createClaudeRiemannRecordProject(
   return createCuratedNewsProject(item, [
     {
       scene: { type: "title", duration: 11, kicker: "数学研究新纪录", headline: shortTitle(title, 42), subhead: "没有证明黎曼猜想，但把关键零点比例纪录从 41.67% 提高到 67.25%", sources: ["67.25%", "约 60 个子智能体", "仍非完整证明"] },
-      narration: title + "。真正的突破不是证明猜想，而是把临界线上零点比例的纪录，从百分之四十一点六七提高到百分之六十七点二五。",
+      narration: title + "。纪录从百分之四十一点六七提高到百分之六十七点二五，黎曼猜想仍未被证明。",
     },
     {
       scene: { type: "briefing_points", duration: 17, headline: "先分清突破和完整证明", source: "研究结果", title: "刷新相关零点比例下界", summary: "黎曼猜想本身仍未被证明，论文推进的是一个重要相关问题。", metrics: [{ label: "原纪录", value: "41.67%" }, { label: "新纪录", value: "67.25%" }, { label: "完整证明", value: "尚未完成" }], points: ["此前三十七年，人类数学家只把相关纪录推进约零点八个百分点。", "新结果一次提高约二十五点六个百分点。", "这不能表述为黎曼猜想已经被证明。"] },

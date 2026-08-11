@@ -297,6 +297,19 @@ test("moderate confidence ASR does not masquerade as a semantic TTS failure", ()
   assert.ok(result.issues.some((item) => item.code === "verification_inconclusive"));
 });
 
+test("near-threshold semantic ASR remains inconclusive", () => {
+  const project = projectFixture();
+  const result = verifySceneTranscripts(project, project.narrationSegments!.map((segment) => ({
+    sceneIndex: segment.sceneIndex,
+    text: segment.text.slice(0, Math.floor(segment.text.length * 0.76)),
+    confidence: 0.84,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  })));
+  assert.equal(result.issues.some((item) => item.code === "audio_semantic_mismatch"), false);
+  assert.ok(result.issues.some((item) => item.code === "verification_inconclusive"));
+});
+
 test("traditional Chinese ASR transcript matches simplified narration", () => {
   const project = projectFixture();
   project.narrationSegments![1].text = "相当于全人类持续计算二百年，现在支持新材料、创新药等领域的计算任务。";
