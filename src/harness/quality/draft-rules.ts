@@ -101,7 +101,7 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
   return { min: 45, max: 105 };
 }
 
-const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|失控|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|全球第|总参数|激活参数/;
+const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|防范|失控|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|全球第|总参数|激活参数/;
 
 function textTokens(value: string) {
   const compact = normalizeText(value);
@@ -330,7 +330,7 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含未完成的截断片段。", evidence: { fragments: narrationJoined.match(/[^。！？!?]{0,18}(?:\.\.\.|…+)[^。！？!?]{0,18}/gu) ?? [] } });
     revisionNotes.push("删除 LLM 截断碎片，确保每个场景以完整句子结束。");
   }
-  const danglingFragmentPattern = /(?:^|[。！？!?])(?:关键是|真正改变的是|要知道|如今|此前|其中|最后|所以|但是|以及|例如|除文本外|值得注意的是|此前报道|试了|创)[。！？!?]/gu;
+  const danglingFragmentPattern = /(?:^|[。！？!?])(?:关键是|真正改变的是|要知道|如今|此前|其中|最后|所以|但是|以及|例如|除文本外|值得注意的是|此前报道|试了|创)[。！？!?]|(?:附加|以及其他|迭代后)[。！？!?]/gu;
   const danglingFragments = narrationTexts.flatMap((text) => text.match(danglingFragmentPattern) ?? []);
   const unpunctuatedSegments = narrationTexts.filter((text) => !/[。！？!?]$/u.test(text.trim()));
   if (danglingFragments.length > 0 || unpunctuatedSegments.length > 0) {

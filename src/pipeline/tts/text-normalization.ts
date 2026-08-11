@@ -103,6 +103,8 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/Next[.]js/gi, "Next JS")
     .replace(/draw[.]io/gi, "Draw IO")
     .replace(/ChatGPT/gi, "恰特 G-P-T")
+    .replace(/\bClaude\b(?!\s+Code\b)/gi, "克劳德")
+    .replace(/\bC2PA\b/gi, "C、二、P、A")
     .replace(/\bSol\b/gi, "索尔")
     .replace(/Codex(?![，、。！？；：,.!?;:])/gi, "Codex，")
     .replace(/OpenAI/gi, "欧盆艾，")

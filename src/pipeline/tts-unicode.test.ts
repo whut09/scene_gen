@@ -15,3 +15,12 @@ test("pronounces a headline-leading 曝 as bao", () => {
   assert.match(prepared, /爆料称/);
   assert.equal(prepared.includes("曝"), false);
 });
+
+test("normalizes Claude for Mandarin synthesis", () => {
+  assert.equal(prepareF5SynthesisText("Claude 推进了相关研究。"), "克劳德 推进了相关研究。");
+  assert.equal(prepareF5SynthesisText("Claude Code 继续保留产品原名。"), "Claude Code 继续保留产品原名。");
+});
+
+test("normalizes C2PA as a stable acronym", () => {
+  assert.equal(prepareF5SynthesisText("使用 C2PA 元数据。"), "使用 C、二、P、A 元数据。");
+});

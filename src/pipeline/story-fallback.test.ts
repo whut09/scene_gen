@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildProductionDecisions } from "../production/visual-planner";
 import { projectSynthesisReadinessIssues } from "./synthesis-readiness";
 import { cleanNarrationNoise, compactProjectNarration, createStoryProject, scrubAttribution, splitArticleIntoSemanticChunks } from "./story";
 import type { HotItem } from "./types";
@@ -683,10 +684,24 @@ test("current news batch uses grounded complete deterministic profiles", () => {
   ];
   for (const fixture of fixtures) {
     const project = createStoryProject({ id: fixture.title, kind: "webpage", contentType: fixture.type, title: fixture.title, url: fixture.url, source: "核心事实", summary: fixture.content, content: fixture.content, publishedAt: "2026年8月11日", score: 1, tags: [] });
-    assert.equal(project.scenes.length, 4);
+    assert.equal(project.scenes.length, fixture.type === "technical-article" ? 5 : 4);
     assert.match(project.narration, fixture.expected);
     assert.equal(project.narrationSegments?.every((segment) => /[。！？!?]$/u.test(segment.text)), true);
     assert.doesNotMatch(project.narration, /(?:^|[。！？!?])(?:关键是|要知道|如今|此前|试了|创)[。！？!?]/u);
+    if (fixture.url.includes("3934784382958726")) {
+      assert.equal(project.meta.title, fixture.title);
+      assert.equal(project.scenes[0]?.headline, fixture.title);
+      assert.match(project.narrationSegments?.[0]?.ttsText ?? "", /克劳德/);
+    }
+    if (fixture.url.includes("988/286")) {
+      assert.equal(project.scenes[0]?.headline, fixture.title);
+      const chart = project.scenes.find((scene) => scene.type === "signal_chart");
+      assert.equal(chart?.bars.find((bar) => bar.label === "综合排名")?.value, 2);
+      assert.equal(chart?.bars.some((bar) => bar.value === 90), false);
+      const visualStateCount = buildProductionDecisions(project).reduce((sum, decision) => sum + 1 + decision.syncCues.length, 0);
+      assert.equal(visualStateCount >= 15, true);
+    }
+    if (fixture.url.includes("2978138")) assert.equal(project.scenes[0]?.headline, fixture.title);
   }
 });
 

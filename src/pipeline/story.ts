@@ -19,7 +19,11 @@ function speechFriendlyText(text: string) {
 }
 
 function speechFriendlyTitle(title: string) {
-  return speechFriendlyText(title.replace(/^.{4,24}[？?](?=.{2,30}[：:])/u, ""));
+  return title
+    .replace(/^.{4,24}[？?](?=.{2,30}[：:])/u, "")
+    .replace(/\bCOO\b/gi, "首席运营官")
+    .replace(/HappyHorse/gi, "活动主办方")
+    .replace(/HorsePower/gi, "人工智能影像大赛");
 }
 
 const danglingClauseEnding = /(?:\u6b63\u662f\u56e0\u4e3a|\u56e0\u4e3a|\u4f46\u662f|\u800c\u4e14|\u4ee5\u53ca|\u5e76\u4e14|\u4ece\u800c|\u6240\u4ee5|\u5305\u62ec|\u4f8b\u5982)[\uff0c,:\s]*$/u;
@@ -1675,7 +1679,7 @@ function createClaudeRiemannRecordProject(
   const title = speechFriendlyTitle(item.title);
   return createCuratedNewsProject(item, [
     {
-      scene: { type: "title", duration: 11, kicker: "数学研究新纪录", headline: shortTitle(title, 42), subhead: "没有证明黎曼猜想，但把关键零点比例纪录从 41.67% 提高到 67.25%", sources: ["67.25%", "约 60 个子智能体", "仍非完整证明"] },
+      scene: { type: "title", duration: 11, kicker: "数学研究新纪录", headline: title, subhead: "没有证明黎曼猜想，但把关键零点比例纪录从 41.67% 提高到 67.25%", sources: ["67.25%", "约 60 个子智能体", "仍非完整证明"] },
       narration: title + "。纪录从百分之四十一点六七提高到百分之六十七点二五，黎曼猜想仍未被证明。",
     },
     {
@@ -1700,12 +1704,12 @@ function createMaiImage26Project(
   const title = speechFriendlyTitle(item.title);
   return createCuratedNewsProject(item, [
     {
-      scene: { type: "title", duration: 11, kicker: "文生图模型更新", headline: shortTitle(title, 42), subhead: "三周内继续迭代，综合排名从第十位升到第二位", sources: ["Elo 1336", "提升 79 分", "文本渲染提升 91 分"] },
-      narration: title + "。三周内继续迭代后，综合排名从第十位升到第二位，最明显的进步来自文本渲染和三维图像。",
+      scene: { type: "title", duration: 11, kicker: "文生图模型更新", headline: title, subhead: "三周内继续迭代，综合排名从第十位升到第二位", sources: ["Elo 1336", "提升 79 分", "文本渲染提升 91 分"] },
+      narration: title + "。三周迭代后，综合排名升至第二位。",
     },
     {
-      scene: { type: "signal_chart", duration: 17, headline: "排名和评分同时上升", bars: [{ label: "综合评分", value: 79, detail: "Elo 评分达到一千三百三十六分，较上一版提升七十九分。", color: "#18b7a5" }, { label: "文本渲染", value: 91, detail: "文本渲染单项提升九十一分。", color: "#7c6cff" }, { label: "综合排名", value: 90, detail: "从第十位升到第二位。", color: "#facc15" }] },
-      narration: "新模型的 Elo 评分达到一千三百三十六分，比二点五版本提高七十九分。其中文本渲染单项提高九十一分，综合排名也从第十位跃升到第二位。",
+      scene: { type: "signal_chart", duration: 17, headline: "排名和评分同时上升", bars: [{ label: "Elo 评分", value: 79, detail: "Elo 评分达到一千三百三十六分，较上一版提升七十九分。", color: "#18b7a5" }, { label: "文本渲染", value: 91, detail: "文本渲染单项提升九十一分。", color: "#7c6cff" }, { label: "综合排名", value: 2, detail: "从第十位升到第二位。", color: "#facc15" }] },
+      narration: "新模型的Elo评分达到一千三百三十六分，比二点五版本提高七十九分。其中文本渲染单项提高九十一分，综合排名也从第十位跃升到第二位。",
     },
     {
       scene: { type: "briefing_points", duration: 17, headline: "进步不只发生在一个类别", source: "公开评测", title: "三维、动漫、商业设计和文字同步提升", summary: "三维成像与建模升至第一位，多个内容类别升至第二位。", metrics: [{ label: "3D 成像", value: "第 1 位" }, { label: "动漫幻想", value: "第 2 位" }, { label: "商业设计", value: "第 2 位" }], points: ["支持多参考图融合。", "文本描述与图像区域的关联更准确。", "输出格式和分辨率控制更细。"] },
@@ -1725,20 +1729,24 @@ function createClaudeInvisibleWatermarkProject(
   const title = speechFriendlyTitle(item.title);
   return createCuratedNewsProject({ ...item, contentType: "technical-article" }, [
     {
-      scene: { type: "title", duration: 11, kicker: "技术文章", headline: shortTitle(title, 42), subhead: "把可检测特征嵌入文本结构，不在画面上显示标签", sources: ["文本水印", "C2PA 元数据", "检测边界"] },
-      narration: title + "。关键不是在文字旁边加标签，而是把可检测特征写进文本结构，同时给生成文件附加来源元数据。",
+      scene: { type: "title", duration: 10, kicker: "技术文章", headline: title, subhead: "把可检测特征嵌入文本结构，不在画面上显示标签", sources: ["文本水印", "C2PA 元数据", "检测边界"] },
+      narration: title + "。它把可检测特征写进文本结构，并为生成文件附加可验证元数据。",
     },
     {
-      scene: { type: "flow", duration: 17, headline: "两种内容使用两套标记", steps: [{ label: "生成文本", detail: "算法把统计特征嵌入词语选择和文本结构。" }, { label: "轻度编辑", detail: "复制、粘贴或少量修改后仍可能被识别。" }, { label: "生成文件", detail: "图片等文件附加 C2PA 数字签名元数据。" }, { label: "检测工具", detail: "第三方通过配套工具检查标记。" }] },
-      narration: "文本部分使用特殊算法，把统计特征嵌入词语选择和底层结构，尽量不改变含义和阅读体验。图片等生成文件则使用 C2PA 数字签名元数据记录来源。",
+      scene: { type: "flow", duration: 13, headline: "文本水印藏在词语选择里", steps: [{ label: "生成文本", detail: "模型在多个近义表达之间按规则选择。" }, { label: "嵌入特征", detail: "连续选择形成可统计检测的结构。" }, { label: "保持含义", detail: "阅读者看不到额外标签。" }, { label: "配套检测", detail: "检测工具按对应规则分析文本。" }] },
+      narration: "文本水印使用特殊算法，把统计特征嵌入词语选择和底层结构，尽量不改变原意和阅读体验。检测工具再按对应规则分析这些特征。",
     },
     {
-      scene: { type: "briefing_points", duration: 17, headline: "水印能说明什么，不能说明什么", source: "技术边界", title: "检测到水印不等于证明原作者", summary: "它只能说明内容经过相关模型处理，不能单独证明内容由模型从零创作。", metrics: [{ label: "轻度编辑", value: "可能保留" }, { label: "大幅改写", value: "可能丢失" }, { label: "作者身份", value: "不能证明" }], points: ["翻译、重述、混合文本可能破坏标记。", "短文本或格式转换也可能无法检测。", "检测结果需要结合上下文和其他证据。"] },
-      narration: "边界同样重要。大幅改写、翻译、重述或混合文本，都可能让水印丢失。即使检测到水印，也只能说明内容经过模型处理，不能证明它完全由模型原创。",
+      scene: { type: "briefing_points", duration: 12, headline: "生成文件使用另一套标记", source: "文件来源", title: "C2PA 元数据记录生成来源", summary: "图片等生成文件附加数字签名元数据，和文本统计水印不是同一种机制。", metrics: [{ label: "文本", value: "统计特征" }, { label: "生成文件", value: "C2PA" }, { label: "用途", value: "来源追溯" }], points: ["文本靠结构特征检测。", "图片等文件依赖签名元数据。", "两种机制都需要配套工具读取。"] },
+      narration: "图片等生成文件使用另一套方法，通过 C2PA 数字签名元数据记录来源。它和文本统计水印不是同一种机制，但都需要配套工具读取。",
     },
     {
-      scene: { type: "outro", duration: 15, headline: "它提高追溯能力，但不是最终裁决", bullets: ["检测工具和公开规则决定可用性。", "误报、漏报和跨平台兼容仍需验证。", "发布判断不能只依赖单一水印结果。"] },
-      narration: "所以，隐形水印更像一条追溯线索，不是最终裁决。真正能否落地，还要看检测工具是否开放、误报和漏报多高，以及不同平台能否识别同一套标准。",
+      scene: { type: "briefing_points", duration: 14, headline: "水印能说明什么，不能说明什么", source: "技术边界", title: "检测到水印不等于证明原作者", summary: "它仅能说明内容可能经过相关模型处理，不能单独证明内容由模型从零创作。", metrics: [{ label: "轻度编辑", value: "可能保留" }, { label: "大幅改写", value: "可能丢失" }, { label: "作者身份", value: "不能证明" }], points: ["翻译、重述、混合文本可能破坏标记。", "短文本或格式转换也可能无法检测。", "检测结果需要结合上下文和其他证据。"] },
+      narration: "边界同样重要。大幅改写、翻译、重述或混合文本，都可能让水印丢失。即使检测到水印，也仅能说明内容可能经过模型处理，不能证明它完全由模型原创。",
+    },
+    {
+      scene: { type: "outro", duration: 11, headline: "它提高追溯能力，但不是最终裁决", bullets: ["检测工具和公开规则决定可用性。", "误报、漏报和跨平台兼容仍需验证。", "内容判断不能只依赖单一水印结果。"] },
+      narration: "所以，隐形水印仅是一条可能有效的追溯线索，不是最终裁决。实际使用还要结合检测工具、误报漏报情况和上下文证据。",
     },
   ], options, { maxSeconds: 65, minSeconds: 58 });
 }
