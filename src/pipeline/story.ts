@@ -1625,9 +1625,9 @@ function createGptImageMonaLisaProject(
     {
       scene: {
         type: "briefing_points", duration: 17, headline: "为什么外界猜测它来自 OpenAI", source: "公开测试",
-        title: "匿名模型进入 LM Arena", summary: "测试者发现生成结果带有 SynthID 水印，但官方身份仍未确认。",
+        title: "匿名模型进入 LM Arena（大模型竞技场）", summary: "测试者发现生成结果带有 SynthID 合成内容水印，但官方身份仍未确认。",
         metrics: [{ label: "测试方式", value: "匿名盲测" }, { label: "身份状态", value: "尚未官宣" }],
-        points: ["模型以 mona-lisa-1 的代号进入 LM Arena。", "测试者在生成图中检测到 SynthID 水印。", "现有证据只能说明外界猜测有依据，官方身份仍未确认。"],
+        points: ["模型以 mona-lisa-1 的代号进入 LM Arena 大模型竞技场。", "测试者在生成图中检测到 SynthID 合成内容水印。", "现有证据只能说明外界猜测有依据，官方身份仍未确认。"],
       },
       narration: "它先以匿名身份进入大模型竞技场的盲测。测试者把生成图交给验证工具后，发现了合成内容水印，因此推测它可能来自 OpenAI。但这仍是公开测试线索，官方没有确认模型身份，也没有公布正式版本和上线时间。",
     },
