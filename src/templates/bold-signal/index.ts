@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, headlineFontSize, projectPublicationDate, proje
 
 export const boldSignalTemplate: HtmlTemplateDefinition = {
   id: "bold-signal",
-  version: "1.4.2",
+  version: "2.0.0",
   name: "Bold Signal",
   description: "High-impact title and outro frame for short-form news videos.",
   engine: "html-video",

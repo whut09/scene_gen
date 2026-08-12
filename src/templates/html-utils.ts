@@ -128,12 +128,7 @@ export function commonHtml({
     coral: { a: "#9b2855", b: "#d95372", c: "#f4a261", paper: "#fff0f2" },
   };
   const colors = paletteCss[palette];
-  const background =
-    theme === "paper"
-      ? "#fbf7ed"
-      : theme === "dark"
-        ? "#07111f"
-        : colors.a;
+  const background = theme === "paper" ? "#f5f1e8" : "#0b1018";
 
   return `<!doctype html>
 <html>
@@ -149,35 +144,33 @@ export function commonHtml({
       color: #fff;
       background: ${background};
       --scene-duration: ${Math.max(4, durationSec)}s;
-      --safe-left: 96px;
-      --safe-right: 156px;
+      --safe-left: 82px;
+      --safe-right: 82px;
       --safe-top: 138px;
       --safe-bottom: 150px;
       --hv-accent: ${colors.c};
+      --hv-ink: #0b1018;
+      --hv-paper: #f5f1e8;
+      --hv-coral: #ff6b4a;
+      --hv-cyan: #58d6d0;
+      --hv-yellow: #f6d65c;
     }
     .hv-root { position: relative; width: 100%; height: 100%; overflow: hidden; }
     .hv-root::before {
       content: "";
       position: absolute;
       inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
-      background-size: 96px 96px;
-      opacity: .16;
-      animation: hv-grid-drift var(--scene-duration) linear both;
+      background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+      background-size: 72px 72px;
+      opacity: .55;
     }
     .hv-root::after {
       content: "";
       position: absolute;
       z-index: 3;
-      top: -20%;
-      bottom: -20%;
-      left: -38%;
-      width: 32%;
-      transform: skewX(-12deg);
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,.11), transparent);
-      animation: hv-scene-sweep calc(var(--scene-duration) * .72) 1.4s cubic-bezier(.2,.65,.25,1) both;
+      top: 0; bottom: 0; left: 34px; width: 10px;
+      background: var(--hv-coral);
+      animation: hv-accent-grow .9s .18s cubic-bezier(.2,.8,.2,1) both;
       pointer-events: none;
     }
     .hv-top {
@@ -203,27 +196,22 @@ export function commonHtml({
       animation: hv-enter .72s cubic-bezier(.2,.8,.2,1) both;
     }
     .hv-card {
-      border: 2px solid rgba(255,255,255,.24);
-      background: rgba(255,255,255,.13);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 18px 50px rgba(0,44,120,.12);
-      backdrop-filter: blur(8px);
+      border: 2px solid rgba(255,255,255,.32);
+      background: #111a26;
+      box-shadow: 14px 14px 0 rgba(88,214,208,.16);
     }
     .hv-kicker { color: #fff36a; font-weight: 900; font-size: 28px; margin-bottom: 18px; }
     h1, h2, h3, p { margin: 0; }
     h1 {
       font-size: 78px;
       line-height: 1.12;
-      letter-spacing: .02em;
-      text-shadow: 0 4px 0 rgba(0,40,120,.25), 0 0 16px rgba(255,255,255,.16);
+      letter-spacing: 0;
+      text-shadow: none;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
     .hv-card { position: relative; overflow: hidden; }
-    .hv-card::after {
-      content: ""; position: absolute; inset: 0 auto 0 -45%; width: 28%; pointer-events: none;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,.13), transparent);
-      animation: hv-card-scan 7s 2s ease-in-out infinite;
-    }
+    .hv-card::after { display:none; }
     p { font-size: 34px; line-height: 1.5; color: rgba(255,255,255,.84); }
     @keyframes hv-enter {
       from { opacity: 0; transform: translateY(34px) scale(.985); }
@@ -237,14 +225,14 @@ export function commonHtml({
       from { transform: scaleX(0); }
       to { transform: scaleX(1); }
     }
-    @keyframes hv-grid-drift { from { background-position: 0 0, 0 0; } to { background-position: 72px 110px, 110px 72px; } }
-    @keyframes hv-scene-sweep { 0% { transform: translateX(0) skewX(-12deg); opacity: 0; } 12% { opacity: 1; } 100% { transform: translateX(${Math.round(width * 4.8)}px) skewX(-12deg); opacity: 0; } }
-    @keyframes hv-card-scan { 0%, 58% { transform: translateX(0); opacity: 0; } 66% { opacity: 1; } 84%, 100% { transform: translateX(520%); opacity: 0; } }
+    @keyframes hv-accent-grow { from { transform:scaleY(0); transform-origin:top; } to { transform:scaleY(1); transform-origin:top; } }
     ${themeCss}
     ${extraCss}
     ${accessibilityCss}
     .hv-main { left: var(--safe-left) !important; right: var(--safe-right) !important; }
     .hv-main, .hv-main * { max-width: 100%; }
+    body.hv-theme-paper .hv-root::before { background-image:linear-gradient(rgba(11,16,24,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(11,16,24,.055) 1px,transparent 1px); }
+    body.hv-theme-paper .hv-root::after { background:#d94f39; }
   </style>
 </head>
 <body class="hv-theme-${theme}">

@@ -296,14 +296,15 @@ test("repository synthesis gate permits a complete canonical project", () => {
   const project = createFixtureProject();
   project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "MoonshotAI/kimi-code", url: "https://github.com/MoonshotAI/kimi-code" };
   project.meta.title = "kimi-code";
+  const homepageTitle = "今日开源热点趋势项目推荐：kimi-code｜辅助日常代码工作流";
   const narration = [
-    "开源项目推荐：kimi-code。它面向日常代码工作流，把任务理解、修改建议和结果核对组织在同一套命令行体验里，帮助开发者从问题描述开始建立清晰的执行步骤。",
+    `${homepageTitle}。它面向日常代码工作流，把任务理解、修改建议和结果核对组织在同一套命令行体验里，帮助开发者从问题描述开始建立清晰的执行步骤。`,
     "第一屏之后，项目把复杂工作拆成可检查的小任务。使用者可以先阅读上下文和变更范围，再决定是否执行下一步，从而避免把未经确认的修改直接带入现有工程。",
     "在代码编写阶段，它强调基于仓库上下文给出建议，并把命令、文件变更和结果反馈放在连续流程中。对于较长任务，每一步都应能看到当前目标、已完成内容和待确认事项，方便中断后继续。",
     "最后需要注意，工具不能替代测试、评审和安全检查。把它用于重复性的定位、整理和初稿工作更合适；涉及发布、权限或关键业务逻辑时，仍应由开发者核实变更并完成验证。",
   ];
   project.scenes = Array.from({ length: 4 }, () => ({ ...project.scenes[0] })).map((scene, index) => index === 0
-    ? { ...scene, type: "title", kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：kimi-code", subhead: "代码工作流工具", sources: ["项目资料"] }
+    ? { ...scene, type: "title", kicker: "今日开源热点趋势项目推荐", headline: homepageTitle, subhead: "用途：辅助日常代码工作流；适用场景：代码任务", sources: ["项目资料"] }
     : scene);
   project.narrationSegments = narration.map((text, sceneIndex) => ({ sceneIndex, text }));
   project.narration = narration.join("\n");

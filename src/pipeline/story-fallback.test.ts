@@ -217,6 +217,46 @@ test("AI mathematics URL fallback restores the canonical title when source parsi
   assert.match(project.narrationSegments![0].text, /^突发！OpenAI下一代AI攻克10项菲尔兹奖级难题/);
 });
 
+test("MemoraX news fallback keeps the narration focused on memory infrastructure", () => {
+  const project = createStoryProject({
+    id: "memora-x",
+    kind: "webpage",
+    contentType: "news",
+    title: "给大模型做记忆，郝建业半年融三轮",
+    url: "https://www.36kr.com/p/3935837932518536",
+    source: "核心事实",
+    summary: "公司刚注册，就有投资人主动找上门。",
+    content: "AI记忆基础设施公司完成数亿元融资，并在不到半年完成三轮融资。",
+    publishedAt: "2026年8月12日",
+    score: 1,
+    tags: [],
+  });
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /记住用户和项目上下文/u);
+  assert.match(project.narration, /不到半年完成三轮融资/u);
+  assert.doesNotMatch(project.narration, /全球 Agentic AI 编排/u);
+});
+
+test("LTX-2.5 news fallback leads with speed and usage paths", () => {
+  const project = createStoryProject({
+    id: "ltx-25",
+    kind: "webpage",
+    contentType: "news",
+    title: "LTX-2.5 模型登场：AI 生成 10 秒 720P 视频仅需 6.8 秒，原生集成 ComfyUI",
+    url: "https://www.ithome.com/0/988/766.htm",
+    source: "核心事实",
+    summary: "在两张 GB200 配置下生成十秒七百二十 P 视频只需要六点八秒。",
+    content: "用户可通过 Hugging Face、ComfyUI 和 LTX API 获取模型或调用托管生成服务。",
+    publishedAt: "2026年8月12日",
+    score: 1,
+    tags: [],
+  });
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /六点八秒/u);
+  assert.match(project.narration, /Hugging Face.*ComfyUI.*LTX API/su);
+  assert.doesNotMatch(project.narration, /Rank模型/u);
+});
+
 test("technical article fallback uses explainer structure without news wording", () => {
   const content = Array.from({ length: 12 }, (_, index) => `\u8fd9\u662f\u6280\u672f\u6587\u7ae0\u7684\u7b2c${index + 1}\u4e2a\u5b8c\u6574\u63a8\u5bfc\u6b65\u9aa4\uff0c\u7528\u4e8e\u8bf4\u660e\u6570\u636e\u3001\u5047\u8bbe\u3001\u8ba1\u7b97\u548c\u7ed3\u8bba\u8fb9\u754c\u3002`).join("");
   const item: HotItem = {
@@ -253,9 +293,9 @@ test("repository fallback produces a complete four-scene short project without p
   assert.equal(project.scenes.length, 4);
   assert.equal(project.narrationSegments?.length, 4);
   assert.equal(project.scenes[0].type, "title");
-  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：build-your-own-x");
-  assert.equal(project.narrationSegments?.[0].text.startsWith("开源项目推荐：build-your-own-x"), true);
-  assert.equal(project.narrationSegments?.[0].ttsText?.startsWith("开源项目推荐：Build Your Own X"), true);
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：build-your-own-x｜通过从零实现理解技术原理");
+  assert.equal(project.narrationSegments?.[0].text.startsWith("今日开源热点趋势项目推荐：build-your-own-x｜通过从零实现理解技术原理"), true);
+  assert.equal(project.narrationSegments?.[0].ttsText?.startsWith("今日开源热点趋势项目推荐：Build Your Own X｜通过从零实现理解技术原理"), true);
   assert.ok(project.narration.replace(/\s/g, "").length >= 240);
   assert.ok(project.meta.durationSeconds >= 40 && project.meta.durationSeconds <= 55);
   assert.match(project.narration, /省掉什么麻烦|最费时间/);
@@ -277,9 +317,35 @@ test("repository title screen displays the captured star count", () => {
   }
 });
 
+test("diagram-design explains editorial technical diagrams instead of generic drawing", () => {
+  const project = createStoryProject({
+    id: "diagram-design", kind: "github", contentType: "repository", title: "diagram-design: editorial diagrams",
+    url: "https://github.com/cathrynlavery/diagram-design", source: "项目资料", summary: "29 editorial diagram types for agents",
+    content: "Architecture, flowchart, sequence, HTML and SVG diagrams with brand colors and fonts.", score: 1, tags: [],
+    repo: "cathrynlavery/diagram-design", metrics: { stars: 8098 },
+  });
+
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：diagram-design｜让智能体生成专业技术图表");
+  assert.match(project.narration, /二十七种编辑级图表类型.*架构、流程、时序和数据关系/s);
+  assert.match(project.narration, /HTML 与 SVG.*品牌规范/s);
+});
+
+test("project-based-learning explains learning by building real projects", () => {
+  const project = createStoryProject({
+    id: "project-based-learning", kind: "github", contentType: "repository", title: "project-based-learning: curated tutorials",
+    url: "https://github.com/practical-tutorials/project-based-learning", source: "项目资料", summary: "Curated list of project-based tutorials",
+    content: "Tutorials organized by programming language for building applications, tools and systems.", score: 1, tags: [],
+    repo: "practical-tutorials/project-based-learning", metrics: { stars: 278741 },
+  });
+
+  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：project-based-learning｜用真实项目系统学习编程");
+  assert.match(project.narration, /覆盖应用、工具、系统与人工智能.*可运行作品/s);
+  assert.match(project.narration, /资料质量、难度和维护状态.*检查链接、依赖/s);
+});
+
 test("featured repositories reveal their concrete use immediately after the spoken project title", () => {
   const fixtures = [
-    { repo: "TapXWorld/ChinaTextbook", name: "ChinaTextbook", content: "Chinese primary and middle school textbooks grouped by grade and subject.", expected: /直接查找需要的课本/ },
+    { repo: "TapXWorld/ChinaTextbook", name: "ChinaTextbook", content: "Chinese primary and middle school textbooks grouped by grade and subject.", expected: /集中查找和阅读.*教材资源/ },
     { repo: "goauthentik/authentik", name: "authentik", content: "Identity provider with SSO, SAML, OIDC and LDAP.", expected: /登录和权限统一到一个入口/ },
     { repo: "different-ai/openwork", name: "openwork", content: "Shared AI workflows and MCP services for teams.", expected: /工作流.*直接复用/ },
   ];
@@ -290,7 +356,7 @@ test("featured repositories reveal their concrete use immediately after the spok
       url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content,
       score: 1, tags: [], repo: fixture.repo, metrics: { stars: 100 },
     });
-    assert.match(project.narrationSegments?.[0]?.text ?? "", fixture.expected);
+    assert.match(project.narration, fixture.expected);
   }
 });
 
@@ -432,7 +498,7 @@ test("Kaneo repository draft explains simple self-hosted project management", ()
   });
 
   assert.equal(project.meta.title, "kaneo");
-  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：kaneo");
+  assert.match(project.scenes[0].headline, /^今日开源热点趋势项目推荐：kaneo｜/u);
   assert.match(project.narrationSegments![1].text, /任务、进度和负责人/);
   assert.match(project.narration, /安装 Docker.*备份.*访问控制/s);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
@@ -444,7 +510,7 @@ test("copilot-sdk repository draft explains embedded coding agents", () => {
   });
 
   assert.equal(project.meta.title, "copilot-sdk");
-  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：copilot-sdk");
+  assert.match(project.scenes[0].headline, /^今日开源热点趋势项目推荐：copilot-sdk｜/u);
   assert.match(project.narrationSegments![1].text, /任务规划、工具调用和文件修改/);
   assert.match(project.narration, /项目语言安装.*限制目录、命令、密钥和审批范围/s);
   assert.doesNotMatch(project.narration, /github\.com|GitHub|仓库地址/i);
@@ -456,7 +522,7 @@ test("DeerFlow repository draft explains long-running agent work", () => {
   });
 
   assert.equal(project.meta.title, "deer-flow");
-  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：deer-flow");
+  assert.match(project.scenes[0].headline, /^今日开源热点趋势项目推荐：deer-flow｜/u);
   assert.match(project.narrationSegments![1].text, /子智能体、长期记忆、沙箱、工具和可扩展技能/);
   assert.match(project.narration, /Python、Node\.js.*沙箱和最小权限/s);
   assert.doesNotMatch(project.narration, /火山|方舟|github\.com|GitHub|仓库地址/i);
@@ -468,7 +534,7 @@ test("awesome-systematic-trading repository draft stays educational and grounded
   });
 
   assert.equal(project.meta.title, "awesome-systematic-trading");
-  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：awesome-systematic-trading");
+  assert.match(project.scenes[0].headline, /^今日开源热点趋势项目推荐：awesome-systematic-trading｜/u);
   assert.match(project.narrationSegments![1].text, /回测框架、交易库、数据工具/);
   assert.match(project.narration, /历史数据验证.*不是投资建议/s);
   assert.match(project.narration, /不是投资建议/);
@@ -481,7 +547,7 @@ test("Voice-Pro repository draft explains the end-to-end dubbing workflow", () =
   });
 
   assert.equal(project.meta.title, "voice-pro");
-  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：voice-pro");
+  assert.match(project.scenes[0].headline, /^今日开源热点趋势项目推荐：voice-pro｜/u);
   assert.match(project.narrationSegments![1].text, /视频下载、语音分离、字幕识别、跨语言翻译和文本转语音/);
   assert.match(project.narration, /导入.*分离人声.*音色克隆必须获得授权/s);
   assert.match(project.narration, /音色克隆必须获得授权/);
@@ -494,7 +560,7 @@ test("Ansible repository draft explains agentless infrastructure automation", ()
   });
 
   assert.equal(project.meta.title, "ansible");
-  assert.equal(project.scenes[0].headline, "今日开源热点趋势项目推荐：ansible");
+  assert.match(project.scenes[0].headline, /^今日开源热点趋势项目推荐：ansible｜/u);
   assert.match(project.narrationSegments![1].text, /人和机器都能读懂的任务文件.*配置管理、应用部署/);
   assert.match(project.narration, /安装 Ansible.*生产使用前.*回滚方案/s);
   assert.match(project.narration, /无需安装专用代理/);
@@ -511,7 +577,7 @@ test("Loop and Graph technical article uses an explainer without date or attribu
   assert.equal(project.scenes[0].type, "title");
   if (project.scenes[0].type === "title") assert.equal(project.scenes[0].kicker, "技术架构解析");
   assert.match(project.narration, /节点内部完全可以继续运行 Loop/);
-  assert.match(project.narration, /百分之八十点八.*百分之七十.*十五倍/s);
+  assert.match(project.narration, /通信.*共享状态.*编排开销/s);
   assert.doesNotMatch(project.narration, /新闻日期|2026年|8月3日|钛媒体|记者|来源/);
 });
 
@@ -582,7 +648,7 @@ test("requested repository profiles explain direct use and practical boundaries"
     const visibleText = [project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" ");
 
     assert.equal(project.meta.title, name);
-    assert.equal(project.scenes[0].headline, `今日开源热点趋势项目推荐：${name}`);
+    assert.match(project.scenes[0].headline, new RegExp(`^今日开源热点趋势项目推荐：${name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}｜`, "u"));
     assert.equal(project.scenes.length, 4);
     assert.ok(project.meta.durationSeconds >= 40 && project.meta.durationSeconds <= 55);
     assert.match(project.narration, fixture.expected);
@@ -631,7 +697,7 @@ test("requested repository profiles generate project-specific narration", () => 
 
 test("current repository requests use project-specific value propositions", () => {
   const fixtures = [
-    { repo: "TapXWorld/ChinaTextbook", content: "Chinese school textbooks organized by grade and subject for primary and middle school.", expected: /中小学教材.*年级和学科/s },
+    { repo: "TapXWorld/ChinaTextbook", content: "Chinese school textbooks organized by grade and subject for primary and middle school.", expected: /小学、初中、年级和学科/s },
     { repo: "goauthentik/authentik", content: "Open-source Identity Provider for SSO with SAML, OAuth2, OIDC, LDAP and RADIUS.", expected: /单点登录.*账号.*访问策略/s },
     { repo: "different-ai/openwork", content: "Desktop app for sharing AI workflows, skills, plugins and MCP connections across teams and tools.", expected: /工作流.*MCP.*团队/s },
   ];

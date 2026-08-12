@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPubl
 
 export const kineticTitleTemplate: HtmlTemplateDefinition = {
   id: "kinetic-title",
-  version: "1.3.4",
+  version: "2.0.0",
   name: "Kinetic Title",
   description: "Oversized editorial typography with paced signal strips for hooks and conclusions.",
   engine: "html-video",
@@ -62,13 +62,13 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
     const css =
       '.kt-main{inset:112px 58px 72px;display:flex;flex-direction:column;justify-content:center;}' +
       '.kt-asset{position:absolute;right:-20px;top:90px;width:520px;height:610px;margin:0;overflow:hidden;border:2px solid rgba(255,255,255,.38);background:rgba(3,21,52,.38);box-shadow:0 36px 100px rgba(0,20,70,.3);animation:kt-asset-in .9s .18s both}.kt-asset img{width:100%;height:100%;object-fit:contain;background:rgba(255,255,255,.96)}' +
-      '.kt-index{position:absolute;right:0;top:0;font-size:260px;line-height:.8;font-weight:950;color:rgba(255,255,255,.09);}' +
+      '.kt-index{position:absolute;right:0;top:0;font-size:260px;line-height:.8;font-weight:950;color:rgba(255,255,255,.055);font-family:Georgia,serif}' +
       '.kt-kicker{font-size:30px;font-weight:900;color:#fff36a;margin-bottom:26px;animation:hv-rise .45s both;}' +
       '.kt-date{display:grid;gap:8px;align-self:flex-start;margin-bottom:32px;padding:18px 24px;background:#fff36a;color:#083f99;box-shadow:0 18px 52px rgba(0,20,70,.18);animation:hv-rise .5s .08s both}.kt-date small{font-size:22px;font-weight:850;letter-spacing:.08em}.kt-date strong{font-size:46px;line-height:1;font-weight:950}' +
       '.kt-title{font-size:var(--kt-title-size);line-height:1.08;max-width:950px;letter-spacing:0;animation:kt-slam .72s cubic-bezier(.16,.86,.22,1) both;}' +
       '.kt-rule{display:grid;grid-template-columns:1.7fr .7fr .35fr;gap:12px;width:72%;margin:42px 0 34px;}' +
-      '.kt-rule i{height:12px;background:#fff36a;transform-origin:left;animation:hv-width .8s .3s both,kt-rule-pulse 4s 1.2s ease-in-out infinite;}' +
-      '.kt-rule i:nth-child(2){background:#72f0ff;animation-delay:.45s,1.6s}.kt-rule i:nth-child(3){background:#ff8bd7;animation-delay:.6s,2s}' +
+      '.kt-rule i{height:12px;background:var(--hv-coral);transform-origin:left;animation:hv-width .8s .3s both}' +
+      '.kt-rule i:nth-child(2){background:var(--hv-cyan);animation-delay:.45s}.kt-rule i:nth-child(3){background:var(--hv-yellow);animation-delay:.6s}' +
       '.kt-support{font-size:34px;max-width:850px;animation:hv-rise .55s .5s both;}' +
       '.kt-stars{align-self:flex-start;margin-top:26px;padding:13px 20px;background:#fff36a;color:#083f99;font-size:28px;line-height:1;font-weight:950;animation:hv-rise .45s .62s both;}' +
       '.kt-stamp{position:absolute;left:0;right:0;bottom:4px;font-size:30px;line-height:1.2;font-weight:900;letter-spacing:.04em;color:rgba(255,255,255,.82);overflow-wrap:anywhere;}' +

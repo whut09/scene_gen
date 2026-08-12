@@ -25,5 +25,5 @@ test("bold signal keeps ambient motion active for long title scenes", () => {
   const html = boldSignalTemplate.renderHtml({ project, scene: { ...scene, duration: 30 }, width: 1080, height: 1920, variantId: "minimal-pulse" } as never);
   assert.match(html, /class="bs-motion"/);
   assert.match(html, /animation:bs-orbit-a 8s ease-in-out infinite alternate/);
-  assert.equal(boldSignalTemplate.version, "1.4.2");
+  assert.equal(boldSignalTemplate.version, "2.0.0");
 });

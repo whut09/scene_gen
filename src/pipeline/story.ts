@@ -2,7 +2,7 @@
 
 import { buildFactLedger, claimIdsForText, sceneFactText } from "./fact-ledger";
 import { contentTypeForItem } from "./content-type";
-import { REPOSITORY_HOMEPAGE_PREFIX, repositoryHomepageTitle, repositoryNarrationTitle, repositorySynthesisText } from "./repository-project";
+import { REPOSITORY_HOMEPAGE_PREFIX, normalizeRepositoryTitleSummary, repositoryHomepageTitle, repositoryNarrationBody, repositoryNarrationTitle, repositorySynthesisText } from "./repository-project";
 
 const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15"];
 
@@ -547,6 +547,7 @@ function repositoryTopics(content: string) {
 }
 
 interface RepositoryProfile {
+  titleSummary?: string;
   theme: string;
   capability: string;
   workflow: string;
@@ -562,6 +563,50 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^diagram-design$/i.test(name)) {
+    return {
+      titleSummary: "让智能体生成专业技术图表",
+      theme: "让智能体快速生成符合品牌风格的专业技术图表",
+      capability: "提供二十七种编辑级图表类型，让智能体把架构、流程、时序和数据关系生成自包含 HTML 与 SVG，并自动匹配品牌颜色和字体",
+      workflow: "安装技能后描述图表内容和用途，选择架构图、流程图或时序图等类型；需要统一品牌时先读取网站样式，再导出 HTML、SVG 或 PNG",
+      boundaries: "它生成的是结构化技术图表，不是通用图片编辑器；复杂内容仍需控制节点数量，并人工核对关系、文字和品牌规范",
+      topics: ["技术图表", "架构与流程", "品牌样式", "HTML 与 SVG", "智能体技能", "内容可视化"],
+      metrics: [{ label: "图表类型", value: "27 种" }, { label: "输出格式", value: "HTML / SVG" }],
+      problemPoints: [
+        "普通智能体生成的架构图常是千篇一律的圆角框，手工调整配色、字体和层级又很费时间。",
+        "Diagram Design 提供二十七种编辑级模板，可把架构、流程和数据关系直接生成自包含图表，并快速套用品牌样式。",
+        "它适合写技术文档、方案和演示的人，但复杂图仍要删减节点并核对连接关系。",
+      ],
+      steps: [
+        { label: "安装技能", detail: "把 Diagram Design 安装到兼容 Agent Skills 的智能体。" },
+        { label: "描述关系", detail: "写清节点、连接、受众和最终使用场景。" },
+        { label: "匹配品牌", detail: "读取网站配色和字体，生成统一视觉令牌。" },
+        { label: "检查导出", detail: "核对关系与文字后导出 HTML、SVG 或 PNG。" },
+      ],
+    };
+  }
+  if (/^project-based-learning$/i.test(name)) {
+    return {
+      titleSummary: "用真实项目系统学习编程",
+      theme: "通过动手完成真实项目来学习编程",
+      capability: "按编程语言整理大量项目式教程，覆盖应用、工具、系统与人工智能等方向，让学习者从可运行作品中掌握知识",
+      workflow: "先按语言和难度选一个能在短期完成的项目，跟着教程搭出最小版本；遇到问题主动调试，完成后再扩展功能并总结原理",
+      boundaries: "它是教程索引而不是统一课程，资料质量、难度和维护状态各不相同；开始前要检查链接、依赖和维护时间",
+      topics: ["项目式学习", "编程教程", "动手实践", "多语言分类", "作品构建", "学习路径"],
+      metrics: [{ label: "学习方式", value: "边做边学" }, { label: "内容组织", value: "按语言分类" }],
+      problemPoints: [
+        "只看语法和课程很容易懂概念却不会独立完成作品，也不知道知识该在什么场景使用。",
+        "Project Based Learning 按语言整理真实项目教程，让学习者通过做应用、工具和系统建立完整开发经验。",
+        "它适合已经学过基础语法、想靠作品继续进阶的人，但教程质量和依赖需要逐项核对。",
+      ],
+      steps: [
+        { label: "选择语言", detail: "从自己正在学习的语言分类进入。" },
+        { label: "限定规模", detail: "先选几天内能完成最小版本的项目。" },
+        { label: "动手调试", detail: "跟随教程实现，并记录错误和解决过程。" },
+        { label: "独立扩展", detail: "完成后增加一个功能，验证是否真正理解。" },
+      ],
+    };
+  }
   if (/^manim$/i.test(name)) {
     return {
       theme: "用代码精确制作数学讲解动画",
@@ -999,7 +1044,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
     return {
       theme: "把 ESP32-S3 变成便携式多协议硬件调试与分析工具",
       capability: "通过串口终端或网页命令行扫描、收发、嗅探和脚本化操作 I2C、SPI、UART、CAN 等数字总线，也能分析红外、蓝牙、Wi-Fi、Sub-GHz 和 RFID",
-      workflow: "先确认开发板电压和引脚，再刷入固件；随后通过 USB 串口或网页终端连接设备，选择协议模式，用 scan、sniff、read 或 write 等命令完成最小测试",
+      workflow: "先确认开发板电压和引脚，再刷入固件；随后用串口或网页终端做最小扫描测试",
       boundaries: "它适合硬件开发、协议排查和安全研究，但接线、电压、射频操作和授权测试必须遵守目标设备规范与当地法规",
       topics: ["I2C 与 SPI", "UART 与 CAN", "协议嗅探", "红外与 RFID", "蓝牙与 Wi-Fi", "脚本自动化"],
       metrics: [{ label: "协议模式", value: "20+" }, { label: "连接方式", value: "串口与网页" }],
@@ -1019,6 +1064,12 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       workflow: "先准备需要处理的文件和明确任务，例如汇总表格、改写文档或生成演示稿；再让 AI 执行一小步，并打开结果核对格式、数据和内容",
       boundaries: "它能减少重复点击和复制粘贴，但涉及重要数据、对外文件和复杂格式时，仍应由使用者逐项核对后再发送或发布",
       topics: ["读取文档", "整理表格", "生成演示稿", "批量修改", "结果核对", "文件安全"],
+      narration: [
+        `开源项目推荐：${name}。它让 AI 直接处理文档、表格和演示文稿，适合把办公文件变成可执行的自动化任务。`,
+        "你可以让它读取文档、整理表格、完成汇总和生成演示材料，把办公文件处理交给 AI，减少重复复制粘贴，再打开结果核对格式和数据。",
+        "最短路径是先准备一个低风险文件，提出汇总、改写或生成演示材料的具体任务，让 AI 只执行一小步，再检查输出。",
+        "它适合重复办公处理，但重要数据、复杂格式和对外发送仍要人工复核，不能把一次成功当成完全可靠。",
+      ],
     };
   }
   if (/\bbifrost\b|enterprise ai gateway|openai-compatible api|automatic fallbacks|semantic caching|load balancing/i.test(`${name} ${item.title} ${content}`)) {
@@ -1028,6 +1079,12 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       workflow: "先在本地或服务器启动网关，通过管理界面配置模型服务和密钥；再把原有应用的接口地址改到网关，最后用故障切换、延迟和成本监控验证配置",
       boundaries: "它解决的是模型调用入口和运行治理，不会替你选择最合适的模型；生产使用前仍要验证密钥权限、供应商兼容性、缓存策略和故障切换规则",
       topics: ["统一模型接口", "自动故障切换", "负载均衡", "语义缓存", "预算控制", "调用监控"],
+      narration: [
+        `开源项目推荐：${name}。它是模型网关，让应用只接一套接口，就能统一调用多个模型服务。`,
+        "Bifrost 支持二十三家以上模型服务，并把故障切换、负载均衡、语义缓存和预算控制集中起来。",
+        "最短路径是先在本地启动网关，配置模型服务、密钥和密钥权限，再把应用接口改到网关，最后验证故障切换、负载均衡和语义缓存。",
+        "它适合同时接入多个模型的团队，但密钥权限、供应商兼容性、缓存策略和真实成本仍要在上线前复核。",
+      ],
     };
   }
   if (/\bloopx\b|local control plane for long-running ai agent work|loop engineering for long-running ai agents/i.test(`${name} ${item.title}`)) {
@@ -1271,17 +1328,18 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
 function createRepositoryProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }): VideoProject {
   const name = repositoryName(item);
   const profile = repositoryProfile(item);
+  const titleSummary = normalizeRepositoryTitleSummary(profile.titleSummary ?? profile.theme);
   const promotion = repositoryPromotionCopy(profile);
   const narration = profile.narration;
   const proofMetrics = repositoryProofMetrics(item, profile);
   const sections: Array<{ scene: VideoScene; narration: string }> = [
     {
       scene: {
-        type: "title", duration: 10, kicker: REPOSITORY_HOMEPAGE_PREFIX, headline: repositoryHomepageTitle(name),
+        type: "title", duration: 10, kicker: REPOSITORY_HOMEPAGE_PREFIX, headline: repositoryHomepageTitle(name, titleSummary),
         subhead: `用途：${compactSentence(profile.capability, 44)}；适用场景：${profile.topics.slice(0, 2).join("、")}`,
         sources: [repositoryStars(item), `适用：${compactSentence(promotion.audience, 18)}`, `场景：${profile.topics.slice(0, 2).join("、")}`],
       },
-      narration: narration?.[0] ?? `${repositoryNarrationTitle(name)}。它直接解决${profile.theme}。`,
+      narration: `${repositoryNarrationTitle(name, titleSummary)}。${repositoryNarrationBody(narration?.[0] ?? `它${profile.theme}。`)}`,
     },
     {
       scene: {
@@ -1302,7 +1360,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
           tags: [profile.topics[index] ?? "项目能力"],
         })),
       },
-      narration: narration?.[2] ?? limitNarration(`判断它是否值得用，主要看三点：${promotion.highlights.join("；")}。`, 105),
+      narration: narration?.[2] ?? limitNarration(`最短路径是${profile.workflow}。核心结果是${profile.capability}。`, 105),
     },
     {
       scene: {
@@ -1318,7 +1376,11 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   const scenes = applySectionDurations(sections, Math.min(55, Math.max(40, Number(process.env.STORY_MAX_SECONDS ?? 48))), 40);
   const factLedger = buildFactLedger([item]);
   const claimIds = (sceneIndex: number) => {
-    const selected = factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2);
+    const factText = `${sceneFactText(scenes[sceneIndex])} ${sections[sceneIndex].narration}`;
+    const matched = claimIdsForText(factLedger, factText, 4);
+    const selected = matched.length
+      ? factLedger.claims.filter((claim) => matched.includes(claim.id))
+      : factLedger.claims.slice(sceneIndex * 2, sceneIndex * 2 + 2);
     return (selected.length ? selected : factLedger.claims.slice(0, 2)).map((claim) => claim.id);
   };
   return {
@@ -1366,7 +1428,9 @@ export function createStoryProject(
   if (/tmtpost\.com\/8096544/i.test(clean.url) || /Jeff Dean挥别谷歌48小时首秀/i.test(joinedContent)) return createJeffDeanNextDecadeProject(clean, options);
   if (/36kr\.com\/p\/3933115490368647/i.test(clean.url) || /mona-lisa-1/i.test(joinedContent)) return createGptImageMonaLisaProject(clean, options);
   if (/36kr\.com\/p\/3934784382958726/i.test(clean.url)) return createClaudeRiemannRecordProject(clean, options);
+  if (/36kr\.com\/p\/3935837932518536/i.test(clean.url)) return createMemoraXMemoryInfrastructureProject(clean, options);
   if (/ithome\.com\/0\/988\/286/i.test(clean.url)) return createMaiImage26Project(clean, options);
+  if (/ithome\.com\/0\/988\/766/i.test(clean.url)) return createLtx25VideoModelProject(clean, options);
   if (/techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(clean.url)) return createClaudeInvisibleWatermarkProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
@@ -1751,6 +1815,56 @@ function createClaudeInvisibleWatermarkProject(
   ], options, { maxSeconds: 65, minSeconds: 58 });
 }
 
+function createMemoraXMemoryInfrastructureProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "AI 记忆基础设施", headline: shortTitle(title, 42), subhead: "不到半年完成三轮融资，记忆正在从附加功能变成长期协作的基础设施", sources: ["三轮融资", "长期记忆", "智能体协作"] },
+      narration: `${title}。关键是让 AI 记住用户和项目上下文，而不是每次都从零开始；这也是长期智能体减少重复沟通的基础。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "为什么智能体需要记忆", source: "产品价值", title: "把历史偏好和任务上下文保存下来", summary: "长期协作时，智能体需要持续理解用户，而不是反复要求用户解释背景。", metrics: [{ label: "过去", value: "每次重新解释" }, { label: "现在", value: "保留长期上下文" }], points: ["记录值得保留的信息。", "在下一次任务中找回相关上下文。", "减少重复沟通和上下文断档。"] },
+      narration: "它解决的是智能体的长期协作问题：记住用户偏好、项目背景和历史任务，再在需要时找回相关信息，减少重复沟通。",
+    },
+    {
+      scene: { type: "flow", duration: 16, headline: "记忆不只是接一个数据库", steps: [{ label: "判断", detail: "先判断什么信息值得记住。" }, { label: "理解", detail: "把信息整理成可调用的记忆。" }, { label: "检索", detail: "在当前任务中找到相关上下文。" }, { label: "更新", detail: "随着交互持续修正和维护。" }] },
+      narration: "真正的记忆系统不只是存文件或查向量库，而是先判断什么值得记住，再理解信息、检索当前需要的上下文，最后持续更新和删除；这些环节共同决定记忆是否可靠，也决定它能不能用于真实产品。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "资本下注，产品仍要看真实效果", bullets: ["不到半年完成三轮融资。", "记忆能力开始成为独立赛道。", "落地仍要验证准确率、成本和隐私。"] },
+      narration: "这家公司不到半年完成三轮融资，说明市场开始重估记忆能力的价值。但真正落地还要看记忆准确率、调用成本和数据隐私，融资不等于产品已经成熟，还要看真实使用效果。",
+    },
+  ], options, { maxSeconds: 58, minSeconds: 54 });
+}
+
+function createLtx25VideoModelProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "视频生成模型", headline: shortTitle(title, 42), subhead: "十秒七百二十 P 视频，重点是速度、开放权重和 ComfyUI 接入", sources: ["6.8 秒", "720P", "ComfyUI"] },
+      narration: `更快：${title}。在两张 GB200 上，十秒七百二十 P 视频最快六点八秒生成。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "普通用户从哪里用", source: "使用入口", title: "模型、工作流和托管接口都能接入", summary: "可以通过 Hugging Face、ComfyUI 或 LTX API 获取模型或调用生成服务。", metrics: [{ label: "模型", value: "Hugging Face" }, { label: "工作流", value: "ComfyUI" }, { label: "接口", value: "LTX API" }], points: ["本地工作流适合反复调试。", "托管接口适合快速接入。", "不同入口的速度和分辨率并不相同。"] },
+      narration: "使用方式有三种：通过 Hugging Face 获取模型，接入 ComfyUI 做本地工作流，或者调用 LTX API 托管接口。开发者可以先用接口验证效果，再决定是否自己部署。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 15, headline: "速度和成本要分开看", bars: [{ label: "本地测试", value: 6.8, detail: "两张 GB200 生成十秒七百二十 P 视频约需六点八秒。", color: "#18b7a5" }, { label: "托管成本", value: 0.9, detail: "LTX-2.5 Fast 生成十秒带音频视频约零点九美元。", color: "#f97316" }, { label: "最长片段", value: 20, detail: "单次生成最长约二十秒，帧率为二十四或二十五帧。", color: "#7c6cff" }] },
+      narration: "成本也要看清楚：托管版本每秒约零点零九美元，十秒片段约零点九美元。单次最长约二十秒，速度优势更适合快速迭代，而不是一次生成长片。",
+    },
+    {
+      scene: { type: "outro", duration: 13, headline: "适合快速迭代，不代表没有门槛", bullets: ["先用短片段验证画面质量。", "本地部署需要高端显卡。", "商业授权和真实成本要单独确认。"] },
+      narration: "结论是：LTX-2.5 适合需要快速试错的短视频工作流。高端显卡、本地部署成本、商业授权和最终画质，仍然要按自己的场景单独验证。",
+    },
+  ], options, { maxSeconds: 58, minSeconds: 54 });
+}
+
 function createCuratedNewsProject(
   item: HotItem,
   sections: Array<{ scene: VideoScene; narration: string }>,
@@ -2057,7 +2171,7 @@ function createLoopGraphEngineeringProject(
   return createCuratedNewsProject(storyItem, [
     {
       scene: { type: "title", duration: 10, kicker: "技术架构解析", headline: storyItem.title, subhead: "Loop 负责单点迭代，Graph 负责多任务协作", sources: ["任务拆分", "状态流转", "成本控制"] },
-      narration: `${storyItem.title} Loop 擅长让一个智能体反复检查、修改和重试；Graph 解决的是多个工作单元如何分工、并行、交接和恢复。两者不是替代关系，而是处理不同层级的问题。`,
+      narration: `${storyItem.title} 关键区别是：Loop 负责单点迭代，Graph 负责多个任务的分工、并行、交接和恢复。`,
     },
     {
       scene: { type: "briefing_points", duration: 18, headline: "Loop 反复修改，Graph 管理协作", source: "架构分析", title: "单点迭代与全局编排", summary: "同一个智能体读取结果、发现问题、修改后再次执行。", metrics: [{ label: "Loop", value: "修改重试" }, { label: "Graph", value: "分支并行" }, { label: "组合方式", value: "节点内循环" }], points: ["Loop 让同一个智能体读取结果并持续修改。", "Graph 把复杂目标拆成节点，用共享状态管理分支、并行、回退与交接。", "Graph 节点内部仍然可以运行 Loop。"] },
@@ -2068,8 +2182,8 @@ function createLoopGraphEngineeringProject(
       narration: "Graph 的价值不是多放几个智能体，而是把任务依赖显式化。可独立验证的工作变成节点，无依赖任务可以并行，路由器根据状态选择下一步；某个节点失败时，也能局部重试、回退或交给其他节点，而不是全部重来。",
     },
     {
-      scene: { type: "signal_chart", duration: 18, headline: "多智能体并不总是更好", bars: [{ label: "金融任务提升", value: 80.8, detail: "研究报告中的最高提升。", color: "#18b7a5" }, { label: "Plan Craft 下降", value: 70, detail: "部分任务最高下降幅度。", color: "#ff6b6b" }, { label: "额外令牌", value: 15, detail: "可能约为聊天模式十五倍。", color: "#facc15" }] },
-      narration: "多智能体并不天然更强。文章引用的研究里，部分金融任务最高提升百分之八十点八，但 Plan Craft 的表现最高下降百分之七十，软件工程基准也出现百分之一点三到十二点八的下降。多智能体令牌消耗还可能达到聊天模式的十五倍左右。",
+      scene: { type: "briefing_points", duration: 18, headline: "多智能体并不总是更好", source: "工程边界", title: "协作能力会带来额外成本", summary: "拆分、通信和状态管理只有在任务确实可并行时才值得。", metrics: [{ label: "主要收益", value: "并行与恢复" }, { label: "主要代价", value: "通信与状态" }], points: ["简单任务会被编排开销拖慢。", "任务边界不清时，智能体容易重复工作。", "应先证明单节点可靠，再扩展协作图。"] },
+      narration: "多智能体并不天然更强。拆分任务、通信、传递上下文和维护共享状态都会增加成本；边界不清时，还会出现重复工作和错误放大。只有任务确实能独立验证和并行时，Graph 的收益才可能超过编排开销。",
     },
     {
       scene: { type: "outro", duration: 16, headline: "只在任务确实可拆时使用 Graph", bullets: ["适合可拆分、可独立验证的复杂任务。", "简单或强顺序任务优先保留 Loop。", "从最小图开始，持续观察状态、成本和恢复效果。"] },

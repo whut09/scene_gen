@@ -1,14 +1,29 @@
 import type { VideoProject } from "./types";
 
 export const REPOSITORY_HOMEPAGE_PREFIX = "今日开源热点趋势项目推荐";
-export const REPOSITORY_NARRATION_PREFIX = "开源项目推荐";
+export const REPOSITORY_TITLE_SEPARATOR = "｜";
 
-export function repositoryHomepageTitle(name: string) {
-  return `${REPOSITORY_HOMEPAGE_PREFIX}：${name}`;
+export function normalizeRepositoryTitleSummary(value: string) {
+  return value
+    .replace(/^用途[：:]\s*/u, "")
+    .replace(/[；;。！？!?].*$/u, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 28)
+    .replace(/[，、：:]$/u, "");
 }
 
-export function repositoryNarrationTitle(name: string) {
-  return `${REPOSITORY_NARRATION_PREFIX}：${name}`;
+export function repositoryHomepageTitle(name: string, summary = "") {
+  const normalizedSummary = normalizeRepositoryTitleSummary(summary);
+  return `${REPOSITORY_HOMEPAGE_PREFIX}：${name}${normalizedSummary ? `${REPOSITORY_TITLE_SEPARATOR}${normalizedSummary}` : ""}`;
+}
+
+export function repositoryNarrationTitle(name: string, summary = "") {
+  return repositoryHomepageTitle(name, summary);
+}
+
+export function repositoryTitleIdentity(value: string) {
+  return value.replace(/[\s，,｜|：:。！？!?]/gu, "").toLowerCase();
 }
 
 function repositoryName(project: VideoProject) {
@@ -35,9 +50,22 @@ export function repositoryProjectUrl(project: VideoProject) {
   }
 }
 
-function narrationBody(value: string) {
+export function repositoryNarrationBody(value: string) {
   const match = value.match(/^.*?[。！？!?](?:\s*)/u);
   return match ? value.slice(match[0].length).trim() : value.trim();
+}
+
+export function repositoryProjectTitleSummary(project: VideoProject) {
+  const firstScene = project.scenes[0];
+  if (firstScene?.type === "title") {
+    const fromHeadline = firstScene.headline.split(REPOSITORY_TITLE_SEPARATOR).slice(1).join(REPOSITORY_TITLE_SEPARATOR);
+    if (fromHeadline) return normalizeRepositoryTitleSummary(fromHeadline);
+    const fromSubhead = firstScene.subhead.startsWith("用途：")
+      ? normalizeRepositoryTitleSummary(firstScene.subhead)
+      : "";
+    if (fromSubhead) return fromSubhead;
+  }
+  return normalizeRepositoryTitleSummary(project.sources[0]?.summary ?? "");
 }
 
 export function repositorySynthesisName(name: string) {
@@ -61,11 +89,12 @@ export function ensureRepositoryProjectIdentity(project: VideoProject): VideoPro
   if (!name || !project.narrationSegments?.[0]) return project;
 
   const first = project.narrationSegments[0];
-  const openingTitle = repositoryNarrationTitle(name);
-  const openingBody = narrationBody(first.text);
+  const summary = repositoryProjectTitleSummary(project);
+  const openingTitle = repositoryNarrationTitle(name, summary);
+  const openingBody = repositoryNarrationBody(first.text);
   const opening = `${openingTitle}。${openingBody}`.trim();
   const scenes = project.scenes.map((scene, index) => index === 0 && scene.type === "title"
-    ? { ...scene, kicker: REPOSITORY_HOMEPAGE_PREFIX, headline: repositoryHomepageTitle(name) }
+    ? { ...scene, kicker: REPOSITORY_HOMEPAGE_PREFIX, headline: repositoryHomepageTitle(name, summary) }
     : scene);
   const narrationSegments = project.narrationSegments.map((segment, index) => {
     const text = index === 0 ? opening : segment.text;

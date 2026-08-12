@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectPublicatio
 
 export const generalEditorialTemplate: HtmlTemplateDefinition = {
   id: "general-editorial",
-  version: "1.1.2",
+  version: "2.0.0",
   name: "General Editorial",
   description: "Magazine-style vertical storytelling for business, society, policy, people, consumer and general-interest articles.",
   engine: "html-video",

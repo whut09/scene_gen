@@ -16,22 +16,22 @@ function project(): VideoProject {
 
 test("repository draft gate requires recommendation banner and original name", async () => {
   const result = await evaluateDraft(project(), 12, "");
-  assert.equal(result.issues.some((issue) => issue.code === "repository_recommendation_missing"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "repository_recommendation_missing" || issue.code === "repository_title_summary_missing"), true);
   assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_canonical"), true);
-  assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_spoken_first"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "repository_title_narration_mismatch"), true);
   assert.equal(result.issues.some((issue) => issue.code === "repository_promotion_structure_missing"), true);
 });
 
 test("repository draft gate accepts the canonical recommendation opening", async () => {
   const value = project();
   value.meta.title = "ai-agent-book";
-  value.scenes[0] = { type: "title", duration: value.scenes[0].duration, kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：ai-agent-book", subhead: "面向非技术读者的智能体实践", sources: ["项目资料"] };
-  value.narrationSegments![0].text = "开源项目推荐：ai-agent-book。它帮助非技术读者理解智能体的用途和实践方法。";
+  value.scenes[0] = { type: "title", duration: value.scenes[0].duration, kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：ai-agent-book｜面向非技术读者学习智能体", subhead: "用途：面向非技术读者的智能体实践；适用场景：智能体学习", sources: ["项目资料"] };
+  value.narrationSegments![0].text = "今日开源热点趋势项目推荐：ai-agent-book｜面向非技术读者学习智能体。它帮助非技术读者理解智能体的用途和实践方法。";
   value.narration = value.narrationSegments![0].text;
 
   const result = await evaluateDraft(value, 12, "");
 
-  assert.equal(result.issues.some((issue) => issue.code === "repository_name_not_spoken_first"), false);
+  assert.equal(result.issues.some((issue) => issue.code === "repository_title_narration_mismatch"), false);
   assert.equal(result.issues.some((issue) => issue.code === "title_not_spoken_first"), false);
   assert.equal(result.issues.some((issue) => issue.code === "repository_date_spoken"), false);
 });
@@ -47,7 +47,7 @@ test("generated repository recommendation follows the promotion structure", asyn
 
   assert.equal(result.issues.some((issue) => issue.code === "repository_promotion_structure_missing"), false);
   assert.deepEqual(value.scenes.map((scene) => scene.headline), [
-    "今日开源热点趋势项目推荐：voicebox",
+    "今日开源热点趋势项目推荐：voicebox｜在本地完成声音克隆、语音生成和听写的语音工作室",
     "先看它替你省掉什么麻烦",
     "核心价值、证据和使用前提",
     "怎么开始，什么情况别急",

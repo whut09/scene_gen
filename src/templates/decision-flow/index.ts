@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, sceneHeadline } f
 
 export const decisionFlowTemplate: HtmlTemplateDefinition = {
   id: "decision-flow",
-  version: "1.2.0",
+  version: "2.0.0",
   name: "Decision Flow",
   description: "A vertical cause-and-effect spine with alternating evidence nodes.",
   engine: "html-video",

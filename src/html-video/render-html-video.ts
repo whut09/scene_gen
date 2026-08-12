@@ -99,7 +99,7 @@ export interface HtmlVideoCacheFingerprint {
   rendererVersion: string;
 }
 
-const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v4";
+const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v5";
 let browserVersionPromise: Promise<string> | undefined;
 
 function emptyVisualAudit(sceneIndex: number, width: number, height: number, durationSec: number) {

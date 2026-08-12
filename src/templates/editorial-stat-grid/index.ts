@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const editorialStatGridTemplate: HtmlTemplateDefinition = {
   id: "editorial-stat-grid",
-  version: "1.2.2",
+  version: "2.0.0",
   name: "Editorial Stat Grid",
   description: "Asymmetric magazine layout that turns facts, metrics and points into a strong vertical composition.",
   engine: "html-video",

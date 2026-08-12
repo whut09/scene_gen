@@ -1,7 +1,7 @@
 import type { VideoProject, VideoScene } from "./types";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion } from "./story";
 import { contentDurationPolicy } from "./content-strategy";
-import { repositoryHomepageTitle, repositoryNarrationTitle } from "./repository-project";
+import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryProjectTitleSummary, repositoryTitleIdentity } from "./repository-project";
 
 export interface SynthesisReadinessIssue {
   code: string;
@@ -86,14 +86,19 @@ export function projectSynthesisReadinessIssues(project: VideoProject, targetSec
   });
 
   const firstScene = project.scenes[0];
-  if (firstScene?.type !== "title" || firstScene.headline !== repositoryHomepageTitle(repository)) {
+  const titleSummary = repositoryProjectTitleSummary(project);
+  const canonicalTitle = repositoryHomepageTitle(repository, titleSummary);
+  if (!titleSummary) {
+    issues.push({ code: "repository_title_summary_missing", sceneIndex: 0, message: "Repository title must include a concrete use summary." });
+  }
+  if (firstScene?.type !== "title" || firstScene.headline !== canonicalTitle) {
     issues.push({ code: "repository_recommendation_missing", message: "The first repository scene must show the canonical recommendation banner." });
   }
   if (project.meta.title !== repository) {
     issues.push({ code: "repository_name_not_canonical", message: "Repository video metadata must keep the original project name." });
   }
-  if (!compactText(segments[0]?.text ?? "").startsWith(compactText(repositoryNarrationTitle(repository)))) {
-    issues.push({ code: "repository_name_not_spoken_first", sceneIndex: 0, message: "The first narration must begin with the canonical recommendation title and original repository name." });
+  if (!repositoryTitleIdentity(segments[0]?.text ?? "").startsWith(repositoryTitleIdentity(repositoryNarrationTitle(repository, titleSummary)))) {
+    issues.push({ code: "repository_title_narration_mismatch", sceneIndex: 0, message: "The first narration must begin with the exact homepage title and use summary." });
   }
 
   const publicText = [project.meta.title, project.narration, ...project.scenes.map(scenePublicText)].join(" ");

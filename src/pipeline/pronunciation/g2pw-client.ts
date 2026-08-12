@@ -19,22 +19,36 @@ export class G2pwWorkerClient implements G2pwPredictor {
 
   constructor(private readonly options: { python?: string; script?: string; modelDir?: string; readyTimeoutMs?: number; requestTimeoutMs?: number; pypinyinOnly?: boolean } = {}) {}
 
-  private start() {
+  private start(signal?: AbortSignal) {
     if (this.ready) return this.ready;
     this.ready = new Promise<void>((resolve, reject) => {
       const child = spawn(this.options.python ?? (process.platform === "win32" ? "python" : "python3"), [this.options.script ?? fromRoot("scripts", "g2pw-worker.py"), ...(this.options.modelDir ? ["--model-dir", path.resolve(this.options.modelDir)] : []), ...(this.options.pypinyinOnly ? ["--pypinyin-only"] : [])], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" } });
       this.child = child;
-      const timer = setTimeout(() => reject(new Error("G2PW worker ready timeout.")), this.options.readyTimeoutMs ?? 30_000);
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const finishResolve = () => { if (settled) return; settled = true; cleanup(); resolve(); };
+      const finishReject = (error: Error) => { if (settled) return; settled = true; cleanup(); reject(error); };
+      const onAbort = () => {
+        const reason = signal?.reason instanceof Error ? signal.reason : new Error("G2PW worker startup cancelled.");
+        child.kill();
+        this.ready = undefined;
+        finishReject(reason);
+      };
+      const timer = setTimeout(() => finishReject(new Error("G2PW worker ready timeout.")), this.options.readyTimeoutMs ?? 30_000);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) { onAbort(); return; }
       const onReady = (line: string) => {
         const parsed = readySchema.safeParse(JSON.parse(line));
         if (!parsed.success) return;
-        clearTimeout(timer);
-        parsed.data.status === "ready" ? resolve() : reject(new Error(parsed.data.error ?? "G2PW worker unavailable."));
+        parsed.data.status === "ready" ? finishResolve() : finishReject(new Error(parsed.data.error ?? "G2PW worker unavailable."));
       };
       child.stdout.on("data", (chunk) => this.handleData(chunk.toString(), onReady));
       child.stderr.on("data", () => undefined);
-      child.on("exit", () => this.failPending(new Error("G2PW worker exited.")));
-      child.on("error", (error) => { clearTimeout(timer); reject(error); this.failPending(error); });
+      child.on("exit", () => { if (!settled) finishReject(new Error("G2PW worker exited.")); this.failPending(new Error("G2PW worker exited.")); });
+      child.on("error", (error) => { finishReject(error); this.failPending(error); });
     });
     return this.ready;
   }
@@ -59,7 +73,7 @@ export class G2pwWorkerClient implements G2pwPredictor {
   }
 
   private async predictMode(text: string, mode: "g2pw" | "pypinyin", options: { signal?: AbortSignal; timeoutMs?: number } = {}) {
-    await this.start();
+    await this.start(options.signal);
     if (options.signal?.aborted) throw options.signal.reason instanceof Error ? options.signal.reason : new Error("G2PW prediction aborted.");
     const requestId = randomUUID();
     return new Promise<G2pwPrediction[]>((resolve, reject) => {

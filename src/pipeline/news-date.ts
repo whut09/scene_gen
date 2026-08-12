@@ -1,6 +1,6 @@
 import type { VideoProject } from "./types";
 import { contentTypeForItem } from "./content-type";
-import { repositoryNarrationTitle } from "./repository-project";
+import { repositoryNarrationTitle, repositoryProjectTitleSummary } from "./repository-project";
 
 export function isNewsProject(project: VideoProject) {
   const source = project.sources[0];
@@ -92,7 +92,7 @@ export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {
   const repository = project.sources.find((source) => source.kind === "github");
   const repositoryName = repository?.repo?.split("/").filter(Boolean).at(-1) ?? "";
   const isRepositoryOpening = Boolean(repositoryName);
-  const title = (repositoryName ? repositoryNarrationTitle(repositoryName) : project.meta.title.trim()).replace(/[\u3002\uff01\uff1f?]+$/u, "");
+  const title = (repositoryName ? repositoryNarrationTitle(repositoryName, repositoryProjectTitleSummary(project)) : project.meta.title.trim()).replace(/[\u3002\uff01\uff1f?]+$/u, "");
   if (!title || !segments?.[0]) return project;
   const first = segments[0];
   const spoken = first.ttsText ?? first.text;

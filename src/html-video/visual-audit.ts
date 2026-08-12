@@ -117,6 +117,7 @@ export async function inspectSceneDom(page: Page, input: {
       const style = getComputedStyle(element);
       const text = (element.innerText || element.textContent || "").trim();
       const className = typeof element.className === "string" ? element.className : "";
+      const repositoryIdentifier = /repository-url|kt-stamp/i.test(className) && /(?:github\.com\/|^[\w.-]+\/[\w.-]+$)/i.test(text);
       const primary = /^H[1-3]$/.test(element.tagName) || /headline|title|metric|value|step|bullet/i.test(className) || element.hasAttribute("data-sg-key");
       const fontSize = Number.parseFloat(style.fontSize) || 0;
       const lineHeight = Number.parseFloat(style.lineHeight) || fontSize * 1.2;
@@ -129,7 +130,7 @@ export async function inspectSceneDom(page: Page, input: {
       }
       const minimumFont = primary ? 24 : 16;
       if (fontSize < minimumFont) issues.push({ code: "text_too_small", severity: primary ? "error" : "warning", message: `文本字号 ${fontSize.toFixed(1)}px 低于 ${minimumFont}px：${text.slice(0, 40)}`, evidence: { text: text.slice(0, 80), fontSize, minimumFont } });
-      if (charsPerLine > (primary ? 28 : 36)) issues.push({ code: "text_line_too_long", severity: "warning", message: `单行文字过长：${text.slice(0, 40)}`, evidence: { text: text.slice(0, 80), charsPerLine: Number(charsPerLine.toFixed(1)), lines } });
+      if (charsPerLine > (primary ? 28 : repositoryIdentifier ? 52 : 36)) issues.push({ code: "text_line_too_long", severity: "warning", message: `单行文字过长：${text.slice(0, 40)}`, evidence: { text: text.slice(0, 80), charsPerLine: Number(charsPerLine.toFixed(1)), lines } });
       const horizontalOverflow = element.scrollWidth - element.clientWidth;
       const verticalOverflow = element.scrollHeight - element.clientHeight;
       if (horizontalOverflow > Math.max(4, fontSize * 0.15) || verticalOverflow > Math.max(4, fontSize * 0.2)) issues.push({ code: "content_clipped", severity: "error", message: `文本存在裁切或溢出：${text.slice(0, 40)}`, evidence: { text: text.slice(0, 80), scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight } });

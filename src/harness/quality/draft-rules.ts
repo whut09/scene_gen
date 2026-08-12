@@ -7,7 +7,7 @@ import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate, projectRepositoryDate } from "../../pipeline/news-date";
-import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryProjectName, repositoryProjectUrl } from "../../pipeline/repository-project";
+import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryProjectName, repositoryProjectTitleSummary, repositoryProjectUrl, repositoryTitleIdentity } from "../../pipeline/repository-project";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
@@ -356,10 +356,13 @@ export async function evaluateDraft(
   const compactNarration = project.narration.replace(/\s+/g, "");
   const earlyWindow = compactNarration.slice(0, Math.max(36, Math.round(6 * 7) + 2));
   const valueIndex = firstValueIndex(compactNarration);
-  if (valueIndex < 0) {
+  const repositoryOpeningValue = repositoryProjectName(project)
+    ? repositoryProjectTitleSummary(project)
+    : "";
+  if (valueIndex < 0 && !repositoryOpeningValue) {
     issues.push({ severity: "error", code: "hook_value_missing", message: "开场没有结果、冲突、痛点或用户收益钩子。", sceneIndex: 0 });
     revisionNotes.push("标题后立刻给出结果、冲突、痛点或用户收益，不要用背景介绍开场。");
-  } else if (!EARLY_VALUE_PATTERN.test(earlyWindow)) {
+  } else if (!repositoryOpeningValue && !EARLY_VALUE_PATTERN.test(earlyWindow) && !(/(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(project.meta.title) && /(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(earlyWindow))) {
     issues.push({ severity: "error", code: "value_revealed_too_late", message: "核心价值在开场 6 秒之后才出现。", sceneIndex: 0, evidence: { valueCharacterIndex: valueIndex, earlyWindowCharacters: earlyWindow.length } });
     revisionNotes.push("把第一个核心卖点提前到开场 6 秒内。");
   }
@@ -394,7 +397,12 @@ export async function evaluateDraft(
   const repositoryName = repositoryProjectName(project);
   if (repositoryName) {
     const firstVisibleText = firstScene ? sceneVisibleText(firstScene) : "";
-    const homepageTitle = repositoryHomepageTitle(repositoryName);
+    const titleSummary = repositoryProjectTitleSummary(project);
+    const homepageTitle = repositoryHomepageTitle(repositoryName, titleSummary);
+    if (!titleSummary || titleSummary.length < 6 || /^(?:开源)?(?:工具|项目|项目推荐|实用工具)$/u.test(titleSummary)) {
+      issues.push({ severity: "error", code: "repository_title_summary_missing", message: "开源项目首屏标题必须包含具体用途总结。", sceneIndex: 0, evidence: { titleSummary: titleSummary || "missing" } });
+      revisionNotes.push("在项目原名后加入一句具体用途总结，直接说明它能帮用户完成什么。");
+    }
     if (firstScene?.type !== "title" || firstScene.headline !== homepageTitle) {
       issues.push({ severity: "error", code: "repository_recommendation_missing", message: `首屏必须完整显示“${homepageTitle}”。`, sceneIndex: 0 });
       revisionNotes.push(`首屏标题改为“${homepageTitle}”，并保留项目原名。`);
@@ -457,9 +465,9 @@ export async function evaluateDraft(
       issues.push({ severity: "error", code: "repository_value_context_missing", message: `开源项目首屏缺少：${missingRepositoryContext.join("、")}。`, sceneIndex: 0 });
       revisionNotes.push("首屏同时写清项目用途、解决的问题和适用场景。 ");
     }
-    const canonicalOpening = repositoryNarrationTitle(repositoryName);
-    if (!normalizeText(firstNarration).startsWith(normalizeText(canonicalOpening))) {
-      issues.push({ severity: "error", code: "repository_name_not_spoken_first", message: `首屏旁白必须先完整播报“${canonicalOpening}”。`, sceneIndex: 0 });
+    const canonicalOpening = repositoryNarrationTitle(repositoryName, titleSummary);
+    if (!repositoryTitleIdentity(firstNarration).startsWith(repositoryTitleIdentity(canonicalOpening))) {
+      issues.push({ severity: "error", code: "repository_title_narration_mismatch", message: `首屏旁白必须与画面标题一致，先完整播报“${canonicalOpening}”。`, sceneIndex: 0 });
       revisionNotes.push(`首句完整播报“${canonicalOpening}”，然后进入项目用途。`);
     }
     const repositoryDate = projectRepositoryDate(project);
