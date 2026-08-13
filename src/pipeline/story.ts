@@ -1339,7 +1339,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
         subhead: `用途：${compactSentence(profile.capability, 44)}；适用场景：${profile.topics.slice(0, 2).join("、")}`,
         sources: [repositoryStars(item), `适用：${compactSentence(promotion.audience, 18)}`, `场景：${profile.topics.slice(0, 2).join("、")}`],
       },
-      narration: `${repositoryNarrationTitle(name, titleSummary)}。${repositoryNarrationBody(narration?.[0] ?? `它${profile.theme}。`)}`,
+      narration: `${repositoryNarrationTitle(name, titleSummary)}。${repositoryNarrationBody(narration?.[0] ?? `它${profile.theme}。`, name)}`,
     },
     {
       scene: {
@@ -1432,6 +1432,7 @@ export function createStoryProject(
   if (/ithome\.com\/0\/988\/286/i.test(clean.url)) return createMaiImage26Project(clean, options);
   if (/ithome\.com\/0\/988\/766/i.test(clean.url)) return createLtx25VideoModelProject(clean, options);
   if (/techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(clean.url)) return createClaudeInvisibleWatermarkProject(clean, options);
+  if (/36kr\.com\/p\/3935738007485574/i.test(clean.url)) return createPragmatikAgentCompanyProject(clean, options);
   if (!/Step\s*3\.7|416\s*tokens|AA\s*榜/i.test(joinedContent)) {
     return createGeneralNewsProject(clean, options);
   }
@@ -1475,13 +1476,20 @@ function createGeneralNewsProject(
     /芯片|AI芯片|推理芯片|自研芯片|造芯|算力芯片/i.test(topicText) &&
     !/(?:开源|发布|推出).{0,20}(?:模型|H3)|(?:模型|H3).{0,20}(?:开源|发布|推出)/i.test(item.title);
   const title = speechFriendlyTitle(item.title);
-  const summary =
-    item.summary && item.summary !== item.title
-      ? item.summary
-      : isChipStory
-        ? "头部模型公司开始把竞争从模型能力，推进到底层算力和推理成本控制。"
-        : "这条新闻的关键，是一个行业变量正在从表层事件变成结构性变化。";
   const articleSentences = splitArticleIntoSemanticChunks(item.content ?? item.summary);
+  const cleanedSummary = compactSentence(item.summary, 72).trim();
+  const articleLead = articleSentences.find((sentence) => {
+    const compact = scrubAttribution(sentence).trim();
+    return compact.length >= 12 && compact !== title && !/https?:\/\/|www\.|官网/u.test(compact);
+  });
+  const summary =
+    cleanedSummary.length >= 12 && cleanedSummary !== title
+      ? cleanedSummary
+      : articleLead
+        ? compactSentence(articleLead, 72)
+        : isChipStory
+          ? "头部模型公司开始把竞争从模型能力，推进到底层算力和推理成本控制。"
+          : "事件已经发生，后续影响仍需结合公开事实继续判断。";
   const sentenceAt = (index: number) => articleSentences[index] ?? articleSentences[index % Math.max(1, articleSentences.length)] ?? summary;
   const narrationAt = (start: number, count = 2) => {
     const selected = Array.from({ length: count }, (_, offset) => sentenceAt(start + offset));
@@ -1659,7 +1667,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["事实", "影响", "边界"],
           },
-          narration: `${title}。这次真正改变的是：${coverSummary}`,
+          narration: `${title}。${coverSummary}`,
         },
         {
           scene: {
@@ -1863,6 +1871,51 @@ function createLtx25VideoModelProject(
       narration: "结论是：LTX-2.5 适合需要快速试错的短视频工作流。高端显卡、本地部署成本、商业授权和最终画质，仍然要按自己的场景单独验证。",
     },
   ], options, { maxSeconds: 58, minSeconds: 54 });
+}
+
+function createPragmatikAgentCompanyProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: {
+        type: "title", duration: 10, kicker: "智能体创业新动向", headline: shortTitle(title, 42),
+        subhead: "林俊旸离开千问约五个月后创业，目标是进入长期复杂工作流的智能体",
+        sources: ["约 5 个月", "Pragmatik Labs", "长期任务"],
+      },
+      narration: `${title}。目标是打造能进入长期复杂工作流的智能体。林俊旸离开千问约五个月后创办 Pragmatik Labs。`,
+    },
+    {
+      scene: {
+        type: "briefing_points", duration: 14, headline: "融资阵容先说明市场判断", source: "融资信息",
+        title: "红杉中国与高榕领投", summary: "腾讯和上海未来产业基金参与本轮融资。",
+        metrics: [{ label: "创始人", value: "林俊旸" }, { label: "公司", value: "Pragmatik Labs" }, { label: "方向", value: "Agent" }],
+        points: ["林俊旸曾负责千问模型研发和开源生态。", "红杉中国与高榕创投领投。", "腾讯和上海未来产业基金参与支持。"],
+      },
+      narration: "这家公司由红杉中国和高榕创投领投，腾讯与上海未来产业基金参与。投资人押注的不是又一个聊天产品，而是林俊旸做基础模型和工程化的经验。",
+    },
+    {
+      scene: {
+        type: "flow", duration: 15, headline: "目标是让智能体持续完成复杂任务",
+        steps: [
+          { label: "数字工作", detail: "处理知识工作和企业运营流程。" },
+          { label: "工具协作", detail: "自主推理、调用工具并根据反馈调整。" },
+          { label: "长程任务", detail: "把同一目标持续推进几十分钟甚至更久。" },
+          { label: "物理世界", detail: "未来延伸到机器人和真实设备。" },
+        ],
+      },
+      narration: "产品方向同时覆盖数字智能体和物理智能体。它要让人工智能自己推理、调用工具、根据反馈调整行动，并把同一个目标持续推进到知识工作、企业运营，甚至机器人任务中。",
+    },
+    {
+      scene: {
+        type: "outro", duration: 13, headline: "方向很大，产品能力仍待验证",
+        bullets: ["公开信息主要是创业方向，具体产品和客户仍待披露。", "长期任务成功率还需要真实使用验证。", "从研究到稳定产品仍需要工程和场景数据。"],
+      },
+      narration: "需要注意的是，目前公开信息主要是创业方向，具体产品和客户仍待披露，长期任务成功率也需要真实使用验证。从研究到稳定产品，还需要工程和场景数据。",
+    },
+  ], options, { maxSeconds: 55, minSeconds: 48 });
 }
 
 function createCuratedNewsProject(

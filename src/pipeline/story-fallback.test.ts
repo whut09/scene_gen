@@ -771,6 +771,27 @@ test("current news batch uses grounded complete deterministic profiles", () => {
   }
 });
 
+test("Pragmatik news directly explains the company without generic filler or URLs", () => {
+  const title = "刚刚，前千问负责人林俊旸杀回来了：新公司剑指 Agent，腾讯跟投";
+  const project = createStoryProject({
+    id: "pragmatik",
+    kind: "webpage",
+    contentType: "news",
+    title,
+    url: "https://www.36kr.com/p/3935738007485574",
+    source: "核心事实",
+    summary: "林俊旸创办 Pragmatik Labs，红杉中国与高榕领投，腾讯参与。",
+    content: "公司面向数字世界和物理世界研发智能体，希望处理知识工作、企业运营和长期复杂任务。",
+    publishedAt: "2026年8月12日",
+    score: 1,
+    tags: ["agent"],
+  });
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /长期复杂工作流.*约五个月.*Pragmatik Labs/s);
+  assert.match(project.narration, /红杉中国.*腾讯.*上海未来产业基金/s);
+  assert.doesNotMatch(project.narration, /这次真正改变的是|真正改变的是|https?:\/\/|官网/u);
+});
+
 test("GPT Image report keeps complete connected narration near sixty seconds", () => {
   const project = createStoryProject({
     id: "gpt-image",

@@ -1,7 +1,7 @@
 import type { VideoProject, VideoScene } from "./types";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion } from "./story";
 import { contentDurationPolicy } from "./content-strategy";
-import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryProjectTitleSummary, repositoryTitleIdentity } from "./repository-project";
+import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryOpeningTitleCount, repositoryProjectTitleSummary, repositoryTitleIdentity } from "./repository-project";
 
 export interface SynthesisReadinessIssue {
   code: string;
@@ -99,6 +99,10 @@ export function projectSynthesisReadinessIssues(project: VideoProject, targetSec
   }
   if (!repositoryTitleIdentity(segments[0]?.text ?? "").startsWith(repositoryTitleIdentity(repositoryNarrationTitle(repository, titleSummary)))) {
     issues.push({ code: "repository_title_narration_mismatch", sceneIndex: 0, message: "The first narration must begin with the exact homepage title and use summary." });
+  }
+  const openingNarration = segments[0]?.providerSynthesisText ?? segments[0]?.ttsText ?? segments[0]?.text ?? "";
+  if (repositoryOpeningTitleCount(openingNarration, repository) > 1) {
+    issues.push({ code: "title_spoken_repeated", sceneIndex: 0, message: "The first repository narration repeats the homepage title." });
   }
 
   const publicText = [project.meta.title, project.narration, ...project.scenes.map(scenePublicText)].join(" ");

@@ -76,3 +76,17 @@ test("repository homepage title, file name, and narration share the same use sum
   assert.equal(expectedVideoFileName(normalized), "今日开源热点趋势项目推荐：text-to-cad｜用文字生成三维模型.mp4");
   assert.match(normalized.narrationSegments![0].text, /^今日开源热点趋势项目推荐：text-to-cad｜用文字生成三维模型。/u);
 });
+
+test("repository identity removes equivalent duplicate homepage titles", () => {
+  const project = fixture();
+  project.scenes[0] = { type: "title", duration: 10, kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：text-to-cad｜用文字生成三维模型", subhead: "用途：用文字生成三维模型；适用场景：快速建模", sources: ["项目资料"] };
+  project.narrationSegments![0].text = "今日开源热点趋势项目推荐：text-to-cad｜用文字生成三维模型。今日开源热点趋势项目推荐：text-to-cad，用文字生成三维模型。它把文字描述转换成三维模型。";
+
+  const normalized = ensureRepositoryProjectIdentity(project);
+  const opening = "今日开源热点趋势项目推荐：text-to-cad｜用文字生成三维模型";
+
+  assert.equal(normalized.narrationSegments![0].text, `${opening}。它把文字描述转换成三维模型。`);
+  assert.equal((normalized.narrationSegments![0].text.match(/今日开源热点趋势项目推荐/gu) ?? []).length, 1);
+  assert.equal((normalized.narrationSegments![0].ttsText?.match(/今日开源热点趋势项目推荐/gu) ?? []).length, 1);
+  assert.equal(ensureRepositoryProjectIdentity(normalized).narrationSegments![0].text, normalized.narrationSegments![0].text);
+});

@@ -23,7 +23,26 @@ export function repositoryNarrationTitle(name: string, summary = "") {
 }
 
 export function repositoryTitleIdentity(value: string) {
-  return value.replace(/[\s，,｜|：:。！？!?]/gu, "").toLowerCase();
+  return value.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+}
+
+function isRepositoryOpeningSentence(value: string, name: string) {
+  const identity = repositoryTitleIdentity(value);
+  const nameIdentity = repositoryTitleIdentity(name);
+  const recommendationIdentity = repositoryTitleIdentity(REPOSITORY_HOMEPAGE_PREFIX);
+  const shortRecommendationIdentity = repositoryTitleIdentity("开源项目推荐");
+  return Boolean(
+    nameIdentity
+    && identity.includes(nameIdentity)
+    && (identity.includes(recommendationIdentity) || identity.includes(shortRecommendationIdentity)),
+  );
+}
+
+export function repositoryOpeningTitleCount(value: string, name: string) {
+  return value
+    .split(/[。！？!?\n]+/u)
+    .filter((sentence) => isRepositoryOpeningSentence(sentence, name))
+    .length;
 }
 
 function repositoryName(project: VideoProject) {
@@ -50,9 +69,18 @@ export function repositoryProjectUrl(project: VideoProject) {
   }
 }
 
-export function repositoryNarrationBody(value: string) {
-  const match = value.match(/^.*?[。！？!?](?:\s*)/u);
-  return match ? value.slice(match[0].length).trim() : value.trim();
+export function repositoryNarrationBody(value: string, name?: string) {
+  let body = value.trim();
+  if (!name) {
+    const match = body.match(/^.*?[。！？!?](?:\s*)/u);
+    return match ? body.slice(match[0].length).trim() : body;
+  }
+  for (let index = 0; index < 4; index += 1) {
+    const match = body.match(/^(.*?)[。！？!?](?:\s*)/u);
+    if (!match || !isRepositoryOpeningSentence(match[1], name)) break;
+    body = body.slice(match[0].length).trim();
+  }
+  return body;
 }
 
 export function repositoryProjectTitleSummary(project: VideoProject) {
@@ -91,8 +119,8 @@ export function ensureRepositoryProjectIdentity(project: VideoProject): VideoPro
   const first = project.narrationSegments[0];
   const summary = repositoryProjectTitleSummary(project);
   const openingTitle = repositoryNarrationTitle(name, summary);
-  const openingBody = repositoryNarrationBody(first.text);
-  const opening = `${openingTitle}。${openingBody}`.trim();
+  const openingBody = repositoryNarrationBody(first.text, name);
+  const opening = openingBody ? `${openingTitle}。${openingBody}` : `${openingTitle}。`;
   const scenes = project.scenes.map((scene, index) => index === 0 && scene.type === "title"
     ? { ...scene, kicker: REPOSITORY_HOMEPAGE_PREFIX, headline: repositoryHomepageTitle(name, summary) }
     : scene);
