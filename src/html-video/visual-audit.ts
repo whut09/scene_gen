@@ -83,6 +83,30 @@ export async function inspectSceneDom(page: Page, input: {
       const dark = Math.min(luminance(foreground), luminance(background));
       return (bright + 0.05) / (dark + 0.05);
     };
+    const canvasCandidates = [document.body, ...document.querySelectorAll<HTMLElement>("body > *, .hv-root")]
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const color = parseColor(getComputedStyle(element).backgroundColor);
+        const coveredWidth = element === document.body ? width : Math.max(0, Math.min(width, rect.right) - Math.max(0, rect.left));
+        const coveredHeight = element === document.body ? height : Math.max(0, Math.min(height, rect.bottom) - Math.max(0, rect.top));
+        return { element, color, coveredArea: coveredWidth * coveredHeight };
+      })
+      .filter(({ coveredArea, color }) => Boolean(color && color.alpha >= 0.95 && coveredArea >= width * height * 0.8));
+    const darkCanvas = canvasCandidates.find(({ color }) => color && luminance(color) < 0.16);
+    if (darkCanvas?.color) {
+      issues.push({
+        code: "dark_background_disallowed",
+        severity: "error",
+        message: "场景使用了全黑或近黑的根画布，应切换为浅色背景。",
+        evidence: {
+          element: darkCanvas.element.tagName.toLowerCase(),
+          red: Math.round(darkCanvas.color.red),
+          green: Math.round(darkCanvas.color.green),
+          blue: Math.round(darkCanvas.color.blue),
+          luminance: Number(luminance(darkCanvas.color).toFixed(3)),
+        },
+      });
+    }
     const effectiveBackgrounds = (element: Element) => {
       let current: Element | null = element;
       while (current) {

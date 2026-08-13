@@ -90,34 +90,20 @@ export function commonHtml({
   chrome?: boolean;
   durationSec?: number;
 }) {
-  const themeCss =
-    theme === "paper"
-      ? "body{color:#123b56}.hv-kicker{color:#b4232f}h1{color:#062f50;text-shadow:none}p{color:#31546c}"
-      : "";
+  const themeCss = "body{color:#123b56}.hv-kicker{color:#b4232f}h1{color:#062f50;text-shadow:none}p{color:#31546c}";
   const accessibilityCss = `
-    body:not(.hv-theme-paper) .hv-main h1,
-    body:not(.hv-theme-paper) .hv-main h2,
-    body:not(.hv-theme-paper) .hv-main h3,
-    body:not(.hv-theme-paper) .hv-main p,
-    body:not(.hv-theme-paper) .hv-main li,
-    body:not(.hv-theme-paper) .hv-main dd { color:#f8fbff !important; text-shadow:0 2px 4px rgba(0,0,0,.42); }
-    body:not(.hv-theme-paper) .hv-card,
-    body:not(.hv-theme-paper) .pf-card,
-    body:not(.hv-theme-paper) .df-node { background:rgba(3,20,43,.88) !important; border-color:rgba(255,255,255,.42) !important; }
-    body.hv-theme-paper .hv-main h1,
-    body.hv-theme-paper .hv-main h2,
-    body.hv-theme-paper .hv-main h3 { color:#102a43 !important; text-shadow:none; }
-    body.hv-theme-paper .hv-main p,
-    body.hv-theme-paper .hv-main li,
-    body.hv-theme-paper .hv-main dd { color:#17324d !important; text-shadow:none; }
-    body.hv-theme-paper .hv-card,
-    body.hv-theme-paper .es-lead,
-    body.hv-theme-paper .es-points li,
-    body.hv-theme-paper .es-news,
-    body.hv-theme-paper .ir-card { background:rgba(255,255,255,.96) !important; }
-    body.hv-theme-paper .es-points li,
-    body.hv-theme-paper .es-news,
-    body.hv-theme-paper .ir-card { border-color:rgba(16,42,67,.36) !important; }
+    .hv-main h1, .hv-main h2, .hv-main h3 { color:#102a43 !important; text-shadow:none !important; }
+    .hv-main p, .hv-main li, .hv-main dd { color:#17324d !important; text-shadow:none !important; }
+    .hv-card, .pf-card, .df-node, .es-lead, .es-points li, .es-news, .ir-card {
+      background:rgba(255,255,255,.96) !important;
+      border-color:rgba(16,42,67,.3) !important;
+      color:#17324d !important;
+      box-shadow:0 18px 48px rgba(24,58,86,.12) !important;
+    }
+    .hv-card div { color:#31546c !important; }
+    .hv-card strong { color:#075e83 !important; }
+    .kt-kicker, .kt-stamp, .bs-repository-url, .df-kicker { color:#075e83 !important; }
+    .kt-index { color:rgba(16,42,67,.07) !important; }
   `;
 
   const paletteCss: Record<VisualPalette, { a: string; b: string; c: string; paper: string }> = {
@@ -128,7 +114,7 @@ export function commonHtml({
     coral: { a: "#9b2855", b: "#d95372", c: "#f4a261", paper: "#fff0f2" },
   };
   const colors = paletteCss[palette];
-  const background = theme === "paper" ? "#f5f1e8" : "#0b1018";
+  const background = theme === "paper" ? "#f7f3ea" : colors.paper;
 
   return `<!doctype html>
 <html>
@@ -141,7 +127,7 @@ export function commonHtml({
     html, body { width: ${width}px; height: ${height}px; margin: 0; overflow: hidden; }
     body {
       font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
-      color: #fff;
+      color: #102a43;
       background: ${background};
       --scene-duration: ${Math.max(4, durationSec)}s;
       --safe-left: 82px;
@@ -160,7 +146,7 @@ export function commonHtml({
       content: "";
       position: absolute;
       inset: 0;
-      background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+      background-image: linear-gradient(rgba(16,42,67,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(16,42,67,.055) 1px, transparent 1px);
       background-size: 72px 72px;
       opacity: .55;
     }
@@ -182,7 +168,7 @@ export function commonHtml({
       display: flex;
       justify-content: space-between;
       align-items: center;
-      color: rgba(255,255,255,.86);
+      color: #31546c;
       font-size: 24px;
       font-weight: 800;
       letter-spacing: .04em;
@@ -197,10 +183,10 @@ export function commonHtml({
     }
     .hv-card {
       border: 2px solid rgba(255,255,255,.32);
-      background: #111a26;
+      background: rgba(255,255,255,.96);
       box-shadow: 14px 14px 0 rgba(88,214,208,.16);
     }
-    .hv-kicker { color: #fff36a; font-weight: 900; font-size: 28px; margin-bottom: 18px; }
+    .hv-kicker { color: #b4232f; font-weight: 900; font-size: 28px; margin-bottom: 18px; }
     h1, h2, h3, p { margin: 0; }
     h1 {
       font-size: 78px;
@@ -212,7 +198,7 @@ export function commonHtml({
     }
     .hv-card { position: relative; overflow: hidden; }
     .hv-card::after { display:none; }
-    p { font-size: 34px; line-height: 1.5; color: rgba(255,255,255,.84); }
+    p { font-size: 34px; line-height: 1.5; color: #31546c; }
     @keyframes hv-enter {
       from { opacity: 0; transform: translateY(34px) scale(.985); }
       to { opacity: 1; transform: translateY(0) scale(1); }

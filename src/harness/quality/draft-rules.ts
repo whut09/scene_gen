@@ -7,7 +7,7 @@ import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate, projectRepositoryDate } from "../../pipeline/news-date";
-import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryProjectName, repositoryProjectTitleSummary, repositoryProjectUrl, repositoryTitleIdentity } from "../../pipeline/repository-project";
+import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryOpeningTitleCount, repositoryProjectName, repositoryProjectTitleSummary, repositoryProjectUrl, repositoryTitleIdentity } from "../../pipeline/repository-project";
 import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
@@ -319,13 +319,30 @@ export async function evaluateDraft(
     revisionNotes.push("Remove unmatched brackets and quotation marks before synthesis.");
   }
   const narratedRepositoryName = repositoryProjectName(project);
-  const narratedTitle = normalizeText(narratedRepositoryName ? repositoryNarrationTitle(narratedRepositoryName) : project.meta.title);
-  if (narratedTitle.length >= 4 && normalizeText(project.narration).split(narratedTitle).length - 1 > 1) {
+  const narratedTitle = normalizeText(project.meta.title);
+  const titleRepeated = narratedRepositoryName
+    ? repositoryOpeningTitleCount(project.narration, narratedRepositoryName) > 1
+    : narratedTitle.length >= 4 && normalizeText(project.narration).split(narratedTitle).length - 1 > 1;
+  if (titleRepeated) {
     issues.push({ severity: "error", code: "title_repeated_in_narration", message: "旁白重复播报主标题，只允许完整播报一次。", sceneIndex: 0 });
     revisionNotes.push("首屏只播报一次完整标题，删除后续重复标题。");
   }
   const narrationTexts = (project.narrationSegments ?? []).map((segment) => segment.text).filter(Boolean);
   const narrationJoined = narrationTexts.join(" ");
+  const genericTransitionPattern = /这次真正改变的是|真正改变的是|这条新闻真正说了什么/gu;
+  const genericTransitionMatches = [
+    ...narrationTexts,
+    ...project.scenes.map(sceneVisibleText),
+  ].flatMap((text) => text.match(genericTransitionPattern) ?? []);
+  if (genericTransitionMatches.length > 0) {
+    issues.push({
+      severity: "error",
+      code: "generic_transition_filler",
+      message: "文案包含空泛模板句，应直接陈述事实、影响或限制。",
+      evidence: { fragments: [...new Set(genericTransitionMatches)].slice(0, 8) },
+    });
+    revisionNotes.push("删除“这次真正改变的是”等模板套话，直接说具体事实和影响。");
+  }
   if (/(?:\.\.\.|…+)/u.test(narrationJoined)) {
     issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含未完成的截断片段。", evidence: { fragments: narrationJoined.match(/[^。！？!?]{0,18}(?:\.\.\.|…+)[^。！？!?]{0,18}/gu) ?? [] } });
     revisionNotes.push("删除 LLM 截断碎片，确保每个场景以完整句子结束。");

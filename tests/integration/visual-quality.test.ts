@@ -83,6 +83,26 @@ test("DOM audit rejects unverifiable image backgrounds behind key text", { timeo
   }
 });
 
+test("DOM audit rejects near-black canvases and accepts light canvases", { timeout: 30_000 }, async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 360, height: 640 } });
+    await page.setContent("<!doctype html><style>body{margin:0;background:#0b1018;color:#fff}h1{margin:60px;font-size:36px}</style><h1>关键结论</h1>");
+    const darkAudit = await inspectSceneDom(page, { sceneIndex: 0, width: 360, height: 640, durationSec: 4, headline: "关键结论" });
+    assert.equal(darkAudit.issues.some((issue) => issue.code === "dark_background_disallowed"), true);
+
+    await page.setContent("<!doctype html><style>body{margin:0;background:#eef7ff}.root{position:absolute;inset:0;background:#0b1018;color:#fff}h1{margin:60px;font-size:36px}</style><main class=\"root\"><h1>关键结论</h1></main>");
+    const coveredAudit = await inspectSceneDom(page, { sceneIndex: 0, width: 360, height: 640, durationSec: 4, headline: "关键结论" });
+    assert.equal(coveredAudit.issues.some((issue) => issue.code === "dark_background_disallowed"), true);
+
+    await page.setContent("<!doctype html><style>body{margin:0;background:#eef7ff;color:#102a43}h1{margin:60px;font-size:36px}</style><h1>关键结论</h1>");
+    const lightAudit = await inspectSceneDom(page, { sceneIndex: 0, width: 360, height: 640, durationSec: 4, headline: "关键结论" });
+    assert.equal(lightAudit.issues.some((issue) => issue.code === "dark_background_disallowed"), false);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("HTML renderer persists scene visual audit before recording", { timeout: 60_000 }, async () => {
   const workDir = await mkdtemp(path.join(tmpdir(), "scene-gen-render-visual-audit-"));
   try {
