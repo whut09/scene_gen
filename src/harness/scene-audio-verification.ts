@@ -218,6 +218,14 @@ function hasTimedTransliteratedTitle(
 }
 
 function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
+  const maximumBlockWidth = Math.min(80, Math.floor(actualText.length / 2));
+  for (let width = maximumBlockWidth; width >= 8; width -= 1) {
+    for (let index = 0; index + width * 2 <= actualText.length; index += 1) {
+      const phrase = actualText.slice(index, index + width);
+      if (actualText.slice(index + width, index + width * 2) !== phrase) continue;
+      if (!expectedText.includes(phrase.repeat(2))) return { phrase, repeats: 2, index };
+    }
+  }
   for (let width = 1; width <= 6; width += 1) {
     for (let index = 0; index + width * 2 <= actualText.length; index += 1) {
       const phrase = actualText.slice(index, index + width);

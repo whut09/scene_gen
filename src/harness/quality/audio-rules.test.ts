@@ -73,3 +73,15 @@ test("local provider gate rejects spaced or Chinese-homophone AI and accepts glo
   project.narrationSegments![0].providerSynthesisText = "A-I For Beginners 是人工智能入门课程。";
   assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected"), false);
 });
+
+test("audio gate rejects a repeated repository homepage title in provider synthesis text", () => {
+  const project = {
+    meta: { title: "diagram-design", createdAt: "2026-08-12T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 40, sourceCount: 1 },
+    narration: "今日开源热点趋势项目推荐：diagram-design｜让智能体生成专业技术图表。",
+    narrationSegments: [{ sceneIndex: 0, text: "今日开源热点趋势项目推荐：diagram-design｜让智能体生成专业技术图表。", providerSynthesisText: "今日开源热点趋势项目推荐：Diagram Design｜让智能体生成专业技术图表。今日开源热点趋势项目推荐：Diagram Design，让智能体生成专业技术图表。", ttsProvider: "indextts" }],
+    scenes: [{ type: "title" as const, duration: 40, kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：diagram-design｜让智能体生成专业技术图表", subhead: "用途：让智能体生成专业技术图表", sources: ["8000 Stars"] }],
+    sources: [{ id: "repo", kind: "github" as const, title: "diagram-design", url: "https://github.com/cathrynlavery/diagram-design", source: "项目资料", summary: "让智能体生成专业技术图表", score: 1, tags: [], repo: "cathrynlavery/diagram-design", metrics: { stars: 8000 } }],
+  } satisfies VideoProject;
+
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "title_spoken_repeated"), true);
+});

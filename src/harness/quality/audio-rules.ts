@@ -13,6 +13,7 @@ import type { AudioStructuralProbe } from "./audio-structural-gate";
 import type { AsrSceneTranscript } from "../scene-audio-verification";
 import type { PronunciationAssessmentResult } from "./azure-pronunciation-assessment";
 import type { PronunciationSpan } from "../../pipeline/pronunciation/schema";
+import { repositoryOpeningTitleCount, repositoryProjectName } from "../../pipeline/repository-project";
 
 export interface AudioGateDependencies {
   structuralProbe?: (audioPath: string, signal?: AbortSignal) => Promise<AudioStructuralProbe>;
@@ -63,9 +64,13 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
       const normalizedName = canonicalSpeechText(prepareF5SynthesisText(name));
       if (!canonicalSpeechText(prepared).includes(normalizedName)) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, normalizedName, displayText: segment.text, synthesisText: synthesisInput } });
     }
+    const repositoryName = repositoryProjectName(project);
     const normalizedTitle = project.meta.title.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
     const normalizedSynthesis = synthesisInput.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
-    if (segment.sceneIndex === 0 && normalizedTitle.length >= 4 && normalizedSynthesis.split(normalizedTitle).length - 1 > 1) issues.push({ severity: "error", code: "title_spoken_repeated", message: "The opening TTS text repeats the full title.", sceneIndex: 0, repairAction: "revise-scenes", retryable: true, evidence: { title: project.meta.title, synthesisText: synthesisInput } });
+    const repeatedTitle = repositoryName
+      ? repositoryOpeningTitleCount(synthesisInput, repositoryName) > 1
+      : normalizedTitle.length >= 4 && normalizedSynthesis.split(normalizedTitle).length - 1 > 1;
+    if (segment.sceneIndex === 0 && repeatedTitle) issues.push({ severity: "error", code: "title_spoken_repeated", message: "The opening TTS text repeats the full title.", sceneIndex: 0, repairAction: "revise-scenes", retryable: true, evidence: { title: project.meta.title, synthesisText: synthesisInput } });
     for (const year of segment.text.match(/(?<!\d)(?:19|20)\d{2}(?!\d|元|块|美元|人民币)/g) ?? []) {
       const expected = pronounceYearDigits(year);
       if (!prepared.includes(expected)) issues.push({ severity: "error", code: "tts_year_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏年份 ${year} 必须逐位读作 ${expected}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { year, expected, synthesisText: prepared } });

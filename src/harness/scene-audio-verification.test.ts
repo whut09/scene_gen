@@ -434,6 +434,21 @@ test("scene ASR blocks a Latin product token repeated twice", () => {
   assert.ok(result.issues.some((item) => item.code === "audio_repeated_phrase"));
 });
 
+test("scene ASR blocks a repository homepage title spoken twice", () => {
+  const project = projectFixture();
+  const title = "今日开源热点趋势项目推荐图表设计让智能体生成专业技术图表";
+  project.meta.title = "diagram-design";
+  project.narrationSegments = [{ sceneIndex: 0, text: `${title}它能快速生成品牌风格图表` }];
+  const result = verifySceneTranscripts(project, [{
+    sceneIndex: 0,
+    text: `${title}${title}它能快速生成品牌风格图表`,
+    confidence: 0.83,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  }], { expectedLanguage: "zh", minimumConfidence: 0.65 });
+  assert.ok(result.issues.some((item) => item.code === "audio_repeated_phrase"));
+});
+
 test("scene ASR blocks short residual narration after an otherwise complete scene", () => {
   const project = projectFixture();
   project.narrationSegments = [{ sceneIndex: 0, text: "系统完成核心模块重构并输出结果" }];
