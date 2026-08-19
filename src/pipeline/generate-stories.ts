@@ -228,7 +228,7 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, effectiveTargetSeconds);
-  const deterministicShortStory = /ithome\.com\/0\/(?:986\/936|988\/286|988\/766)|qbitai\.com\/2026\/08\/(?:467879|467877)|36kr\.com\/p\/(?:3933115490368647|3934784382958726|3935913818684545|3935837932518536|3935738007485574)|zhidx\.com\/p\/583895|techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(item.url);
+  const deterministicShortStory = /ithome\.com\/0\/(?:989\/505|989\/497|989\/689|989\/722|986\/936|988\/286|988\/766)|qbitai\.com\/2026\/08\/(?:473379|473597|467879|467877|471642)|tmtpost\.com\/8102019|36kr\.com\/p\/(?:3933115490368647|3934784382958726|3935913818684545|3935837932518536|3935738007485574)|zhidx\.com\/p\/583895|techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(item.url);
   if (!deterministicShortStory && (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1")) {
     project = await improveWithOpenAI(project, {
       targetSeconds: effectiveTargetSeconds,

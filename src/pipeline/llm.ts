@@ -287,12 +287,16 @@ export async function improveWithOpenAI(
     return project;
   }
   const isGithubProject = project.sources[0]?.kind === "github";
+  const isNewsContent = contentTypeForProject(project) === "news";
   const targetChars = Math.max(190, Math.min(420, Math.round(targetSeconds * 5.8)));
   const plannedVisuals = planning.selected.scenes.map((scene) => scene.visual);
   const guidance = [
     "你是 AI 科技竖屏短视频的资深新闻编导。",
     "只返回 JSON，不要 Markdown。",
     `总旁白建议约 ${targetChars} 个汉字；${targetSeconds} 秒只是时长参考，不要为了凑时长增加信息或强行压缩语速。`,
+    isNewsContent
+      ? "这是面向普通读者的新闻科普，不是技术发布会摘要。只保留发生了什么、影响谁、普通人为什么要关心、一个可核验的证据和一个限制；API、SDK、框架、协议、参数、算子、显存、基准等术语只有在直接解释价格、速度、功能或风险时才保留，并在第一次出现时用一句日常语言解释。连续技术术语不得超过两个，禁止罗列技术细节和空泛的‘推动行业发展’。"
+      : "",
     `必须输出 title 和 sections；sections 恰好 ${plannedVisuals.length} 个，visual 顺序固定为 ${plannedVisuals.join("、")}。`,
     "selectedPlan 已通过确定性检查。必须逐字使用 selectedPlan.title，并严格按 selectedPlan.scenes 的 angle、focus 和 claimIds 展开，不得切换叙事角度或新增事实。",
     "factLedger 是唯一声明级事实账本。title 必须返回 titleClaimIds；每个 section 必须返回 claimIds，且只能引用 factLedger 中存在、能够直接支持当前画面和旁白的 id。",

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildProductionDecisions } from "../production/visual-planner";
 import { projectSynthesisReadinessIssues } from "./synthesis-readiness";
-import { cleanNarrationNoise, compactProjectNarration, createStoryProject, scrubAttribution, splitArticleIntoSemanticChunks } from "./story";
+import { cleanNarrationNoise, compactProjectNarration, createStoryProject, scrubAttribution, scrubSpokenAttribution, splitArticleIntoSemanticChunks } from "./story";
 import type { HotItem } from "./types";
 import { containsForbiddenGithubReference } from "./story";
 import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
@@ -118,6 +118,10 @@ test("semantic article chunks repair punctuation inserted inside model versions"
 test("attribution scrubber preserves natural sentences beginning with editing", () => {
   assert.equal(scrubAttribution("编辑和视觉指令更稳定"), "编辑和视觉指令更稳定");
   assert.equal(scrubAttribution("编辑：测试人员"), "");
+});
+
+test("spoken attribution scrubber removes URLs without changing visible source fields", () => {
+  assert.equal(scrubSpokenAttribution("模型资料见 https://www.modelscope.cn/models/qwen。"), "模型资料见。");
 });
 
 test("DeepSeek V4 Flash news fallback keeps API scope and benchmark facts complete", () => {
@@ -721,6 +725,21 @@ test("current repository batch uses grounded project-specific profiles", () => {
     assert.match(project.narration, fixture.expected);
     assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|电路板走线/);
     assert.match(project.narrationSegments?.[0]?.text ?? "", /直接|解决|避免|统一/);
+  }
+});
+
+test("requested repository batch uses distinct project-specific value propositions", () => {
+  const fixtures = [
+    { repo: "infiniflow/ragflow", content: "Deep document understanding RAG engine with citations and traceable retrieval.", expected: /复杂文档.*检索.*引用/s },
+    { repo: "hugohe3/ppt-master", content: "AI generates native PowerPoint from PDFs, DOCX files and web pages as a natively editable PPTX.", expected: /原生可编辑.*PPTX.*图表/s },
+    { repo: "ZuodaoTech/everyone-can-use-english", content: "AI 是外语老师，Enjoy 提供视频、电子书、闪卡和课程训练。", expected: /英语.*跟读.*录音/s },
+    { repo: "localsend/localsend", content: "Share files with nearby devices over the local network without internet using HTTPS.", expected: /局域网.*(?:不经过云端|不经过第三方服务器)/s },
+  ];
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo, metrics: { stars: 1000 } });
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|电路板走线|股票分析/);
   }
 });
 

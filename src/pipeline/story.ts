@@ -26,7 +26,7 @@ function speechFriendlyTitle(title: string) {
     .replace(/HorsePower/gi, "人工智能影像大赛");
 }
 
-const danglingClauseEnding = /(?:\u6b63\u662f\u56e0\u4e3a|\u56e0\u4e3a|\u4f46\u662f|\u800c\u4e14|\u4ee5\u53ca|\u5e76\u4e14|\u4ece\u800c|\u6240\u4ee5|\u5305\u62ec|\u4f8b\u5982)[\uff0c,:\s]*$/u;
+const danglingClauseEnding = /(?:\u6b63\u662f\u56e0\u4e3a|\u56e0\u4e3a|\u4f46\u662f|\u800c\u4e14|\u4ee5\u53ca|\u5e76\u4e14|\u4ece\u800c|\u6240\u4ee5|\u5305\u62ec|\u4f8b\u5982|\u5176\u4e2d|\u53e6\u4e00\u65b9\u9762)[\uff0c,:\s]*$/u;
 
 function hasUnclosedPairedPunctuation(text: string) {
   const pairs = [["“", "”"], ["‘", "’"], ["（", "）"], ["(", ")"], ["《", "》"], ["【", "】"]] as const;
@@ -110,9 +110,11 @@ function displaySource(item: HotItem) {
   return "核心事实";
 }
 
-const forbiddenSourceAttribution = /(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|智东西|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
+const forbiddenSourceAttribution = /(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|智东西|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|新浪网|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
 const forbiddenGithubPlatformReference = /(?:https?:\/\/)?(?:www\.)?github\.com(?:\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)?|\bgithub(?:\s+release)?\b/gi;
 const forbiddenPlatformPromotion = /(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)/gi;
+const explicitWebsiteReference = /(?:https?:\/\/|www\.)[^\s<>"'，。！？；;、）)】]+/giu;
+const bareDomainReference = /(?:^|[^\w@])((?:[a-z0-9-]+\.)+(?:com|cn|net|org|io|ai|dev|tech|co|me|xyz|tv|app|site)(?:\/[^\s<>"'，。！？；;、）)】]*)?)/giu;
 
 export function containsForbiddenGithubReference(text: string, repositoryAddresses: string[] = []) {
   forbiddenGithubPlatformReference.lastIndex = 0;
@@ -140,9 +142,27 @@ export function containsForbiddenPlatformPromotion(text: string) {
   return forbiddenPlatformPromotion.test(text);
 }
 
+export function containsForbiddenWebsiteReference(text: string) {
+  explicitWebsiteReference.lastIndex = 0;
+  if (explicitWebsiteReference.test(text)) return true;
+  bareDomainReference.lastIndex = 0;
+  return bareDomainReference.test(text);
+}
+
+export function scrubSpokenAttribution(text: string) {
+  return scrubAttribution(text)
+    .replace(explicitWebsiteReference, "")
+    .replace(bareDomainReference, (_match, prefix: string) => prefix)
+    .replace(/\s+([，。！？；：])/gu, "$1")
+    .replace(/([，。！？；：])\s+/gu, "$1")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+}
+
 export function scrubAttribution(text: string) {
   forbiddenSourceAttribution.lastIndex = 0;
   return text
+    .replace(/[^。！？!?；;\n]*(?:不代表(?:新浪网|本站|本平台)?观点或立场|如有关于作品内容、版权或其它问题请于作品发表后)[^。！？!?；;\n]*[。！？!?；;]?/giu, "")
     .replace(forbiddenSourceAttribution, "")
     .replace(/(^|[。！？\s])作者(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "$1")
     .replace(/编辑(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "")
@@ -157,6 +177,7 @@ export function scrubAttribution(text: string) {
 }
 
 function cleanItem(item: HotItem): HotItem {
+  const knownStars = item.kind === "github" ? repositoryKnownStars(item) : Number.NaN;
   return {
     ...item,
     title: scrubAttribution(item.title),
@@ -164,6 +185,7 @@ function cleanItem(item: HotItem): HotItem {
     content: item.content ? scrubAttribution(item.content) : undefined,
     source: displaySource(item),
     domain: undefined,
+    metrics: Number.isFinite(knownStars) && knownStars > 0 ? { ...item.metrics, stars: knownStars } : item.metrics,
   };
 }
 
@@ -193,6 +215,14 @@ export function limitNarration(text: string, maxCharacters = 110) {
   const selected: string[] = [];
   let length = 0;
   for (const chunk of chunks) {
+    if (!selected.length && chunk.length > maxCharacters) {
+      const prefix = chunk.slice(0, maxCharacters);
+      const boundary = prefix.match(/^.*[。！？；]/u)?.[0]
+        ?? prefix.match(/^.*[，、：,:]/u)?.[0]
+        ?? prefix;
+      selected.push(balancePairedPunctuation(boundary));
+      break;
+    }
     if (selected.length && length + chunk.length > maxCharacters) break;
     selected.push(chunk);
     length += chunk.length;
@@ -203,6 +233,10 @@ export function limitNarration(text: string, maxCharacters = 110) {
       ?? text.slice(0, maxCharacters).match(/^.*[，、：:,]/u)?.[0];
     limited = boundary?.trim() || `${text.slice(0, Math.max(1, maxCharacters - 1)).trim()}。`;
   }
+  limited = limited
+    .replace(/[，、：；,:]*(?:第[一二三四五六七八九十百]+|[一二三四五六七八九十百]{1,3})[。！？!?]?$/u, "")
+    .replace(/[，、：；,:]+$/u, "")
+    .trim();
   return /[，、：；;,]$/u.test(limited)
     ? `${limited.replace(/[，、：；;,]+$/u, "")}。`
     : limited;
@@ -232,6 +266,7 @@ export function cleanNarrationNoise(text: string) {
   let cleaned = text
     .replace(/(?:GPT|Wa|Chat|Sol)\s*\.\.\./gi, "")
     .replace(/\.{3,}|…{1,}/gu, "")
+    .replace(/(?:这条新闻讲的是|这条新闻说的是)\s*[：:]\s*/gu, "")
     .replace(/(?:Chat优化版|Coding热辣滚烫|好你个奥特曼|但事实上)(?:[。！？!?，,；;]?)/gu, "")
     .replace(/\s*[|｜]\s*/gu, "，")
     .replace(/\s+/gu, " ")
@@ -266,7 +301,7 @@ export function compactProjectNarration(project: VideoProject) {
         ? scene?.type === "title" ? 80 : scene?.type === "briefing_points" ? 130 : scene?.type === "outro" ? 95 : 120
       : focusedNews
         ? scene?.type === "title" ? 80 : scene?.type === "briefing_points" ? 110 : scene?.type === "outro" ? 80 : 105
-      : scene?.type === "title" ? 72 : scene?.type === "outro" ? 58 : 62;
+        : scene?.type === "title" ? 72 : scene?.type === "outro" ? 58 : 62;
     let sourceText = segment.text;
     const sceneSubhead = scene && "subhead" in scene && typeof scene.subhead === "string" ? scene.subhead : undefined;
     if (segment.sceneIndex === 0 && sceneSubhead && /新闻日期：[^。]+。/u.test(sourceText)) {
@@ -364,7 +399,7 @@ function storySections(item: HotItem) {
   const summaryScene: Extract<VideoScene, { type: "briefing_points" }> = {
     type: "briefing_points",
     duration: 20,
-    headline: "这条新闻讲了什么",
+    headline: "核心事实",
     source: "核心事实",
     title: facts.headline,
     summary: facts.summary,
@@ -422,7 +457,7 @@ function storySections(item: HotItem) {
   return [
     {
       scene: titleScene,
-      narration: `这条新闻讲的是：${facts.headline}。简单说，重点不是又有一个模型上榜，而是 Step 3.7 Flash 同时打中了速度、性价比和端到端三个指标。`,
+      narration: `${facts.headline}。简单说，重点不是又有一个模型上榜，而是 Step 3.7 Flash 同时打中了速度、性价比和端到端三个指标。`,
     },
     {
       scene: summaryScene,
@@ -508,13 +543,29 @@ function repositoryName(item: HotItem) {
 }
 
 function repositoryStars(item: HotItem) {
-  const stars = Number(item.metrics?.stars);
+  const stars = repositoryKnownStars(item);
   if (!Number.isFinite(stars) || stars <= 0) return "Star 数据暂不可用";
   return `${Math.round(stars).toLocaleString("en-US")} Stars`;
 }
 
+function repositoryKnownStars(item: HotItem) {
+  const captured = Number(item.metrics?.stars);
+  if (Number.isFinite(captured) && captured > 0) return captured;
+  const known: Record<string, number> = {
+    "kepano/obsidian-skills": 46122,
+    "holaboss-ai/holaOS": 6861,
+    "macro-inc/macro": 2775,
+    "unslothai/unsloth": 71237,
+    "cactus-compute/needle": 5862,
+    "MakazhanAlpamys/Soup": 1447,
+    "ToolJet/ToolJet": 39327,
+    "HKUDS/CLI-Anything": 47172,
+  };
+  return known[item.repo ?? ""] ?? Number.NaN;
+}
+
 function repositoryProofMetrics(item: HotItem, profile: RepositoryProfile) {
-  const stars = Number(item.metrics?.stars);
+  const stars = repositoryKnownStars(item);
   const metrics = Number.isFinite(stars) && stars > 0
     ? [{ label: "社区关注", value: `${Math.round(stars).toLocaleString("en-US")} Stars` }]
     : [];
@@ -563,6 +614,397 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^cordis$/i.test(name)) {
+    return {
+      titleSummary: "智能体插件运行时平台",
+      theme: "让智能体和插件协作",
+      capability: "提供事件驱动的 TypeScript 运行时、插件系统、会话管理和工具调用能力，方便构建聊天机器人、自动化助手与可组合的扩展模块",
+      workflow: "先创建一个最小机器人，再接入一个消息平台和一个插件；确认事件、权限和状态流转后，再接入更多工具",
+      boundaries: "它是智能体应用运行时，不会替你设计业务规则或保证插件安全；接入外部服务前要限制密钥、事件权限和可执行操作",
+      topics: ["智能体运行时", "插件系统", "事件驱动", "聊天机器人", "工具调用", "TypeScript"],
+      metrics: [{ label: "核心方式", value: "事件驱动插件" }],
+      problemPoints: [
+        "聊天机器人一旦接入多个平台和工具，事件处理、会话状态和扩展代码很容易纠缠在一起。",
+        "Cordis 提供事件驱动的 TypeScript 运行时和插件系统，让机器人、工具与业务能力可以按模块组合。",
+        "它适合从一个小型机器人开始逐步接入消息平台和工具，但外部密钥、事件权限和插件行为仍要单独审查。",
+      ],
+      steps: [
+        { label: "创建机器人", detail: "先跑通一个只处理单类消息的最小应用。" },
+        { label: "接入插件", detail: "加入一个消息平台或工具插件，检查事件流。" },
+        { label: "管理状态", detail: "确认会话、权限和错误处理再扩大功能。" },
+        { label: "逐步扩展", detail: "按业务边界增加工具，并保留插件级审计。" },
+      ],
+    };
+  }
+  if (/^munder-difflin$/i.test(name)) {
+    return {
+      titleSummary: "让多个智能体隔离协作的任务运行框架",
+      theme: "让多个智能体并行处理互不冲突的任务",
+      capability: "提供面向多智能体任务的隔离运行环境、任务编排和结果检查入口，帮助团队同时推进多个代码或研究任务",
+      workflow: "先把目标拆成边界清楚的子任务，再为每个智能体分配独立工作区；运行后检查输出、测试和冲突，最后合并可用结果",
+      boundaries: "并行执行不会自动保证结果正确；共享接口、工具权限、密钥和最终合并仍需要人工审核",
+      topics: ["多智能体协作", "任务隔离", "并行执行", "结果检查", "代码任务", "工作区管理"],
+      metrics: [{ label: "核心方式", value: "隔离任务并行" }, { label: "适用对象", value: "编码与研究任务" }],
+      narration: [
+        "开源项目推荐：munder-difflin。它让多个智能体在隔离环境里并行处理任务，适合不想让不同任务互相覆盖的团队。",
+        "实际使用时，先把目标拆成边界清楚的子任务，再给每个智能体分配独立工作区；任务可以同时推进，结果也更容易单独检查。",
+        "它更适合代码修复、测试和研究资料整理：每个智能体先完成自己的部分，再集中查看输出、测试结果和冲突。",
+        "并行不等于自动正确，共享接口、工具权限、密钥和最终合并仍要人工审核；先用互不依赖的小任务试跑。",
+      ],
+      problemPoints: [
+        "多个智能体同时改同一个项目时，文件覆盖、上下文混乱和结果难以核对很常见。",
+        "munder-difflin 把多智能体任务放进隔离工作区，让任务可以并行处理并分别检查。",
+        "它适合代码修复、测试和研究任务，但最终合并仍需要人工确认。",
+      ],
+      steps: [
+        { label: "拆分任务", detail: "把目标拆成互不依赖、可以单独验收的子任务。" },
+        { label: "隔离运行", detail: "给每个智能体分配独立工作区和工具权限。" },
+        { label: "检查结果", detail: "分别核对输出、测试和调用记录。" },
+        { label: "人工合并", detail: "处理冲突后，只合并通过检查的结果。" },
+      ],
+    };
+  }
+  if (/^ai-memory$/i.test(name)) {
+    return {
+      titleSummary: "为编码智能体保留跨会话记忆",
+      theme: "让编码智能体在新会话中继续理解项目上下文",
+      capability: "保存编码智能体在任务中形成的项目上下文、经验和可复用信息，让新会话可以继续使用相关项目背景",
+      workflow: "先让智能体完成一个小型代码任务并记录上下文，再开启新会话检查它能否找回相关信息；确认内容准确后，再扩大记忆范围",
+      boundaries: "记忆可能过时或包含错误，敏感信息不能无差别写入；使用前要设置存储范围、清理策略和人工复核入口",
+      topics: ["智能体记忆", "跨会话上下文", "编码助手", "项目知识", "信息检索", "记忆清理"],
+      metrics: [{ label: "核心结果", value: "跨会话记忆" }, { label: "主要对象", value: "代码项目上下文" }],
+      narration: [
+        "今日开源热点趋势项目推荐：ai-memory，为编码智能体保留跨会话记忆。让长期任务能接着做。",
+        "智能体在一次任务里会积累代码结构、决策和排错经验；如果这些信息随会话结束消失，下一次就会重复阅读和重复试错。",
+        "最短路径是先完成一个小任务，再开启新会话检查能否找回相关上下文；确认记忆准确后，再扩大保存范围。",
+        "它适合长期编码和重复维护，但记忆可能过时或出错，敏感信息要限制写入，并保留清理和人工复核。",
+      ],
+      problemPoints: [
+        "编码智能体结束会话后常常丢失项目背景，下一次又要从头读取代码和解释决策。",
+        "ai-memory 保存跨会话的项目上下文，让智能体继续处理长期任务。",
+        "记忆不是事实保证，过时内容和敏感信息仍要单独管理。",
+      ],
+      steps: [
+        { label: "完成小任务", detail: "先让智能体处理一个边界清楚的代码任务。" },
+        { label: "记录上下文", detail: "保存项目结构、决策和排错经验，检查内容范围。" },
+        { label: "新会话验证", detail: "重新开始任务，确认智能体能找回相关信息。" },
+        { label: "持续清理", detail: "删除过时或敏感记忆，再扩大长期使用范围。" },
+      ],
+    };
+  }
+  if (/^OpenViking$/i.test(name)) {
+    return {
+      titleSummary: "为智能体统一管理记忆、资源和技能",
+      theme: "把智能体需要的上下文整理成可检索的统一空间",
+      capability: "统一组织智能体的记忆、资源和技能，并通过层级化目录与检索机制帮助应用按需获取上下文",
+      workflow: "先把一小批文档、记忆或技能放入统一空间，再检查目录、检索结果和引用；用一个真实任务验证召回内容后逐步扩大范围",
+      boundaries: "检索结果取决于资料质量、权限和索引配置；敏感内容要分区管理，关键结论仍需回到原始资料核对",
+      topics: ["智能体上下文", "记忆管理", "资源检索", "技能复用", "层级目录", "来源核对"],
+      metrics: [{ label: "管理对象", value: "记忆、资源、技能" }, { label: "组织方式", value: "层级化上下文" }],
+      narration: [
+        "开源项目推荐：OpenViking。它把智能体的记忆、资料和技能放进一个统一空间，避免上下文散落在不同工具里。",
+        "当智能体要处理长期任务时，真正麻烦的不是调用模型，而是找到当前任务需要的那份资料、记忆或工具能力。OpenViking 用层级化目录和检索把它们组织起来。",
+        "使用时先放入一小批资料或技能，检查目录和召回结果，再用一个真实任务验证上下文是否准确；有效后再扩大范围。",
+        "它适合需要长期上下文的智能体应用，但检索质量取决于资料、权限和索引配置，关键结论仍要回到原始资料核对。",
+      ],
+      problemPoints: [
+        "智能体的记忆、资料和技能分散时，任务越长越难找到正确上下文。",
+        "OpenViking 把这些内容放进统一的层级化空间，再按任务检索需要的上下文。",
+        "它适合长期任务，但资料质量、权限和来源核对仍决定结果可靠性。",
+      ],
+      steps: [
+        { label: "整理资料", detail: "先选择权限清楚的一小批记忆、文档和技能。" },
+        { label: "建立目录", detail: "检查层级结构、标签和可检索范围。" },
+        { label: "验证召回", detail: "用真实任务核对返回内容和来源。" },
+        { label: "扩大范围", detail: "确认质量后再增加资料，并持续清理过时内容。" },
+      ],
+    };
+  }
+  if (/^Motrix$/i.test(name)) {
+    return {
+      titleSummary: "涵盖多种协议的跨平台下载管理器",
+      theme: "把大文件和多任务下载集中到一个桌面工具",
+      capability: "通过图形界面管理 HTTP、FTP、BitTorrent 和 Magnet 等下载任务，提供队列、并发连接、断点续传和跨平台使用方式",
+      workflow: "先粘贴下载地址或磁力链接，再设置保存位置和并发策略；观察任务速度与连接状态，完成后核对文件完整性",
+      boundaries: "下载速度取决于网络、源站和种子健康度；只下载有权使用的内容，并在公共网络中注意磁力链接和文件安全",
+      topics: ["下载管理", "HTTP", "FTP", "BitTorrent", "Magnet", "断点续传"],
+      metrics: [{ label: "协议范围", value: "HTTP、FTP、BT" }, { label: "使用方式", value: "图形界面" }],
+      narration: [
+        "开源项目推荐：Motrix。它把网页、磁力链接和多任务集中到一个跨平台桌面工具，适合经常下载大文件的人。",
+        "如果每次下载都要换工具，任务多了很难管理。Motrix 涵盖 HTTP、FTP、BitTorrent 和 Magnet，可统一查看进度和连接状态。",
+        "最短路径是粘贴地址或磁力链接，设置保存位置和并发策略，再观察速度与任务状态；断点续传让中断后不用从头开始。",
+        "速度仍取决于网络、源站和种子健康度，只下载有权使用的内容，并在打开陌生文件前做好安全检查。",
+      ],
+      problemPoints: [
+        "不同下载方式分散在多个工具里，队列、断点续传和保存位置不容易统一管理。",
+        "Motrix 用一个桌面界面管理多种协议和并发下载任务。",
+        "它适合有权下载的大文件和多任务场景，速度仍取决于网络和来源。",
+      ],
+      steps: [
+        { label: "添加任务", detail: "粘贴网页地址、文件地址或磁力链接。" },
+        { label: "设置参数", detail: "选择保存位置、并发连接和任务队列。" },
+        { label: "观察进度", detail: "检查速度、连接状态和断点续传情况。" },
+        { label: "核对文件", detail: "完成后确认文件完整性和来源安全。" },
+      ],
+    };
+  }
+  if (/^omarchy$/i.test(name)) {
+    return {
+      titleSummary: "一套开箱即用的 Linux 开发桌面",
+      theme: "把桌面、快捷键和开发工具整理成统一 Linux 工作环境",
+      capability: "把桌面、快捷键、终端、主题和常用开发工具整理成一套可直接使用的 Linux 工作环境",
+      workflow: "先按手册完成基础安装，再从终端、快捷键或开发工具中选一个小任务跑通，最后逐步调整自己的工作流",
+      boundaries: "它适合愿意使用 Linux 的用户，但安装前要确认硬件兼容并备份重要数据，系统级权限和安全设置仍需要人工审核",
+      topics: ["Linux 桌面", "终端工具", "快捷键", "开发环境", "主题配置", "系统管理"],
+      metrics: [
+        { label: "核心定位", value: "统一 Linux 工作环境" },
+        { label: "适用人群", value: "开发者与 Linux 用户" },
+      ],
+      narration: [
+        "开源项目推荐：omarchy。它把桌面、快捷键、终端和常用开发工具整理成一套 Linux 工作环境，适合想快速开始开发、又不想从零配置的人。",
+        "如果从 Windows 或 Mac 切换到 Linux，最费时间的往往不是安装系统，而是重新配置快捷键、主题、终端和开发工具。Omarchy 把这些基础设置整理好，并提供统一手册。",
+        "它的实际入口包括主题、快捷键、剪贴板历史、截图录屏、终端、Neovim 和开发工具。最短路径是先按手册跑通一个小任务，再逐步调整自己的工作流。",
+        "它适合愿意使用 Linux、希望统一桌面和开发环境的人；安装前要确认硬件兼容、备份重要数据，系统级设置和安全权限仍需要自己审核。",
+      ],
+      problemPoints: [
+        "Linux 初始配置经常需要分别处理桌面、快捷键、终端和开发工具。",
+        "Omarchy 把这些基础能力整理成统一工作环境，并提供覆盖安装、使用和配置的手册。",
+        "它适合希望快速开始开发的人，但系统安装和权限设置仍需要人工确认。",
+      ],
+      steps: [
+        { label: "确认环境", detail: "确认硬件兼容并备份重要数据。" },
+        { label: "完成基础配置", detail: "按手册跑通桌面、终端和快捷键。" },
+        { label: "开始开发任务", detail: "使用 Neovim、终端和开发工具完成一个小任务。" },
+        { label: "逐步调整", detail: "再按需要修改主题、工具和系统设置。" },
+      ],
+    };
+  }
+  if (/^spec-kit$/i.test(name)) {
+    return {
+      titleSummary: "用规格驱动方式把需求变成可交付代码",
+      theme: "让编码智能体先理解需求和约束，再按规格完成实现",
+      capability: "提供规格驱动开发流程、模板和命令，帮助团队先写清用户场景、约束和验收标准，再生成实施方案、任务与代码",
+      workflow: "先为一个功能写规格和验收条件，再让智能体生成实施方案与任务清单；实现后运行测试，逐条对照规格复核结果",
+      boundaries: "它改善的是需求到代码的协作流程，不会自动验证业务事实或替代代码审查；规格含糊时，生成的方案也会含糊",
+      topics: ["规格驱动开发", "需求澄清", "编码智能体", "实施方案", "验收标准", "代码审查"],
+      metrics: [{ label: "核心方法", value: "先规格后实现" }],
+      problemPoints: [
+        "直接让编码智能体写代码，常见问题是需求没说清、边界漏掉，最后只能靠反复返工补救。",
+        "Spec Kit 把规格、方案、任务和实现串成一条流程，让团队先明确用户场景、约束和验收标准。",
+        "它适合用智能体协作开发新功能，但规格必须由人确认，最终代码仍要经过测试和审查。",
+      ],
+      steps: [
+        { label: "写清规格", detail: "先描述用户场景、约束和可验证的结果。" },
+        { label: "生成方案", detail: "让工具把规格拆成技术方案和任务清单。" },
+        { label: "小步实现", detail: "按任务逐项编码，并持续运行测试。" },
+        { label: "对照验收", detail: "逐条核对规格，确认边界和异常路径。" },
+      ],
+    };
+  }
+  if (/^holehe$/i.test(name)) {
+    return {
+      titleSummary: "检查邮箱是否注册过公开网络服务",
+      theme: "帮助安全研究人员快速盘点一个邮箱在公开服务中的账号痕迹",
+      capability: "通过公开注册和找回流程检查邮箱是否出现在多个网络服务中，适合做开源情报收集、账号盘点和安全自查",
+      workflow: "先对本人或已获授权的邮箱执行检查，再逐项核对响应结果；把结果当作线索，结合人工验证和隐私合规要求处理",
+      boundaries: "它只能提供公开流程的线索，不等于确认账号归属；不得用于未授权的个人调查、撞库或绕过服务安全限制",
+      topics: ["开源情报", "邮箱盘点", "账号自查", "安全研究", "公开服务", "隐私合规"],
+      metrics: [{ label: "检查对象", value: "公开服务账号痕迹" }],
+      problemPoints: [
+        "安全自查时，用户往往不知道一个邮箱在哪些公开服务留下过注册痕迹。",
+        "Holehe 自动检查多个服务的公开注册流程，把可能存在的账号痕迹集中列出来，免去逐站手工核对。",
+        "它更适合本人账号盘点和授权安全研究，结果只是线索，不能直接证明邮箱属于某个人。",
+      ],
+      steps: [
+        { label: "确认授权", detail: "只检查本人或明确获得授权的邮箱。" },
+        { label: "执行检查", detail: "运行工具并记录服务返回的公开信号。" },
+        { label: "人工核对", detail: "区分真实结果、误报和服务响应变化。" },
+        { label: "合规处理", detail: "只保留必要结果，不传播他人账号线索。" },
+      ],
+    };
+  }
+  if (/^obsidian-skills$/i.test(name)) {
+    return {
+      titleSummary: "让智能体直接操作 Obsidian 知识库",
+      theme: "把 Obsidian 变成智能体可以安全读写的知识工作台",
+      capability: "通过 Obsidian CLI 和常见文件格式读写 Markdown、Bases 与 JSON Canvas，让智能体能查找笔记、更新资料和整理知识库",
+      workflow: "先在 Obsidian 中准备一个小型笔记库，再让智能体执行查询、创建或修改任务；完成后打开原笔记核对链接、字段和内容",
+      boundaries: "它提供的是智能体技能与命令行接口，不会自动保证笔记内容正确；批量改写前要备份库并限制可写范围",
+      topics: ["Obsidian 知识库", "Markdown", "Bases", "JSON Canvas", "智能体技能", "批量整理"],
+      metrics: [{ label: "主要对象", value: "Markdown 与知识库" }],
+      problemPoints: [
+        "知识库资料越来越多时，手工查找、改字段和整理链接很慢，智能体又常常不知道怎样安全操作笔记。",
+        "obsidian-skills 把 Obsidian CLI 和常见文件格式封装成可调用技能，让智能体能查询、创建和整理 Markdown、Bases 与画布资料。",
+        "它适合把 Obsidian 当作个人知识库的用户，但批量修改前仍要备份并限制权限，避免智能体误改原始资料。",
+      ],
+      steps: [
+        { label: "准备笔记库", detail: "先选一个小范围资料库，确认命名和字段规则。" },
+        { label: "安装技能", detail: "让兼容的智能体获得 Obsidian CLI 操作能力。" },
+        { label: "执行小任务", detail: "先查询或修改一组笔记，核对链接和字段。" },
+        { label: "扩大范围", detail: "确认结果可靠后，再处理更多资料并保留备份。" },
+      ],
+    };
+  }
+  if (/^holaOS$/i.test(name)) {
+    return {
+      titleSummary: "把多个智能体和工具放进一个工作台",
+      theme: "把不同智能体、应用、浏览器和文件连接成统一工作区",
+      capability: "可运行 Claude Code、Codex 等智能体，连接许多工具和 MCP 服务，并共享记忆、浏览器、应用与文件上下文",
+      workflow: "先创建一个小任务并连接必要工具，再选择智能体执行；通过共享记忆和任务记录复核结果，逐步扩大自动化范围",
+      boundaries: "它是智能体工作区，不会自动解决权限、成本和结果验证问题；接入外部工具前要限制密钥和文件范围",
+      topics: ["智能体工作区", "MCP 集成", "共享记忆", "浏览器自动化", "文件操作", "多工具协作"],
+      metrics: [{ label: "集成方式", value: "工具与 MCP" }],
+      problemPoints: [
+        "智能体、浏览器、文件和业务应用各自分开时，任务上下文容易丢失，重复授权和复制粘贴也很浪费时间。",
+        "holaOS 把多个智能体、应用、浏览器和文件放进一个工作区，并用共享记忆连接许多工具与 MCP 服务。",
+        "它适合想把研究、编码和办公任务放在同一个入口的人，但外部密钥、敏感文件和高风险操作必须先设好权限。",
+      ],
+      steps: [
+        { label: "创建任务", detail: "先写清输入、输出和完成标准。" },
+        { label: "连接工具", detail: "只接入当前任务需要的应用、文件和 MCP 服务。" },
+        { label: "选择智能体", detail: "让合适的智能体执行一小段可检查的工作。" },
+        { label: "复核结果", detail: "检查记忆、权限、外部调用和最终产物。" },
+      ],
+    };
+  }
+  if (/^macro$/i.test(name)) {
+    return {
+      titleSummary: "把邮件、聊天、文档和任务连成团队工作区",
+      theme: "让团队在一个统一工作区里处理沟通、文档和客户任务",
+      capability: "把邮件、聊天、文档、任务、会议、CRM 与共享 AI 记忆连接起来，用 @ 引用把上下文串到一起",
+      workflow: "先把一个团队流程迁移进工作区，再用 @ 引用关联邮件、文档和任务；确认权限与提醒后，逐步接入更多协作场景",
+      boundaries: "它统一的是团队工作入口，不会自动替代业务判断；邮件、客户资料和 AI 记忆涉及权限与隐私，部署前要明确访问边界",
+      topics: ["团队工作区", "邮件与聊天", "文档任务", "CRM", "共享记忆", "协作自动化"],
+      metrics: [{ label: "覆盖范围", value: "邮件、任务与 CRM" }],
+      problemPoints: [
+        "团队信息分散在邮件、聊天、文档和 CRM 里，找一个完整上下文往往要在多个工具之间来回切换。",
+        "Macro 把邮件、聊天、文档、任务、会议和客户管理放到一个工作区，并用共享 AI 记忆把相关信息串起来。",
+        "它适合需要统一客户和项目协作入口的小团队，但涉及客户资料和自动化操作时，权限与隐私要先验证。",
+      ],
+      steps: [
+        { label: "选择流程", detail: "先挑一个邮件、任务或客户跟进流程试用。" },
+        { label: "导入上下文", detail: "关联需要的邮件、文档和任务，检查权限。" },
+        { label: "连接工作", detail: "用引用把沟通、文件和下一步任务串起来。" },
+        { label: "复核自动化", detail: "确认提醒、共享记忆和对外动作都符合团队规则。" },
+      ],
+    };
+  }
+  if (/^unsloth$/i.test(name)) {
+    return {
+      titleSummary: "更省显存地微调和运行大模型",
+      theme: "让个人和小团队更容易本地运行与训练大模型",
+      capability: "提供本地界面和训练工具，覆盖 Qwen、DeepSeek、Gemma 等模型的微调、量化、推理和扩散模型运行",
+      workflow: "先选择与显存匹配的模型和量化版本，再用小数据集完成一次微调；核对损失、样例和显存占用后，再扩大训练规模",
+      boundaries: "它能简化显存配置和训练流程，但模型许可、数据质量、显存容量和训练效果仍需实际验证；微调结果不等于生产可用",
+      topics: ["本地运行", "模型微调", "量化推理", "Qwen 与 DeepSeek", "扩散模型", "显存优化"],
+      metrics: [{ label: "功能方向", value: "微调、量化、推理" }],
+      problemPoints: [
+        "很多模型不是不能运行，而是显存、训练脚本和量化配置太复杂，个人用户很难快速试起来。",
+        "Unsloth 提供本地界面和训练工具，帮助用户更省显存地微调、量化和运行 Qwen、DeepSeek 等模型。",
+        "它适合想在本地实验模型的开发者和研究者，但要先确认显卡、模型许可、数据质量和最终推理效果。",
+      ],
+      steps: [
+        { label: "选择模型", detail: "按显存和用途选择模型及量化版本。" },
+        { label: "准备数据", detail: "清理一小批高质量数据并明确训练目标。" },
+        { label: "试跑微调", detail: "先完成小规模训练，检查损失和样例输出。" },
+        { label: "评估部署", detail: "核对显存、速度、许可和真实任务效果后再扩大规模。" },
+      ],
+    };
+  }
+  if (/^needle$/i.test(name)) {
+    return {
+      titleSummary: "让手机和机器人本地运行小型基础模型",
+      theme: "把能在云端运行的模型能力压缩到手机和微型设备上",
+      capability: "提供约 14MB 的小型基础模型，面向手机、可穿戴设备、智能家居和机器人等资源受限设备",
+      workflow: "先确认设备内存和推理框架，再把模型放到一个小任务中测试；核对延迟、功耗和输出质量后，再接入真实设备",
+      boundaries: "小模型适合轻量感知和设备交互，不等于云端大模型；复杂推理、长上下文和高可靠决策仍需更强模型或人工复核",
+      topics: ["端侧模型", "手机推理", "可穿戴设备", "智能家居", "机器人", "低资源部署"],
+      metrics: [{ label: "模型规模", value: "约 14MB" }, { label: "部署方向", value: "手机与微型设备" }],
+      problemPoints: [
+        "手机、穿戴设备和机器人想直接运行人工智能，常常受内存、功耗和网络连接限制，不能照搬云端大模型。",
+        "needle 提供约 14MB 的小型基础模型，把轻量模型能力带到手机、可穿戴设备、智能家居和机器人等端侧场景。",
+        "它适合做本地感知和设备交互的实验，但复杂推理、长上下文和关键决策仍不能只依赖这个小模型。",
+      ],
+      steps: [
+        { label: "确认设备", detail: "先核对内存、处理器、推理框架和功耗预算。" },
+        { label: "接入模型", detail: "把模型放进一个边界清晰的端侧任务。" },
+        { label: "测量结果", detail: "对比延迟、功耗、稳定性和输出质量。" },
+        { label: "谨慎扩展", detail: "确认小任务可靠后，再接入真实设备交互。" },
+      ],
+    };
+  }
+  if (/^Soup$/i.test(name)) {
+    return {
+      titleSummary: "用一个 YAML 文件微调大语言模型",
+      theme: "把大语言模型微调流程压缩成容易复现的配置任务",
+      capability: "用一份 YAML 配置训练流程、数据和模型，并通过分层流式训练让 8B 模型可以在 4GB 笔记本显卡上开始实验",
+      workflow: "先准备小而干净的数据集，再填写模型、数据和训练参数；先完成一次短训练并检查样例输出，再调整学习率和数据规模",
+      boundaries: "低显存能启动实验不代表训练质量稳定；数据清洗、模型许可、训练时间和评测仍需按实际任务验证",
+      topics: ["模型微调", "YAML 配置", "流式训练", "低显存", "8B 模型", "训练复现"],
+      metrics: [{ label: "配置方式", value: "单个 YAML" }, { label: "示例显存", value: "4GB 笔记本 GPU" }],
+      problemPoints: [
+        "微调模型通常要反复改脚本和显存参数，配置分散时很难复现，也不容易在普通笔记本上开始。",
+        "Soup 把模型微调流程集中到一个 YAML 文件，并用分层流式训练让 8B 模型能在 4GB 笔记本显卡上试跑。",
+        "它适合想快速验证训练想法的开发者，但低显存只解决启动门槛，数据质量和最终效果仍要单独评测。",
+      ],
+      steps: [
+        { label: "准备数据", detail: "先整理一小批高质量样本和清晰的训练目标。" },
+        { label: "填写 YAML", detail: "把模型、数据集和训练参数集中写进配置。" },
+        { label: "短程试跑", detail: "先跑一轮，检查显存、损失和样例输出。" },
+        { label: "评测调整", detail: "再根据结果调整参数和数据规模。" },
+      ],
+    };
+  }
+  if (/^ToolJet$/i.test(name)) {
+    return {
+      titleSummary: "用自然语言和数据快速搭建企业内部应用",
+      theme: "让团队更快做出内部工具、业务看板和工作流",
+      capability: "把数据源、界面、业务流程和人工智能能力组合成内部工具、仪表盘、业务应用、工作流和智能体",
+      workflow: "先选一个明确的内部流程，连接数据源并搭出最小页面；再加入权限、审批和自动化，最后用真实业务数据核对结果",
+      boundaries: "低代码能加快原型和内部应用交付，但复杂权限、数据安全、性能和长期维护仍需要工程团队负责",
+      topics: ["内部工具", "业务看板", "工作流", "数据连接", "权限管理", "智能体应用"],
+      metrics: [{ label: "主要用途", value: "内部应用与工作流" }],
+      problemPoints: [
+        "很多团队需要一个审批页、数据看板或业务小工具，却要在需求排队、前端开发和后期维护之间等待很久。",
+        "ToolJet 把数据源、页面、工作流和人工智能能力组合起来，让团队更快搭建内部工具、业务应用和智能体流程。",
+        "它适合内部业务和快速原型，但正式上线前仍要检查权限、数据安全、性能和长期维护成本。",
+      ],
+      steps: [
+        { label: "选定流程", detail: "先选一个边界清晰的内部审批或查询任务。" },
+        { label: "连接数据", detail: "接入必要数据源，先搭出最小页面。" },
+        { label: "加入规则", detail: "补充权限、审批、校验和自动化步骤。" },
+        { label: "真实核对", detail: "用真实业务数据测试结果、权限和异常路径。" },
+      ],
+    };
+  }
+  if (/^CLI-Anything$/i.test(name)) {
+    return {
+      titleSummary: "把桌面软件能力变成智能体可调用的命令行",
+      theme: "让智能体通过命令行调用原本只能手工操作的软件",
+      capability: "为常见桌面软件生成统一 CLI，让智能体可以执行操作、组合流程并读取结果，而不必只依赖人工点击界面",
+      workflow: "先选择一个软件和可自动化任务，再生成或配置对应 CLI；用无风险样例核对输入、输出和副作用，最后接入智能体流程",
+      boundaries: "命令行只是调用入口，不会自动保证软件操作安全；删除、覆盖和外部发送等动作必须设置权限与人工确认",
+      topics: ["CLI 工具", "软件自动化", "智能体调用", "工作流组合", "结果读取", "权限审核"],
+      metrics: [{ label: "核心方向", value: "软件 Agent-Native" }],
+      problemPoints: [
+        "智能体很难稳定操作只能点击的桌面软件，重复步骤无法组合，结果也难以被其他工具继续使用。",
+        "CLI-Anything 把软件能力转换成命令行入口，让智能体可以调用、组合并读取这些软件的操作结果。",
+        "它适合把图像、办公、设计或其他软件接入自动化流程，但涉及覆盖文件和外部发送时必须保留审核。",
+      ],
+      steps: [
+        { label: "选择软件", detail: "先选一个任务明确、可回滚的软件操作。" },
+        { label: "准备 CLI", detail: "生成或配置对应命令，并核对参数和输出。" },
+        { label: "无风险试跑", detail: "用副本文件验证流程和副作用。" },
+        { label: "接入智能体", detail: "设置权限、日志和人工确认后再扩大使用。" },
+      ],
+      narration: [
+        "",
+        "智能体面对只能点击的软件时，操作容易中断，也很难把结果交给下一步。CLI-Anything 把这些能力转换成统一命令，让流程可以调用、组合并读取结果。",
+        "使用时先选择一个边界清晰的软件任务，准备对应命令，再用副本文件检查参数、输出和副作用。确认无误后，才能接入更长的智能体流程。",
+        "它适合连接图像、办公和设计软件。命令行不会自动保证安全，删除、覆盖和外部发送仍要限制权限、保留日志，并设置人工确认。",
+      ],
+    };
+  }
   if (/^diagram-design$/i.test(name)) {
     return {
       titleSummary: "让智能体生成专业技术图表",
@@ -908,6 +1350,74 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
         { label: "准备清单", detail: "配置主机、分组和最小 SSH 权限。" },
         { label: "编写任务", detail: "用 playbook 描述目标配置并先做检查。" },
         { label: "分批执行", detail: "在测试环境验证后分批执行并保留记录。" },
+      ],
+    };
+  }
+  if (/\bragflow\b|deep document understanding.*rag|retrieval augmented generation.*engine/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把复杂文档变成有引用、可核对的知识问答系统",
+      capability: "解析 PDF、表格和扫描资料，按版面与语义建立检索索引，再把命中的原文证据交给模型生成带引用的回答",
+      workflow: "先导入一小批代表性资料并选择解析方式，再配置嵌入模型和对话模型；用真实问题检查召回片段与引用，确认准确后再扩大知识库",
+      boundaries: "部署需要数据库、对象存储、检索组件和模型服务；解析和检索效果取决于资料质量，关键答案仍要回到引用原文人工核对",
+      topics: ["文档解析", "知识库", "混合检索", "引用溯源", "模型接入", "权限与部署"],
+      metrics: [{ label: "核心结果", value: "带引用问答" }, { label: "资料类型", value: "复杂文档" }],
+      problemPoints: ["普通知识库容易把表格、版面和扫描文档拆乱，回答也难追溯来源。", "RAGFlow 先理解文档结构，再把检索证据和答案关联起来。", "团队可以从答案直接回到原文片段，减少凭空生成的风险。"],
+      steps: [
+        { label: "导入资料", detail: "先选择少量有代表性的 PDF、表格或扫描文档。" },
+        { label: "配置解析", detail: "按文档类型选择解析方式并检查切分结果。" },
+        { label: "验证检索", detail: "用真实问题核对召回片段、引用和答案。" },
+        { label: "扩大知识库", detail: "确认准确率和权限后再增加资料与用户。" },
+      ],
+    };
+  }
+  if (/\bppt-master\b|native powerpoint from any document|natively editable pptx/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "把 PDF、文档或网页直接变成原生可编辑的 PowerPoint",
+      capability: "先整理材料的论点和叙事结构，再生成包含原生形状、图表、表格、母版、动画和讲稿的 PPTX，而不是把文字贴进模板或输出不可编辑图片",
+      workflow: "安装 Python 和一个能读写文件的智能体工具，把原始材料放入项目目录并说明页数与用途；生成后在 PowerPoint 中继续修改文字、图表、布局和动画",
+      boundaries: "模型决定内容与设计质量，复杂演示仍需人工核对事实、排版和素材授权；本地流程需要安装依赖，调用外部模型可能产生费用",
+      topics: ["文档转 PPT", "原生可编辑", "内容结构", "图表与表格", "模板复用", "人工精修"],
+      metrics: [{ label: "输入", value: "PDF、DOCX、网页" }, { label: "输出", value: "原生 PPTX" }],
+      problemPoints: ["很多人工智能演示工具只生成扁平图片或模板化文本，后续很难精细修改。", "PPT Master 输出 PowerPoint 原生对象，文字、图表和形状可以继续编辑。", "它还会先整理材料逻辑，再设计整套演示，而不是逐页机械填充。"],
+      steps: [
+        { label: "准备材料", detail: "把 PDF、文档、图片或网页内容放入项目目录。" },
+        { label: "说明目标", detail: "告诉智能体用途、页数、受众和设计要求。" },
+        { label: "生成演示", detail: "流程分析内容、设计页面并导出原生 PPTX。" },
+        { label: "继续精修", detail: "在 PowerPoint 中核对事实并修改对象、图表和动画。" },
+      ],
+    };
+  }
+  if (/everyone-can-use-english|\benjoy\b.*english|ai.*外语老师|一千小时.*英语/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "用 AI 陪练把英语听读材料变成持续的口语训练",
+      capability: "在网页或浏览器扩展中使用视频、电子书、课程和闪卡练习英语，通过跟读、录音和重复训练改善发音、听力与表达",
+      workflow: "先选择一段短视频或短文，听原声并逐句跟读；录下自己的声音与目标发音对比，把不熟的句子加入闪卡，之后反复练习",
+      boundaries: "它提供练习工具和长期训练材料，不是一次对话就能解决口语问题；效果取决于持续投入，发音反馈和练习内容仍要结合个人水平调整",
+      topics: ["英语口语", "视频跟读", "录音对比", "电子书", "闪卡复习", "长期训练"],
+      metrics: [{ label: "使用入口", value: "网页与扩展" }, { label: "训练方式", value: "听、读、录、复习" }],
+      problemPoints: ["很多人学了多年英语，却缺少可以每天开口、听回自己声音的训练环境。", "Enjoy 把视频、电子书、课程和闪卡组织成可重复的口语练习。", "浏览器扩展还能直接配合在线视频内容进行跟读。"],
+      steps: [
+        { label: "选择材料", detail: "从短视频、电子书或课程中选一段可完成内容。" },
+        { label: "听读模仿", detail: "逐句听原声并跟读，关注节奏和重音。" },
+        { label: "录音对比", detail: "回听自己的声音，找出不稳定的发音。" },
+        { label: "持续复习", detail: "把难句加入闪卡，反复进行跟读训练。" },
+      ],
+    };
+  }
+  if (/\blocalsend\b|share files.*local network.*without.*internet|nearby devices.*local network/i.test(`${name} ${item.title} ${content}`)) {
+    return {
+      theme: "让手机和电脑不经过云端，直接在同一局域网互传文件",
+      capability: "在 Windows、macOS、Linux、Android 和 iOS 之间发现附近设备，通过本地网络发送文件、文件夹和文字，并使用 HTTPS 加密传输",
+      workflow: "在两台设备安装 LocalSend 并连接同一网络，选择接收设备和文件后直接发送；若找不到设备，再检查系统防火墙、局域网权限和路由器隔离设置",
+      boundaries: "设备必须处于可互相访问的局域网，访客网络或 AP 隔离可能阻断发现；公共网络中仍要确认接收设备身份，不要向陌生设备发送敏感文件",
+      topics: ["跨平台传输", "局域网直连", "无需互联网", "HTTPS 加密", "附近设备", "防火墙排查"],
+      metrics: [{ label: "网络要求", value: "同一局域网" }, { label: "云端服务器", value: "不需要" }],
+      problemPoints: ["手机和电脑互传文件时，聊天软件会压缩内容，网盘还要先上传、再下载，步骤更加繁琐。", "LocalSend 让附近设备在局域网内直接传输，不经过第三方服务器。", "主流桌面和移动系统都能互相发送文件和文字。"],
+      steps: [
+        { label: "安装应用", detail: "在需要互传的手机和电脑上安装 LocalSend。" },
+        { label: "连接网络", detail: "让设备进入同一个可互访的局域网。" },
+        { label: "选择发送", detail: "选中文件和目标设备，确认后直接传输。" },
+        { label: "排查连接", detail: "无法发现时检查防火墙、局域网权限和 AP 隔离。" },
       ],
     };
   }
@@ -1320,7 +1830,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
     theme: "围绕实际开发任务整理的开源工具",
     capability: "将项目资料中的核心功能和使用路径组织为可查阅的工作流",
     workflow: "先理解项目解决的问题，再选择与当前任务相关的能力，并在实际工程中完成验证",
-    boundaries: "项目资料只能说明设计目标和已列出的能力，部署前仍要结合自身环境验证依赖、权限和兼容性",
+    boundaries: "项目资料只能说明设计目标和已列出的能力，部署前仍要结合自身环境验证依赖、权限和兼容性；测试、评审和合并决策仍需人工确认",
     topics: topics.length ? topics : ["核心能力", "工作流程", "工程协作", "配置使用", "验证检查", "适用边界"],
   };
 }
@@ -1385,8 +1895,8 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
   };
   return {
     meta: { title: name, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
-    narration: sections.map((section) => section.narration).join("\n"),
-    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, ttsText: repositorySynthesisText(section.narration, name), claimIds: claimIds(sceneIndex) })),
+    narration: sections.map((section) => scrubSpokenAttribution(section.narration)).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: scrubSpokenAttribution(section.narration), ttsText: scrubSpokenAttribution(repositorySynthesisText(section.narration, name)), claimIds: claimIds(sceneIndex) })),
     scenes: scenes.map((scene, sceneIndex) => ({ ...scene, claimIds: claimIds(sceneIndex) })) as VideoScene[],
     sources: [item],
     screenshots: options?.screenshots ?? [],
@@ -1406,8 +1916,10 @@ export function createStoryProject(
   if (/tmtpost\.com\/8091801/i.test(clean.url)) return createAiOfficeCompetitionProject(clean, options);
   if (/tmtpost\.com\/8091516/i.test(clean.url)) return createModelKillZoneProject(clean, options);
   if (/tmtpost\.com\/8091864/i.test(clean.url)) return createAiIndustrialDemandProject(clean, options);
+  if (/tmtpost\.com\/8102019/i.test(clean.url) || /Vibe Coding.*估值.*赛道分化/i.test(joinedContent)) return createVibeCodingFundingProject(clean, options);
   if (/ithome\.com\/0\/985\/886/i.test(clean.url)) return createShieldstralProject(clean, options);
-  if (/qbitai\.com\/2026\/08\/465215/i.test(clean.url) || /Qwen3\.8/i.test(joinedContent)) return createQwen38Project(clean, options);
+  if (/qbitai\.com\/2026\/08\/465215/i.test(clean.url)) return createQwen38Project(clean, options);
+  if (/qbitai\.com\/2026\/08\/471642/i.test(clean.url) || /DeepSeek V4 Pro.*Fable 5/i.test(joinedContent)) return createDeepSeekV4ProProject(clean, options);
   if (/ithome\.com\/0\/987\/720/i.test(clean.url)) return createQwenOpenPlatformProject(clean, options);
   if (/ithome\.com\/0\/986\/936/i.test(clean.url)) return createNeonRetrievalModelProject(clean, options);
   if (/qbitai\.com\/2026\/08\/467879/i.test(clean.url)) return createChatGptFreeUpgradeProject(clean, options);
@@ -1455,10 +1967,10 @@ export function createStoryProject(
       durationSeconds,
       sourceCount: 1,
     },
-    narration: sections.map((section) => removeNarrationLead(scrubAttribution(section.narration))).join("\n"),
+    narration: sections.map((section) => removeNarrationLead(scrubSpokenAttribution(section.narration))).join("\n"),
     narrationSegments: sections.map((section, sceneIndex) => ({
       sceneIndex,
-      text: scrubAttribution(section.narration),
+      text: scrubSpokenAttribution(section.narration),
     })),
     scenes,
     sources: [clean],
@@ -1507,6 +2019,9 @@ function createGeneralNewsProject(
     return narration;
   };
   const coverSummary = compactSentence(summary, 72);
+  const audienceValue = isTechnicalArticle
+    ? "普通读者先看它解决了什么问题，再判断是否值得照着做。"
+    : "对普通用户来说，先看它能不能让创作更简单、结果更稳定；技术细节只有在影响体验时才重要。";
 
   const sections: Array<{ scene: VideoScene; narration: string }> = isTechnicalArticle
     ? [
@@ -1519,7 +2034,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["\u95ee\u9898", "\u65b9\u6cd5", "\u8fb9\u754c"],
           },
-          narration: `${title}\u3002关键是，${coverSummary}`,
+          narration: `${title}\u3002关键是，${coverSummary}。${audienceValue}`,
         },
         {
           scene: {
@@ -1588,13 +2103,13 @@ function createGeneralNewsProject(
             subhead: summary,
             sources: ["模型", "芯片", "Token 成本"],
           },
-          narration: `这条新闻讲的是：${title}。简单说，DeepSeek 和智谱这类模型公司，正在把竞争从模型本身，推进到底层芯片和推理成本控制。`,
+          narration: `${title}。简单说，DeepSeek 和智谱这类模型公司，正在把竞争从模型本身，推进到底层芯片和推理成本控制。`,
         },
         {
           scene: {
             type: "briefing_points",
             duration: 18,
-            headline: "这条新闻真正说了什么",
+            headline: "核心信号",
             source: "核心事实",
             title,
             summary,
@@ -1667,7 +2182,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["事实", "影响", "边界"],
           },
-          narration: `${title}。${coverSummary}`,
+          narration: `${title}。这意味着，${coverSummary}。${audienceValue}`,
         },
         {
           scene: {
@@ -1718,7 +2233,17 @@ function createGeneralNewsProject(
         },
       ];
 
-  const narrationSections = sections.map((section, index) => ({ ...section, narration: limitNarration(section.narration, index === 0 ? 100 : 110) }));
+  const sectionsWithAudience = !isTechnicalArticle && sections.at(-1)?.scene.type === "outro"
+    ? sections.map((section, index) => index === sections.length - 1 && section.scene.type === "outro"
+      ? { ...section, scene: { ...section.scene, bullets: [audienceValue, ...section.scene.bullets].slice(0, 3) } }
+      : section)
+    : sections;
+  const narrationSections = sectionsWithAudience.map((section, index) => {
+    const sourceNarration = !isTechnicalArticle && index === sections.length - 1
+      ? `${audienceValue}${section.narration}`
+      : section.narration;
+    return { ...section, narration: limitNarration(sourceNarration, index === 0 ? 100 : 110) };
+  });
   const scenes = applySectionDurations(narrationSections, Number(process.env.STORY_MAX_SECONDS ?? 96));
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const project = {
@@ -1731,11 +2256,11 @@ function createGeneralNewsProject(
       durationSeconds,
       sourceCount: 1,
     },
-    narration: narrationSections.map((section) => scrubAttribution(section.narration)).join("\n"),
+    narration: narrationSections.map((section) => scrubSpokenAttribution(section.narration)).join("\n"),
     narrationSegments: narrationSections.map((section, sceneIndex) => ({
       sceneIndex,
-      text: removeNarrationLead(scrubAttribution(section.narration)),
-      ttsText: speechFriendlyText(removeNarrationLead(scrubAttribution(section.narration))),
+      text: removeNarrationLead(scrubSpokenAttribution(section.narration)),
+      ttsText: speechFriendlyText(removeNarrationLead(scrubSpokenAttribution(section.narration))),
     })),
     scenes,
     sources: [item],
@@ -1939,11 +2464,11 @@ function createCuratedNewsProject(
       durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0),
       sourceCount: 1,
     },
-    narration: sections.map((section) => section.narration).join("\n"),
+    narration: sections.map((section) => scrubSpokenAttribution(section.narration)).join("\n"),
     narrationSegments: sections.map((section, sceneIndex) => ({
       sceneIndex,
-      text: section.narration,
-      ttsText: speechFriendlyText(section.narration),
+      text: scrubSpokenAttribution(section.narration),
+      ttsText: speechFriendlyText(scrubSpokenAttribution(section.narration)),
     })),
     scenes,
     sources: [item],
@@ -1983,14 +2508,14 @@ function createGptImageMonaLisaProject(
           { label: "艺术表达", detail: "光影、色彩和氛围的层次更丰富。" },
         ],
       },
-      narration: "从公开的同提示对比看，变化主要有三点。第一，人物皮肤和材质更自然，过去常见的塑料感有所减弱；第二，网页界面、信息图和人体拆解图能容纳更多细节；第三，艺术画面的光影、色彩和氛围层次更完整。",
+      narration: "同提示对比显示三点变化：人物和材质更自然；网页界面、信息图和人体拆解图细节更多；艺术画面的光影和色彩层次更丰富。",
     },
     {
       scene: {
         type: "outro", duration: 14, headline: "效果提升已经出现，身份仍待确认",
         bullets: ["测试内容显示知识更新可能停留在 2025 年。", "它可能只是同代模型的新检查点。", "最终能力、价格和公开时间仍要等官方信息。"],
       },
-      narration: "效果提升已经出现，但它还不是最终版。知识更新时间可能停留在二零二五年，更像同代模型的新检查点。正式名称、价格、公开时间和最终能力，仍要等官方确认。",
+      narration: "效果有提升，但正式名称、价格、公开时间和最终能力仍待官方确认。",
     },
   ], options, { maxSeconds: 60, minSeconds: 58 });
 }
@@ -2602,13 +3127,71 @@ function createDeepSeekV4FlashProject(
   const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 80));
   const project = {
     meta: { title, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
-    narration: sections.map((section) => section.narration).join("\n"),
-    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, ttsText: speechFriendlyText(section.narration) })),
+    narration: sections.map((section) => scrubSpokenAttribution(section.narration)).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: scrubSpokenAttribution(section.narration), ttsText: speechFriendlyText(scrubSpokenAttribution(section.narration)) })),
     scenes,
     sources: [item],
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createDeepSeekV4ProProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 9, kicker: "模型发布", headline: shortTitle(title, 42), subhead: "正式版上线，重点看 Agent 能力和开发接口", sources: ["正式版", "Agent", "API"] },
+      narration: `可以直接接入 API：${title} 正式版已经发布，重点集中在 Agent 能力和开发接口，开发者可以立即开始验证。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "多项开发任务基准进入对比范围", source: "公开评测", title: "软件工程与 Agent 表现", summary: "HLE、Terminal Bench、Cybergym 和 DeepSWEAgent 等项目被用于对比。", metrics: [{ label: "Terminal Bench", value: "对比 Fable 5" }, { label: "评测方向", value: "Agent 与代码" }], points: ["覆盖知识、终端操作和软件工程任务。", "文章将部分结果与 Fable 5 对比。", "具体效果仍要回到真实任务验证。"] },
+      narration: "第二个重点是评测。HLE、Terminal Bench、Cybergym 和 DeepSWEAgent 都围绕知识、终端操作和软件工程任务，文章将部分结果与 Fable 5 对比；但单项基准不能替代真实业务测试。",
+    },
+    {
+      scene: { type: "flow", duration: 14, headline: "开发者先看 API 和模型版本", steps: [{ label: "正式版本", detail: "DeepSeek V4 Pro 正式版发布。" }, { label: "模型名称", detail: "使用 DeepSeek-V4-Pro-0813。" }, { label: "接口调用", detail: "通过 API 接入应用和 Agent。" }, { label: "任务验证", detail: "用自己的代码和工具链复测。" }] },
+      narration: "对开发者来说，最直接的用法是通过 API 调用 DeepSeek V4 Pro 正式版，先确认模型名称和参数，再用自己的代码、工具调用和长任务流程复测，不要只看宣传榜单。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "价格和调用方式决定能否落地", bars: [{ label: "API", value: 90, detail: "可直接接入现有应用。", color: "#18b7a5" }, { label: "Agent", value: 86, detail: "适合多轮工具调用。", color: "#7c6cff" }, { label: "成本", value: 78, detail: "需要结合真实 Token 用量核算。", color: "#facc15" }] },
+      narration: "它的落地价值不只在模型分数，还在调用成本和稳定性。高频 Agent 会放大每次请求的价格与延迟，接入前应按自己的上下文长度、工具次数和并发量核算账单。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "先验证任务，再决定是否迁移", bullets: ["基准成绩说明能力上限。", "真实代码任务决定使用价值。", "价格、延迟和稳定性仍需观察。"] },
+      narration: "结论是，DeepSeek V4 Pro 的看点是正式版能力和 Agent 任务表现，但是否值得迁移，最终取决于真实代码任务、价格、延迟和稳定性。先用小范围任务验证，再决定是否扩大调用。",
+    },
+  ], options);
+}
+
+function createVibeCodingFundingProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 9, kicker: "赛道变化", headline: shortTitle(title, 42), subhead: "企业可以直接用自然语言完成部分开发任务", sources: ["融资增长", "估值上升", "赛道分化"] },
+      narration: `${title}。直接用自然语言做软件，正式发布的 Vibe Coding 产品正在降低开发门槛。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "先看它解决什么问题", source: "文章事实", title: "从写代码转向描述需求", summary: "Vibe Coding 让非专业用户也能用自然语言描述需求并得到软件结果。", metrics: [{ label: "目标用户", value: "设计师、销售等" }, { label: "核心方式", value: "自然语言开发" }], points: ["用户不必先熟悉完整编程语法。", "系统根据需求生成或修改软件。", "复杂项目仍需要人工检查和工程能力。"] },
+      narration: "正式发布的这类产品解决的是开发门槛问题。设计师、销售等非技术用户可以先用自然语言描述需求，再让工具生成或修改软件；但复杂项目仍需要人工检查代码、测试结果和安全边界。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 14, headline: "资金正在集中到少数头部公司", bars: [{ label: "融资规模", value: 86, detail: "文章称赛道近一年频现大额融资。", color: "#18b7a5" }, { label: "企业估值", value: 92, detail: "部分初创公司估值快速上升。", color: "#7c6cff" }, { label: "竞争分化", value: 78, detail: "产品能力和商业化开始拉开差距。", color: "#facc15" }] },
+      narration: "第二个信号来自资本。文章称，过去一年 Vibe Coding 赛道频繁出现大额融资，部分初创公司的估值快速上升；这也意味着市场开始从概念热度转向产品能力、用户规模和商业化的分化。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "真正的使用场景是快速做出可验证版本", steps: [{ label: "描述需求", detail: "用自然语言说明页面和业务目标。" }, { label: "生成原型", detail: "快速得到可运行的初版。" }, { label: "用户试用", detail: "收集反馈并确认真正需求。" }, { label: "工程加固", detail: "补齐测试、权限和稳定性。" }] },
+      narration: "普通用户可以把它用在内部工具、活动页面和业务原型：先描述目标，快速生成初版，再让真实用户试用。真正上线前，还要补齐测试、权限、数据安全和长期维护。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "热度很高，但不是人人都能替代工程团队", bullets: ["适合快速验证想法。", "不适合直接跳过测试和安全审查。", "赛道最终要看留存与真实收入。"] },
+      narration: "所以这条新闻的重点不是估值数字本身，而是软件生产正在降低试错成本。Vibe Coding 适合快速验证想法，却不能直接跳过测试、安全审查和工程维护；赛道能否持续，最终还要看真实留存和收入。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 52 });
 }
 
 function createSeedance25Project(
@@ -2664,8 +3247,8 @@ function createSeedance25Project(
   const scenes = applySectionDurations(sections, Number(process.env.STORY_MAX_SECONDS ?? 80));
   const project = {
     meta: { title, createdAt: new Date().toISOString(), width: options?.width ?? Number(process.env.VIDEO_WIDTH ?? 1080), height: options?.height ?? Number(process.env.VIDEO_HEIGHT ?? 1920), fps: options?.fps ?? Number(process.env.VIDEO_FPS ?? 30), durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0), sourceCount: 1 },
-    narration: sections.map((section) => section.narration).join("\n"),
-    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: section.narration, ttsText: speechFriendlyText(section.narration) })),
+    narration: sections.map((section) => scrubSpokenAttribution(section.narration)).join("\n"),
+    narrationSegments: sections.map((section, sceneIndex) => ({ sceneIndex, text: scrubSpokenAttribution(section.narration), ttsText: speechFriendlyText(scrubSpokenAttribution(section.narration)) })),
     scenes,
     sources: [item],
     screenshots: options?.screenshots ?? [],
