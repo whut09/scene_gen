@@ -262,6 +262,7 @@ export interface VideoProject {
       avoidedTtsRegenerationCount?: number;
       ttsVoice?: string;
       ttsLanguage?: string;
+      ttsRate?: number;
       ttsSceneVoiceConsistency?: boolean;
       acousticVoiceSpreadSemitones?: number;
       minimumSpeakerSimilarity?: number;

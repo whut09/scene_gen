@@ -31,6 +31,27 @@ test("scene ASR never infers pronunciation from Chinese transcript text", () => 
   assert.equal(result.issues.some((item) => item.code === "audio_pronunciation_mismatch"), false);
 });
 
+test("repository opening coverage includes the recommendation prefix", () => {
+  const project = projectFixture();
+  project.meta.title = "OpenViking";
+  project.sources = [{
+    ...project.sources[0],
+    kind: "github",
+    repo: "volcengine/OpenViking",
+    url: "https://github.com/volcengine/OpenViking",
+  }];
+  project.narrationSegments![0].text = "今日开源热点趋势项目推荐：OpenViking，为智能体统一管理记忆、资源和技能。";
+  project.narrationSegments![0].ttsText = project.narrationSegments![0].text;
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "今日开源热点趋势项目推荐OpenViking，为智能体统一管理记忆、资源和技能。", confidence: 0.95 },
+    { sceneIndex: 1, text: project.narrationSegments![1].text, confidence: 0.95 },
+    { sceneIndex: 2, text: project.narrationSegments![2].text, confidence: 0.95 },
+  ]);
+  assert.equal(result.titleAudioCoverage, 1);
+  assert.equal(result.titleOpeningCoverage, 1);
+  assert.equal(result.issues.some((item) => item.code === "audio_title_opening_missing"), false);
+});
+
 test("semantic ASR verifies provider fallback text instead of display text", () => {
   const project = projectFixture();
   project.narrationSegments![1].providerSynthesisText = "系统完成核心模块重新构建并输出结果。";

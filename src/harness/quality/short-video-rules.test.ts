@@ -3,11 +3,21 @@ import test from "node:test";
 import { createFixtureProject } from "../../../tests/fixtures/project";
 import { evaluateDraft } from "./draft-rules";
 
-test("draft gate rejects long news targets and missing early value", async () => {
+test("draft gate rejects long news targets", async () => {
   const project = createFixtureProject();
   const result = await evaluateDraft(project, 75, "");
   assert.equal(result.issues.some((issue) => issue.code === "platform_duration_mismatch"), true);
-  assert.equal(result.issues.some((issue) => issue.code === "hook_value_missing"), true);
+});
+
+test("draft gate rejects news narration that cannot finish within a scene", async () => {
+  const project = createFixtureProject({
+    meta: { ...createFixtureProject().meta, durationSeconds: 10 },
+    scenes: [{ type: "title", duration: 3, kicker: "新闻", headline: "核心结果", subhead: "普通读者需要知道的变化", sources: ["事实"] }],
+    narration: "这是一段超过当前画面时长的新闻旁白，需要完整讲清楚结果、影响、证据和限制，否则画面会在句子播完之前切换到下一屏。",
+    narrationSegments: [{ sceneIndex: 0, text: "这是一段超过当前画面时长的新闻旁白，需要完整讲清楚结果、影响、证据和限制，否则画面会在句子播完之前切换到下一屏。" }],
+  });
+  const result = await evaluateDraft(project, 40, "");
+  assert.equal(result.issues.some((issue) => issue.code === "narration_scene_overflow"), true);
 });
 
 test("draft gate reports a title repeated anywhere in narration", async () => {

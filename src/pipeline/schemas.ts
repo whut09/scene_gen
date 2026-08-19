@@ -236,6 +236,7 @@ export const videoProjectSchema = z.object({
       pronunciationUncertainCount: z.number().int().nonnegative().optional(),
       ttsVoice: z.string().optional(),
       ttsLanguage: z.string().optional(),
+      ttsRate: z.number().positive().optional(),
       ttsSceneVoiceConsistency: z.boolean().optional(),
       acousticVoiceSpreadSemitones: z.number().nonnegative().optional(),
       minimumSpeakerSimilarity: z.number().min(0).max(1).optional(),

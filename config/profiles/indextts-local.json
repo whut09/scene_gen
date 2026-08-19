@@ -3,7 +3,10 @@
   "description": "Fixed-reference IndexTTS2 Mandarin narration with deterministic speaker identity.",
   "env": {
     "TTS_PROVIDER": "indextts",
-    "TTS_PROVIDER_FALLBACK": "nvidia",
+    "TTS_FAIL_FAST": "1",
+    "TTS_EXPECTED_PROVIDER": "indextts",
+    "TTS_EXPECTED_VOICE": "IndexTTS2.Fixed.Reference",
+    "TTS_EXPECTED_RATE": "1.22",
     "INDEXTTS_ROOT": "../models/index-tts",
     "INDEXTTS_MODEL_DIR": "../models/index-tts/checkpoints",
     "INDEXTTS_PYTHON": "../models/index-tts/.venv-system/Scripts/python.exe",

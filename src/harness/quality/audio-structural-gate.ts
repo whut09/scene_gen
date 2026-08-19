@@ -7,7 +7,7 @@ import { fromRoot } from "../../pipeline/utils";
 import type { QualityIssueInput } from "../quality-protocol";
 import { analyzeVoiceProfilesFromTimeline, MAX_VOICE_PITCH_SPREAD_SEMITONES, voicePitchSpreadSemitones } from "../../pipeline/tts/acoustic-stability";
 
-export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v6-pairwise-speaker-consistency";
+export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v7-narration-identity";
 
 export function indexTtsSpeakerDrift(input: { minimum: number; average: number; pairwiseMinimum: number; pairwiseAverage: number }, requiredSimilarity: number) {
   const thresholds = {
@@ -94,6 +94,17 @@ export async function runAudioStructuralGate(input: {
   const segmentLanguages = (project.narrationSegments ?? []).map((segment) => segment.ttsLanguage).filter((language): language is string => Boolean(language));
   const uniqueVoices = [...new Set(segmentVoices)];
   const uniqueLanguages = [...new Set(segmentLanguages.map((language) => language.toLowerCase()))];
+  const narrationIdentity = config.tts.narrationIdentity;
+  const actualRate = project.audio.metrics?.ttsRate;
+  if (narrationIdentity.expectedProvider && project.audio.provider !== narrationIdentity.expectedProvider) {
+    issues.push({ severity: "error", code: "audio_narration_profile_mismatch", message: "Narration provider changed from the configured publishing voice profile.", evidence: { expectedProvider: narrationIdentity.expectedProvider, actualProvider: project.audio.provider } });
+  }
+  if (narrationIdentity.expectedVoice && (uniqueVoices.length !== 1 || uniqueVoices[0] !== narrationIdentity.expectedVoice)) {
+    issues.push({ severity: "error", code: "audio_narration_profile_mismatch", message: "Narration voice changed from the configured publishing voice profile.", evidence: { expectedVoice: narrationIdentity.expectedVoice, actualVoices: uniqueVoices } });
+  }
+  if (narrationIdentity.expectedRate !== undefined && (actualRate === undefined || Math.abs(actualRate - narrationIdentity.expectedRate) > narrationIdentity.rateTolerance)) {
+    issues.push({ severity: "error", code: "audio_narration_profile_mismatch", message: "Narration speed changed from the configured publishing voice profile.", evidence: { expectedRate: narrationIdentity.expectedRate, actualRate: actualRate ?? -1, tolerance: narrationIdentity.rateTolerance } });
+  }
   const identityRequired = project.audio?.provider === "indextts" || project.audio?.provider === "local" || project.audio?.provider === "nvidia" || project.audio?.provider === "azure";
   if (identityRequired && (segmentVoices.length !== (project.narrationSegments?.length ?? 0) || segmentLanguages.length !== (project.narrationSegments?.length ?? 0))) issues.push({ severity: "error", code: "audio_identity_metadata_missing", message: "Narration voice or language metadata is missing, so consistency cannot be verified.", evidence: { provider: project.audio?.provider ?? "unknown", voiceCount: segmentVoices.length, languageCount: segmentLanguages.length, segmentCount: project.narrationSegments?.length ?? 0 } });
   if (uniqueVoices.length > 1) issues.push({ severity: "error", code: "audio_voice_inconsistent", message: "Narration scenes use different voices.", evidence: { voices: uniqueVoices } });
@@ -139,5 +150,5 @@ export async function runAudioStructuralGate(input: {
     acousticVoiceProfiles = "unavailable";
   }
   const passed = !issues.some((issue) => issue.severity === "error");
-  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, leadingSilenceSeconds: project.audio.metrics?.leadingSilenceSeconds ?? 0, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsSceneVoiceConsistency: uniqueVoices.length <= 1, acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), minimumSpeakerSimilarity: Number(minimumSpeakerSimilarity.toFixed(4)), averageSpeakerSimilarity: Number(averageSpeakerSimilarity.toFixed(4)), pairwiseMinimumSpeakerSimilarity: Number(pairwiseMinimumSpeakerSimilarity.toFixed(4)), pairwiseAverageSpeakerSimilarity: Number(pairwiseAverageSpeakerSimilarity.toFixed(4)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
+  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, leadingSilenceSeconds: project.audio.metrics?.leadingSilenceSeconds ?? 0, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsRate: actualRate ?? -1, ttsSceneVoiceConsistency: uniqueVoices.length <= 1, acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), minimumSpeakerSimilarity: Number(minimumSpeakerSimilarity.toFixed(4)), averageSpeakerSimilarity: Number(averageSpeakerSimilarity.toFixed(4)), pairwiseMinimumSpeakerSimilarity: Number(pairwiseMinimumSpeakerSimilarity.toFixed(4)), pairwiseAverageSpeakerSimilarity: Number(pairwiseAverageSpeakerSimilarity.toFixed(4)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
 }

@@ -348,6 +348,26 @@ test("IndexTTS speaker gate rejects one scene changing speaker identity", () => 
   assert.equal(result.drift, true);
 });
 
+test("structural gate rejects a provider fallback that changes the publishing voice profile", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-voice-profile-"));
+  try {
+    const { project } = await fixture(root, { riskOnSecond: false });
+    project.audio = {
+      ...project.audio!,
+      provider: "nvidia",
+      metrics: {
+        workerStartCount: 0, workerStartupMs: 0, modelLoadMs: 0, queueWaitMs: 0, synthesisMs: 0,
+        cacheHitCount: 0, cacheMissCount: 1, generatedSceneCount: 1, reusedSceneCount: 0,
+        forcedAudioSceneIndexes: "", generatedAudioSceneIndexes: "0", reusedAudioSceneIndexes: "",
+        concatenatedAudio: false, audioGenerationKey: "test", providerSelection: "{}", ttsRate: 1,
+      },
+    };
+    project.narrationSegments = project.narrationSegments!.map((segment) => ({ ...segment, ttsProvider: "nvidia", ttsVoice: "Magpie-Multilingual.ZH-CN.HouZhen", ttsLanguage: "zh-CN" }));
+    const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root, { TTS_EXPECTED_PROVIDER: "indextts", TTS_EXPECTED_VOICE: "IndexTTS2.Fixed.Reference", TTS_EXPECTED_RATE: "1.22" }), probe: goodProbe });
+    assert.ok(result.issues.some((issue) => issue.code === "audio_narration_profile_mismatch"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("TTS convention gate keeps AI and reads four-digit years digit by digit", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "scene-gen-tts-conventions-"));
   try {

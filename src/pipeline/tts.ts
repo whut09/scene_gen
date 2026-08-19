@@ -304,6 +304,26 @@ function providerExtension(provider: TtsProvider) {
   return provider === "openai" || provider === "cloudflare-melotts" || provider === "edge" ? "mp3" : "wav";
 }
 
+function providerVoice(provider: TtsProvider) {
+  const config = getRuntimeConfig().tts;
+  if (provider === "indextts") return "IndexTTS2.Fixed.Reference";
+  if (provider === "nvidia") return config.nvidia.voice;
+  if (provider === "azure") return config.azure.voice;
+  if (provider === "openai") return config.openai.voice;
+  if (provider === "edge") return config.edge.voice;
+  if (provider === "local") return config.local.voice;
+  return undefined;
+}
+
+function providerRate(provider: TtsProvider) {
+  const config = getRuntimeConfig().tts;
+  if (provider === "indextts") return config.indextts.tempo;
+  if (provider === "nvidia") return config.nvidia.speed;
+  if (provider === "openai") return config.openai.speed;
+  if (provider === "f5") return config.f5.uniformSpeed;
+  return undefined;
+}
+
 async function synthesizeNarration(
   provider: TtsProvider,
   plan: PronunciationPlan,
@@ -597,7 +617,7 @@ async function attachSegmentedNarration(
       providerSynthesisChunks: indexTtsInput ? splitIndexTtsText(indexTtsInput.text) : undefined,
       pronunciationPlan: results[index].pronunciationPlan,
       ttsProvider: provider,
-      ttsVoice: results[index].azureResult?.voice ?? (provider === "local" ? getRuntimeConfig().tts.local.voice : provider === "nvidia" ? getRuntimeConfig().tts.nvidia.voice : provider === "indextts" ? "IndexTTS2.Fixed.Reference" : undefined),
+      ttsVoice: results[index].azureResult?.voice ?? providerVoice(provider),
       ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",
       audioStartSeconds,
       durationSeconds,
@@ -649,6 +669,7 @@ async function attachSegmentedNarration(
     pronunciationUncertainCount: results.reduce((sum, result) => sum + result.pronunciationIssueCount, 0),
     ttsVoice: [...new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean))].join(","),
     ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",
+    ttsRate: providerRate(provider),
     ttsSceneVoiceConsistency: new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean)).size <= 1,
   };
   if (metrics.budgetRemainingCharacters === Number.MAX_SAFE_INTEGER) delete metrics.budgetRemainingCharacters;
@@ -776,6 +797,9 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       budgetWarning: azureResult?.budgetWarning,
       pronunciationPlanCount: 1,
       pronunciationUncertainCount: pronunciation.issues.length,
+      ttsVoice: azureResult?.voice ?? providerVoice(provider),
+      ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",
+      ttsRate: providerRate(provider),
     };
     const pronunciationPlansPath = path.join(generatedDir, `${basename}-pronunciation-plans.json`);
     await writeJsonAtomic(pronunciationPlansPath, [{ sceneIndex: 0, plan: pronunciation.plan, issues: pronunciation.issues }]);

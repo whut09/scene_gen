@@ -5,6 +5,7 @@ import { z } from "zod";
 import { runExternalProcess } from "../pipeline/external-operation";
 import { acronymsRequiringSpelledLetters, spelledLatinAcronym } from "../pipeline/pronunciation/provider-adapters";
 import { prepareF5SynthesisText } from "../pipeline/tts";
+import { repositoryProjectName } from "../pipeline/repository-project";
 import type { NarrationSegment, VideoProject } from "../pipeline/types";
 import { fromRoot } from "../pipeline/utils";
 import { resolvePythonCommand } from "../runtime/runtime-paths";
@@ -189,6 +190,12 @@ function normalizeAcronymHomophones(text: string) {
 
 function normalizeSemanticAsrVariants(text: string) {
   return normalizeAcronymHomophones(text)
+    .replace(/開圓/gu, "开源")
+    .replace(/開源/gu, "开源")
+    .replace(/熱點/gu, "热点")
+    .replace(/趨勢/gu, "趋势")
+    .replace(/項目/gu, "项目")
+    .replace(/推薦/gu, "推荐")
     .replace(/两百/gu, "二百")
     .replace(/超级群/gu, "超集群")
     .replace(/极群/gu, "集群")
@@ -372,9 +379,18 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
   }
   const firstTranscript = transcriptMap.get(0)?.text ?? "";
   const expectedTitle = canonicalSpeechText(prepareF5SynthesisText(project.meta.title));
-  const actualOpening = canonicalSpeechText(firstTranscript).slice(0, Math.max(expectedTitle.length + 8, 18));
-  const titleAudioCoverage = firstTranscript ? bigramRecall(expectedTitle, canonicalSpeechText(firstTranscript)) : 0;
-  const titleOpeningCoverage = firstTranscript ? bigramRecall(expectedTitle, actualOpening) : 0;
+  const normalizedFirstTranscript = normalizeSemanticAsrVariants(firstTranscript);
+  const actualOpening = canonicalSpeechText(normalizedFirstTranscript).slice(0, Math.max(expectedTitle.length + 8, 18));
+  const titleAudioCoverage = firstTranscript ? bigramRecall(expectedTitle, canonicalSpeechText(normalizedFirstTranscript)) : 0;
+  // Repository openings intentionally contain a recommendation prefix before
+  // the project name. Validate the title against the complete first scene
+  // transcript instead of a fixed 18-character window that can end before the
+  // project name.
+  const titleOpeningCoverage = firstTranscript
+    ? repositoryProjectName(project)
+      ? titleAudioCoverage
+      : bigramRecall(expectedTitle, actualOpening)
+    : 0;
   const firstConfidence = transcriptMap.get(0)?.confidence;
   const expectedPrefix = canonicalSpeechText(prepareF5SynthesisText(segments[0] ? expectedSynthesisText(segments[0]) : project.meta.title)).slice(0, 10);
   const embeddedAsciiIndex = expectedPrefix.search(/[a-z]/);

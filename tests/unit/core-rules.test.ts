@@ -6,14 +6,14 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { createHtmlVideoCacheKey, hashHtmlAssetContent } from "../../src/html-video/render-html-video";
 import { evaluateDraft } from "../../src/harness/quality";
-import { extraNarrationNumbers } from "../../src/harness/quality/draft-rules";
+import { extraNarrationNumbers, newsTechnicalJargon } from "../../src/harness/quality/draft-rules";
 import { ensureTitleOpening } from "../../src/pipeline/llm";
 import { prepareF5SynthesisText } from "../../src/pipeline/tts";
 import { narrationSynthesisText } from "../../src/pipeline/tts/segmentation";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
-import { containsForbiddenPlatformPromotion, scrubAttribution, scrubGithubReference } from "../../src/pipeline/story";
+import { containsForbiddenPlatformPromotion, scrubAttribution, scrubGithubReference, scrubSpokenAttribution } from "../../src/pipeline/story";
 import { expectedVideoFileName, homepageTitleBasedVideoPath, projectHomepageTitle, provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 import { ProjectSynthesisReadinessError, assertProjectReadyForSynthesis, projectSynthesisReadinessIssues, synthesisTargetSeconds } from "../../src/pipeline/synthesis-readiness";
 
@@ -222,6 +222,18 @@ test("news source websites are scrubbed and blocked by the draft gate", async ()
   assert.equal(result.issues.some((issue) => issue.code === "source_attribution_exposed"), true);
 });
 
+test("news gate rejects unexplained technical detail and missing audience value", async () => {
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], contentType: "news", title: project.meta.title };
+  project.narration = "API、SDK、CUDA 和 Token 同时升级，参数量和推理吞吐也刷新纪录。";
+  project.narrationSegments![0].text = project.narration;
+  assert.ok(newsTechnicalJargon(project.narration).length >= 6);
+  const result = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "news_excessive_technical_detail"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "news_jargon_unexplained"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "news_audience_value_missing"), true);
+});
+
 test("repository videos display the address but reject it from narration", async () => {
   assert.equal(scrubGithubReference("GitHub 仓库：https://github.com/HKUDS/DeepTutor，地址 HKUDS/DeepTutor", ["HKUDS/DeepTutor"]), "开源项目 仓库：开源项目，地址 DeepTutor");
   const project = createFixtureProject();
@@ -230,6 +242,17 @@ test("repository videos display the address but reject it from narration", async
   const result = await evaluateDraft(project, project.meta.durationSeconds, "");
   assert.equal(result.issues.some((issue) => issue.code === "repository_address_spoken"), true);
   assert.equal(result.issues.some((issue) => issue.code === "repository_address_missing"), false);
+});
+
+test("spoken website references are scrubbed while visible URLs remain allowed", async () => {
+  assert.equal(scrubSpokenAttribution("请访问 https://modelscope.cn/models/demo 获取完整资料。"), "请访问 获取完整资料。");
+  const project = createFixtureProject();
+  project.sources[0] = { ...project.sources[0], url: "https://example.com/article", contentType: "news" };
+  project.scenes[0] = { ...project.scenes[0], sources: ["https://example.com/article"] };
+  project.narrationSegments![0].ttsText = "请访问 modelscope.cn 查看详情。";
+  const result = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "narration_website_reference_exposed"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "source_attribution_exposed"), false);
 });
 
 test("repository draft gate blocks zero stars and missing homepage context", async () => {

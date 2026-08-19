@@ -8,7 +8,7 @@ import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate, projectRepositoryDate } from "../../pipeline/news-date";
 import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryOpeningTitleCount, repositoryProjectName, repositoryProjectTitleSummary, repositoryProjectUrl, repositoryTitleIdentity } from "../../pipeline/repository-project";
-import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution } from "../../pipeline/story";
+import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution, containsForbiddenWebsiteReference, scrubGithubReference } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
 import { getRuntimeConfig, type RuntimeConfig } from "../../config/runtime-config";
@@ -101,7 +101,7 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
   return { min: 45, max: 105 };
 }
 
-const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|防范|失控|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|全球第|总参数|激活参数/;
+const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|防范|失控|核心|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|何去何从|人气|体验|吸引|惊喜|潜力|成绩|全球第|总参数|激活参数/;
 
 function textTokens(value: string) {
   const compact = normalizeText(value);
@@ -144,6 +144,43 @@ function standaloneNumbers(text: string) {
   return text.match(/(?<![A-Za-z])\d+(?:\.\d+)?%?(?![A-Za-z])/g) ?? [];
 }
 
+const NEWS_TECHNICAL_TERMS = [
+  /\b(?:API|SDK|CUDA|GPU|CPU|Token|tokens|FP8|BF16|RAG|OCR|LLM|ASR|TTS)\b/giu,
+  /(?:上下文窗口|推理吞吐|显存|算子|协议|框架|向量数据库|参数量|基准测试|缓存命中|内存访问|端到端)/gu,
+];
+const NEWS_EXPLANATION_PATTERN = /(?:也就是|简单说|换句话说|可以理解为|意味着|相当于|对普通人|对用户来说|不用懂技术)/u;
+const NEWS_AUDIENCE_VALUE_PATTERN = /(?:普通用户|消费者|开发者|企业|团队|学生|创作者|患者|司机|家庭|意味着|影响|能用来|可以用来|帮助|省下|减少|降低|提高|更快|更便宜|更方便|限制|风险|适合)/u;
+
+export function newsTechnicalJargon(text: string) {
+  const matches: string[] = [];
+  for (const pattern of NEWS_TECHNICAL_TERMS) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) matches.push(match[0]);
+  }
+  return matches;
+}
+
+function newsEducationIssues(narration: string): QualityIssueInput[] {
+  const jargon = newsTechnicalJargon(narration);
+  if (jargon.length === 0) return [];
+  const issues: QualityIssueInput[] = [];
+  const uniqueJargon = [...new Set(jargon.map((term) => term.toLowerCase()))];
+  if (uniqueJargon.length >= 4 || jargon.length >= 6) {
+    issues.push({ severity: "error", code: "news_excessive_technical_detail", message: "新闻旁白连续堆叠技术术语，普通读者无法直接理解。", repairAction: "revise-scenes", retryable: true, evidence: { terms: uniqueJargon, count: jargon.length } });
+  }
+  const unexplainedSentence = narration.split(/[。！？!?；;]/u).find((sentence) => {
+    const sentenceJargon = newsTechnicalJargon(sentence);
+    return sentenceJargon.length >= 2 && !NEWS_EXPLANATION_PATTERN.test(sentence);
+  });
+  if (unexplainedSentence) {
+    issues.push({ severity: "error", code: "news_jargon_unexplained", message: "新闻中的技术术语没有转换成普通读者能理解的结果。", repairAction: "revise-scenes", retryable: true, evidence: { sentence: unexplainedSentence.slice(0, 160), terms: newsTechnicalJargon(unexplainedSentence) } });
+  }
+  if (!NEWS_AUDIENCE_VALUE_PATTERN.test(narration)) {
+    issues.push({ severity: "error", code: "news_audience_value_missing", message: "新闻没有说明这件事影响谁、能带来什么实际变化或有什么限制。", repairAction: "revise-scenes", retryable: true });
+  }
+  return issues;
+}
+
 export function extraNarrationNumbers(visibleText: string, narration: string) {
   const visibleNumbers = new Set(standaloneNumbers(visibleText));
   return [...new Set(standaloneNumbers(narration))].filter((value) => !visibleNumbers.has(value));
@@ -181,7 +218,9 @@ export async function evaluateDraft(
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const naturalDuration = config.tts.durationPolicy === "natural";
   const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.2 : 4.8));
-  const maximumChars = Math.round(targetSeconds * (contentType === "technical-article" ? 9 : 8.2));
+  const maximumChars = contentType === "news"
+    ? Math.min(230, Math.round(targetSeconds * 5.2))
+    : Math.round(targetSeconds * (contentType === "technical-article" ? 9 : 8.2));
   const plannedDurationSeconds = project.scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const templateGraph = buildHtmlVideoContentGraph(project);
   const productionDecisions = buildProductionDecisions(project);
@@ -285,12 +324,32 @@ export async function evaluateDraft(
     revisionNotes.push(`将总旁白扩充到 ${minimumChars} 到 ${maximumChars} 字。`);
   }
   if (narrationChars > maximumChars) {
-    issues.push({ severity: "warning", code: "narration_long", message: `旁白 ${narrationChars} 字，可能超过目标时长。` });
+    issues.push({ severity: "error", code: "narration_long", message: `旁白 ${narrationChars} 字，超过 ${contentType} 的完整播报预算 ${maximumChars} 字。` });
     revisionNotes.push(`将总旁白压缩到 ${maximumChars} 字以内。`);
   }
+  if (contentType === "news") {
+    for (const segment of project.narrationSegments ?? []) {
+      const scene = project.scenes[segment.sceneIndex];
+      const characters = segment.text.replace(/\s+/gu, "").length;
+      const estimatedSpeechSeconds = characters / 5.1;
+      if (scene && estimatedSpeechSeconds > scene.duration + 0.75) {
+        issues.push({
+          severity: "error",
+          code: "narration_scene_overflow",
+          message: `第 ${segment.sceneIndex + 1} 屏旁白约需 ${estimatedSpeechSeconds.toFixed(1)} 秒，但场景只有 ${scene.duration.toFixed(1)} 秒，可能出现未播完就跳屏。`,
+          sceneIndex: segment.sceneIndex,
+          evidence: { characters, estimatedSpeechSeconds, sceneDurationSeconds: scene.duration },
+        });
+      }
+    }
+  }
   const firstNarration = project.narrationSegments?.[0]?.text ?? "";
+  const spokenProjectText = [
+    project.narration,
+    ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
+  ].join(" ");
   const publicProjectText = [project.meta.title, project.narration, ...project.scenes.map(sceneVisibleText)].join(" ");
-  if (isNewsProject(project) && containsForbiddenSourceAttribution(publicProjectText)) {
+  if (isNewsProject(project) && containsForbiddenSourceAttribution(spokenProjectText)) {
     issues.push({ severity: "error", code: "source_attribution_exposed", message: "新闻画面或旁白不得出现网站、媒体或文章来源署名。" });
     revisionNotes.push("删除 IT之家、量子位、36氪、TechWeb 等网站来源文字，只保留事实内容。 ");
   }
@@ -300,14 +359,14 @@ export async function evaluateDraft(
   }
   const normalizedTitle = normalizeText(project.meta.title);
   const normalizedOpening = normalizeText(firstNarration);
-  const sourceTitle = normalizeText(project.sources[0]?.title ?? "");
+  const sourceTitle = normalizeText(scrubGithubReference(project.sources[0]?.title ?? ""));
   if (!repositoryProjectName(project) && sourceTitle && normalizedTitle !== sourceTitle) {
     issues.push({ severity: "error", code: "source_title_not_preserved", message: "视频标题和首页标题必须直接使用清洗后的原始文章标题。", sceneIndex: 0, evidence: { sourceTitle: project.sources[0]?.title, projectTitle: project.meta.title } });
     revisionNotes.push("恢复原始文章标题，不要另写概括标题。 ");
   }
   const firstScenePurposeText = project.scenes[0] ? sceneVisibleText(project.scenes[0]) : "";
   const isModelRelease = /(?:模型|MAGI|Shieldstral|Mistral)/i.test(project.meta.title) && /(?:发布|推出|开源|参数|Preview)/i.test(project.meta.title);
-  if (isModelRelease && !/(?:用途|用于|用来|可用于|审核|生成|处理|完成|推理|生图|图像|浏览器|智能体)/u.test(firstScenePurposeText)) {
+  if (isModelRelease && !/(?:用途|用于|用来|可用于|审核|生成|处理|完成|推理|生图|图像|浏览器|智能体|专为|编程|歌曲|音乐|文档)/u.test(firstScenePurposeText)) {
     issues.push({ severity: "error", code: "homepage_purpose_missing", message: "模型类视频首屏必须直接说明模型是做什么的。", sceneIndex: 0 });
     revisionNotes.push("在首屏副标题写清模型用途和直接使用场景，不要只展示参数。 ");
   }
@@ -329,6 +388,11 @@ export async function evaluateDraft(
   }
   const narrationTexts = (project.narrationSegments ?? []).map((segment) => segment.text).filter(Boolean);
   const narrationJoined = narrationTexts.join(" ");
+  if (contentType === "news") {
+    const educationIssues = newsEducationIssues(project.narration);
+    issues.push(...educationIssues);
+    if (educationIssues.length > 0) revisionNotes.push("面向普通读者重写新闻：只保留发生了什么、影响谁、实际变化和限制；把技术术语改成日常语言，不连续罗列 API、框架、参数或架构细节。");
+  }
   const genericTransitionPattern = /这次真正改变的是|真正改变的是|这条新闻真正说了什么/gu;
   const genericTransitionMatches = [
     ...narrationTexts,
@@ -373,13 +437,15 @@ export async function evaluateDraft(
   const compactNarration = project.narration.replace(/\s+/g, "");
   const earlyWindow = compactNarration.slice(0, Math.max(36, Math.round(6 * 7) + 2));
   const valueIndex = firstValueIndex(compactNarration);
+  const openingValuePattern = /\u6709\u671b|\u8ba1\u5212|\u4f30\u503c|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02/u;
+  const titleValuePattern = /\u751f\u6210|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02|\u4f30\u503c|\u63d0\u5347|\u4e0a\u7ebf|\u5f00\u6e90|\u5bb6\u7528|\u663e\u5361|\u8dd1\u51fa|\u72ec\u89d2\u517d|\u878d\u8d44|\u7eaa\u5f55|\u699c\u5355|\u521b\u4e0b|\u5f71\u54cd|\u6536\u8d2d|\u7f8e\u5143|\u66b4\u6da8|\u6700\u8d35|\u843d\u69cc|\u6d88\u5931|\u7834\u706d|\u5012\u584c|\u52a0\u5165/u;
   const repositoryOpeningValue = repositoryProjectName(project)
     ? repositoryProjectTitleSummary(project)
     : "";
-  if (valueIndex < 0 && !repositoryOpeningValue) {
+  if (valueIndex < 0 && !repositoryOpeningValue && !titleValuePattern.test(project.meta.title)) {
     issues.push({ severity: "error", code: "hook_value_missing", message: "开场没有结果、冲突、痛点或用户收益钩子。", sceneIndex: 0 });
     revisionNotes.push("标题后立刻给出结果、冲突、痛点或用户收益，不要用背景介绍开场。");
-  } else if (!repositoryOpeningValue && !EARLY_VALUE_PATTERN.test(earlyWindow) && !(/(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(project.meta.title) && /(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(earlyWindow))) {
+  } else if (!repositoryOpeningValue && !EARLY_VALUE_PATTERN.test(earlyWindow) && !openingValuePattern.test(earlyWindow) && !titleValuePattern.test(project.meta.title) && !(/(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(project.meta.title) && /(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(earlyWindow))) {
     issues.push({ severity: "error", code: "value_revealed_too_late", message: "核心价值在开场 6 秒之后才出现。", sceneIndex: 0, evidence: { valueCharacterIndex: valueIndex, earlyWindowCharacters: earlyWindow.length } });
     revisionNotes.push("把第一个核心卖点提前到开场 6 秒内。");
   }
@@ -407,10 +473,10 @@ export async function evaluateDraft(
     })
     : "";
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
-  const spokenProjectText = [
-    project.narration,
-    ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
-  ].join(" ");
+  if (containsForbiddenWebsiteReference(spokenProjectText)) {
+    issues.push({ severity: "error", code: "narration_website_reference_exposed", message: "旁白、ttsText 和 providerSynthesisText 不得播报网站地址或域名；网址只允许作为画面字段展示。" });
+    revisionNotes.push("从 narration、ttsText 和 providerSynthesisText 删除 http、www 及裸域名，保留网址在首屏视觉字段中的展示。 ");
+  }
   const repositoryName = repositoryProjectName(project);
   if (repositoryName) {
     const firstVisibleText = firstScene ? sceneVisibleText(firstScene) : "";
@@ -540,13 +606,15 @@ export async function evaluateDraft(
     }
   }
   const titleChineseCount = (project.meta.title.match(/[\u4e00-\u9fff]/g) ?? []).length;
-  if (!repositoryProjectName(project) && titleChineseCount < 6) {
+  if (!repositoryProjectName(project) && titleChineseCount < 4) {
     issues.push({ severity: "error", code: "title_not_chinese_summary", message: "视频主标题没有形成清晰的中文总结。" });
     revisionNotes.push("将主标题改写为14到30个汉字的中文事实总结，英文仅保留必要专有名。 ");
   }
   const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
+  const releaseStatusSource = `${source?.title ?? ""} ${source?.summary ?? ""}`;
   const releaseStatusPattern = /正式发布|正式推出|对外推出|即日起.{0,80}开放|(?:开启|进入|开放)公测/;
-  if (releaseStatusPattern.test(sourceText) && !releaseStatusPattern.test(project.narration)) {
+  const releaseNarrationPattern = /正式发布|正式推出|对外推出|开源|发布|推出|上线|开放|公测/;
+  if (releaseStatusPattern.test(releaseStatusSource) && !releaseNarrationPattern.test(project.narration)) {
     issues.push({ severity: "error", code: "release_status_weakened", message: "原文的正式发布或开放状态被弱化。" });
     revisionNotes.push("首段直接复述原文的正式发布状态、开放渠道和用户范围。 ");
   }
@@ -593,7 +661,9 @@ export async function evaluateDraft(
     revisionNotes.push("合并重复场景，每屏只保留一个新的结论或证据。");
   }
 
+  const structuredEvidenceCount = project.scenes.filter((scene) => ["signal_chart", "timeline", "news_stack"].includes(scene.type)).length;
   const authenticVisualCount = productionDecisions.filter((decision) => decision.visualPlan.source !== "programmatic").length
+    + structuredEvidenceCount
     + (project.screenshots?.length ?? 0)
     + (project.assets?.filter((asset) => asset.role === "evidence" || asset.role === "demo").length ?? 0);
   if (plannedDurationSeconds > 30 && authenticVisualCount === 0) {
