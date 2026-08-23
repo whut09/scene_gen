@@ -687,7 +687,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       workflow: "先退出官方控制软件并连接设备，再在图形界面或 TOML 配置中设置按键、手势和摄像头参数；需要自动化时直接调用 CLI",
       boundaries: "项目仍在积极开发，设备兼容性和平台功能存在差异；它与官方工具不能同时占用同一个接收器，重要配置要先备份并逐项验证",
       topics: ["外设管理", "按键映射", "手势配置", "跨平台", "摄像头控制", "CLI 自动化"],
-      metrics: [{ label: "支持平台", value: "Windows、macOS、Linux" }, { label: "配置方式", value: "图形界面 + TOML" }],
+      metrics: [{ label: "运行平台", value: "Windows、macOS、Linux" }, { label: "配置方式", value: "图形界面 + TOML" }],
       problemPoints: [
         "官方外设软件体积大、平台支持不一致，Linux 用户和想保留纯文本配置的人尤其不方便。",
         "OpenLogi 用本地 Rust 程序管理 Logitech 鼠标、键盘和摄像头，还提供按键映射、手势、DPI、灯光和 CLI。",
@@ -700,7 +700,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
         { label: "自动化使用", detail: "需要脚本或跨机器同步时，保存配置并调用命令行工具。" },
       ],
       narration: [
-        "开源项目推荐：OpenLogi。它在本地统一管理 Logitech 鼠标、键盘和摄像头，替代体积大的官方工具。",
+        "开源项目推荐：OpenLogi。它在本地管理 Logitech 外设，替代体积大的官方工具。",
         "OpenLogi 用 Rust 原生程序提供按键映射、手势、DPI、灯光和摄像头参数，也能按应用切换配置，并支持 Windows、macOS 和 Linux。",
         "它的画面和效果图展示本地管理界面。使用时先连接设备，在界面或 TOML 配置中设置按键、手势和镜头参数，需要自动化时直接调用 CLI。",
         "它仍在积极开发，平台和设备兼容性需要逐项验证；使用前先退出官方工具，因为两个程序不能同时占用同一个接收器。",
@@ -2230,7 +2230,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
   const evidenceHeadline = repository === "plane"
     ? "核心价值：工作区、任务迭代与项目效果图"
     : repository === "openlogi"
-      ? "核心价值：本地外设管理界面与效果图"
+      ? "核心价值：本地管理界面、按键配置与效果图"
       : repository === "free-for-dev"
         ? "核心价值：免费资源列表与使用效果图"
         : "核心价值：项目界面与实际效果图";
