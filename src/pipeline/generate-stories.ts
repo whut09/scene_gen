@@ -312,11 +312,33 @@ for (const [index, item] of items.entries()) {
     const conciseNarration = [
       `${title}。周末全天统一按低谷价格收费。${date}`,
       "这则调整针对开发者 API 用户：周末不再区分峰谷，周六和周日统一按低谷价格计费。对需要批量调用的人，最直接的变化是不用再躲开工作日高峰。",
-      "此前高峰价格最高是低谷的两倍。现在批量任务可以放到周末跑，但实际账单仍取决于调用量、输入输出规模和任务是否真的适合延后。",
+      "此前高峰价格最高是低谷的两倍。现在批量任务可以放到周末跑，但实际账单仍取决于调用量、输入输出规模和任务是否真的适合延后，按需安排。",
       "对个人用户，省下的是调用成本，不是工作时间。公司若因此改排班，还会增加沟通和管理成本；低价不等于所有任务都适合周末处理。",
     ];
+    const conciseScenes = project.scenes.slice(0, 4).map((scene, index) => {
+      if (index === 0 && scene.type === "title") return { ...scene, subhead: "周末全天统一按低谷价格收费。" };
+      if (index === 1 && scene.type === "briefing_points") return {
+        ...scene,
+        headline: "周末全天统一按低谷价计费",
+        summary: conciseNarration[1],
+        points: [conciseNarration[1]],
+        metrics: [{ label: "计费时段", value: "周六、周日全天" }, { label: "价格规则", value: "统一低谷价" }],
+      };
+      if (index === 2 && scene.type === "news_stack") return {
+        ...scene,
+        headline: "高峰价曾是低谷价的两倍",
+        items: [{ title: "价格差异", summary: conciseNarration[2], source: "核心事实", url: "about:blank", tags: ["价格"] }],
+      };
+      if (index === 3 && scene.type === "outro") return {
+        ...scene,
+        headline: "省的是调用成本，不是工作时间",
+        bullets: [conciseNarration[3]],
+      };
+      return scene;
+    });
     project = {
       ...project,
+      scenes: conciseScenes,
       narrationSegments: currentNarrationSegments.slice(0, 4).map((segment, index) => ({
         ...segment,
         text: conciseNarration[index],
