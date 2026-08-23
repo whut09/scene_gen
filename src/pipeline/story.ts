@@ -2281,7 +2281,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
   if (!source || images.length === 0 || project.scenes.length < 3) return project;
   const repository = source.repo?.split("/").at(-1)?.toLowerCase() ?? "";
   const evidenceHeadline = repository === "plane"
-    ? "核心价值：工作区、任务迭代与项目效果图"
+    ? "Plane 工作项与项目看板"
     : repository === "openlogi"
       ? "核心价值：本地管理界面、按键配置与效果图"
       : repository === "free-for-dev"
