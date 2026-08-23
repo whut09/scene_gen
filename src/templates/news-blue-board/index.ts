@@ -3,7 +3,7 @@ import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils
 
 export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
   id: "news-blue-board",
-  version: "1.1.0",
+  version: "1.1.1",
   name: "News Blue Board",
   description: "Vertical blue teaching-board layout for AI news briefings.",
   engine: "html-video",
@@ -85,16 +85,13 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
             .join("")}
         </section></main>`;
     } else if (scene.type === "web_screenshot_zoom") {
-      const shot = scene.shots[0];
       body = `<main class="hv-main"><h1>${escapeHtml(scene.headline)}</h1>
-        <section class="hv-card" style="margin-top:44px;padding:18px;">
-          ${
-            shot
-              ? `<img src="${escapeHtml(shot.src)}" style="width:100%;height:980px;object-fit:cover;filter:saturate(.9) brightness(1.08);opacity:.9;" />`
-              : ""
-          }
-        </section>
-        <p style="margin-top:26px;">${escapeHtml(shot?.title ?? sceneHeadline(scene))}</p></main>`;
+        <section style="display:grid;grid-template-columns:repeat(${Math.min(2, Math.max(1, scene.shots.length))},1fr);gap:18px;margin-top:34px;align-items:start;">
+          ${scene.shots.slice(0, 2).map((shot) => `<article class="hv-card" style="padding:12px;">
+            <img src="${escapeHtml(shot.src)}" style="display:block;width:100%;height:650px;object-fit:cover;filter:saturate(.9) brightness(1.08);opacity:.9;" />
+            <p style="margin:16px 8px 8px;font-size:25px;line-height:1.25;">${escapeHtml(shot.title || sceneHeadline(scene))}</p>
+          </article>`).join("")}
+        </section></main>`;
     } else {
       body = `<main class="hv-main"><h1>${escapeHtml(sceneHeadline(scene))}</h1></main>`;
     }
