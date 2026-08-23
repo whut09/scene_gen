@@ -11,14 +11,31 @@ function repoParts(item: HotItem) {
 }
 
 function markdownImages(markdown: string) {
-  return [...markdown.matchAll(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g)]
-    .map((match) => ({ alt: match[1].trim(), url: match[2].trim().replace(/^<|>$/g, "") }))
-    .filter((asset) => !/badge|shield|build|coverage|license|stars?|forks?/i.test(asset.alt + " " + asset.url));
+  const markdownAssets = [...markdown.matchAll(/!\[([^\]]*)\]\((?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\)/g)]
+    .map((match) => ({ alt: match[1].trim(), url: (match[2] ?? match[3] ?? "").trim() }));
+  const htmlAssets = [...markdown.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)]
+    .map((match) => ({
+      alt: (match[0].match(/\balt=["']([^"']*)["']/i)?.[1] ?? "").trim(),
+      url: match[1].trim(),
+    }));
+  const candidates = [...markdownAssets, ...htmlAssets]
+    .filter((asset) => asset.url)
+    .filter((asset) => !/badge|shield|build|coverage|license|stars?|forks?|social-preview/i.test(asset.alt + " " + asset.url));
+  const score = (asset: { alt: string; url: string }) => {
+    const value = `${asset.alt} ${asset.url}`;
+    return /screenshot|screen shot|demo|preview|dashboard|interface|ui|workflow|效果|页面|界面|演示/i.test(value) ? 2 : 0;
+  };
+  return [...new Map(candidates.map((asset) => [asset.url, asset])).values()]
+    .sort((left, right) => score(right) - score(left));
 }
 
 function resolveAssetUrl(raw: string, owner: string, repo: string, branch: string) {
+  if (/^https?:\/\/raw\.githubusercontent\.com\//i.test(raw)) return raw;
+  if (/^https?:\/\/github\.com\/[^/]+\/[^/]+\/blob\//i.test(raw)) {
+    return raw.replace(/^https?:\/\/github\.com\//i, "https://raw.githubusercontent.com/").replace("/blob/", "/");
+  }
   if (/^https?:\/\//i.test(raw)) return raw;
-  const clean = raw.replace(/^\.\//, "").replace(/^\//, "");
+  const clean = raw.replace(/^\.\//, "").replace(/^\//, "").replace(/^\.?\//, "");
   return "https://raw.githubusercontent.com/" + owner + "/" + repo + "/" + branch + "/" + clean;
 }
 

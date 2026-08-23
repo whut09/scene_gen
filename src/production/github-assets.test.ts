@@ -17,3 +17,34 @@ test("GitHub asset collection tolerates an unavailable remote README", async () 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("GitHub asset collection prefers demo images and resolves HTML and blob URLs", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/README.md")) {
+      return new Response([
+        "<img alt=\"build\" src=\"badge.svg\">",
+        "![Dashboard screenshot](docs/dashboard.png)",
+        "<img alt=\"Demo UI\" src=\"https://github.com/example/project/blob/main/docs/demo.png\">",
+      ].join("\n"), { status: 200, headers: { "content-type": "text/markdown" } });
+    }
+    return new Response(new Uint8Array(5000), { status: 200, headers: { "content-type": "image/png" } });
+  };
+  const item = {
+    id: "repo", kind: "github", contentType: "repository", title: "project", url: "https://github.com/example/project",
+    source: "项目资料", summary: "summary", content: "# Project", score: 1, tags: [], repo: "example/project",
+    metrics: { branch: "main" },
+  } satisfies HotItem;
+  try {
+    const assets = await collectGithubAssets(item, 2);
+    assert.equal(assets.length, 2);
+    assert.equal(assets[0]?.role, "hero");
+    assert.match(assets[0]?.sourceUrl ?? "", /dashboard|demo/);
+    assert.ok(requests.some((url) => url.includes("raw.githubusercontent.com/example/project/main/docs/")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
