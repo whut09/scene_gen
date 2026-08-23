@@ -689,7 +689,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       topics: ["外设管理", "按键映射", "手势配置", "跨平台", "摄像头控制", "CLI 自动化"],
       metrics: [{ label: "运行平台", value: "Windows、macOS、Linux" }, { label: "配置方式", value: "图形界面 + TOML" }],
       problemPoints: [
-        "官方外设软件体积大、平台支持不一致，Linux 用户和想保留纯文本配置的人尤其不方便。",
+        "官方外设软件体积大、平台覆盖不一致，Linux 用户和想保留纯文本配置的人尤其不方便。",
         "OpenLogi 用本地 Rust 程序管理 Logitech 鼠标、键盘和摄像头，还提供按键映射、手势、DPI、灯光和 CLI。",
         "它适合想把外设设置留在本机、并在多台设备间同步配置的用户。",
       ],
