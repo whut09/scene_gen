@@ -651,6 +651,34 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^plane$/i.test(name)) {
+    return {
+      titleSummary: "自托管的团队项目管理工作台",
+      theme: "把任务、迭代、文档和产品路线图放进一套团队工作台",
+      capability: "集中管理工作项、Cycles 迭代、Modules 模块、视图、文档和分析，支持云端使用，也支持团队自行部署并掌握数据",
+      workflow: "先创建工作区和项目，再录入任务、安排迭代和模块；用视图筛选进度，用文档沉淀决策，最后通过分析找出阻塞",
+      boundaries: "自托管需要自己维护服务器、数据库、升级和备份；它更适合需要统一项目协作和数据控制的团队，不是个人待办清单的轻量替代品",
+      topics: ["项目管理", "任务协作", "迭代规划", "产品路线图", "团队文档", "自托管"],
+      metrics: [{ label: "使用方式", value: "云端或自托管" }, { label: "核心对象", value: "任务与迭代" }],
+      problemPoints: [
+        "任务、迭代、文档和路线图分散在不同工具里，团队很难从一个地方看清项目进度。",
+        "Plane 把工作项、Cycles、Modules、视图、文档和分析放进同一套项目管理工作台，还能让团队自行部署。",
+        "它适合需要统一协作流程、又希望掌握项目数据的产品和工程团队。",
+      ],
+      steps: [
+        { label: "创建工作区", detail: "建立团队、项目和成员权限，明确协作范围。" },
+        { label: "安排任务", detail: "录入工作项，用 Modules 和 Cycles 组织交付节奏。" },
+        { label: "沉淀决策", detail: "用文档和可筛选视图同步背景、进度和阻塞。" },
+        { label: "复盘进度", detail: "通过分析定位瓶颈，再调整下一轮计划。" },
+      ],
+      narration: [
+        "开源项目推荐：Plane。它解决任务、迭代、文档和路线图分散在多个工具里的问题，把团队项目管理集中到一个工作台。",
+        "Plane 可以管理工作项、Cycles 迭代、Modules 模块、筛选视图、团队文档和数据分析；团队既能使用云端，也能自行部署来掌握项目数据。",
+        "使用时先创建工作区和项目，再录入任务、安排迭代和模块；用视图跟进进度，用文档记录决策，最后通过分析查找阻塞。",
+        "它适合产品和工程团队，不是个人待办清单。选择自托管前，要评估服务器、数据库、升级、权限和备份维护成本。",
+      ],
+    };
+  }
   if (/^career-ops$/i.test(name)) {
     return {
       titleSummary: "用 AI 筛选职位并定制简历的求职工作台",

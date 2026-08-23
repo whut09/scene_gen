@@ -1,8 +1,39 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import path from "node:path";
 import type { HotItem, ProjectAsset } from "../pipeline/types";
 import { ensureDir, fromRoot } from "../pipeline/utils";
+
+const execFileAsync = promisify(execFile);
+
+async function fetchBytes(url: string) {
+  try {
+    const response = await fetch(url, { headers: { "user-agent": "scene-gen/0.1 asset collector" } });
+    if (response.ok) {
+      return { bytes: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get("content-type") ?? "" };
+    }
+  } catch {
+    // Windows installations can have a working curl/proxy path when Node fetch cannot resolve GitHub.
+  }
+  const curl = process.platform === "win32" ? "curl.exe" : "curl";
+  const result = await execFileAsync(curl, ["-L", "--fail", "--silent", "--show-error", "--max-time", "45", "-A", "scene-gen/0.1 asset collector", url], {
+    encoding: "buffer",
+    maxBuffer: 12_000_000,
+    windowsHide: true,
+  }) as unknown as { stdout: Buffer };
+  return { bytes: Buffer.from(result.stdout), contentType: "" };
+}
+
+function imageContentType(bytes: Buffer, fallback: string, url: string) {
+  if (fallback.startsWith("image/")) return fallback;
+  if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
+  if (bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))) return "image/jpeg";
+  if (bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP") return "image/webp";
+  if (bytes.subarray(0, 6).toString().startsWith("GIF")) return "image/gif";
+  return /\.svg(?:$|[?#])/i.test(url) ? "image/svg+xml" : fallback;
+}
 
 function repoParts(item: HotItem) {
   const repo = item.repo ?? "";
@@ -55,8 +86,8 @@ export async function collectGithubAssets(item: HotItem, limit = 3): Promise<Pro
   const readmeUrl = "https://raw.githubusercontent.com/" + target.owner + "/" + target.name + "/" + branch + "/README.md";
   let markdown = item.content ?? "";
   try {
-    const readmeResponse = await fetch(readmeUrl, { headers: { "user-agent": "scene-gen/0.1 asset collector" } });
-    if (readmeResponse.ok) markdown = await readmeResponse.text();
+    const readmeResponse = await fetchBytes(readmeUrl);
+    if (readmeResponse.bytes.length > 0) markdown = readmeResponse.bytes.toString("utf8");
   } catch (error) {
     console.warn("[assets] README unavailable; continuing without remote assets: " + (error as Error).message);
   }
@@ -69,11 +100,10 @@ export async function collectGithubAssets(item: HotItem, limit = 3): Promise<Pro
     if (assets.length >= limit) break;
     try {
       const sourceUrl = resolveAssetUrl(candidate.url, target.owner, target.name, branch);
-      const response = await fetch(sourceUrl, { redirect: "follow", headers: { "user-agent": "scene-gen/0.1 asset collector" } });
-      if (!response.ok) continue;
-      const contentType = response.headers.get("content-type") ?? "";
+      const response = await fetchBytes(sourceUrl);
+      const bytes = response.bytes;
+      const contentType = imageContentType(bytes, response.contentType, sourceUrl);
       if (!contentType.startsWith("image/")) continue;
-      const bytes = Buffer.from(await response.arrayBuffer());
       if (bytes.length < 4_000 || bytes.length > 8_000_000) continue;
       const id = createHash("sha1").update(sourceUrl).digest("hex").slice(0, 12);
       const ext = extension(contentType, sourceUrl);
