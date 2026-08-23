@@ -2281,7 +2281,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
   if (!source || images.length === 0 || project.scenes.length < 3) return project;
   const repository = source.repo?.split("/").at(-1)?.toLowerCase() ?? "";
   const evidenceHeadline = repository === "plane"
-    ? "Plane 工作项与项目看板"
+    ? "核心价值：Plane 工作项与项目看板"
     : repository === "openlogi"
       ? "核心价值：本地管理界面、按键配置与效果图"
       : repository === "free-for-dev"
@@ -2298,7 +2298,16 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
     height: 900,
     highlight: { x: 0, y: 0, width: 1200, height: 900 },
   }));
-  const narrationSegments = project.narrationSegments;
+  const narrationSegments = project.narrationSegments?.map((segment, index) => repository === "plane" && index === 2
+    ? {
+      ...segment,
+      text: "核心价值是 Plane 的工作项与项目看板：团队可以在一个界面查看任务、迭代和项目进度，真实页面展示了这条工作流。",
+      ttsText: undefined,
+      providerSynthesisText: undefined,
+      providerSynthesisChunks: undefined,
+      pronunciationPlan: undefined,
+    }
+    : segment);
   return {
     ...project,
     narrationSegments,
