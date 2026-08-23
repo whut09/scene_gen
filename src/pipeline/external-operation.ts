@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 export type ExternalFailureKind = "timeout" | "cancelled" | "rate-limit" | "server" | "network" | "process-exit" | "permanent";
 
@@ -24,6 +27,44 @@ function delay(milliseconds: number, signal?: AbortSignal) {
   });
 }
 
+async function fetchWithCurlFallback(url: string, init: RequestInit, timeoutMs: number) {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "scene-gen-http-"));
+  const outputPath = path.join(tempDir, "response.body");
+  const inputPath = path.join(tempDir, "request.body");
+  const curl = process.platform === "win32" ? "curl.exe" : "curl";
+  try {
+    const headers = new Headers(init.headers);
+    const args = [
+      "--location",
+      "--silent",
+      "--show-error",
+      "--request",
+      init.method ?? "GET",
+      "--max-time",
+      String(Math.max(1, Math.ceil(timeoutMs / 1000))),
+      "--user-agent",
+      headers.get("user-agent") ?? "scene-gen/0.1",
+    ];
+    headers.delete("content-length");
+    for (const [name, value] of headers.entries()) args.push("--header", `${name}: ${value}`);
+    if (typeof init.body === "string") {
+      await writeFile(inputPath, init.body, "utf8");
+      args.push("--data-binary", `@${inputPath}`);
+    }
+    args.push("--output", outputPath, "--write-out", "%{http_code}", url);
+    const result = await runExternalProcess(curl, args, { timeoutMs: timeoutMs + 5000 });
+    const status = Number.parseInt(result.stdout.trim(), 10);
+    if (!Number.isInteger(status) || status < 100) throw new Error("curl returned an invalid HTTP status");
+    const body = await readFile(outputPath);
+    return new Response(body, {
+      status,
+      headers: { "content-type": headers.get("content-type") ?? "application/octet-stream" },
+    });
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 export async function fetchWithRetry(
   url: string,
   init: RequestInit,
@@ -46,6 +87,13 @@ export async function fetchWithRetry(
       if (options.signal?.aborted) throw new ExternalOperationError(`${options.label ?? "fetch"} cancelled.`, "cancelled", false);
       const timeout = controller.signal.aborted;
       if (attempt === retries) {
+        if (!options.signal?.aborted) {
+          try {
+            return await fetchWithCurlFallback(url, init, timeoutMs);
+          } catch {
+            // Preserve the original fetch error when the platform fallback also fails.
+          }
+        }
         throw error instanceof ExternalOperationError
           ? error
           : new ExternalOperationError(`${options.label ?? "fetch"} failed: ${(error as Error).message}`, timeout ? "timeout" : "network", true);

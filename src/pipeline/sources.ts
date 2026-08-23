@@ -8,6 +8,7 @@ import type { HotItem, SourceConfig } from "./types";
 import { compactText, daysAgo, domainFromUrl, stableId } from "./utils";
 import { fetchWithRetry, runExternalProcess } from "./external-operation";
 import { classifyWebpageContent } from "./content-type";
+import { researchModelRelease } from "./model-release-research";
 
 export { classifyWebpageContent } from "./content-type";
 
@@ -80,6 +81,30 @@ async function fetchTextWithBrowser(url: string, timeoutMs = 30000) {
   }
 }
 
+async function fetchTextWithCurl(url: string, timeoutMs = 30000) {
+  const tempDir = await mkdtemp(path.join(tmpdir(), "scene-gen-source-"));
+  const outputPath = path.join(tempDir, "page.html");
+  const curl = process.platform === "win32" ? "curl.exe" : "curl";
+  try {
+    await runExternalProcess(curl, [
+      "--location",
+      "--fail-with-body",
+      "--silent",
+      "--show-error",
+      "--max-time",
+      String(Math.max(1, Math.ceil(timeoutMs / 1000))),
+      "--user-agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36",
+      "--output",
+      outputPath,
+      url,
+    ], { timeoutMs: timeoutMs + 5000, retries: 1 });
+    return await readFile(outputPath, "utf8");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 async function fetchWebpageText(url: string) {
   try {
     return await fetchText(url);
@@ -88,7 +113,12 @@ async function fetchWebpageText(url: string) {
     try {
       return await fetchTextWithBrowser(url);
     } catch (browserError) {
-      throw new Error(`direct fetch failed: ${(directError as Error).message}; browser fallback failed: ${(browserError as Error).message}`);
+      console.warn(`[webpage] Playwright fetch failed for ${url}; retrying with curl: ${(browserError as Error).message}`);
+      try {
+        return await fetchTextWithCurl(url);
+      } catch (curlError) {
+        throw new Error(`direct fetch failed: ${(directError as Error).message}; browser fallback failed: ${(browserError as Error).message}; curl fallback failed: ${(curlError as Error).message}`);
+      }
     }
   }
 }
@@ -409,6 +439,15 @@ async function githubRepositoryMetricsFallback(target: NonNullable<ReturnType<ty
       branch: parsed.branch || "main",
     };
   } catch {
+    // Anonymous API quotas are small. The public repository page still exposes
+    // the exact star counter and does not require an API token.
+  }
+  try {
+    const script = `$ErrorActionPreference='Stop'; $repo='${target.fullName}'; $html=(Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent'='Mozilla/5.0' } -Uri ('https://github.com/'+$repo)).Content; $escaped=[regex]::Escape($repo); $match=[regex]::Match($html, ('href="/'+$escaped+'/stargazers"[\\s\\S]{0,500}?Counter[^>]*>([^<]+)'), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase); if(-not $match.Success){ throw 'GitHub star counter unavailable' }; $raw=($match.Groups[1].Value -replace '[^0-9]',''); if(-not $raw){ throw 'GitHub star counter invalid' }; [pscustomobject]@{ stars=[int]$raw } | ConvertTo-Json -Compress`;
+    const result = await runExternalProcess("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeoutMs: 30_000, retries: 0 });
+    const parsed = JSON.parse(result.stdout.trim()) as { stars?: number };
+    return Number.isFinite(parsed.stars) && Number(parsed.stars) > 0 ? { stars: Number(parsed.stars) } : {};
+  } catch {
     return {};
   }
 }
@@ -435,6 +474,16 @@ async function githubReadmeViaGit(target: NonNullable<ReturnType<typeof githubRe
 
 async function collectGithubReadmeFallback(url: string, target: NonNullable<ReturnType<typeof githubRepoFromUrl>>, config: SourceConfig, headers: Record<string, string>) {
   const repositoryMetrics = await githubRepositoryMetricsFallback(target);
+  try {
+    const result = await runExternalProcess("gh", ["api", `repos/${target.fullName}/readme`, "--jq", ".content"], { timeoutMs: 30_000, retries: 0 });
+    const encoded = result.stdout.trim();
+    if (encoded) {
+      const readme = Buffer.from(encoded.replace(/\s+/gu, ""), "base64").toString("utf8");
+      if (readme.trim()) return githubReadmeItem(url, target, readme, config, repositoryMetrics);
+    }
+  } catch {
+    // Continue through raw HTTP and git fallbacks when the GitHub CLI is unavailable.
+  }
   try {
     const readmeResponse = await fetchWithRetry(`https://raw.githubusercontent.com/${target.fullName}/HEAD/README.md`, { headers: { "user-agent": headers["user-agent"] } }, { label: "github-readme-fallback" });
     if (readmeResponse.ok) return githubReadmeItem(url, target, await readmeResponse.text(), config, repositoryMetrics);
@@ -467,6 +516,7 @@ async function collectGithubRepository(url: string, config: SourceConfig): Promi
     headers: { ...headers, accept: "application/vnd.github.raw+json" },
   }, { label: "github-readme" });
   const readme = readmeResponse.ok ? await readmeResponse.text() : "";
+  if (!readme.trim()) return collectGithubReadmeFallback(url, target, config, headers);
   const rawDescription = compactText(repo.description || target.fullName, 260);
   const description = cleanGithubDescription(rawDescription, repo.name || target.repo);
   const content = compactText([
@@ -518,7 +568,7 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
       const { title, content, summary } = extractReadableWebpage(dom.window.document, url);
       const joined = `${title} ${summary}`;
       const publishedAt = extractWebpagePublishedAt(dom.window.document) ?? new Date().toISOString();
-      items.push({
+      const item: HotItem = {
         id: stableId("webpage", url, title),
         kind: "webpage",
         contentType: classifyWebpageContent(url, title, content),
@@ -531,7 +581,9 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         score: scoreItem(joined, publishedAt, 1, config.keywords),
         tags: normalizeTags(joined, config.keywords),
         domain: domainFromUrl(url),
-      });
+      };
+      const research = await researchModelRelease(item);
+      items.push(research.length > 0 ? { ...item, research } : item);
     } catch (error) {
       console.warn(`[webpage] ${url} failed: ${(error as Error).message}`);
     }
