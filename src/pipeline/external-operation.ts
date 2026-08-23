@@ -68,7 +68,7 @@ async function fetchWithCurlFallback(url: string, init: RequestInit, timeoutMs: 
 export async function fetchWithRetry(
   url: string,
   init: RequestInit,
-  options: { timeoutMs?: number; retries?: number; signal?: AbortSignal; label?: string } = {},
+  options: { timeoutMs?: number; retries?: number; signal?: AbortSignal; label?: string; allowCurlFallback?: boolean } = {},
 ) {
   const retries = Math.max(0, options.retries ?? 2);
   const timeoutMs = options.timeoutMs ?? Number(process.env.EXTERNAL_FETCH_TIMEOUT_MS ?? 90_000);
@@ -89,6 +89,7 @@ export async function fetchWithRetry(
       if (attempt === retries) {
         if (!options.signal?.aborted) {
           try {
+            if (options.allowCurlFallback === false) throw new Error("curl fallback disabled");
             return await fetchWithCurlFallback(url, init, timeoutMs);
           } catch {
             // Preserve the original fetch error when the platform fallback also fails.

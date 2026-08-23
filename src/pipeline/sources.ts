@@ -499,7 +499,7 @@ async function collectGithubRepository(url: string, config: SourceConfig): Promi
   const headers = { "user-agent": "scene-gen/0.1 video research bot", accept: "application/vnd.github+json" };
   let repoResponse: Response;
   try {
-    repoResponse = await fetchWithRetry("https://api.github.com/repos/" + target.fullName, { headers }, { label: "github-repository" });
+    repoResponse = await fetchWithRetry("https://api.github.com/repos/" + target.fullName, { headers }, { label: "github-repository", allowCurlFallback: false });
   } catch {
     return collectGithubReadmeFallback(url, target, config, headers);
   }
