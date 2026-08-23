@@ -100,6 +100,7 @@ export function repositorySynthesisName(name: string) {
   if (name.toLowerCase() === "ai-memory") return "AI Memory";
   if (name.toLowerCase() === "mirofish") return "米若菲什";
   if (name.toLowerCase() === "tooljet") return "图杰特";
+  if (name.toLowerCase() === "free-for-dev") return "Free for developers";
   return name
     .split(/([-_.]+)/)
     .map((part) => /^[A-Za-z0-9]+$/.test(part) ? part.charAt(0).toUpperCase() + part.slice(1) : part)

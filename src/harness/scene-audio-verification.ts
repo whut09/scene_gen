@@ -190,6 +190,8 @@ function normalizeAcronymHomophones(text: string) {
 
 function normalizeSemanticAsrVariants(text: string) {
   return normalizeAcronymHomophones(text)
+    .replace(/refodev/giu, "freefordevelopers")
+    .replace(/(?:ornice|欧尼|王尼|欧妮|奥尼)/giu, "ornith")
     .replace(/開圓/gu, "开源")
     .replace(/開源/gu, "开源")
     .replace(/熱點/gu, "热点")
