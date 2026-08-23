@@ -289,7 +289,10 @@ for (const [index, item] of items.entries()) {
     console.log("[repository] using deterministic repository draft; set REPOSITORY_LLM_EXPANSION=1 to opt into LLM expansion.");
   }
   project = ensureModelReleaseHomepagePurpose(project);
-  const hasModelReleaseResearch = project.sources.some((source) => (source.research?.length ?? 0) > 0)
+  const releaseSignal = `${project.sources[0]?.title ?? ""} ${project.sources[0]?.summary ?? ""}`;
+  const hasModelReleaseHeadline = /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith)/iu.test(releaseSignal)
+    && /(?:发布|推出|开源|开放权重|公测|上线)/u.test(releaseSignal);
+  const hasModelReleaseResearch = hasModelReleaseHeadline && project.sources.some((source) => (source.research?.length ?? 0) > 0)
     || /qbitai\.com\/2026\/08\/473379/i.test(item.url);
   const maximumScenes = hasModelReleaseResearch
     ? Math.max(5, contentDurationPolicy(contentTypeForItem(item)).sceneCount)
