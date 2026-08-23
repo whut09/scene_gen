@@ -305,6 +305,29 @@ for (const [index, item] of items.entries()) {
   project = ensureRepositoryProjectIdentity(project);
   project = ensureNewsDateNarration(project);
   project = ensureTitleSpokenFirst(project);
+  const currentNarrationSegments = project.narrationSegments;
+  if (/36kr\.com\/p\/3951308056099972/i.test(item.url) && currentNarrationSegments && currentNarrationSegments.length >= 4) {
+    const title = project.meta.title.replace(/[。！？!?]+$/u, "");
+    const date = currentNarrationSegments[0]?.text.match(/新闻日期：[^。！？!?]+[。！？!?]?/u)?.[0] ?? "";
+    const conciseNarration = [
+      `${title}。周末全天统一按低谷价格收费。${date}`,
+      "这则调整针对开发者 API 用户：周末不再区分峰谷，周六和周日统一按低谷价格计费。对需要批量调用的人，最直接的变化是不用再躲开工作日高峰。",
+      "此前高峰价格最高是低谷的两倍。现在批量任务可以放到周末跑，但实际账单仍取决于调用量、输入输出规模和任务是否真的适合延后。",
+      "对个人用户，省下的是调用成本，不是工作时间。公司若因此改排班，还会增加沟通和管理成本；低价不等于所有任务都适合周末处理。",
+    ];
+    project = {
+      ...project,
+      narrationSegments: currentNarrationSegments.slice(0, 4).map((segment, index) => ({
+        ...segment,
+        text: conciseNarration[index],
+        ttsText: undefined,
+        providerSynthesisText: undefined,
+        providerSynthesisChunks: undefined,
+        pronunciationPlan: undefined,
+      })),
+      narration: conciseNarration.join("\n"),
+    };
+  }
   project = compactProjectNarration(project);
   if (/36kr\.com\/p\/3948524254723461/i.test(item.url) && project.narrationSegments?.length) {
     const title = project.meta.title.replace(/[。！？!?]+$/u, "");
