@@ -35,7 +35,7 @@ function sceneNarrationMinimum(scene: VideoScene) {
 }
 
 function scenePublicText(scene: VideoScene) {
-  return JSON.stringify(scene);
+  return JSON.stringify(scene, (key, value) => key === "url" || key === "src" ? undefined : value);
 }
 
 function compactText(value: string) {

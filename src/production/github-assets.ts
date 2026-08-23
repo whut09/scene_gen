@@ -51,7 +51,7 @@ function markdownImages(markdown: string) {
     }));
   const candidates = [...markdownAssets, ...htmlAssets]
     .filter((asset) => asset.url)
-    .filter((asset) => !/badge|shield|build|coverage|license|stars?|forks?|social-preview|repobeats|analytics|(?:^|[\/_-])(?:logo|icon)(?:[._/-]|$)/i.test(asset.alt + " " + asset.url));
+    .filter((asset) => !/badge|shield|build|coverage|license|stars?|forks?|social-preview|repobeats|analytics|deploy(?:\s+with)?|hosting|button|(?:^|[\/_-])(?:logo|icon)(?:[._/-]|$)/i.test(asset.alt + " " + asset.url));
   const score = (asset: { alt: string; url: string }) => {
     const value = `${asset.alt} ${asset.url}`;
     return /screenshot|screen shot|demo|preview|dashboard|interface|ui|workflow|效果|页面|界面|演示/i.test(value) ? 2 : 0;

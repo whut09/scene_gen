@@ -27,6 +27,7 @@ test("GitHub asset collection prefers demo images and resolves HTML and blob URL
     if (url.endsWith("/README.md")) {
       return new Response([
         "<img alt=\"build\" src=\"badge.svg\">",
+        "<img alt=\"Deploy with Zenith\" src=\"https://cdn.zenith.hosting/buttons/deploy-with-zenith.svg\">",
         "![Dashboard screenshot](docs/dashboard.png)",
         "<img alt=\"Demo UI\" src=\"https://github.com/example/project/blob/main/docs/demo.png\">",
       ].join("\n"), { status: 200, headers: { "content-type": "text/markdown" } });
