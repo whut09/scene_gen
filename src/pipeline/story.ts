@@ -2217,7 +2217,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
     scenes: project.scenes.map((scene, index) => index === 2 ? {
       type: "web_screenshot_zoom",
       duration: baseScene.duration,
-      headline: "核心价值、实际页面与效果图",
+      headline: "项目工作流与实际效果图",
       shots,
       claimIds: baseScene.claimIds,
     } : scene),
