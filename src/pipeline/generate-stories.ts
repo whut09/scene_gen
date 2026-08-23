@@ -313,7 +313,7 @@ for (const [index, item] of items.entries()) {
       `${title}。周末全天统一按低谷价格收费。${date}`,
       "这则调整针对开发者 API 用户：周末不再区分峰谷，周六和周日统一按低谷价格计费。对需要批量调用的人，最直接的变化是不用再躲开工作日高峰。",
       "此前高峰价格最高是低谷的两倍。现在批量任务可以放到周末跑，但实际账单仍取决于调用量、输入输出规模和任务是否真的适合延后，按需安排。",
-      "对个人用户，省下的是调用成本，不是工作时间。公司若因此改排班，还会增加沟通和管理成本；低价不等于所有任务都适合周末处理。",
+      "对个人用户，省下的是调用成本，不是工作时间。公司若因此改排班，还要面对沟通和管理成本；低价不等于所有任务都适合周末处理。",
     ];
     const conciseScenes = project.scenes.slice(0, 4).map((scene, index) => {
       if (index === 0 && scene.type === "title") return { ...scene, subhead: "周末全天统一按低谷价格收费。" };
@@ -321,7 +321,11 @@ for (const [index, item] of items.entries()) {
         ...scene,
         headline: "周末全天统一按低谷价计费",
         summary: conciseNarration[1],
-        points: [conciseNarration[1]],
+        points: [
+          "周末不再区分峰谷，周六和周日统一按低谷价格计费。",
+          "开发者不必再躲开工作日高峰，批量调用可以安排在周末。",
+          "实际收益仍取决于调用量和输入输出规模。",
+        ],
         metrics: [{ label: "计费时段", value: "周六、周日全天" }, { label: "价格规则", value: "统一低谷价" }],
       };
       if (index === 2 && scene.type === "news_stack") return {
@@ -332,7 +336,10 @@ for (const [index, item] of items.entries()) {
       if (index === 3 && scene.type === "outro") return {
         ...scene,
         headline: "省的是调用成本，不是工作时间",
-        bullets: [conciseNarration[3]],
+        bullets: [
+          "省下的是调用成本，不是工作时间。",
+          "公司若因此改排班，还要面对沟通和管理成本；低价不等于所有任务都适合周末处理。",
+        ],
       };
       return scene;
     });
