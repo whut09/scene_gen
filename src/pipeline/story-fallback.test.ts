@@ -382,7 +382,7 @@ test("repository asset evidence replaces the middle proof scene and keeps narrat
     assets: [{ id: "demo", kind: "image", role: "hero", title: "Dashboard screenshot", sourceUrl: "https://example.com/demo.png", src: "/generated/assets/demo.png", contentType: "image/png", license: "test" }],
   });
   assert.equal(withAssets.scenes[2]?.type, "web_screenshot_zoom");
-  assert.match(withAssets.scenes[2]?.headline ?? "", /项目工作流.*核心价值.*效果图/);
+  assert.match(withAssets.scenes[2]?.headline ?? "", /核心价值.*工作区.*任务.*迭代.*效果图/);
   assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /最短路径|核心结果/);
   assert.equal(withAssets.scenes[2]?.type === "web_screenshot_zoom" && withAssets.scenes[2].shots[0]?.src, "/generated/assets/demo.png");
 });
