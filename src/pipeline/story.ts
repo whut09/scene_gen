@@ -679,6 +679,34 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       ],
     };
   }
+  if (/^openlogi$/i.test(name)) {
+    return {
+      titleSummary: "跨平台 Logitech 外设本地管理工具",
+      theme: "在本地统一管理 Logitech 鼠标、键盘和摄像头",
+      capability: "用 Rust 原生程序替代官方控制软件，管理按键映射、手势、DPI、灯光、摄像头参数和按应用切换配置，支持 Windows、macOS 和 Linux",
+      workflow: "先退出官方控制软件并连接设备，再在图形界面或 TOML 配置中设置按键、手势和摄像头参数；需要自动化时直接调用 CLI",
+      boundaries: "项目仍在积极开发，设备兼容性和平台功能存在差异；它与官方工具不能同时占用同一个接收器，重要配置要先备份并逐项验证",
+      topics: ["外设管理", "按键映射", "手势配置", "跨平台", "摄像头控制", "CLI 自动化"],
+      metrics: [{ label: "支持平台", value: "Windows、macOS、Linux" }, { label: "配置方式", value: "图形界面 + TOML" }],
+      problemPoints: [
+        "官方外设软件体积大、平台支持不一致，Linux 用户和想保留纯文本配置的人尤其不方便。",
+        "OpenLogi 用本地 Rust 程序管理 Logitech 鼠标、键盘和摄像头，还提供按键映射、手势、DPI、灯光和 CLI。",
+        "它适合想把外设设置留在本机、并在多台设备间同步配置的用户。",
+      ],
+      steps: [
+        { label: "退出官方工具", detail: "先关闭官方控制软件，避免两个程序争抢同一接收器。" },
+        { label: "连接设备", detail: "通过接收器、蓝牙或有线方式连接鼠标、键盘和摄像头。" },
+        { label: "设置功能", detail: "在界面或 TOML 中配置按键、手势、DPI、灯光和镜头参数。" },
+        { label: "自动化使用", detail: "需要脚本或跨机器同步时，保存配置并调用命令行工具。" },
+      ],
+      narration: [
+        "开源项目推荐：OpenLogi。它解决官方外设工具体积大、平台支持不一致的问题，在本地统一管理 Logitech 鼠标、键盘和摄像头。",
+        "OpenLogi 用 Rust 原生程序提供按键映射、手势、DPI、灯光和摄像头参数，也能按应用切换配置，并支持 Windows、macOS 和 Linux。",
+        "它的画面和效果图展示本地管理界面。使用时先连接设备，在界面或 TOML 配置中设置按键、手势和镜头参数，需要自动化时直接调用 CLI。",
+        "它仍在积极开发，平台和设备兼容性需要逐项验证；使用前先退出官方工具，因为两个程序不能同时占用同一个接收器。",
+      ],
+    };
+  }
   if (/^career-ops$/i.test(name)) {
     return {
       titleSummary: "用 AI 筛选职位并定制简历的求职工作台",
