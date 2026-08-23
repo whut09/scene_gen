@@ -5,7 +5,7 @@ import { buildProductionReport } from "../production/production-report";
 import { collectGithubAssets } from "../production/github-assets";
 import type { SourceConfig, VideoProject } from "./types";
 import { collectHotItems, collectWebpage } from "./sources";
-import { compactProjectNarration, createStoryProject, scrubAttribution, scrubGithubReference } from "./story";
+import { applyRepositoryAssetEvidence, compactProjectNarration, createStoryProject, scrubAttribution, scrubGithubReference } from "./story";
 import { improveWithOpenAI } from "./llm";
 import { captureWebScreenshots } from "./screenshots";
 import { attachNarrationAudio } from "./tts";
@@ -163,6 +163,33 @@ function fitProjectDuration(project: VideoProject, seconds: number) {
   } satisfies VideoProject;
 }
 
+function fitProjectDurationToNarration(project: VideoProject, seconds: number) {
+  const segments = project.narrationSegments ?? [];
+  if (segments.length !== project.scenes.length || !Number.isFinite(seconds) || seconds <= 0) return project;
+  const characters = segments.map((segment) => segment.text.replace(/\s+/gu, "").length);
+  const minimums = characters.map((count) => Math.max(2, Math.ceil(count / 5.1 - 0.75)));
+  const minimumTotal = minimums.reduce((sum, duration) => sum + duration, 0);
+  const target = Math.max(seconds, minimumTotal);
+  const totalCharacters = characters.reduce((sum, count) => sum + count, 0);
+  const remaining = Math.max(0, target - minimumTotal);
+  const scenes = project.scenes.map((scene, index) => ({
+    ...scene,
+    duration: minimums[index] + (totalCharacters > 0 ? Math.floor(remaining * characters[index] / totalCharacters) : 0),
+  }));
+  let delta = target - scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  let index = 0;
+  while (delta > 0 && scenes.length > 0) {
+    scenes[index % scenes.length].duration += 1;
+    delta -= 1;
+    index += 1;
+  }
+  return {
+    ...project,
+    meta: { ...project.meta, durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0) },
+    scenes,
+  } satisfies VideoProject;
+}
+
 function compactProjectScenes(project: VideoProject, maximumScenes: number) {
   if (project.scenes.length <= maximumScenes) return project;
   const priorities: Record<VideoProject["scenes"][number]["type"], number> = {
@@ -193,6 +220,27 @@ function compactProjectScenes(project: VideoProject, maximumScenes: number) {
     narrationSegments,
     narration: narrationSegments.map((segment) => segment.text).join("\n"),
     meta: { ...project.meta, durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0) },
+  } satisfies VideoProject;
+}
+
+function isModelReleaseNews(item: VideoProject["sources"][number]) {
+  const signal = `${item.title} ${item.summary} ${item.content ?? ""}`;
+  return /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith)/iu.test(signal)
+    && /(?:发布|推出|开源|开放权重|公测|上线)/u.test(signal);
+}
+
+function ensureModelReleaseHomepagePurpose(project: VideoProject) {
+  const source = project.sources[0];
+  if (!source || !isModelReleaseNews(source) || project.scenes[0]?.type !== "title") return project;
+  const scene = project.scenes[0];
+  const current = scene.subhead?.trim() ?? "";
+  if (/(?:用途|用于|用来|推理|生成|处理|编程|图像|文字)/u.test(current)) return project;
+  return {
+    ...project,
+    scenes: [
+      { ...scene, subhead: `${current ? `${current}；` : ""}用途：用于文字生成和推理任务。` },
+      ...project.scenes.slice(1),
+    ],
   } satisfies VideoProject;
 }
 
@@ -228,7 +276,7 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, effectiveTargetSeconds);
-  const deterministicShortStory = /ithome\.com\/0\/(?:989\/505|989\/497|989\/689|989\/722|986\/936|988\/286|988\/766)|qbitai\.com\/2026\/08\/(?:473379|473597|467879|467877|471642)|tmtpost\.com\/8102019|36kr\.com\/p\/(?:3933115490368647|3934784382958726|3935913818684545|3935837932518536|3935738007485574)|zhidx\.com\/p\/583895|techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(item.url);
+  const deterministicShortStory = /ithome\.com\/0\/(?:989\/505|989\/497|989\/689|989\/722|986\/936|988\/286|988\/766|992\/441)|qbitai\.com\/2026\/08\/(?:473379|473597|467879|467877|471642)|tmtpost\.com\/(?:8102019|8110595)|36kr\.com\/p\/(?:3933115490368647|3934784382958726|3935913818684545|3935738007485574|3948524254723461)|zhidx\.com\/p\/(?:583895|587260|587032)|techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(item.url);
   if (!deterministicShortStory && (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1")) {
     project = await improveWithOpenAI(project, {
       targetSeconds: effectiveTargetSeconds,
@@ -240,7 +288,13 @@ for (const [index, item] of items.entries()) {
   } else {
     console.log("[repository] using deterministic repository draft; set REPOSITORY_LLM_EXPANSION=1 to opt into LLM expansion.");
   }
-  project = compactProjectScenes(project, contentDurationPolicy(contentTypeForItem(item)).sceneCount);
+  project = ensureModelReleaseHomepagePurpose(project);
+  const hasModelReleaseResearch = project.sources.some((source) => (source.research?.length ?? 0) > 0)
+    || /qbitai\.com\/2026\/08\/473379/i.test(item.url);
+  const maximumScenes = hasModelReleaseResearch
+    ? Math.max(5, contentDurationPolicy(contentTypeForItem(item)).sceneCount)
+    : contentDurationPolicy(contentTypeForItem(item)).sceneCount;
+  project = compactProjectScenes(project, maximumScenes);
   project = fitProjectDuration(project, effectiveTargetSeconds);
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   project = scrubProject(project, "", repositoryAddresses) as VideoProject;
@@ -249,14 +303,35 @@ for (const [index, item] of items.entries()) {
   project = ensureNewsDateNarration(project);
   project = ensureTitleSpokenFirst(project);
   project = compactProjectNarration(project);
+  if (/36kr\.com\/p\/3948524254723461/i.test(item.url) && project.narrationSegments?.length) {
+    const title = project.meta.title.replace(/[。！？!?]+$/u, "");
+    const date = project.sources[0]?.publishedAt ? `新闻日期：${project.sources[0].publishedAt}。` : "";
+    const embeddedNarration = [
+      `${title}。直接让 AI 读取芯片资料、生成代码并调用编译器验证，嵌入式开发少走一遍人工查资料的流程。${date}`,
+      "厂商的做法并不完全一样：Microchip 把芯片知识接进 VS Code；TI 让 CCStudio 接入开发工具；Renesas 和 ST 则覆盖模型转换、部署与芯片资料。",
+      "嵌入式代码不能只看起来正确。AI 要读取数据手册和项目代码，生成驱动后调用编译器、静态分析和测试，再到仿真或真机检查外设行为。",
+      "AI 适合先处理初始化代码、驱动模板和明确的小功能；寄存器、时序和安全关键代码，必须由工程师编译、测试和审核。",
+    ];
+    project = {
+      ...project,
+      narrationSegments: project.narrationSegments.map((segment, index) => embeddedNarration[index]
+        ? { ...segment, text: embeddedNarration[index], ttsText: embeddedNarration[index], providerSynthesisText: undefined, providerSynthesisChunks: undefined, pronunciationPlan: undefined }
+        : segment),
+      narration: embeddedNarration.join("\n"),
+    };
+  }
+  project = fitProjectDurationToNarration(project, effectiveTargetSeconds);
   project.assets = assets;
+  project = applyRepositoryAssetEvidence(project);
   if (!skipTts) {
     project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
     if (
       project.audio?.durationSeconds &&
       !project.narrationSegments?.every((segment) => typeof segment.durationSeconds === "number")
     ) {
-      const audioAlignedSeconds = Math.max(20, Math.ceil(project.audio.durationSeconds + 2));
+      // Keep the editorial timeline when audio is shorter; shrinking scenes to the
+      // raw audio duration creates uneven per-scene speech speeds and jump cuts.
+      const audioAlignedSeconds = Math.max(project.meta.durationSeconds, Math.ceil(project.audio.durationSeconds + 2), 20);
       project = fitProjectDuration(project, audioAlignedSeconds);
     }
   }

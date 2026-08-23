@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildProductionDecisions } from "../production/visual-planner";
 import { projectSynthesisReadinessIssues } from "./synthesis-readiness";
-import { cleanNarrationNoise, compactProjectNarration, createStoryProject, scrubAttribution, scrubSpokenAttribution, splitArticleIntoSemanticChunks } from "./story";
+import { applyRepositoryAssetEvidence, cleanNarrationNoise, compactProjectNarration, createStoryProject, genericNarrationFillerMatches, scrubAttribution, scrubSpokenAttribution, splitArticleIntoSemanticChunks } from "./story";
 import type { HotItem } from "./types";
 import { containsForbiddenGithubReference } from "./story";
 import { buildHtmlVideoContentGraph } from "../html-video/content-graph";
@@ -33,6 +33,71 @@ test("general news fallback creates five grounded scenes", () => {
   assert.equal(project.meta.title.includes("AI"), true);
   assert.equal(project.narrationSegments?.some((segment) => segment.ttsText?.includes("AI")), true);
   assert.equal(project.narrationSegments?.[0].ttsText?.includes("这条新闻讲的是"), false);
+  assert.deepEqual(genericNarrationFillerMatches(project.narration), []);
+});
+
+test("DeepSeek pricing news stays focused on pricing instead of release questions", () => {
+  const project = createStoryProject({
+    id: "deepseek-pricing",
+    kind: "webpage",
+    contentType: "news",
+    title: "DeepSeek涨价，价格屠夫梁文锋收刀",
+    url: "https://baijiahao.baidu.com/s?id=1873940198939202909",
+    source: "核心事实",
+    summary: "DeepSeek V4 系列 API 改为峰谷定价，高峰时段价格翻倍。",
+    content: "闲时按每百万 Tokens 计价，高峰时段价格翻倍。重复输入命中缓存时价格更低。",
+    publishedAt: "2026-08-19",
+    score: 1,
+    tags: ["DeepSeek", "API 定价"],
+  });
+
+  assert.match(project.narration, /峰谷定价|高峰价格|批量调用/);
+  assert.doesNotMatch(project.narration, /是否开源|开放权重|本地部署|本地硬件|能跑多快|运行速度/);
+  assert.deepEqual(genericNarrationFillerMatches(project.narration), []);
+});
+
+test("Qwen3.8-27B release news uses researched access, hardware and speed facts", () => {
+  const project = createStoryProject({
+    id: "qwen38-27b-release",
+    kind: "webpage",
+    contentType: "news",
+    title: "刚刚，Qwen3.8-27B 开源了！家用显卡也能跑",
+    url: "https://www.qbitai.com/2026/08/473379.html",
+    source: "qbitai.com",
+    summary: "Qwen3.8-27B 按 Apache 2.0 协议开源。",
+    content: "所有人都可免费下载部署及商用。Qwen3.8-27B 支持二十六万二千 Token 上下文。",
+    publishedAt: "2026-08-14",
+    score: 1,
+    tags: ["Qwen", "开源", "模型"],
+  });
+  assert.equal(project.scenes.length, 5);
+  assert.match(project.narration, /Apache 2\.0/);
+  assert.match(project.narration, /OpenRouter|Cloudflare/);
+  assert.match(project.narration, /二十四 GB|五十 Token/);
+  assert.doesNotMatch(project.narration, /未提及|未说明|未检索到/);
+});
+
+test("AI drama bubble news explains regulation, economics and the surviving path", () => {
+  const project = createStoryProject({
+    id: "ai-drama-bubble",
+    kind: "webpage",
+    contentType: "news",
+    title: "批量博主集体停更，AI漫剧的泡沫终于破了",
+    url: "https://www.36kr.com/p/3945081613647236",
+    source: "核心事实",
+    summary: "监管、成本和流量同时收紧。",
+    content: "四月一日起先备案后上线。单集算力成本涨到八十至一百元，万播收益降到五至十元。上半年新增二十二点一九万部，一千零五十五部播放量破亿。",
+    publishedAt: "2026-08-19",
+    score: 1,
+    tags: ["AI 漫剧"],
+  });
+
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /先备案再上线/);
+  assert.match(project.narration, /八十至一百元.*五至十元/s);
+  assert.match(project.narration, /原创剧本、稳定角色和精细制作/);
+  assert.doesNotMatch(project.narration, /外界老有一种幻觉|说明这个行业/);
+  assert.deepEqual(genericNarrationFillerMatches(project.narration), []);
 });
 
 test("national compute cluster news keeps deployment, workload and network implications", () => {
@@ -305,6 +370,20 @@ test("repository fallback produces a complete four-scene short project without p
   assert.match(project.narration, /省掉什么麻烦|最费时间/);
   assert.doesNotMatch(project.narration, /重点环节是|项目资料列出的实践主题|先确认输入、规则和预期结果/);
   assert.equal(containsForbiddenGithubReference([project.meta.title, project.narration, ...project.scenes.map((scene) => JSON.stringify(scene))].join(" "), [item.repo ?? ""]), false);
+});
+
+test("repository asset evidence replaces the middle proof scene and keeps narration aligned", () => {
+  const project = createStoryProject({
+    id: "asset-repo", kind: "github", contentType: "repository", title: "asset-repo: demo tool",
+    url: "https://github.com/example/asset-repo", source: "项目资料", summary: "A demo tool.", content: "A demo tool.", score: 1, tags: [], repo: "example/asset-repo",
+  });
+  const withAssets = applyRepositoryAssetEvidence({
+    ...project,
+    assets: [{ id: "demo", kind: "image", role: "hero", title: "Dashboard screenshot", sourceUrl: "https://example.com/demo.png", src: "/generated/assets/demo.png", contentType: "image/png", license: "test" }],
+  });
+  assert.equal(withAssets.scenes[2]?.type, "web_screenshot_zoom");
+  assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /效果图/);
+  assert.equal(withAssets.scenes[2]?.type === "web_screenshot_zoom" && withAssets.scenes[2].shots[0]?.src, "/generated/assets/demo.png");
 });
 
 test("repository title screen displays the captured star count", () => {
