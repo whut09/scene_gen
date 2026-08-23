@@ -655,7 +655,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
     return {
       titleSummary: "自托管的团队项目管理工作台",
       theme: "把任务、迭代、文档和产品路线图放进一套团队工作台",
-      capability: "集中管理工作项、Cycles 迭代、Modules 模块、视图、文档和分析，支持云端使用，也支持团队自行部署并掌握数据",
+      capability: "集中管理工作项、Cycles 迭代、Modules 模块、视图、文档和分析，可使用云端，也可由团队自行部署并掌握数据",
       workflow: "先创建工作区和项目，再录入任务、安排迭代和模块；用视图筛选进度，用文档沉淀决策，最后通过分析找出阻塞",
       boundaries: "自托管需要自己维护服务器、数据库、升级和备份；它更适合需要统一项目协作和数据控制的团队，不是个人待办清单的轻量替代品",
       topics: ["项目管理", "任务协作", "迭代规划", "产品路线图", "团队文档", "自托管"],
@@ -2209,16 +2209,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
     height: 900,
     highlight: { x: 0, y: 0, width: 1200, height: 900 },
   }));
-  const narrationSegments = project.narrationSegments?.map((segment) => segment.sceneIndex === 2
-    ? {
-      ...segment,
-      text: "实际页面与效果图，先看项目界面和演示结果，再判断它是否适合自己的使用场景。",
-      ttsText: "实际页面与效果图，先看项目界面和演示结果，再判断它是否适合自己的使用场景。",
-      providerSynthesisText: undefined,
-      providerSynthesisChunks: undefined,
-      pronunciationPlan: undefined,
-    }
-    : segment);
+  const narrationSegments = project.narrationSegments;
   return {
     ...project,
     narrationSegments,
@@ -2226,7 +2217,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
     scenes: project.scenes.map((scene, index) => index === 2 ? {
       type: "web_screenshot_zoom",
       duration: baseScene.duration,
-      headline: "实际页面与效果图",
+      headline: "核心价值、实际页面与效果图",
       shots,
       claimIds: baseScene.claimIds,
     } : scene),
