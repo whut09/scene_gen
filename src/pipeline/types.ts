@@ -1,6 +1,15 @@
 export type SourceKind = "rss" | "github" | "hackernews" | "webpage" | "seed";
 export type ContentType = "news" | "technical-article" | "repository";
 
+export interface ModelReleaseResearch {
+  url: string;
+  title: string;
+  source: string;
+  kind: "official" | "provider" | "deployment" | "search";
+  content: string;
+  retrievedAt: string;
+}
+
 export interface HotItem {
   id: string;
   kind: SourceKind;
@@ -16,6 +25,7 @@ export interface HotItem {
   domain?: string;
   repo?: string;
   metrics?: Record<string, number | string>;
+  research?: ModelReleaseResearch[];
 }
 
 export interface ProjectAsset {
