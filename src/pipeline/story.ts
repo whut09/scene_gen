@@ -285,6 +285,7 @@ export function cleanNarrationNoise(text: string) {
     .replace(/\.{3,}|…{1,}/gu, "")
     .replace(/(?:所以)?(?:这意味着|这说明|这条新闻讲的是|这条新闻说的是|这条新闻的核心价值|这条新闻真正的信号|这条新闻的重点|这次真正改变的是|真正改变的是|这条新闻真正说了什么)\s*[，,：:]?\s*/gu, "")
     .replace(/(?:Chat优化版|Coding热辣滚烫|好你个奥特曼|但事实上)(?:[。！？!?，,；;]?)/gu, "")
+    .replace(/(^|[。！？!?])(?:关键是|真正改变的是|要知道|如今|此前|其中|最后|所以|但是|以及|例如|除文本外|值得注意的是|此前报道|试了|创)[。！？!?]/gu, "$1")
     .replace(/\s*[|｜]\s*/gu, "，")
     .replace(/\s+/gu, " ")
     .trim();
@@ -308,7 +309,11 @@ export function compactProjectNarration(project: VideoProject) {
   const contentType = project.sources[0] ? contentTypeForItem(project.sources[0]) : "news";
   const title = project.meta.title;
   const focusedNews = contentType === "news" && project.meta.durationSeconds >= 55;
-  const modelReleaseNews = contentType === "news" && (project.sources[0]?.research?.length ?? 0) > 0;
+  const releaseSignal = `${project.sources[0]?.title ?? ""} ${project.sources[0]?.summary ?? ""}`;
+  const modelReleaseNews = contentType === "news"
+    && /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith)/iu.test(releaseSignal)
+    && /(?:发布|推出|开源|开放权重|公测|上线)/u.test(releaseSignal)
+    && (project.sources[0]?.research?.length ?? 0) > 0;
   const datePattern = /新闻日期：[^。！？!?]+[。！？!?]?/gu;
   let dateKept = false;
   const narrationSegments = project.narrationSegments.map((segment) => {
@@ -368,10 +373,30 @@ export function compactProjectNarration(project: VideoProject) {
       pronunciationPlan: undefined,
     };
   });
+  let compactedSegments = narrationSegments;
+  if (contentType === "news") {
+    const budget = 318;
+    let excess = compactedSegments.reduce((sum, segment) => sum + segment.text.replace(/\s+/gu, "").length, 0) - budget;
+    for (const index of compactedSegments
+      .map((segment, position) => ({ position, length: segment.text.replace(/\s+/gu, "").length }))
+      .filter((item) => item.position > 0)
+      .sort((left, right) => right.length - left.length)
+      .map((item) => item.position)) {
+      if (excess <= 0) break;
+      const current = compactedSegments[index];
+      const currentLength = current.text.replace(/\s+/gu, "").length;
+      const targetLength = Math.max(42, currentLength - excess);
+      const text = cleanNarrationNoise(limitNarration(current.text, targetLength));
+      excess -= Math.max(0, currentLength - text.replace(/\s+/gu, "").length);
+      compactedSegments = compactedSegments.map((segment, position) => position === index
+        ? { ...segment, text, ttsText: undefined, providerSynthesisText: undefined, providerSynthesisChunks: undefined, pronunciationPlan: undefined }
+        : segment);
+    }
+  }
   return {
     ...project,
-    narrationSegments,
-    narration: narrationSegments.map((segment) => segment.text).join("\n"),
+    narrationSegments: compactedSegments,
+    narration: compactedSegments.map((segment) => segment.text).join("\n"),
   } satisfies VideoProject;
 }
 
