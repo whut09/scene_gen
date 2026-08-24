@@ -91,6 +91,17 @@ test("semantic ASR accepts equivalent Mandarin number and homophone transcriptio
   assert.equal(result.issues.some((item) => item.code === "audio_number_mismatch" || item.code === "audio_semantic_mismatch"), false);
 });
 
+test("semantic ASR accepts the Mandarin reading of Wan3.0", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "Wan3.0 正式上线。", ttsText: "Wan三点零 正式上线。" }];
+  project.narration = project.narrationSegments[0].text;
+  project.scenes = [{ type: "title", duration: 10, kicker: "视频生成模型", headline: "Wan3.0 正式上线", subhead: "视频生成", sources: ["模型"] }];
+  for (const transcript of ["万三点零正式上线。", "萬三点零正式上线。", "萬三點零正式上线。"]) {
+    const result = verifySceneTranscripts(project, [{ sceneIndex: 0, text: transcript, confidence: 0.9 }]);
+    assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch" || item.code === "audio_number_mismatch"), false);
+  }
+});
+
 test("semantic ASR accepts the homophone transcription for result review", () => {
   const project = projectFixture();
   project.narrationSegments![2].text = "安全、治理和结果复核不能交给AI。";
@@ -115,6 +126,15 @@ test("semantic ASR accepts the traditional homophone transcription for result re
   ]);
 
   assert.equal(result.issues.some((item) => item.sceneIndex === 2 && item.code === "audio_semantic_mismatch"), false);
+});
+
+test("semantic ASR accepts the Mandarin homophone transcription of Ornith", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "Ornith-1.5 用于文字生成和推理任务。", ttsText: "Ornith-1.5 用于文字生成和推理任务。" }];
+  project.narration = project.narrationSegments[0].text;
+  project.scenes = [{ type: "title", duration: 10, kicker: "模型", headline: "Ornith-1.5", subhead: "用于文字生成和推理任务", sources: ["模型"] }];
+  const result = verifySceneTranscripts(project, [{ sceneIndex: 0, text: "王尼一点五用于文字生成和推理任务。", confidence: 0.9 }]);
+  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch"), false);
 });
 
 test("AI entity verification rejects expansion to the Mandarin semantic form", () => {

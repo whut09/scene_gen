@@ -190,6 +190,7 @@ function normalizeAcronymHomophones(text: string) {
 
 function normalizeSemanticAsrVariants(text: string) {
   return normalizeAcronymHomophones(text)
+    .replace(/(?:万|萬|灣)三(?:点|點)零/gu, "Wan三点零")
     .replace(/refodev/giu, "freefordevelopers")
     .replace(/(?:ornice|欧尼|王尼|欧妮|奥尼)/giu, "ornith")
     .replace(/開圓/gu, "开源")
