@@ -56,6 +56,27 @@ test("DeepSeek pricing news stays focused on pricing instead of release question
   assert.deepEqual(genericNarrationFillerMatches(project.narration), []);
 });
 
+test("EnvHarness fallback keeps environment claims grounded", () => {
+  const project = createStoryProject({
+    id: "env-harness",
+    kind: "webpage",
+    contentType: "news",
+    title: "Google：和agent一样，环境也可以有Harness",
+    url: "https://www.36kr.com/p/3952922405256328",
+    source: "36kr.com",
+    summary: "EnvHarness 是环境侧的可组合控制层，用于改善智能体训练反馈。",
+    content: "论文讨论环境布置、交互规则和链接环境，并比较不同配置对训练轨迹的影响。",
+    publishedAt: "2026-08-24",
+    score: 1,
+    tags: ["Agent", "Harness"],
+  });
+  const secondScene = project.scenes[1];
+  assert.equal(secondScene.type, "briefing_points");
+  assert.match(JSON.stringify(secondScene), /提供可组合组件/);
+  assert.doesNotMatch(JSON.stringify(secondScene), /增加可组合组件/);
+  assert.doesNotMatch(project.narration, /这意味着|这说明|这条新闻讲的是/);
+});
+
 test("Qwen3.8-27B release news uses researched access, hardware and speed facts", () => {
   const project = createStoryProject({
     id: "qwen38-27b-release",

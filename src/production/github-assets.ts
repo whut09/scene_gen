@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { access, copyFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
 import type { HotItem, ProjectAsset } from "../pipeline/types";
@@ -79,6 +79,36 @@ function extension(contentType: string, url: string) {
   return path.extname(new URL(url).pathname).slice(0, 6) || ".img";
 }
 
+async function collectLocalGithubAssets(target: { owner: string; name: string }, assetDir: string, limit: number) {
+  const localDir = fromRoot("config", "assets", "github", target.owner + "-" + target.name);
+  const entries = ["dashboard.png", "dashboard.jpg", "dashboard.webp", "ui.png", "ui.jpg", "ui.webp"];
+  const assets: ProjectAsset[] = [];
+  for (const entry of entries) {
+    if (assets.length >= limit) break;
+    const sourcePath = path.join(localDir, entry);
+    try {
+      await access(sourcePath);
+      const destination = path.join(assetDir, entry);
+      await copyFile(sourcePath, destination);
+      const contentType = imageContentType(Buffer.alloc(0), "image/" + path.extname(sourcePath).slice(1), sourcePath);
+      if (!contentType.startsWith("image/")) continue;
+      assets.push({
+        id: createHash("sha1").update(`${target.owner}/${target.name}/${entry}`).digest("hex").slice(0, 12),
+        kind: "image",
+        role: assets.length === 0 ? "hero" : "evidence",
+        title: target.name.toLowerCase() === "zabbix" ? "Zabbix Global view 监控仪表盘" : `${target.name} 项目界面`,
+        sourceUrl: `local://config/assets/github/${target.owner}-${target.name}/${entry}`,
+        src: "/generated/assets/" + target.owner + "-" + target.name + "/" + entry,
+        contentType,
+        license: "user-provided asset",
+      });
+    } catch {
+      continue;
+    }
+  }
+  return assets;
+}
+
 export async function collectGithubAssets(item: HotItem, limit = 3): Promise<ProjectAsset[]> {
   const target = repoParts(item);
   if (!target || item.kind !== "github" || limit <= 0) return [];
@@ -91,11 +121,11 @@ export async function collectGithubAssets(item: HotItem, limit = 3): Promise<Pro
   } catch (error) {
     console.warn("[assets] README unavailable; continuing without remote assets: " + (error as Error).message);
   }
-  if (!markdown) return [];
-  const candidates = markdownImages(markdown);
+  const candidates = markdown ? markdownImages(markdown) : [];
   const assets: ProjectAsset[] = [];
   const assetDir = fromRoot("public", "generated", "assets", target.owner + "-" + target.name);
   await ensureDir(assetDir);
+  assets.push(...await collectLocalGithubAssets(target, assetDir, limit));
   for (const candidate of candidates) {
     if (assets.length >= limit) break;
     try {

@@ -49,3 +49,21 @@ test("GitHub asset collection prefers demo images and resolves HTML and blob URL
     globalThis.fetch = originalFetch;
   }
 });
+
+test("GitHub asset collection includes the configured Zabbix dashboard evidence", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError("network unavailable"); };
+  const item = {
+    id: "zabbix", kind: "github", contentType: "repository", title: "zabbix", url: "https://github.com/zabbix/zabbix",
+    source: "项目资料", summary: "监控平台", content: "", score: 1, tags: [], repo: "zabbix/zabbix",
+    metrics: { branch: "main" },
+  } satisfies HotItem;
+  try {
+    const assets = await collectGithubAssets(item, 3);
+    assert.equal(assets[0]?.title, "Zabbix Global view 监控仪表盘");
+    assert.equal(assets[0]?.src, "/generated/assets/zabbix-zabbix/dashboard.png");
+    assert.equal(assets[0]?.license, "user-provided asset");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

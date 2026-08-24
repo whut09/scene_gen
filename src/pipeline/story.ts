@@ -676,6 +676,34 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^zabbix$/i.test(name)) {
+    return {
+      titleSummary: "自托管的服务器与业务监控平台",
+      theme: "持续观察服务器、网络设备和业务服务的运行状态",
+      capability: "采集主机和服务指标，发现异常并通过仪表盘、告警、拓扑和趋势图定位问题",
+      workflow: "先接入服务器或网络设备，再配置指标和阈值；出现异常时从告警进入仪表盘，结合趋势和拓扑定位原因",
+      boundaries: "它适合需要长期监控基础设施的团队；部署、权限、指标阈值和告警通知仍需根据自己的环境维护",
+      topics: ["基础设施监控", "服务器指标", "告警通知", "仪表盘", "问题定位", "自托管"],
+      metrics: [{ label: "核心用途", value: "持续监控" }, { label: "观察对象", value: "主机、网络与服务" }],
+      problemPoints: [
+        "服务器、网络设备和业务服务出了问题，单靠人工查看日志很难及时发现，也很难判断影响范围。",
+        "Zabbix 持续采集基础设施指标，在异常时触发告警，并用仪表盘、趋势图和拓扑帮助团队定位问题。",
+        "它适合需要自主管理监控数据、并希望把告警和处理流程长期固化的运维与开发团队。",
+      ],
+      steps: [
+        { label: "接入对象", detail: "把服务器、网络设备、数据库或业务服务加入监控范围。" },
+        { label: "设置指标", detail: "选择 CPU、内存、可用性等指标，并设置合理阈值。" },
+        { label: "查看告警", detail: "异常出现后，从问题列表进入仪表盘和趋势图。" },
+        { label: "定位处理", detail: "结合主机状态、依赖关系和历史曲线判断原因，再执行修复。" },
+      ],
+      narration: [
+        "今日开源热点趋势项目推荐：zabbix。它解决服务器、网络设备和业务服务难以及时发现异常的问题，把监控、告警和定位放进一套平台。",
+        "Zabbix 会持续采集主机和服务指标，超过阈值就触发告警；团队可以从一个仪表盘查看可用性、资源利用率和当前问题。",
+        "图中是 Zabbix 的 Global view 监控仪表盘：主机状态、系统信息、内存利用率、每秒数据量和问题列表同时呈现，适合快速判断影响范围。",
+        "它适合需要自主管理监控数据的运维和开发团队。部署后仍要维护权限、指标阈值、告警通知和存储容量，不能只装上就放着不管。",
+      ],
+    };
+  }
   if (/^plane$/i.test(name)) {
     return {
       titleSummary: "自托管的团队项目管理工作台",
@@ -2280,7 +2308,9 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
   const images = project.assets?.filter((asset) => asset.kind === "image").slice(0, 2) ?? [];
   if (!source || images.length === 0 || project.scenes.length < 3) return project;
   const repository = source.repo?.split("/").at(-1)?.toLowerCase() ?? "";
-  const evidenceHeadline = repository === "plane"
+  const evidenceHeadline = repository === "zabbix"
+    ? "核心价值：Zabbix Global view 监控仪表盘"
+    : repository === "plane"
     ? "核心价值：Plane 工作项与项目看板"
     : repository === "openlogi"
       ? "核心价值：本地管理界面、按键配置与效果图"
@@ -2298,7 +2328,16 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
     height: 900,
     highlight: { x: 0, y: 0, width: 1200, height: 900 },
   }));
-  const narrationSegments = project.narrationSegments?.map((segment, index) => repository === "plane" && index === 2
+  const narrationSegments = project.narrationSegments?.map((segment, index) => repository === "zabbix" && index === 2
+    ? {
+      ...segment,
+      text: "图中是 Zabbix 的 Global view 监控仪表盘：主机状态、系统信息、内存利用率、每秒数据量和问题列表同时呈现，适合快速判断影响范围。",
+      ttsText: undefined,
+      providerSynthesisText: undefined,
+      providerSynthesisChunks: undefined,
+      pronunciationPlan: undefined,
+    }
+    : repository === "plane" && index === 2
     ? {
       ...segment,
       text: "核心价值是 Plane 的工作项与项目看板：团队可以在一个界面查看任务、迭代和项目进度，真实页面展示了这条工作流。",
@@ -2340,6 +2379,7 @@ export function createStoryProject(
   if (/qbitai\.com\/2026\/08\/471642/i.test(clean.url) || /DeepSeek V4 Pro.*Fable 5/i.test(joinedContent)) return createDeepSeekV4ProProject(clean, options);
   if (/36kr\.com\/p\/3945081613647236/i.test(clean.url) || /批量博主集体停更.*AI漫剧/i.test(clean.title)) return createAiDramaBubbleProject(clean, options);
   if (/baijiahao\.baidu\.com\/s\?id=1873940198939202909/i.test(clean.url) || /DeepSeek涨价.*价格屠夫/i.test(clean.title)) return createDeepSeekPricingProject(clean, options);
+  if (/36kr\.com\/p\/3952922405256328/i.test(clean.url)) return createEnvHarnessProject(clean, options);
   if (/ithome\.com\/0\/987\/720/i.test(clean.url)) return createQwenOpenPlatformProject(clean, options);
   if (/ithome\.com\/0\/986\/936/i.test(clean.url)) return createNeonRetrievalModelProject(clean, options);
   if (/qbitai\.com\/2026\/08\/467879/i.test(clean.url)) return createChatGptFreeUpgradeProject(clean, options);
@@ -2900,6 +2940,28 @@ function createCuratedNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createEnvHarnessProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "智能体训练新思路", headline: shortTitle(title, 44), subhead: "给环境也加一层可组合的 Harness，改善智能体训练信号", sources: ["EnvHarness", "训练信号", "Agent"] },
+      narration: `${title}。核心价值是让环境提供更清晰的训练反馈。EnvHarness 是环境侧的可组合控制层，不改大语言模型本身，而是调整智能体与环境之间的输入输出方式。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "它先解决环境不会配合的问题", source: "文章核心观点", title, summary: "智能体需要在网页、代码库或机器人环境中行动，但环境给出的反馈方式并不总是适合训练。", metrics: [{ label: "作用位置", value: "环境一侧" }, { label: "接口目标", value: "保持不变" }], points: ["智能体要通过环境完成任务，环境反馈会直接影响学习效果。", "EnvHarness 在 reset、step 和 observation 等标准接口外提供可组合组件。", "底层环境仍可保持网页、代码库、容器或机器人等原有形态。"] },
+      narration: "智能体可能面对网页、代码库、容器甚至机器人环境，但同一个环境不一定能给出最适合训练的反馈。EnvHarness 的做法，是在不改变标准输入输出接口的前提下，用环境侧规则调整行动和观察。",
+    },
+    {
+      scene: { type: "flow", duration: 14, headline: "三类组件改变交互方式", steps: [{ label: "环境布置", detail: "初始化后调整环境状态，准备更明确的任务条件。" }, { label: "交互规则", detail: "把智能体的行动或观察映射成新的输入输出。" }, { label: "链接环境", detail: "满足条件后自动切换到另一个环境或任务阶段。" }, { label: "循环评估", detail: "比较轨迹，保留确实改善训练信号的方案。" }] },
+      narration: "文章把 EnvHarness 拆成三类组件：环境布置负责初始化后的准备，交互规则负责调整行动和观察，链接环境负责在条件满足时切换任务。再通过轨迹对比，保留真正改善训练信号的配置。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "适合研究训练，不是现成产品", bullets: ["论文讨论了强化学习、自进化智能体、网页导航和代码生成等场景。", "当前方法依赖多轮轨迹采样，规模化效率仍有限。", "实际使用要根据任务目标设计环境反馈，不能只套一个通用模板。"] },
+      narration: "这套思路更适合研究智能体训练和环境设计，论文讨论了强化学习、自进化智能体、网页导航和代码生成等场景。它仍依赖多轮轨迹采样，规模化效率有限，实际部署还要按任务设计反馈规则。",
+    },
+  ], options, { maxSeconds: 55, minSeconds: 45 });
 }
 
 function createDeepSeekVisionApiProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
