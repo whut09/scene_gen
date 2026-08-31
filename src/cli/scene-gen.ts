@@ -36,6 +36,7 @@ const runOptions = {
   "max-estimated-cost": { type: "number" as const, description: "Maximum cumulative normalized repair cost." },
   "max-issue-repairs": { type: "number" as const, description: "Maximum repairs attempted for one issue code." },
   screenshots: { type: "number" as const, description: "Maximum webpage screenshots." },
+  "url-only": { type: "boolean" as const, description: "Collect the requested URL directly without source cache." },
   engine: { type: "string" as const, choices: ["html-video", "remotion"], description: "Rendering engine." },
   "out-dir": { type: "string" as const, description: "Final video output directory." },
   notes: { type: "string" as const, description: "Editorial constraints and factual notes." },

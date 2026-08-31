@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -42,7 +42,12 @@ export function extractArticleImageCandidates(document: Document, pageUrl: strin
       return {
         alt,
         url: new URL(rawUrl, pageUrl).toString(),
-        watermarkHint: [element.getAttribute("data-watermark"), element.getAttribute("data-vmark")]
+        watermarkHint: [
+          element.hasAttribute("data-watermark") ? `data-watermark=${element.getAttribute("data-watermark") ?? ""}` : "",
+          element.hasAttribute("data-vmark") ? `data-vmark=${element.getAttribute("data-vmark") ?? ""}` : "",
+          element.parentElement?.hasAttribute("data-watermark") ? `parent-data-watermark=${element.parentElement.getAttribute("data-watermark") ?? ""}` : "",
+          element.parentElement?.hasAttribute("data-vmark") ? `parent-data-vmark=${element.parentElement.getAttribute("data-vmark") ?? ""}` : "",
+        ]
           .filter(Boolean).join(" "),
       };
     } catch {
@@ -130,6 +135,14 @@ function candidateSignals(candidate: ArticleImageCandidate) {
   return `${candidate.alt} ${candidate.watermarkHint ?? ""} ${url.pathname} ${url.search}`;
 }
 
+function isConservativeWatermarkDomain(value: string) {
+  try {
+    return /(^|\.)img\.ithome\.com$/i.test(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function collectArticleImages(input: {
   document: Document;
   pageUrl: string;
@@ -144,7 +157,7 @@ export async function collectArticleImages(input: {
   const assets: ProjectAsset[] = [];
   for (const candidate of candidates) {
     if (assets.length >= limit) break;
-    if (hasWatermarkSignal(candidateSignals(candidate))) continue;
+    if (isConservativeWatermarkDomain(candidate.url) || hasWatermarkSignal(candidateSignals(candidate))) continue;
     try {
       const { bytes, contentType: responseContentType } = await fetchImageBytes(candidate.url);
       if (bytes.length < 8 || bytes.length > 12_000_000) continue;
