@@ -86,6 +86,7 @@ export async function runDraftStage(input: {
   generationResultPath: string;
   notes: string;
   ignoreCache: boolean;
+  forceRebuild: boolean;
   signal: AbortSignal;
 }) {
   const args = [
@@ -100,6 +101,7 @@ export async function runDraftStage(input: {
     "--result-file", input.generationResultPath,
   ];
   if (input.ignoreCache) args.push("--ignore-cache");
+  if (input.forceRebuild) args.push("--force-rebuild");
   if (input.notes) args.push("--notes", input.notes.replace(/\r?\n/g, "；"));
   await runScript("src/pipeline/generate-stories.ts", args, input.signal, {
     timeoutMs: getRuntimeConfig().retry.stageTimeoutMs.draft,

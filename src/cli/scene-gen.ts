@@ -42,6 +42,7 @@ const runOptions = {
   notes: { type: "string" as const, description: "Editorial constraints and factual notes." },
   "quality-profile": { type: "string" as const, choices: ["balanced", "strict", "lenient"], description: "Quality gate profile." },
   "ignore-cache": { type: "boolean" as const, description: "Ignore generated project cache." },
+  "force-rebuild": { type: "boolean" as const, description: "Explicitly rebuild an existing GitHub project." },
   "dry-run": { type: "boolean" as const, description: "Fetch and print an execution plan without generation." },
   "plan-only": { type: "boolean" as const, description: "Alias for --dry-run." },
 };
@@ -71,6 +72,7 @@ const definitions: Record<string, CommandDefinition> = {
       notes: runOptions.notes,
       "quality-profile": runOptions["quality-profile"],
       "ignore-cache": runOptions["ignore-cache"],
+      "force-rebuild": runOptions["force-rebuild"],
       "override-config": { type: "boolean", description: "Allow resume to replace the immutable original runtime config." },
     },
     mutuallyExclusive: [["from-stage", "force-stage"]],

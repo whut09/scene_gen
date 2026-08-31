@@ -48,6 +48,7 @@ import { addTemplateExclusions, affectedVideoScenes } from "./agent/video-loop";
 import { publishAgentRun } from "./agent/publish";
 import { PronunciationAttemptLedger, phraseFingerprint, type PronunciationAttemptLedgerState, type PronunciationStrategy } from "../production/tts-routing";
 import { defaultTargetSecondsForUrl } from "../pipeline/content-strategy";
+import { findCompletedGithubCache, githubRepositoryKey } from "../pipeline/github-cache";
 
 
 async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undefined, runtimeConfig: RuntimeConfig) {
@@ -96,6 +97,25 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
   } else {
     if (typeof args.url !== "string") throw new Error('Usage: scene-gen run --url "https://example.com/news" or scene-gen resume <run-id>');
     url = args.url;
+    if (!args["force-rebuild"] && githubRepositoryKey(url)) {
+      const cacheHit = await findCompletedGithubCache({
+        url,
+        storiesDir: fromRoot("public", "generated", "stories"),
+        manifest: await readStoryManifest(fromRoot("public", "generated", "stories", "manifest.json")).catch(() => []),
+        runsDir: fromRoot("dist", "runs"),
+      });
+      if (cacheHit) {
+        console.log(`[harness-cache] GitHub 项目已生成，直接返回: ${cacheHit.outputPath}`);
+        const projectDirectory = path.dirname(cacheHit.projectPath);
+        return {
+          runId: `cache-hit-${githubRepositoryKey(url).replace("/", "-")}`,
+          runDir: path.basename(projectDirectory) === "projects" ? path.dirname(projectDirectory) : projectDirectory,
+          outputPath: cacheHit.outputPath,
+          passed: true,
+          cacheHit: true,
+        };
+      }
+    }
     targetSeconds = Number(args.seconds ?? defaultTargetSecondsForUrl(url));
     maxIterations = Math.max(1, Math.min(8, Number(args.iterations ?? runtimeConfig.retry.maxIterations)));
     outputDir = typeof args["out-dir"] === "string" ? path.resolve(args["out-dir"]) : runtimeConfig.rendering.outputDir;
@@ -163,6 +183,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     const explicitNotes = typeof args.notes === "string" ? args.notes : "";
     let loopNotes = combineNotes([explicitNotes, ingest.feedbackGuidance ? `历史用户反馈，必须避免重复：\n${ingest.feedbackGuidance}` : ""]);
     let ignoreCache = Boolean(args["ignore-cache"]);
+    const forceRebuild = Boolean(args["force-rebuild"]);
     let globalRewriteEscalated = Boolean(journal.snapshot().artifacts.noProgressEscalation);
     let draftStrategy: LoopStrategyTrace | undefined;
     let { draftPassed, iteration } = initialDraftLoopState(state.iterations);
@@ -176,7 +197,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         const draftStage = await runStage({
           journal, name: "draft", attempt: nextAttempt(journal, "draft"),
           inputs: { url, targetSeconds, screenshotLimit, loopNotes, ignoreCache }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.draft, signal,
-          task: (stageSignal) => runDraftStage({ url, targetSeconds, outputDir, screenshotLimit, runDir, generationResultPath, notes: loopNotes, ignoreCache, signal: stageSignal }),
+          task: (stageSignal) => runDraftStage({ url, targetSeconds, outputDir, screenshotLimit, runDir, generationResultPath, notes: loopNotes, ignoreCache, forceRebuild, signal: stageSignal }),
           describe: (value) => ({ outputs: { generationResultPath, manifestPath: value.manifestPath, projectPath: value.stories[0].projectPath }, metrics: { cacheHit: value.cacheHit } }),
         });
         state.manifestPath = draftStage.value.manifestPath;

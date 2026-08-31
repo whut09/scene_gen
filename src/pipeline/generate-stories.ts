@@ -1,5 +1,4 @@
 import path from "node:path";
-import { readdir } from "node:fs/promises";
 import { writeHtmlVideoContentGraph } from "../html-video/render-html-video";
 import { buildProductionReport } from "../production/production-report";
 import { collectGithubAssets } from "../production/github-assets";
@@ -17,39 +16,11 @@ import { projectHomepageTitle, provisionalVideoFileName } from "./output-naming"
 import { ensureRepositoryProjectIdentity } from "./repository-project";
 import { contentDurationPolicy, resolveContentTargetSeconds } from "./content-strategy";
 import { contentTypeForItem } from "./content-type";
+import { findCompletedGithubCache, githubRepositoryKey } from "./github-cache";
 
 loadDotEnv();
 
 const args = parseArgs(process.argv.slice(2));
-function githubKey(url: string) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.toLowerCase() !== "github.com") return "";
-    const parts = parsed.pathname.split("/").filter(Boolean).slice(0, 2);
-    return parts.length === 2 ? parts.join("/").toLowerCase() : "";
-  } catch { return ""; }
-}
-
-async function findGithubCache(url: string) {
-  const key = githubKey(url);
-  if (!key) return null;
-  const storiesDir = fromRoot("public", "generated", "stories");
-  const manifestPath = fromRoot("public", "generated", "stories", "manifest.json");
-  const manifest = await readStoryManifest(manifestPath).catch(() => []);
-  const fromManifest = manifest.find((item) => githubKey(item.sourceUrl ?? "") === key);
-  const names = await readdir(storiesDir).catch(() => []);
-  for (const name of names.filter((value) => value.endsWith(".json") && value !== "manifest.json")) {
-    const projectPath = path.join(storiesDir, name);
-    const project = await readJson<unknown>(projectPath).then((value) => videoProjectSchema.parse(value) as VideoProject).catch(() => null);
-    if (!project || !Array.isArray(project.sources) || githubKey(project.sources[0]?.url ?? "") !== key) continue;
-    const manifestItem = manifest.find((item) => item.projectPath === projectPath || item.title === project.meta.title);
-    return { projectPath, project, manifestItem };
-  }
-  if (!fromManifest) return null;
-  const project = await readJson<unknown>(fromManifest.projectPath).then((value) => videoProjectSchema.parse(value) as VideoProject).catch(() => null);
-  return project ? { projectPath: fromManifest.projectPath, project, manifestItem: fromManifest } : null;
-}
-
 const urls = typeof args.url === "string" ? [args.url] : [];
 const count = Number(args.count ?? process.env.STORY_COUNT ?? 3);
 const screenshotLimit = Number(args.screenshots ?? process.env.SCREENSHOT_LIMIT ?? 1);
@@ -74,8 +45,14 @@ const manifestPath = runDir
 const projectsDir = runDir ? path.join(runDir, "projects") : fromRoot("public", "generated", "stories");
 const htmlVideoDir = runDir ? path.join(runDir, "html-video") : fromRoot("public", "generated", "html-video");
 
-if (urls.length === 1 && !args["ignore-cache"]) {
-  const cached = await findGithubCache(urls[0]);
+if (urls.length === 1 && !args["force-rebuild"]) {
+  const manifestPath = fromRoot("public", "generated", "stories", "manifest.json");
+  const cached = await findCompletedGithubCache({
+    url: urls[0],
+    storiesDir: fromRoot("public", "generated", "stories"),
+    manifest: await readStoryManifest(manifestPath).catch(() => []),
+    runsDir: fromRoot("dist", "runs"),
+  });
   if (cached) {
     const cachedRepositories = cached.project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
     const cachedProject = ensureRepositoryProjectIdentity(scrubProject(cached.project, "", cachedRepositories) as VideoProject);
