@@ -9,6 +9,7 @@ import { compactText, daysAgo, domainFromUrl, stableId } from "./utils";
 import { fetchWithRetry, runExternalProcess } from "./external-operation";
 import { classifyWebpageContent } from "./content-type";
 import { researchModelRelease } from "./model-release-research";
+import { collectArticleImages } from "./article-images";
 
 export { classifyWebpageContent } from "./content-type";
 
@@ -581,6 +582,15 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         score: scoreItem(joined, publishedAt, 1, config.keywords),
         tags: normalizeTags(joined, config.keywords),
         domain: domainFromUrl(url),
+        articleImages: await collectArticleImages({
+          document: dom.window.document,
+          pageUrl: url,
+          articleId: stableId("article-assets", url),
+          limit: Number(process.env.ARTICLE_IMAGE_LIMIT ?? 3),
+        }).catch((error) => {
+          console.warn(`[article-images] ${url} skipped: ${(error as Error).message}`);
+          return [];
+        }),
       };
       const research = await researchModelRelease(item);
       items.push(research.length > 0 ? { ...item, research } : item);

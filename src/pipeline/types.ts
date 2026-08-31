@@ -26,6 +26,7 @@ export interface HotItem {
   repo?: string;
   metrics?: Record<string, number | string>;
   research?: ModelReleaseResearch[];
+  articleImages?: ProjectAsset[];
 }
 
 export interface ProjectAsset {

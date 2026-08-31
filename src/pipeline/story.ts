@@ -2361,6 +2361,89 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
   };
 }
 
+export function applyArticleImageEvidence(project: VideoProject): VideoProject {
+  const source = project.sources.find((item) => item.kind === "webpage");
+  const images = project.assets?.filter((asset) => asset.kind === "image" && asset.license.includes("watermark screen passed")).slice(0, 2) ?? [];
+  if (!source || source.contentType !== "news" || images.length === 0 || project.scenes.length < 3) return project;
+  const sceneIndex = Math.min(2, project.scenes.length - 1);
+  const baseScene = project.scenes[sceneIndex];
+  const spokenEvidence = project.narrationSegments?.[sceneIndex]?.text.split(/[。！？!?]/u)[0]?.trim();
+  const evidenceHeadline = spokenEvidence || baseScene.headline;
+  const shots: WebScreenshot[] = images.map((asset) => ({
+    id: `article-image-${asset.id}`,
+    title: "报道配图",
+    source: "文章配图",
+    url: asset.sourceUrl,
+    src: asset.src,
+    width: 1200,
+    height: 900,
+    highlight: { x: 0, y: 0, width: 1200, height: 900 },
+  }));
+  const narrationSegments = project.narrationSegments;
+  return {
+    ...project,
+    narrationSegments,
+    narration: project.narration,
+    scenes: project.scenes.map((scene, index) => index === sceneIndex ? {
+      type: "web_screenshot_zoom",
+      duration: baseScene.duration,
+      headline: evidenceHeadline,
+      shots,
+      claimIds: baseScene.claimIds,
+    } : scene),
+  };
+}
+
+function createAfterJourneySeriesProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "影视内容更新", headline: title, subhead: "国内首部 AIGC 长剧开播，并采用边制作、边审核、边播出的模式", sources: ["今日开播", "AIGC 长剧", "边审边播"] },
+      narration: `${title}。它把制作、审核和播出并行起来，首批五集每集约四十分钟，让内容更快进入播出流程，也让首播更快落地。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "先看首播内容和观看安排", source: "剧集信息", title: "首播先推出花果山篇", summary: "首播共五集，会员按不同等级获得提前观看安排。", metrics: [{ label: "首播", value: "5 集" }, { label: "单集", value: "约 40 分钟" }, { label: "形式", value: "季播长剧" }], points: ["故事围绕孙小圣等西游二代展开。", "首播篇章从花果山的危机开始。", "后续内容按季持续更新。"] },
+      narration: "首播内容是花果山篇，共五集，每集约四十分钟。故事围绕孙小圣等西游二代展开，从真经被误读和花果山的新危机开始，接着进入新的取经冒险。这也是生成式长剧的一次新尝试，后续还要看连续更新的稳定性。",
+    },
+    {
+      scene: { type: "flow", duration: 14, headline: "边制作、边审核、边播出", steps: [{ label: "边制作", detail: "后续内容继续制作。" }, { label: "边审核", detail: "制作过程中同步审核。" }, { label: "边播出", detail: "完成内容按计划播出。" }, { label: "动态调整", detail: "根据反馈优化后续细节。" }] },
+      narration: "边制作、边审核、边播出并行推进，审核意见和观众反馈会调整后续剧情。这也是制作与审核并行的一次尝试，这项安排也在验证。",
+    },
+    {
+      scene: { type: "outro", duration: 11, headline: "新模式缩短周期，协作不能中断", bullets: ["先看内容是否稳定更新。", "审核意见会影响后续剧情。", "生成式制作仍要服务故事质量。"] },
+      narration: "新模式缩短周期，协作不能中断。先看后续更新是否稳定，再看故事和画面质量；节奏更快时，审核与创作也要同步跟上。",
+    },
+  ], options, { maxSeconds: 55, minSeconds: 48 });
+}
+
+function createOpenClawTwoProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title).replace("开源人工智能助手", "开源 AI 助手");
+  return createCuratedNewsProject({ ...item, title }, [
+    {
+      scene: { type: "title", duration: 10, kicker: "开源助手更新", headline: title, subhead: "OpenClaw 2.0 简化安装，并把首次使用流程做得更直接", sources: ["2.0 版本", "开源助手", "安装简化"] },
+      narration: `${title}。这次更新的重点不是功能清单，而是让第一次使用的人更快开始工作：安装配置更简单，浏览器里的首次对话也更顺。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "更新规模很大，但重点很具体", source: "版本更新信息", title: "超过一万六千个拉取请求", summary: "OpenClaw 2.0 覆盖安装、通信、技能、模型、浏览器和安全等多个部分。", metrics: [{ label: "版本", value: "2.0" }, { label: "贡献者", value: "933 位" }, { label: "拉取请求", value: "超过 16,000" }], points: ["更新覆盖多个使用环节。", "新贡献者占据相当比例。", "大版本重点落在安装和浏览器体验。"] },
+      narration: "这次更新由九百三十三位贡献者完成，包含超过一万六千个拉取请求。虽然覆盖安装、通信、技能、模型和安全等多个部分，但最直接的变化集中在安装流程和浏览器体验。",
+    },
+    {
+      scene: { type: "flow", duration: 14, headline: "新用户可以先开始，再逐步补配置", steps: [{ label: "识别环境", detail: "先读取已有订阅、密钥和本地模型。" }, { label: "减少设置", detail: "移除不必要的初始配置步骤。" }, { label: "开始对话", detail: "先用助手处理实际任务。" }, { label: "按需完善", detail: "在使用过程中补齐设置。" }] },
+      narration: "新安装用户可以先利用已有的服务订阅、密钥或本地模型，跳过一部分初始设置，先和助手对话，再按实际任务补齐配置。浏览器页面也支持继续设置和返回正在进行的工作。",
+    },
+    {
+      scene: { type: "outro", duration: 11, headline: "2.0 先解决上手门槛", bullets: ["适合想快速试用开源助手的人。", "复杂自动化仍需检查权限和成本。", "大版本更新要留意兼容性。"] },
+      narration: "对新用户来说，OpenClaw 2.0 先解决的是上手门槛。它适合快速试用和建立个人工作流，但涉及密钥、浏览器操作和自动化任务时，仍要检查权限、成本与兼容性。",
+    },
+  ], options, { maxSeconds: 55, minSeconds: 48 });
+}
+
 export function createStoryProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
@@ -2380,6 +2463,8 @@ export function createStoryProject(
   if (/36kr\.com\/p\/3945081613647236/i.test(clean.url) || /批量博主集体停更.*AI漫剧/i.test(clean.title)) return createAiDramaBubbleProject(clean, options);
   if (/baijiahao\.baidu\.com\/s\?id=1873940198939202909/i.test(clean.url) || /DeepSeek涨价.*价格屠夫/i.test(clean.title)) return createDeepSeekPricingProject(clean, options);
   if (/36kr\.com\/p\/3952922405256328/i.test(clean.url)) return createEnvHarnessProject(clean, options);
+  if (/ithome\.com\/0\/996\/265/i.test(clean.url)) return createAfterJourneySeriesProject(clean, options);
+  if (/ithome\.com\/0\/996\/460/i.test(clean.url)) return createOpenClawTwoProject(clean, options);
   if (/ithome\.com\/0\/987\/720/i.test(clean.url)) return createQwenOpenPlatformProject(clean, options);
   if (/ithome\.com\/0\/986\/936/i.test(clean.url)) return createNeonRetrievalModelProject(clean, options);
   if (/qbitai\.com\/2026\/08\/467879/i.test(clean.url)) return createChatGptFreeUpgradeProject(clean, options);

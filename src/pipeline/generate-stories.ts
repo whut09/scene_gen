@@ -5,7 +5,7 @@ import { buildProductionReport } from "../production/production-report";
 import { collectGithubAssets } from "../production/github-assets";
 import type { SourceConfig, VideoProject } from "./types";
 import { collectHotItems, collectWebpage } from "./sources";
-import { applyRepositoryAssetEvidence, compactProjectNarration, createStoryProject, scrubAttribution, scrubGithubReference } from "./story";
+import { applyArticleImageEvidence, applyRepositoryAssetEvidence, compactProjectNarration, createStoryProject, scrubAttribution, scrubGithubReference } from "./story";
 import { improveWithOpenAI } from "./llm";
 import { captureWebScreenshots } from "./screenshots";
 import { attachNarrationAudio } from "./tts";
@@ -376,8 +376,9 @@ for (const [index, item] of items.entries()) {
     };
   }
   project = fitProjectDurationToNarration(project, effectiveTargetSeconds);
-  project.assets = assets;
+  project.assets = [...assets, ...(item.articleImages ?? [])];
   project = applyRepositoryAssetEvidence(project);
+  project = applyArticleImageEvidence(project);
   if (!skipTts) {
     project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
     if (
