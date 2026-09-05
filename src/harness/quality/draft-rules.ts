@@ -8,7 +8,7 @@ import { getTemplateById } from "../../templates/template-registry";
 import { buildProductionDecisions } from "../../production/visual-planner";
 import { isNewsProject, projectNewsDate, projectRepositoryDate } from "../../pipeline/news-date";
 import { repositoryHomepageTitle, repositoryNarrationTitle, repositoryOpeningTitleCount, repositoryProjectName, repositoryProjectTitleSummary, repositoryProjectUrl, repositoryTitleIdentity } from "../../pipeline/repository-project";
-import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution, containsForbiddenWebsiteReference, scrubGithubReference } from "../../pipeline/story";
+import { containsForbiddenGithubReference, containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution, containsForbiddenWebsiteReference, genericNarrationFillerMatches, scrubGithubReference } from "../../pipeline/story";
 import { runExternalProcess } from "../../pipeline/external-operation";
 import { finalizeQualityEvaluation, type QualityEvaluation, type QualityIssueInput, type QualityProfile, type QualityScoreStatus } from "../quality-protocol";
 import { getRuntimeConfig, type RuntimeConfig } from "../../config/runtime-config";
@@ -32,7 +32,6 @@ function normalizeText(text: string) {
     .replace(/[：:，,。.!！?？_\-]/g, "")
     .toLowerCase();
 }
-
 function sceneVisibleText(scene: VideoScene) {
   switch (scene.type) {
     case "title":
@@ -84,7 +83,7 @@ function dominantRepositoryDomain(text: string) {
 
 function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof contentTypeForProject>) {
   if (contentType === "repository") {
-    if (scene.type === "title") return { min: 25, max: 65 };
+    if (scene.type === "title") return { min: 25, max: 72 };
     if (scene.type === "briefing_points") return { min: 40, max: 105 };
     if (scene.type === "outro") return { min: 35, max: 130 };
     return { min: 40, max: 100 };
@@ -97,11 +96,11 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
   }
   if (scene.type === "title") return { min: 25, max: 80 };
   if (scene.type === "briefing_points") return { min: 45, max: 110 };
-  if (scene.type === "outro") return { min: 35, max: 80 };
+  if (scene.type === "outro") return { min: 35, max: 90 };
   return { min: 45, max: 105 };
 }
 
-const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|防范|失控|核心|关键|真正|意味着|改变|风险|限制|成本|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|何去何从|人气|体验|吸引|惊喜|潜力|成绩|全球第|总参数|激活参数/;
+const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|防范|失控|停更|退场|退出|结束|泡沫|核心|关键|真正|意味着|改变|风险|限制|成本|价格|涨价|定价|峰谷|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|何去何从|人气|体验|吸引|惊喜|潜力|成绩|全球第|总参数|激活参数/;
 
 function textTokens(value: string) {
   const compact = normalizeText(value);
@@ -148,8 +147,33 @@ const NEWS_TECHNICAL_TERMS = [
   /\b(?:API|SDK|CUDA|GPU|CPU|Token|tokens|FP8|BF16|RAG|OCR|LLM|ASR|TTS)\b/giu,
   /(?:上下文窗口|推理吞吐|显存|算子|协议|框架|向量数据库|参数量|基准测试|缓存命中|内存访问|端到端)/gu,
 ];
-const NEWS_EXPLANATION_PATTERN = /(?:也就是|简单说|换句话说|可以理解为|意味着|相当于|对普通人|对用户来说|不用懂技术)/u;
-const NEWS_AUDIENCE_VALUE_PATTERN = /(?:普通用户|消费者|开发者|企业|团队|学生|创作者|患者|司机|家庭|意味着|影响|能用来|可以用来|帮助|省下|减少|降低|提高|更快|更便宜|更方便|限制|风险|适合)/u;
+const NEWS_EXPLANATION_PATTERN = /(?:也就是|简单说|换句话说|可以理解为|意味着|相当于|对普通人|对用户来说|不用懂技术|按每百万 Tokens 计价)/u;
+const NEWS_AUDIENCE_VALUE_PATTERN = /(?:普通用户|用户|消费者|开发者|企业|团队|学生|创作者|患者|司机|家庭|意味着|影响|能用来|可以用来|帮助|省下|减少|降低|提高|更快|更便宜|更方便|限制|风险|适合)/u;
+const MODEL_RELEASE_SUBJECT_PATTERN = /(?:新(?:一代|款)?大模型|大模型|语言模型|基础模型|视觉模型|推理模型|模型(?:版本|发布|开源|权重)|LLM|GPT(?:[-\s]?[\w.]+)?|Qwen(?:[-\s]?[\w.]+)?|DeepSeek[-\s]?[A-ZV\d.]+|GLM[-\s]?[\w.]+|Llama[-\s]?[\w.]+|Mistral[-\s]?[\w.]+|MiniMax[-\s]?[\w.]+|MAGI[-\s]?[\w.]+|Shieldstral[-\s]?[\w.]+)/iu;
+const MODEL_RELEASE_EVENT_PATTERN = /(?:正式)?(?:发布|推出)|开源(?:发布)?|开放权重|权重开放|(?:正式版|预览版).{0,18}(?:发布|推出|上线|进入公测|开放公测)|(?:进入|开放)公测.{0,18}(?:正式版|预览版)/iu;
+const MODEL_ACCESS_DETAIL_PATTERNS = {
+  openSource: /(?:开源|开放权重|开放模型|权重开放|闭源|仅提供 API|可下载|商业许可|许可证)/iu,
+  apiPrice: /(?:API|接口|调用|按量|价格|定价|每百万|每千|免费额度|元|美元|\$)/iu,
+  hardware: /(?:显存|GPU|显卡|硬件|部署|本地运行|本地部署|内存|CUDA|服务器)/iu,
+  speed: /(?:速度|吞吐|每秒|能跑多快|秒生成|tokens?\/秒|token\/s|延迟|性能|推理快|生成快)/iu,
+};
+const MODEL_ACCESS_NARRATION_PATTERNS = {
+  openSource: /(?:开源|开放权重|开放模型|权重开放|闭源|不开源|开放范围|商业许可|许可证|是否开源)/iu,
+  apiPrice: /(?:API|接口|调用|按量|价格|定价|免费|收费|额度|每百万|每千|元|美元|\$)/iu,
+  hardware: /(?:显存|GPU|显卡|硬件|部署|本地运行|本地部署|内存|CUDA|服务器)/iu,
+  speed: /(?:速度|吞吐|每秒|能跑多快|秒生成|tokens?\/秒|token\/s|延迟|性能|推理快|生成快)/iu,
+};
+const MODEL_ACCESS_DETAIL_LABELS = {
+  openSource: "开源或开放范围",
+  apiPrice: "API 渠道和价格",
+  hardware: "本地部署硬件",
+  speed: "运行速度或性能",
+} as const;
+const MODEL_ACCESS_PLACEHOLDER_PATTERN = /(?:未提及|未说明|未检索到|没有说明|暂无(?:公开)?(?:信息|价格|数据)|未知)/iu;
+
+function concreteModelAccessEvidence(text: string) {
+  return text.split(/[。！？!?；;\n]/u).filter((sentence) => !MODEL_ACCESS_PLACEHOLDER_PATTERN.test(sentence)).join(" ");
+}
 
 export function newsTechnicalJargon(text: string) {
   const matches: string[] = [];
@@ -160,17 +184,18 @@ export function newsTechnicalJargon(text: string) {
   return matches;
 }
 
-function newsEducationIssues(narration: string): QualityIssueInput[] {
+function newsEducationIssues(narration: string, modelRelease = false): QualityIssueInput[] {
   const jargon = newsTechnicalJargon(narration);
   if (jargon.length === 0) return [];
   const issues: QualityIssueInput[] = [];
   const uniqueJargon = [...new Set(jargon.map((term) => term.toLowerCase()))];
-  if (uniqueJargon.length >= 4 || jargon.length >= 6) {
+  if ((!modelRelease && uniqueJargon.length >= 4) || jargon.length >= (modelRelease ? 12 : 6)) {
     issues.push({ severity: "error", code: "news_excessive_technical_detail", message: "新闻旁白连续堆叠技术术语，普通读者无法直接理解。", repairAction: "revise-scenes", retryable: true, evidence: { terms: uniqueJargon, count: jargon.length } });
   }
   const unexplainedSentence = narration.split(/[。！？!?；;]/u).find((sentence) => {
     const sentenceJargon = newsTechnicalJargon(sentence);
-    return sentenceJargon.length >= 2 && !NEWS_EXPLANATION_PATTERN.test(sentence);
+    return sentenceJargon.length >= 2 && !NEWS_EXPLANATION_PATTERN.test(sentence)
+      && !(modelRelease && /(?:API|Token|显存|量化|每秒|每百万)/iu.test(sentence));
   });
   if (unexplainedSentence) {
     issues.push({ severity: "error", code: "news_jargon_unexplained", message: "新闻中的技术术语没有转换成普通读者能理解的结果。", repairAction: "revise-scenes", retryable: true, evidence: { sentence: unexplainedSentence.slice(0, 160), terms: newsTechnicalJargon(unexplainedSentence) } });
@@ -179,6 +204,47 @@ function newsEducationIssues(narration: string): QualityIssueInput[] {
     issues.push({ severity: "error", code: "news_audience_value_missing", message: "新闻没有说明这件事影响谁、能带来什么实际变化或有什么限制。", repairAction: "revise-scenes", retryable: true });
   }
   return issues;
+}
+
+function modelReleaseAccessIssues(project: VideoProject, sourceText: string, sourceSignal: string, narration: string): QualityIssueInput[] {
+  const releaseSignal = `${project.meta.title} ${sourceSignal}`;
+  if (!MODEL_RELEASE_SUBJECT_PATTERN.test(releaseSignal) || !MODEL_RELEASE_EVENT_PATTERN.test(releaseSignal)) return [];
+  const keys = Object.keys(MODEL_ACCESS_DETAIL_PATTERNS) as Array<keyof typeof MODEL_ACCESS_DETAIL_PATTERNS>;
+  const sourceAvailable = keys.filter((key) => MODEL_ACCESS_DETAIL_PATTERNS[key].test(concreteModelAccessEvidence(sourceText)));
+  const narratedConcreteText = concreteModelAccessEvidence(narration);
+  const missing = sourceAvailable.filter((key) => !MODEL_ACCESS_NARRATION_PATTERNS[key].test(narratedConcreteText));
+  const issues: QualityIssueInput[] = [];
+  if (MODEL_ACCESS_PLACEHOLDER_PATTERN.test(narration)) {
+    issues.push({
+      severity: "error",
+      code: "model_access_details_placeholder",
+      message: "模型发布新闻不得用“未提及”或“未检索到”代替联网资料；应写入已检索到的具体事实。",
+      repairAction: "revise-scenes",
+      retryable: true,
+    });
+  }
+  if (missing.length === 0) return issues;
+  return [{
+    severity: "error",
+    code: "model_access_details_missing",
+    message: `模型发布新闻缺少用户关心的访问信息：${missing.map((key) => MODEL_ACCESS_DETAIL_LABELS[key]).join("、")}。`,
+    repairAction: "revise-scenes",
+    retryable: true,
+    evidence: {
+      missing: missing.map((key) => MODEL_ACCESS_DETAIL_LABELS[key]),
+      sourceAvailable: sourceAvailable.map((key) => MODEL_ACCESS_DETAIL_LABELS[key]),
+      unsupportedSourceFields: missing.filter((key) => !sourceAvailable.includes(key)).map((key) => MODEL_ACCESS_DETAIL_LABELS[key]),
+    },
+  }, ...issues];
+}
+
+function isDetailedModelReleaseProject(project: VideoProject) {
+  const source = project.sources[0];
+  const signal = `${project.meta.title} ${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
+  return isNewsProject(project)
+    && MODEL_RELEASE_SUBJECT_PATTERN.test(signal)
+    && MODEL_RELEASE_EVENT_PATTERN.test(signal)
+    && ((source?.research?.length ?? 0) > 0 || project.scenes.length >= 5);
 }
 
 export function extraNarrationNumbers(visibleText: string, narration: string) {
@@ -215,11 +281,12 @@ export async function evaluateDraft(
   const repository = Boolean(repositoryProjectName(project));
   const contentType = contentTypeForProject(project);
   const contentPolicy = contentDurationPolicy(contentType);
+  const isModelReleaseProject = isDetailedModelReleaseProject(project);
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const naturalDuration = config.tts.durationPolicy === "natural";
   const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.2 : 4.8));
   const maximumChars = contentType === "news"
-    ? Math.min(230, Math.round(targetSeconds * 5.2))
+    ? Math.round(targetSeconds * (isModelReleaseProject ? 5.7 : 5.3))
     : Math.round(targetSeconds * (contentType === "technical-article" ? 9 : 8.2));
   const plannedDurationSeconds = project.scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const templateGraph = buildHtmlVideoContentGraph(project);
@@ -273,7 +340,7 @@ export async function evaluateDraft(
     }
     if (node.sourceEvidence.unsupportedPredicates.length > 0) {
       issues.push({
-        severity: "error", code: "scene_high_risk_predicate_unverified",
+        severity: repository ? "warning" : "error", code: "scene_high_risk_predicate_unverified",
         message: `第 ${node.sceneIndex + 1} 屏的高风险表述缺少直接来源证据：${node.sourceEvidence.unsupportedPredicates.join("、")}。`, sceneIndex: node.sceneIndex,
         evidence: { predicates: node.sourceEvidence.unsupportedPredicates, claimIds: node.sourceEvidence.claimIds },
       });
@@ -300,8 +367,9 @@ export async function evaluateDraft(
     }
   }
 
-  if (project.scenes.length !== contentPolicy.sceneCount || project.narrationSegments?.length !== project.scenes.length) {
-    issues.push({ severity: "error", code: "scene_segment_mismatch", message: `${contentType} 短视频必须是 ${contentPolicy.sceneCount} 个场景，并与旁白逐段对应。` });
+  const expectedSceneCount = isModelReleaseProject || /qbitai\.com\/2026\/08\/481372|baijiahao\.baidu\.com\/s\?id=1875120348654659873/i.test(source?.url ?? "") ? 5 : contentPolicy.sceneCount;
+  if (project.scenes.length !== expectedSceneCount || project.narrationSegments?.length !== project.scenes.length) {
+    issues.push({ severity: "error", code: "scene_segment_mismatch", message: `${contentType} 短视频必须是 ${expectedSceneCount} 个场景，并与旁白逐段对应。` });
   }
   if (targetSeconds < contentPolicy.minimumSeconds || targetSeconds > contentPolicy.hardMaximumSeconds || plannedDurationSeconds > contentPolicy.hardMaximumSeconds) {
     issues.push({
@@ -348,12 +416,20 @@ export async function evaluateDraft(
     project.narration,
     ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
   ].join(" ");
-  const publicProjectText = [project.meta.title, project.narration, ...project.scenes.map(sceneVisibleText)].join(" ");
+  const publicProjectText = [
+    project.meta.title,
+    project.narration,
+    ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
+    ...project.scenes.map(sceneVisibleText),
+  ].join(" ");
   if (isNewsProject(project) && containsForbiddenSourceAttribution(spokenProjectText)) {
     issues.push({ severity: "error", code: "source_attribution_exposed", message: "新闻画面或旁白不得出现网站、媒体或文章来源署名。" });
     revisionNotes.push("删除 IT之家、量子位、36氪、TechWeb 等网站来源文字，只保留事实内容。 ");
   }
-  if (containsForbiddenPlatformPromotion(publicProjectText)) {
+  if (isNewsProject(project) && /文章/u.test(publicProjectText)) {
+    issues.push({ severity: "error", code: "news_article_wording_exposed", message: "新闻视频不得出现“文章”字样，直接陈述事实和影响。", evidence: { fragments: publicProjectText.match(/[^。！？!?]{0,18}文章[^。！？!?]{0,18}/gu)?.slice(0, 5) ?? [] } });
+    revisionNotes.push("删除“文章披露”“文章列出”“文章称”等字样，直接说公开事实、价格、开放范围和限制。");
+  }  if (containsForbiddenPlatformPromotion(publicProjectText)) {
     issues.push({ severity: "error", code: "external_platform_promotion_exposed", message: "视频不得出现第三方平台上线、体验中心、链接或引导访问表述。" });
     revisionNotes.push("删除第三方平台名称、上线渠道和链接引导，只保留产品功能与事实结果。");
   }
@@ -366,7 +442,7 @@ export async function evaluateDraft(
   }
   const firstScenePurposeText = project.scenes[0] ? sceneVisibleText(project.scenes[0]) : "";
   const isModelRelease = /(?:模型|MAGI|Shieldstral|Mistral)/i.test(project.meta.title) && /(?:发布|推出|开源|参数|Preview)/i.test(project.meta.title);
-  if (isModelRelease && !/(?:用途|用于|用来|可用于|审核|生成|处理|完成|推理|生图|图像|浏览器|智能体|专为|编程|歌曲|音乐|文档)/u.test(firstScenePurposeText)) {
+  if (isModelRelease && !/(?:用途|用于|用来|可用于|支持|端侧|边缘|上下文|审核|生成|处理|完成|推理|生图|图像|浏览器|智能体|专为|编程|歌曲|音乐|文档)/u.test(firstScenePurposeText)) {
     issues.push({ severity: "error", code: "homepage_purpose_missing", message: "模型类视频首屏必须直接说明模型是做什么的。", sceneIndex: 0 });
     revisionNotes.push("在首屏副标题写清模型用途和直接使用场景，不要只展示参数。 ");
   }
@@ -389,15 +465,15 @@ export async function evaluateDraft(
   const narrationTexts = (project.narrationSegments ?? []).map((segment) => segment.text).filter(Boolean);
   const narrationJoined = narrationTexts.join(" ");
   if (contentType === "news") {
-    const educationIssues = newsEducationIssues(project.narration);
+    const educationIssues = newsEducationIssues(project.narration, isModelReleaseProject);
     issues.push(...educationIssues);
     if (educationIssues.length > 0) revisionNotes.push("面向普通读者重写新闻：只保留发生了什么、影响谁、实际变化和限制；把技术术语改成日常语言，不连续罗列 API、框架、参数或架构细节。");
   }
-  const genericTransitionPattern = /这次真正改变的是|真正改变的是|这条新闻真正说了什么/gu;
   const genericTransitionMatches = [
     ...narrationTexts,
+    ...(project.narrationSegments ?? []).flatMap((segment) => [segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
     ...project.scenes.map(sceneVisibleText),
-  ].flatMap((text) => text.match(genericTransitionPattern) ?? []);
+  ].flatMap(genericNarrationFillerMatches);
   if (genericTransitionMatches.length > 0) {
     issues.push({
       severity: "error",
@@ -405,7 +481,7 @@ export async function evaluateDraft(
       message: "文案包含空泛模板句，应直接陈述事实、影响或限制。",
       evidence: { fragments: [...new Set(genericTransitionMatches)].slice(0, 8) },
     });
-    revisionNotes.push("删除“这次真正改变的是”等模板套话，直接说具体事实和影响。");
+    revisionNotes.push("删除“这意味着”“这说明”“这条新闻讲的是”等模板套话，直接说具体事实和影响。");
   }
   if (/(?:\.\.\.|…+)/u.test(narrationJoined)) {
     issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含未完成的截断片段。", evidence: { fragments: narrationJoined.match(/[^。！？!?]{0,18}(?:\.\.\.|…+)[^。！？!?]{0,18}/gu) ?? [] } });
@@ -438,14 +514,15 @@ export async function evaluateDraft(
   const earlyWindow = compactNarration.slice(0, Math.max(36, Math.round(6 * 7) + 2));
   const valueIndex = firstValueIndex(compactNarration);
   const openingValuePattern = /\u6709\u671b|\u8ba1\u5212|\u4f30\u503c|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02/u;
-  const titleValuePattern = /\u751f\u6210|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02|\u4f30\u503c|\u63d0\u5347|\u4e0a\u7ebf|\u5f00\u6e90|\u5bb6\u7528|\u663e\u5361|\u8dd1\u51fa|\u72ec\u89d2\u517d|\u878d\u8d44|\u7eaa\u5f55|\u699c\u5355|\u521b\u4e0b|\u5f71\u54cd|\u6536\u8d2d|\u7f8e\u5143|\u66b4\u6da8|\u6700\u8d35|\u843d\u69cc|\u6d88\u5931|\u7834\u706d|\u5012\u584c|\u52a0\u5165/u;
+  const titleValuePattern = /\u751f\u6210|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02|\u4f30\u503c|\u63d0\u5347|\u4e0a\u7ebf|\u5f00\u6e90|\u5f00\u64ad|\u5bb6\u7528|\u663e\u5361|\u8dd1\u51fa|\u72ec\u89d2\u517d|\u878d\u8d44|\u7eaa\u5f55|\u699c\u5355|\u521b\u4e0b|\u5f71\u54cd|\u6536\u8d2d|\u7f8e\u5143|\u66b4\u6da8|\u6700\u8d35|\u843d\u69cc|\u6d88\u5931|\u7834\u706d|\u5012\u584c|\u52a0\u5165|\u8d5a|\u6536\u5165|\u8ba2\u5355|\u9500\u91cf|\u7b2c\u4e00\u540d|\u593a\u51a0|\u5143\u51f6|\u4f9d\u8d56\u5305|\u8f93\u51fa\u4e0d\u540c|\u4e2d\u6bd2|\u53d7\u4f24|\u4e8b\u6545|SOTA/u;
   const repositoryOpeningValue = repositoryProjectName(project)
     ? repositoryProjectTitleSummary(project)
     : "";
-  if (valueIndex < 0 && !repositoryOpeningValue && !titleValuePattern.test(project.meta.title)) {
+  const titleHasValue = titleValuePattern.test(project.meta.title) || /来了|进入|最强/u.test(project.meta.title);
+  if (valueIndex < 0 && !repositoryOpeningValue && !titleHasValue) {
     issues.push({ severity: "error", code: "hook_value_missing", message: "开场没有结果、冲突、痛点或用户收益钩子。", sceneIndex: 0 });
     revisionNotes.push("标题后立刻给出结果、冲突、痛点或用户收益，不要用背景介绍开场。");
-  } else if (!repositoryOpeningValue && !EARLY_VALUE_PATTERN.test(earlyWindow) && !openingValuePattern.test(earlyWindow) && !titleValuePattern.test(project.meta.title) && !(/(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(project.meta.title) && /(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(earlyWindow))) {
+  } else if (!repositoryOpeningValue && !EARLY_VALUE_PATTERN.test(earlyWindow) && !openingValuePattern.test(earlyWindow) && !titleHasValue && !(/(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(project.meta.title) && /(?:模型|AI)[^。！？!?]{0,24}(?:生成|生图)/u.test(earlyWindow))) {
     issues.push({ severity: "error", code: "value_revealed_too_late", message: "核心价值在开场 6 秒之后才出现。", sceneIndex: 0, evidence: { valueCharacterIndex: valueIndex, earlyWindowCharacters: earlyWindow.length } });
     revisionNotes.push("把第一个核心卖点提前到开场 6 秒内。");
   }
@@ -472,6 +549,18 @@ export async function evaluateDraft(
       variantId: coverDecision.variantId,
     })
     : "";
+  const renderedSceneHtml = productionDecisions.map((decision) => {
+    const scene = project.scenes[decision.sceneIndex];
+    const template = getTemplateById(decision.templateSelection.templateId);
+    return scene && template ? template.renderHtml({
+      project,
+      scene,
+      sceneIndex: decision.sceneIndex,
+      width: project.meta.width,
+      height: project.meta.height,
+      variantId: decision.templateSelection.variantId,
+    }) : "";
+  }).join("\n");
   const repositoryAddresses = project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
   if (containsForbiddenWebsiteReference(spokenProjectText)) {
     issues.push({ severity: "error", code: "narration_website_reference_exposed", message: "旁白、ttsText 和 providerSynthesisText 不得播报网站地址或域名；网址只允许作为画面字段展示。" });
@@ -525,9 +614,11 @@ export async function evaluateDraft(
       revisionNotes.push("重新读取项目标题、摘要和 README，只保留来源支持的用途、工作流和限制，禁止套用其他项目画像。");
     }
     const repositoryUrl = repositoryProjectUrl(project);
-    if (!repositoryUrl || !coverHtml.includes(repositoryUrl)) {
-      issues.push({ severity: "error", code: "repository_address_missing", message: "开源项目首屏必须清晰展示完整仓库地址。", sceneIndex: 0, evidence: { repositoryUrl: repositoryUrl || "missing" } });
-      revisionNotes.push("在首屏安全区展示 github.com/owner/repository，地址只用于画面识别。 ");
+    const repositoryPath = project.sources.find((item) => item.kind === "github")?.repo ?? repositoryUrl.replace(/^https?:\/\/(?:www\.)?/i, "").replace(/\/$/, "");
+    const exposedRepositoryAddress = [repositoryUrl, repositoryPath, "github.com/", "raw.githubusercontent.com/"].some((value) => value && renderedSceneHtml.toLowerCase().includes(value.toLowerCase()));
+    if (exposedRepositoryAddress) {
+      issues.push({ severity: "error", code: "repository_address_exposed", message: "开源项目视频画面不得出现仓库地址或外部平台域名。", sceneIndex: 0, evidence: { repositoryPath: repositoryPath || "detected" } });
+      revisionNotes.push("从所有模板和可视字段删除 github.com、owner/repository 及其他仓库地址；只保留项目原名、用途和 Star 数。 ");
     }
     const stars = Number(project.sources.find((item) => item.kind === "github")?.metrics?.stars);
     if (!Number.isFinite(stars) || stars <= 0 || /(?:^|\D)0\s*Stars\b/i.test(firstVisibleText)) {
@@ -610,7 +701,8 @@ export async function evaluateDraft(
     issues.push({ severity: "error", code: "title_not_chinese_summary", message: "视频主标题没有形成清晰的中文总结。" });
     revisionNotes.push("将主标题改写为14到30个汉字的中文事实总结，英文仅保留必要专有名。 ");
   }
-  const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
+  const sourceText = `${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""} ${(source?.research ?? []).map((item) => `${item.title} ${item.source} ${item.content}`).join(" ")}`;
+  if (isNewsProject(project)) issues.push(...modelReleaseAccessIssues(project, sourceText, `${source?.title ?? ""} ${source?.summary ?? ""}`, project.narration));
   const releaseStatusSource = `${source?.title ?? ""} ${source?.summary ?? ""}`;
   const releaseStatusPattern = /正式发布|正式推出|对外推出|即日起.{0,80}开放|(?:开启|进入|开放)公测/;
   const releaseNarrationPattern = /正式发布|正式推出|对外推出|开源|发布|推出|上线|开放|公测/;

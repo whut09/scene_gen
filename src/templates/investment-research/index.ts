@@ -1,11 +1,11 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectRepositoryStars, repositoryDisplayName, sceneHeadline } from "../html-utils";
 
 function sceneItems(scene: Parameters<HtmlTemplateDefinition["renderHtml"]>[0]["scene"]) {
   if (scene.type === "briefing_points") return scene.points.map((detail, index) => ({ label: scene.metrics[index]?.label ?? `研究 ${index + 1}`, detail }));
   if (scene.type === "signal_chart") return scene.bars.map((bar) => ({ label: bar.label, detail: bar.detail, value: bar.value }));
   if (scene.type === "flow") return scene.steps.map((step) => ({ label: step.label, detail: step.detail }));
-  if (scene.type === "github_pulse") return scene.repos.map((repo) => ({ label: repo.repo, detail: repo.summary, value: repo.score }));
+  if (scene.type === "github_pulse") return scene.repos.map((repo) => ({ label: repositoryDisplayName(repo.repo), detail: repo.summary, value: repo.score }));
   if (scene.type === "outro") return scene.bullets.map((detail, index) => ({ label: `结论 ${index + 1}`, detail }));
   return [];
 }
@@ -43,8 +43,6 @@ export const investmentResearchTemplate: HtmlTemplateDefinition = {
   renderHtml: ({ project, scene, width, height, variantId }) => {
     const items = sceneItems(scene).slice(0, 5);
     const title = sceneHeadline(scene);
-    const repoUrl = projectSourceUrl(project);
-    const visibleRepoUrl = repoUrl;
     const repositoryStars = scene.type === "title" ? projectRepositoryStars(project) : "";
     const cards = items.map((item, index) => {
       const delay = pacedDelay(index, items.length, scene.duration, 1.1);
@@ -56,7 +54,7 @@ export const investmentResearchTemplate: HtmlTemplateDefinition = {
     const titleScene = scene.type === "title";
     const cover = titleScene ? `<section class="ir-cover"><div class="ir-seal ir-s1">巴菲特</div><div class="ir-seal ir-s2">芒格</div><div class="ir-seal ir-s3">段永平</div><div class="ir-seal ir-s4">李录</div><p>${escapeHtml(scene.subhead)}</p><blockquote>PRICE IS WHAT YOU PAY<br/>VALUE IS WHAT YOU GET</blockquote></section>` : `<section class="ir-board">${cards}</section>`;
     const body = `<main class="hv-main ir-main ${variantClass} ${titleScene ? "ir-title-cover" : ""}">
-      <header class="ir-header ${visibleRepoUrl ? "ir-repo-header" : ""}"><span>${visibleRepoUrl ? escapeHtml(visibleRepoUrl) : "RESEARCH / PROJECT MEMO"}</span><time>VALUE × AI</time></header>
+      <header class="ir-header"><span>RESEARCH / PROJECT MEMO</span><time>VALUE × AI</time></header>
       <h1 style="font-size:${headlineFontSize(title, 78, 58)}px">${escapeHtml(title)}</h1>
       ${repositoryStars ? `<div class="ir-stars">${escapeHtml(repositoryStars)}</div>` : ""}
       <div class="ir-rule"><i></i></div>

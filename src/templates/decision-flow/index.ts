@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, repositoryDisplayName, sceneHeadline } from "../html-utils";
 
 export const decisionFlowTemplate: HtmlTemplateDefinition = {
   id: "decision-flow",
@@ -36,7 +36,7 @@ export const decisionFlowTemplate: HtmlTemplateDefinition = {
       : scene.type === "timeline"
         ? scene.events.map((event) => ({ label: event.date, detail: event.title }))
         : scene.type === "github_pulse"
-          ? scene.repos.map((repo) => ({ label: repo.repo, detail: repo.summary }))
+          ? scene.repos.map((repo) => ({ label: repositoryDisplayName(repo.repo), detail: repo.summary }))
           : [];
     const nodes = items.slice(0, 5).map((item, index) =>
       '<article class="df-node df-' + (index % 2 ? 'right' : 'left') + '" style="animation-delay:' + pacedDelay(index, items.length, scene.duration) + 's">' +

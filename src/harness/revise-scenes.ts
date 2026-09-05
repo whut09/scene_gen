@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { VideoProject, VideoScene } from "../pipeline/types";
-import { loadDotEnv, parseArgs, readJson, writeJson, writeJsonAtomic } from "../pipeline/utils";
+import { chatCompletionCompatibility, loadDotEnv, parseArgs, readJson, writeJson, writeJsonAtomic } from "../pipeline/utils";
 import { sceneRevisionResponseSchema, videoProjectSchema } from "../pipeline/schemas";
 import { fetchWithRetry } from "../pipeline/external-operation";
 import { attachFactReferences } from "../pipeline/fact-ledger";
@@ -44,7 +44,7 @@ const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/comple
   method: "POST",
   headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
   body: JSON.stringify({
-    model, temperature: 0.18, response_format: { type: "json_object" },
+    model, ...chatCompletionCompatibility(model), temperature: 0.18, response_format: { type: "json_object" },
     messages: [
       { role: "system", content: [
         "你是视频分镜局部修订器。只修改指定 sceneIndex，禁止修改其他屏、项目标题、来源事实和场景数量。",

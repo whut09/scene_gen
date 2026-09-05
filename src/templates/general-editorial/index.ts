@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectPublicationDate, projectPublicationDateLabel, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, pacedDelay, projectPublicationDate, projectPublicationDateLabel, projectRepositoryStars, sceneHeadline } from "../html-utils";
 
 export const generalEditorialTemplate: HtmlTemplateDefinition = {
   id: "general-editorial",
@@ -42,7 +42,6 @@ export const generalEditorialTemplate: HtmlTemplateDefinition = {
     let body = "";
     if (scene.type === "title") {
       const size = headlineFontSize(scene.headline, 92, 62);
-      const repositoryUrl = projectSourceUrl(project);
       const repositoryStars = projectRepositoryStars(project);
       body = `<main class="hv-main ge-main ge-cover">
         <div class="ge-section">今日焦点 · 深度解读</div>
@@ -52,8 +51,7 @@ export const generalEditorialTemplate: HtmlTemplateDefinition = {
         <div class="ge-rule"></div>
         <p class="ge-deck">${escapeHtml(scene.subhead)}</p>
         ${repositoryStars ? `<div class="ge-stars">${escapeHtml(repositoryStars)}</div>` : ""}
-        ${repositoryUrl ? `<div class="ge-repository-url">${escapeHtml(repositoryUrl)}</div>` : ""}
-        <div class="ge-keywords">${scene.sources.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+        <div class="ge-keywords">${scene.sources.filter((item) => !/(?:https?:\/\/|github\.com\/|gitlab\.com\/|[\w.-]+\/[\w.-]+)/i.test(item)).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
       </main>`;
     } else if (scene.type === "briefing_points") {
       body = `<main class="hv-main ge-main">

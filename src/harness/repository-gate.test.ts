@@ -48,7 +48,7 @@ test("generated repository recommendation follows the promotion structure", asyn
   assert.equal(result.issues.some((issue) => issue.code === "repository_promotion_structure_missing"), false);
   assert.deepEqual(value.scenes.map((scene) => scene.headline), [
     "今日开源热点趋势项目推荐：voicebox｜在本地完成声音克隆、语音生成和听写的语音工作室",
-    "先看它替你省掉什么麻烦",
+    "用户痛点与核心价值：先复用已有能力，避免过度设计",
     "核心价值、证据和使用前提",
     "怎么开始，什么情况别急",
   ]);

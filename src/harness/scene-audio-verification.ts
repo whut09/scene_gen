@@ -245,6 +245,11 @@ function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
       let repeats = 1;
       while (actualText.slice(index + repeats * width, index + (repeats + 1) * width) === phrase) repeats += 1;
       const minimumRepeats = /[a-z]/i.test(phrase) && phrase.length >= 2 ? 2 : 3;
+      if (/^[a-z]+$/i.test(phrase)) {
+        const previous = actualText[index - 1] ?? "";
+        const next = actualText[index + width * repeats] ?? "";
+        if (/[a-z0-9]/i.test(previous) || /[a-z0-9]/i.test(next)) continue;
+      }
       if (repeats >= minimumRepeats && !expectedText.includes(phrase.repeat(repeats))) return { phrase, repeats, index };
     }
   }

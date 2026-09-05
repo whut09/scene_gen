@@ -3,6 +3,7 @@ import { qualityJudgeResponseSchema } from "../../pipeline/schemas";
 import { fetchWithRetry } from "../../pipeline/external-operation";
 import type { RuntimeConfig } from "../../config/runtime-config";
 import type { QualityIssueInput, QualityScoreStatus } from "../quality-protocol";
+import { chatCompletionCompatibility } from "../../pipeline/utils";
 
 export const expectedJudgeScoreKeys = ["sourceFidelity", "titleHook", "informationDensity", "visualStructure", "sceneAlignment", "ttsReadability"] as const;
 
@@ -31,6 +32,7 @@ export async function callQualityJudge(project: VideoProject, feedbackGuidance: 
     },
     body: JSON.stringify({
       model,
+      ...chatCompletionCompatibility(model),
       temperature: 0.1,
       response_format: { type: "json_object" },
       messages: [

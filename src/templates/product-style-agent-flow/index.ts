@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, pacedDelay, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, pacedDelay, repositoryDisplayName, sceneHeadline } from "../html-utils";
 
 export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
   id: "product-style-agent-flow",
@@ -43,7 +43,7 @@ export const productStyleAgentFlowTemplate: HtmlTemplateDefinition = {
     const items = scene.type === "flow"
       ? scene.steps.map((step) => ({ title: step.label, detail: step.detail }))
       : scene.type === "github_pulse"
-        ? scene.repos.map((repo) => ({ title: repo.repo, detail: repo.summary }))
+        ? scene.repos.map((repo) => ({ title: repositoryDisplayName(repo.repo), detail: repo.summary }))
         : scene.type === "timeline"
           ? scene.events.map((event) => ({ title: event.title, detail: event.date + " / " + event.source }))
           : [];

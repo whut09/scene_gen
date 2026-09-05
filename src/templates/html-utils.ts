@@ -1,7 +1,6 @@
 import type { VideoProject } from "../pipeline/types";
 import type { VideoScene } from "../pipeline/types";
 import { projectNewsDate, projectRepositoryDate } from "../pipeline/news-date";
-import { repositoryProjectUrl } from "../pipeline/repository-project";
 
 export function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -39,8 +38,8 @@ export function projectPublicationDateLabel(project: VideoProject) {
   return projectRepositoryDate(project) ? "推荐日期" : "新闻日期";
 }
 
-export function projectSourceUrl(project: VideoProject) {
-  return repositoryProjectUrl(project);
+export function repositoryDisplayName(value: string) {
+  return value.split("/").filter(Boolean).at(-1) ?? value;
 }
 
 export function projectRepositoryStars(project: VideoProject) {

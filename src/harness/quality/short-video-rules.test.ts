@@ -94,13 +94,51 @@ test("draft gate rejects cleanup-created dangling narration fragments", async ()
   assert.equal(result.issues.some((issue) => issue.code === "narration_truncated_fragment"), true);
 });
 
-test("draft gate rejects generic news transition filler", async () => {
+test("draft gate rejects generic narration filler in every synthesis field", async () => {
+  const phrases = [
+    "这意味着",
+    "这说明",
+    "这条新闻讲的是",
+    "这条新闻说的是",
+    "这条新闻的核心价值",
+    "这条新闻真正的信号",
+    "这条新闻的重点",
+    "这次真正改变的是",
+    "真正改变的是",
+    "这条新闻真正说了什么",
+    "对普通用户来说",
+    "普通读者先看",
+    "能不能让创作更简单",
+    "用途：用于文字和推理任务",
+    "用途：用于文字生成和推理任务",
+  ];
+  for (const phrase of phrases) {
+    const project = createFixtureProject({
+      scenes: [{ type: "title", duration: 10, kicker: "新闻", headline: "产品负责人创办新公司", subhead: `${phrase}：公司开始研发长期任务智能体。`, sources: ["事实"] }],
+      narration: `产品负责人创办新公司。${phrase}：公司开始研发长期任务智能体。`,
+      narrationSegments: [{
+        sceneIndex: 0,
+        text: "产品负责人创办新公司。公司开始研发长期任务智能体。",
+        ttsText: `产品负责人创办新公司。${phrase}：公司开始研发长期任务智能体。`,
+      }],
+    });
+    const result = await evaluateDraft(project, 40, "");
+    assert.equal(result.issues.some((issue) => issue.code === "generic_transition_filler"), true, phrase);
+  }
+});
+
+test("draft gate preserves the source news title and rejects article wording", async () => {
+  const title = "刚刚，全球最强GPT-6 Astra来了，人类进入AGI时代";
   const project = createFixtureProject({
-    narration: "产品负责人创办新公司。这次真正改变的是：公司开始研发长期任务智能体。",
-    narrationSegments: [{ sceneIndex: 0, text: "产品负责人创办新公司。这次真正改变的是：公司开始研发长期任务智能体。" }],
+    meta: { title: "GPT-6 Astra 发布：评测、操作与开放限制", createdAt: "2026-09-04T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 40, sourceCount: 1 },
+    sources: [{ id: "source-1", kind: "webpage", contentType: "news", title, url: "https://www.36kr.com/p/3968652629422337", source: "核心事实", summary: "模型发布和公开演示。", score: 1, tags: [] }],
+    scenes: [{ type: "title", duration: 10, kicker: "模型发布", headline: "GPT-6 Astra 发布：评测、操作与开放限制", subhead: "文章披露了评测结果。", sources: ["公开信息"] }],
+    narration: "GPT-6 Astra 发布：评测、操作与开放限制。",
+    narrationSegments: [{ sceneIndex: 0, text: "GPT-6 Astra 发布：评测、操作与开放限制。文章披露了评测结果。" }],
   });
   const result = await evaluateDraft(project, 40, "");
-  assert.equal(result.issues.some((issue) => issue.code === "generic_transition_filler"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "source_title_not_preserved"), true);
+  assert.equal(result.issues.some((issue) => issue.code === "news_article_wording_exposed"), true);
 });
 
 test("draft gate recognizes prevention value in a long source title", async () => {
@@ -113,4 +151,17 @@ test("draft gate recognizes prevention value in a long source title", async () =
   });
   const result = await evaluateDraft(project, 40, "");
   assert.equal(result.issues.some((issue) => issue.code === "value_revealed_too_late"), false);
+});
+
+test("draft gate recognizes an immediate market-exit result without generic filler", async () => {
+  const title = "批量博主集体停更，AI漫剧泡沫开始破裂";
+  const project = createFixtureProject({
+    meta: { title, createdAt: "2026-08-19T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 40, sourceCount: 1 },
+    sources: [{ id: "source-1", kind: "webpage", contentType: "news", title, url: "https://example.com/news", source: "核心事实", summary: "粗放生产者正在退场。", score: 1, tags: [] }],
+    narration: `${title}。监管收紧、成本上涨和低质内容失去流量，粗放生产者正在退场。`,
+    narrationSegments: [{ sceneIndex: 0, text: `${title}。监管收紧、成本上涨和低质内容失去流量，粗放生产者正在退场。` }],
+  });
+  const result = await evaluateDraft(project, 40, "");
+  assert.equal(result.issues.some((issue) => issue.code === "value_revealed_too_late"), false);
+  assert.equal(result.issues.some((issue) => issue.code === "generic_transition_filler"), false);
 });

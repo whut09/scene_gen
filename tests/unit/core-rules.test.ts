@@ -234,14 +234,69 @@ test("news gate rejects unexplained technical detail and missing audience value"
   assert.equal(result.issues.some((issue) => issue.code === "news_audience_value_missing"), true);
 });
 
-test("repository videos display the address but reject it from narration", async () => {
+test("model release news requires access details without inventing absent facts", async () => {
+  const project = createFixtureProject();
+  project.sources[0] = {
+    ...project.sources[0],
+    contentType: "news",
+    title: "新模型正式发布，开放 API 调用",
+    content: "新模型正式发布，开放 API 调用。",
+  };
+  project.meta.title = "新模型正式发布";
+  project.narration = "新模型正式发布，开发者可以通过 API 使用。";
+  project.narrationSegments![0].text = project.narration;
+  const passing = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(passing.issues.some((issue) => issue.code === "model_access_details_missing"), false);
+  project.narration = "新模型正式发布，能力更强，开发者可以试试。";
+  project.narrationSegments![0].text = project.narration;
+  const failing = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(failing.issues.some((issue) => issue.code === "model_access_details_missing"), true);
+});
+
+test("model pricing and service news do not require release-only access details", async () => {
+  for (const source of [
+    { title: "DeepSeek涨价，API采用峰谷定价", summary: "高峰时段价格翻倍，批量调用用户需要重新核算成本。" },
+    { title: "DeepSeek API出现服务故障", summary: "部分用户调用失败，服务随后逐步恢复。" },
+    { title: "DeepSeek日调用量创新高", summary: "平台公布最新调用数据和用户增长情况。" },
+  ]) {
+    const project = createFixtureProject();
+    project.sources[0] = { ...project.sources[0], contentType: "news", ...source, content: source.summary };
+    project.meta.title = source.title;
+    project.narration = `${source.title}。${source.summary}`;
+    project.narrationSegments![0].text = project.narration;
+    const result = await evaluateDraft(project, project.meta.durationSeconds, "");
+    assert.equal(result.issues.some((issue) => issue.code === "model_access_details_missing"), false, source.title);
+  }
+});
+
+test("model release gate requires researched fields only when evidence exists", async () => {
+  const project = createFixtureProject();
+  project.sources[0] = {
+    ...project.sources[0],
+    contentType: "news",
+    title: "Qwen3.8-27B 正式开源",
+    content: "Qwen3.8-27B 正式开源，Apache 2.0 协议。API 每百万 Token 输入零点四美元，输出三美元。四比特部署约需十七 GB 显存，实测约五十 Token 每秒。",
+  };
+  project.meta.title = "Qwen3.8-27B 正式开源";
+  project.narration = "Qwen3.8-27B 正式开源。采用 Apache 2.0 协议；API 输入每百万 Token 零点四美元、输出三美元；四比特部署约需十七 GB 显存，实测约五十 Token 每秒。";
+  project.narrationSegments![0].text = project.narration;
+  const passing = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(passing.issues.some((issue) => issue.code === "model_access_details_missing"), false);
+
+  project.narration = "Qwen3.8-27B 正式开源。原文未提及 API 价格、本地硬件和运行速度。";
+  project.narrationSegments![0].text = project.narration;
+  const failing = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(failing.issues.some((issue) => issue.code === "model_access_details_missing"), true);
+});
+
+test("repository videos hide the address and reject it from narration", async () => {
   assert.equal(scrubGithubReference("GitHub 仓库：https://github.com/HKUDS/DeepTutor，地址 HKUDS/DeepTutor", ["HKUDS/DeepTutor"]), "开源项目 仓库：开源项目，地址 DeepTutor");
   const project = createFixtureProject();
   project.sources[0] = { ...project.sources[0], kind: "github", contentType: "repository", repo: "HKUDS/DeepTutor", url: "https://github.com/HKUDS/DeepTutor", metrics: { stars: 100 } };
   project.narration = `${project.narration} 项目托管在 GitHub，仓库地址是 HKUDS/DeepTutor。`;
   const result = await evaluateDraft(project, project.meta.durationSeconds, "");
   assert.equal(result.issues.some((issue) => issue.code === "repository_address_spoken"), true);
-  assert.equal(result.issues.some((issue) => issue.code === "repository_address_missing"), false);
+  assert.equal(result.issues.some((issue) => issue.code === "repository_address_exposed"), false);
 });
 
 test("spoken website references are scrubbed while visible URLs remain allowed", async () => {

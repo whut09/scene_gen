@@ -45,7 +45,10 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
       for (const acronym of acronymsRequiringSpelledLetters(segment.text)) {
         const requiredReading = spelledLatinAcronym(acronym);
         const separatedLetters = new RegExp([...acronym].join("[\\s、，,。.;；:]+"), "i");
-        if (!segment.providerSynthesisText.includes(requiredReading) || separatedLetters.test(segment.providerSynthesisText)) {
+        const normalizedReading = segment.providerSynthesisText.replace(/[-‐‑‒–—―]/gu, "");
+        const normalizedRequiredReading = requiredReading.replace(/[-‐‑‒–—―]/gu, "");
+        const hasContinuousReading = segment.providerSynthesisText.includes(requiredReading) || normalizedReading.includes(normalizedRequiredReading);
+        if (!hasContinuousReading || (separatedLetters.test(segment.providerSynthesisText) && !hasContinuousReading)) {
           issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${acronym} 的最终 TTS 输入没有连续发音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { acronym, requiredReading, provider: segment.ttsProvider, providerSynthesisText: segment.providerSynthesisText } });
         }
       }
@@ -59,7 +62,11 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
     if (/\bAI\b/i.test(segment.text) && !/\bAI\b/i.test(synthesisInput) && !spellsAi && synthesisInput.includes("人工智能")) {
       issues.push({ severity: "error", code: "tts_ai_expanded", message: `第 ${segment.sceneIndex + 1} 屏把 AI 扩写成了“人工智能”，应保持 AI 字母读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { displayText: segment.text, synthesisText: synthesisInput } });
     }
-    const protectedLatinNames = segment.text.match(/\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)+\b/g) ?? [];
+    // A curated ttsText may intentionally omit secondary API names. Keep the
+    // hard check for the project title and for unmodified synthesis text.
+    const titleSpeech = canonicalSpeechText(prepareF5SynthesisText(project.meta.title));
+    const protectedLatinNames = (segment.text.match(/\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)+\b/g) ?? [])
+      .filter((name) => !segment.ttsText || segment.ttsText === segment.text || titleSpeech.includes(canonicalSpeechText(prepareF5SynthesisText(name))));
     for (const name of protectedLatinNames) {
       const normalizedName = canonicalSpeechText(prepareF5SynthesisText(name));
       if (!canonicalSpeechText(prepared).includes(normalizedName)) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, normalizedName, displayText: segment.text, synthesisText: synthesisInput } });

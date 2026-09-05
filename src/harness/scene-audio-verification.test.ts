@@ -518,6 +518,20 @@ test("scene ASR does not treat repeated year digits as repeated narration", () =
   assert.equal(result.issues.some((item) => item.code === "audio_repeated_phrase"), false);
 });
 
+test("scene ASR does not treat a repeated letter sequence inside an English word as narration", () => {
+  const project = projectFixture();
+  project.narrationSegments = [{ sceneIndex: 0, text: "Crisis模型面向企业使用" }];
+  project.meta.title = "Crisis模型";
+  const result = verifySceneTranscripts(project, [{
+    sceneIndex: 0,
+    text: "Crisis模型面向企业使用",
+    confidence: 0.95,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  }], { expectedLanguage: "zh", minimumConfidence: 0.84 });
+  assert.equal(result.issues.some((item) => item.code === "audio_repeated_phrase"), false);
+});
+
 test("scene ASR does not hard fail repeated phrases below the confidence threshold", () => {
   const project = projectFixture();
   project.narrationSegments = [{ sceneIndex: 0, text: "系统完成核心模块重构" }];

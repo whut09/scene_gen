@@ -13,10 +13,11 @@ const project = {
 const scene = { type: "title", duration: 10, kicker: "项目速览", headline: "项目中文标题", subhead: "项目摘要", sources: [repositoryUrl] };
 
 for (const template of [kineticTitleTemplate, boldSignalTemplate, investmentResearchTemplate, generalEditorialTemplate]) {
-  test(`${template.id} repository cover shows the address without a promotional banner`, () => {
+  test(`${template.id} repository cover hides the address without a promotional banner`, () => {
     const html = template.renderHtml({ project, scene, width: 1080, height: 1920, variantId: template.variants[0].id } as never);
     assert.equal(html.includes("GitHub 开源项目推荐"), false);
-    assert.equal(html.includes(repositoryUrl), true);
+    assert.equal(html.includes(repositoryUrl), false);
+    assert.equal(html.includes("github.com/"), false);
     assert.equal(html.includes("1,813 Stars"), true);
   });
 }

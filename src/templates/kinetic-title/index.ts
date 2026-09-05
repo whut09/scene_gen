@@ -1,5 +1,5 @@
 import type { HtmlTemplateDefinition } from "../template.schema";
-import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPublicationDate, projectPublicationDateLabel, projectRepositoryStars, projectSourceUrl, sceneHeadline } from "../html-utils";
+import { commonHtml, escapeHtml, headlineFontSize, projectHeroAsset, projectPublicationDate, projectPublicationDateLabel, projectRepositoryStars, sceneHeadline } from "../html-utils";
 
 export const kineticTitleTemplate: HtmlTemplateDefinition = {
   id: "kinetic-title",
@@ -42,7 +42,6 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
     const kicker = isTitle ? scene.kicker : "最终结论";
     const titleSize = headlineFontSize(headline, 88, 60);
     const isGithubProject = project.sources.some((source) => source.kind === "github" || Boolean(source.repo));
-    const repositoryUrl = isTitle ? projectSourceUrl(project) : "";
     const repositoryStars = isTitle ? projectRepositoryStars(project) : "";
     const publicationDate = projectPublicationDate(project);
     const publicationDateLabel = projectPublicationDateLabel(project);
@@ -57,7 +56,7 @@ export const kineticTitleTemplate: HtmlTemplateDefinition = {
       '<div class="kt-rule"><i></i><i></i><i></i></div>' +
       '<p class="kt-support">' + escapeHtml(supporting) + '</p>' +
       (repositoryStars ? '<div class="kt-stars">' + escapeHtml(repositoryStars) + '</div>' : '') +
-      '<div class="kt-stamp">' + escapeHtml(repositoryUrl || (isGithubProject ? 'PROJECT / SIGNAL' : 'NEWS / SIGNAL')) + '</div>' +
+      '<div class="kt-stamp">' + escapeHtml(isGithubProject ? 'PROJECT / SIGNAL' : 'NEWS / SIGNAL') + '</div>' +
       '</main>';
     const css =
       '.kt-main{inset:112px 58px 72px;display:flex;flex-direction:column;justify-content:center;}' +

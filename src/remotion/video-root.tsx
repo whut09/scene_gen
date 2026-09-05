@@ -312,7 +312,7 @@ function GithubPulse({
               <div className="repoIcon" style={{ boxShadow: `0 0 ${24 + wave * 38}px rgba(66,211,146,.55)` }}>
                 {"</>"}
               </div>
-              <h2>{repo.repo}</h2>
+              <h2>{repo.repo.split("/").filter(Boolean).at(-1) ?? repo.repo}</h2>
               <h3>{repo.title}</h3>
               <p>{repo.summary}</p>
               <div className="repoScore">{repo.score}</div>

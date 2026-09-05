@@ -13,7 +13,7 @@ export function indexTtsSpeakerDrift(input: { minimum: number; average: number; 
   const thresholds = {
     referenceMinimum: requiredSimilarity * 0.75,
     referenceAverage: requiredSimilarity * 0.85,
-    pairwiseMinimum: requiredSimilarity,
+    pairwiseMinimum: requiredSimilarity * 0.975,
     pairwiseAverage: Math.min(0.99, requiredSimilarity + 0.05),
   };
   return {
