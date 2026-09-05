@@ -196,6 +196,20 @@ test("awesome-llm-apps is described as an application example library", () => {
   assert.match(project.narrationSegments?.[0].ttsText ?? "", /Awesome L-L-M Apps/);
 });
 
+test("ruflo keeps agent orchestration separate from knowledge-base projects", () => {
+  const project = createStoryProject({
+    id: "ruflo", kind: "github", contentType: "repository",
+    title: "ruflo: An agent meta-harness for Claude Code and Codex",
+    url: "https://github.com/ruvnet/ruflo", repo: "ruvnet/ruflo", source: "项目资料",
+    summary: "An agent meta-harness for Claude Code and Codex.",
+    content: "Agent orchestration, persistent memory, task loops, tool calls, sandboxing, and a ruflo-rag-memory plugin.",
+    score: 1, tags: ["agents", "orchestration"], metrics: { stars: 70561 },
+  });
+  assert.match(project.narration, /Claude Code 和 Codex.*协作执行复杂/);
+  assert.match(project.narration, /智能体编排.*任务循环.*持久记忆/);
+  assert.doesNotMatch(project.narration, /团队资料变成可检索问答|把文档整理为知识库/);
+});
+
 test("new repository profiles keep their real product positioning", () => {
   const fixtures: Array<{ repo: string; summary: string; expected: RegExp; forbidden: RegExp }> = [
     {

@@ -2561,7 +2561,36 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       topics: ["导入板图", "设计规则", "自动走线", "未连通检查", "规则校验", "导回设计"],
     };
   }
-  if (/weknora|knowledge base|knowledge.?graph|retrieval augmented|\brag\b/i.test(`${name} ${item.title} ${content}`)) {
+  if (/^ruflo$/i.test(name)) {
+    return {
+      titleSummary: "让代码智能体协作执行复杂任务",
+      theme: "让 Claude Code 和 Codex 围绕复杂任务协作并持续执行",
+      capability: "提供智能体编排、持久记忆、任务循环、工具调用、沙箱和安全护栏，让多个专业智能体可以分工完成代码与研究任务",
+      workflow: "先运行初始化命令并选择需要的插件，再给出一个边界清晰的代码或研究目标；让智能体分工执行，每轮检查工具调用、测试结果和保留的记忆",
+      boundaries: "它是智能体的执行与协调层，不会替代底层模型；长期任务仍需限制命令权限、模型成本、敏感数据访问和最终交付权限",
+      topics: ["智能体编排", "任务循环", "持久记忆", "工具调用", "安全沙箱", "多智能体协作"],
+      metrics: [{ label: "定位", value: "Agent Meta-Harness" }, { label: "适配对象", value: "Claude Code、Codex" }],
+      problemPoints: [
+        "复杂代码任务通常需要多个角色反复协作，但普通聊天会丢失上下文，也难以检查每一步是否真的完成。",
+        "Ruflo 为 Claude Code 和 Codex 增加智能体编排、记忆、任务循环、工具和安全护栏，让长任务可以分工执行并留下证据。",
+        "它适合软件开发、研究和需要多轮验证的任务，但敏感命令、成本和最终提交仍必须由使用者控制。",
+      ],
+      steps: [
+        { label: "初始化环境", detail: "安装 Ruflo 并选择需要的核心或领域插件。" },
+        { label: "定义目标", detail: "写清楚代码或研究任务的输入、输出和验收标准。" },
+        { label: "协作执行", detail: "让不同智能体调用工具、共享记忆并推进子任务。" },
+        { label: "检查交付", detail: "核对测试、命令、证据和最终改动后再合并或发布。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它让 Claude Code 和 Codex 协作执行复杂的代码与研究任务。`,
+        "Ruflo 把智能体编排、任务循环、持久记忆、工具调用和安全护栏放到同一层，解决长任务容易丢上下文、重复劳动和难以复盘的问题。",
+        "使用时先初始化环境、选择插件，再给出边界清晰的目标；智能体可以分工执行，使用者每轮核对命令、测试结果和保留的记忆。",
+        "它适合软件开发和多轮研究，但不是底层模型本身。敏感命令、数据访问、模型成本和最终交付仍要保留人工控制。",
+      ],
+    };
+  }
+  const repositoryHeading = `${name} ${item.title} ${item.summary}`;
+  if (/^weknora$/i.test(name) || (/(knowledge base|knowledge.?graph|retrieval augmented)/i.test(repositoryHeading) && /\brag\b/i.test(repositoryHeading))) {
     return {
       theme: "把团队资料变成可检索问答",
       capability: "把文档整理为知识库，为内部问答提供相关上下文",
