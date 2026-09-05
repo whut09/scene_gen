@@ -79,3 +79,29 @@ test("narration limiter never creates a one-word fragment", () => {
   assert.match(limited, /[。！？!?]$/u);
   assert.doesNotMatch(limited, /(?:创|试了|关键是)[。！？!?]$/u);
 });
+
+test("narration limiter preserves sentence-final Chinese numerals", () => {
+  const text = "它的差异不是只刷通用榜单。模型先在现金流和外汇敞口预测中验证，再把能力扩展到更多时间序列任务。平均绝对比例误差降到零点六六六，但金融预测仍要结合滚动回测和风险约束。";
+  const limited = limitNarration(text, 70);
+  assert.match(limited, /零点六六六。$/u);
+  assert.doesNotMatch(limited, /零点$/u);
+});
+
+test("narration limiter always terminates a shortened clause", () => {
+  const text = "公开使用路径以 Falcon 二点零 API 和机构系统接入为主。产品口径约二十五亿参数，个人 GPU 本地部署不是本次路线；Encoder-Only 结构用一次前向计算减少预测延迟。";
+  assert.match(limitNarration(text, 70), /。$/u);
+});
+
+test("long news titles do not repeat the visual subhead in opening narration", () => {
+  const title = "Falcon TST 2.0获世界权威测评第一名，推动时间序列基础模型从通用预测走向金融应用";
+  const project = {
+    meta: { title, createdAt: "2026-08-26T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 60, sourceCount: 1 },
+    narration: `${title}。新闻日期：2026年8月26日。`,
+    narrationSegments: [{ sceneIndex: 0, text: `${title}。新闻日期：2026年8月26日。` }],
+    scenes: [{ type: "title", duration: 60, kicker: "模型发布", headline: title, subhead: "用于现金流与外汇风险预测", sources: ["正式发布"] }],
+    sources: [{ id: "falcon", kind: "webpage", contentType: "news", title, url: "https://example.com/news", source: "核心事实", summary: "正式发布", publishedAt: "2026年8月26日", score: 1, tags: [] }],
+  } satisfies VideoProject;
+  const compacted = compactProjectNarration(project);
+  assert.doesNotMatch(compacted.narrationSegments![0].text, /用于现金流/);
+  assert.match(compacted.narrationSegments![0].text, /新闻日期：2026年8月26日。$/u);
+});

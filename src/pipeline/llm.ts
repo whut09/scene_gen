@@ -5,6 +5,7 @@ import { attachFactReferences, buildFactLedger } from "./fact-ledger";
 import { planStoryCandidates } from "./story-planner";
 import type { StoryPlanCandidate, StoryPlanningAudit } from "./types";
 import { allocateSceneDurations, contentDurationPolicy, contentTypeForProject } from "./content-strategy";
+import { chatCompletionCompatibility } from "./utils";
 
 function cleanStrings(values: unknown, limit: number) {
   if (!Array.isArray(values)) return [];
@@ -303,7 +304,8 @@ export async function improveWithOpenAI(
     "高风险表述（发布、开放、领先、提升、增长、降低等）必须引用 evidenceText 明确包含该动作的 claim；不得把可能、部分用户、实验结果、仅、尚未等限定词省略。",
     "每个 section 必须有 narration。先确定该 section 的所有画面字段，再写旁白；旁白只能复述、串联或简要解释当前 section 屏幕上实际可见的信息。",
     "禁止在旁白中加入当前屏幕没有呈现的新数据、新案例、新结论或额外背景；需要讲的信息必须先写进该 section 的可视字段。",
-    "首屏直接使用结果、冲突或反常识事实作为钩子，不说“今天介绍”“这条新闻讲的是”，完整标题最多播报一次。标题后必须立刻说明为什么值得看。",
+    "首屏直接使用结果、冲突或反常识事实作为钩子，完整标题最多播报一次。标题后必须立刻说明为什么值得看。",
+    "旁白和画面禁止出现这些模板套话：这意味着、这说明、这条新闻讲的是、这条新闻说的是、这条新闻的核心价值、这条新闻真正的信号、这条新闻的重点、这次真正改变的是、真正改变的是、这条新闻真正说了什么。直接陈述具体事实、影响或限制。",
     "前 6 秒必须给出核心价值；视频过半前覆盖至少 70% 的关键结论和事实，不得把主要卖点留到结尾。",
     "按痛点、结果、证据、适用者组织信息。每屏只表达一个新结论；后屏不得换句话重复前屏；结尾必须补充限制、选择建议或适用边界。",
     "逐屏旁白长度：title 25-50 字，briefing 45-70 字，chart 45-65 字，flow 45-65 字，outro 35-55 字。只保留钩子、两个到三个关键证据、实际影响和必要边界；删除空泛背景、来源播报、重复标题和总结套话。",
@@ -311,7 +313,7 @@ export async function improveWithOpenAI(
     "不要出现新闻怎么跟进、如何发布、适合做视频、作者、编辑、站点、媒体来源等无关内容。",
     isGithubProject
       ? "这是GitHub项目拆解，不是热点发布新闻。README和仓库元数据是唯一依据，重点解释项目解决什么问题、核心工作流、技能结构、支持平台和适用边界。outro只能使用README明确写出的安装差异、使用方式、方法论定位或适用对象；README没有限制条件时就总结适用场景，不得虚构隐私、联网、环境变量或性能边界。"
-      : "sourceArticle 是唯一新闻依据。忠实总结文章中的发布状态、开放范围、模型能力、价格和数据，不得主动引入站外信息推翻或改写原文。",
+      : "sourceArticle 是新闻依据，research 是针对模型发布事件的联网资料。只有事件本身是新模型发布、开源发布、正式版或预览版发布、公测开放时，才优先回答是否开源或开放权重、API 是否可用及价格、本地部署硬件、实际速度或吞吐；使用 research 中检索到的具体事实，并保留官方、云厂商、部署资料或社区实测的来源性质。搜索资料之间数值不一致时明确条件和来源，不要编造统一结论。价格调整、服务故障、调用量变化、榜单、融资和公司动态都不是模型发布，不得强行补充这些问题。不要使用“未提及”“未检索到”等填充句，资料中没有的字段直接不写。",
     "如果文章明确写正式发布、正式推出或即日起开放，首段必须直接使用对应表述，并说明开放渠道和用户范围，不得弱化。",
     "不要照抄长原文，不要虚构文章中没有的数据；只有用户明确传入事实校正备注时，才按备注调整。",
     "先判断新闻事件类型：产品发布、研究突破、公司动态、政策变化或工具实测。研究成果不得写成产品发布，产品发布不得写成尚未开放。",
@@ -339,6 +341,7 @@ export async function improveWithOpenAI(
     },
     body: JSON.stringify({
       model,
+      ...chatCompletionCompatibility(model),
       temperature: 0.28,
       messages: [
         { role: "system", content: guidance },
@@ -357,6 +360,7 @@ export async function improveWithOpenAI(
               repo: item.repo,
               metrics: item.metrics,
               tags: item.tags,
+              research: item.research,
             })),
           }),
         },

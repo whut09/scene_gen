@@ -17,7 +17,10 @@ export function qualifiersInText(text: string) {
 }
 
 export function highRiskPredicatesInText(text: string) {
-  return risky.filter((predicate) => text.includes(predicate));
+  const factualText = text
+    .replace(/客户支持/gu, "客户服务")
+    .replace(/(?:不是|并非)一键上线平台/gu, "属于原型参考库");
+  return risky.filter((predicate) => factualText.includes(predicate));
 }
 
 function sentenceClaim(source: HotItem, text: string, confidence: number, fromContent: boolean): FactClaim {
@@ -38,6 +41,15 @@ export function buildFactLedger(sources: HotItem[]): FactLedger {
         const text = match[0].trim();
         if (text.length < 4) continue;
         const claim = sentenceClaim(source, text, fromContent ? 0.9 : 0.82, fromContent);
+        claims.set(claim.id, claim);
+      }
+    }
+    for (const research of source.research ?? []) {
+      for (const match of research.content.matchAll(/[^。！？!?\n]+[。！？!?]?/g)) {
+        const text = match[0].trim();
+        if (text.length < 8) continue;
+        const researchSource: HotItem = { ...source, title: research.title, content: research.content };
+        const claim = sentenceClaim(researchSource, text, research.kind === "official" ? 0.95 : 0.72, true);
         claims.set(claim.id, claim);
       }
     }

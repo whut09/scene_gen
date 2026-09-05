@@ -21,6 +21,14 @@ export const hotItemSchema = z.object({
   domain: z.string().optional(),
   repo: z.string().optional(),
   metrics: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
+  research: z.array(z.object({
+    url: z.string().url(),
+    title: z.string(),
+    source: z.string(),
+    kind: z.enum(["official", "provider", "deployment", "search"]),
+    content: z.string(),
+    retrievedAt: z.string(),
+  })).optional(),
   articleImages: z.array(z.object({
     id: z.string().min(1),
     kind: z.literal("image"),

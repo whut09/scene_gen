@@ -1,8 +1,8 @@
 {
   "NEWS_LLM_API_KEY": "xx",
   "NEWS_LLM_BASE_URL": "xx",
-  "NEWS_LLM_MODEL": "meta/llama-3.1-8b-instruct",
+  "NEWS_LLM_MODEL": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "QUALITY_LLM_API_KEY": "xx",
   "QUALITY_LLM_BASE_URL": "xx",
-  "QUALITY_LLM_MODEL": "meta/llama-3.1-8b-instruct"
+  "QUALITY_LLM_MODEL": "nvidia/nemotron-3.5-lightning-30b-a3b"
 }

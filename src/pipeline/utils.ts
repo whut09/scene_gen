@@ -10,6 +10,12 @@ export const workspaceRoot = path.resolve(
 
 export const fromRoot = (...parts: string[]) => path.join(workspaceRoot, ...parts);
 
+export function chatCompletionCompatibility(model: string) {
+  return /^nvidia\/nemotron-3(?:\.|-)/i.test(model)
+    ? { chat_template_kwargs: { enable_thinking: false } }
+    : {};
+}
+
 export async function ensureDir(dir: string) {
   await mkdir(dir, { recursive: true });
 }

@@ -89,7 +89,7 @@ if (urls.length === 1 && !args["force-rebuild"]) {
       }));
     }
     console.log("\n[github-cache] 已经生成过，已写入本次运行结果");
-    console.log("[github-cache] 仓库: " + githubKey(urls[0]));
+    console.log("[github-cache] 仓库: " + githubRepositoryKey(urls[0]));
     console.log("[github-cache] 项目: " + projectPath);
     console.log("[github-cache] 视频: " + outputPath);
     console.log("[github-cache] 生成时间: " + cached.project.meta.createdAt);
@@ -167,6 +167,12 @@ function fitProjectDurationToNarration(project: VideoProject, seconds: number) {
   } satisfies VideoProject;
 }
 
+function isModelReleaseNews(item: VideoProject["sources"][number]) {
+  const signal = `${item.title} ${item.summary} ${item.content ?? ""}`;
+  return /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith)/iu.test(signal)
+    && /(?:发布|推出|开源|开放权重|公测|上线)/u.test(signal);
+}
+
 function compactProjectScenes(project: VideoProject, maximumScenes: number) {
   if (project.scenes.length <= maximumScenes) return project;
   const priorities: Record<VideoProject["scenes"][number]["type"], number> = {
@@ -197,27 +203,6 @@ function compactProjectScenes(project: VideoProject, maximumScenes: number) {
     narrationSegments,
     narration: narrationSegments.map((segment) => segment.text).join("\n"),
     meta: { ...project.meta, durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0) },
-  } satisfies VideoProject;
-}
-
-function isModelReleaseNews(item: VideoProject["sources"][number]) {
-  const signal = `${item.title} ${item.summary} ${item.content ?? ""}`;
-  return /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith)/iu.test(signal)
-    && /(?:发布|推出|开源|开放权重|公测|上线)/u.test(signal);
-}
-
-function ensureModelReleaseHomepagePurpose(project: VideoProject) {
-  const source = project.sources[0];
-  if (!source || !isModelReleaseNews(source) || project.scenes[0]?.type !== "title") return project;
-  const scene = project.scenes[0];
-  const current = scene.subhead?.trim() ?? "";
-  if (/(?:用途|用于|用来|推理|生成|处理|编程|图像|文字)/u.test(current)) return project;
-  return {
-    ...project,
-    scenes: [
-      { ...scene, subhead: `${current ? `${current}；` : ""}用途：用于文字生成和推理任务。` },
-      ...project.scenes.slice(1),
-    ],
   } satisfies VideoProject;
 }
 
@@ -253,7 +238,7 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, effectiveTargetSeconds);
-  const deterministicShortStory = /ithome\.com\/0\/(?:989\/505|989\/497|989\/689|989\/722|986\/936|988\/286|988\/766|992\/441)|qbitai\.com\/2026\/08\/(?:473379|473597|467879|467877|471642)|tmtpost\.com\/(?:8102019|8110595)|36kr\.com\/p\/(?:3952922405256328|3933115490368647|3934784382958726|3935913818684545|3935738007485574|3948524254723461)|zhidx\.com\/p\/(?:583895|587260|587032)|techweb\.com\.cn\/it\/2026-08-11\/2978138/i.test(item.url);
+  const deterministicShortStory = /ithome\.com\/0\/(?:989\/505|989\/497|989\/689|989\/722|986\/936|988\/286|988\/766|992\/441|996\/120|996\/265|996\/460|996\/855|997\/270|997\/726|998\/647|998\/683|998\/747)|qbitai\.com\/2026\/08\/(?:473379|473597|467879|467877|471642|481372)|qbitai\.com\/2026\/09\/482652|tmtpost\.com\/(?:8102019|8110595)|36kr\.com\/p\/(?:3952922405256328|3933115490368647|3934784382958726|3935913818684545|3935738007485574|3948524254723461|3966895582123656|3968652629422337|3969755274883328)|zhidx\.com\/p\/(?:583895|587260|587032)|techweb\.com\.cn\/it\/2026-08-11\/2978138|baijiahao\.baidu\.com\/s\?id=(?:1875120348654659873|1875308462529578043)/i.test(item.url);
   if (!deterministicShortStory && (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1")) {
     project = await improveWithOpenAI(project, {
       targetSeconds: effectiveTargetSeconds,
@@ -265,13 +250,11 @@ for (const [index, item] of items.entries()) {
   } else {
     console.log("[repository] using deterministic repository draft; set REPOSITORY_LLM_EXPANSION=1 to opt into LLM expansion.");
   }
-  project = ensureModelReleaseHomepagePurpose(project);
-  const releaseSignal = `${project.sources[0]?.title ?? ""} ${project.sources[0]?.summary ?? ""}`;
-  const hasModelReleaseHeadline = /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith)/iu.test(releaseSignal)
-    && /(?:发布|推出|开源|开放权重|公测|上线)/u.test(releaseSignal);
-  const hasModelReleaseResearch = hasModelReleaseHeadline && project.sources.some((source) => (source.research?.length ?? 0) > 0)
-    || /qbitai\.com\/2026\/08\/473379/i.test(item.url);
-  const maximumScenes = hasModelReleaseResearch
+  const hasModelReleaseResearch = project.sources.some((source) => isModelReleaseNews(source))
+    && (project.scenes.length >= 5 || project.sources.some((source) => (source.research?.length ?? 0) > 0))
+    || /qbitai\.com\/2026\/08\/(?:473379|481372)/i.test(item.url);
+  const forceFiveSceneArticle = /qbitai\.com\/2026\/08\/481372|baijiahao\.baidu\.com\/s\?id=1875120348654659873/i.test(item.url);
+  const maximumScenes = hasModelReleaseResearch || forceFiveSceneArticle
     ? Math.max(5, contentDurationPolicy(contentTypeForItem(item)).sceneCount)
     : contentDurationPolicy(contentTypeForItem(item)).sceneCount;
   project = compactProjectScenes(project, maximumScenes);

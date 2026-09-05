@@ -1,4 +1,4 @@
-﻿import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
+import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
 
 import { buildFactLedger, claimIdsForText, sceneFactText } from "./fact-ledger";
 import { contentTypeForItem } from "./content-type";
@@ -9,7 +9,6 @@ const palette = ["#42d392", "#7dd3fc", "#f97316", "#f43f5e", "#a78bfa", "#facc15
 function shortTitle(title: string, max = 34) {
   return title.length > max ? `${title.slice(0, max - 1)}…` : title;
 }
-
 function speechFriendlyText(text: string) {
   return text
     .replace(/\bClaude\b/gi, "克劳德")
@@ -17,7 +16,6 @@ function speechFriendlyText(text: string) {
     .replace(/HappyHorse/gi, "活动主办方")
     .replace(/HorsePower/gi, "人工智能影像大赛");
 }
-
 function speechFriendlyTitle(title: string) {
   return title
     .replace(/^.{4,24}[？?](?=.{2,30}[：:])/u, "")
@@ -234,12 +232,12 @@ export function limitNarration(text: string, maxCharacters = 110) {
     limited = boundary?.trim() || `${text.slice(0, Math.max(1, maxCharacters - 1)).trim()}。`;
   }
   limited = limited
-    .replace(/[，、：；,:]*(?:第[一二三四五六七八九十百]+|[一二三四五六七八九十百]{1,3})[。！？!?]?$/u, "")
+    .replace(/[，、：；,:]*第[一二三四五六七八九十百]+[。！？!?]?$/u, "")
     .replace(/[，、：；,:]+$/u, "")
     .trim();
-  return /[，、：；;,]$/u.test(limited)
-    ? `${limited.replace(/[，、：；;,]+$/u, "")}。`
-    : limited;
+  return /[。！？!?]$/u.test(limited)
+    ? limited
+    : `${limited.replace(/[，、：；;,]+$/u, "")}。`;
 }
 
 function normalizedNarrationSentence(value: string) {
@@ -273,6 +271,11 @@ export const GENERIC_NARRATION_FILLERS = [
   "这次真正改变的是",
   "真正改变的是",
   "这条新闻真正说了什么",
+  "对普通用户来说",
+  "普通读者先看",
+  "能不能让创作更简单",
+  "用途：用于文字和推理任务",
+  "用途：用于文字生成和推理任务",
 ] as const;
 
 export function genericNarrationFillerMatches(text: string) {
@@ -283,7 +286,7 @@ export function cleanNarrationNoise(text: string) {
   let cleaned = text
     .replace(/(?:GPT|Wa|Chat|Sol)\s*\.\.\./gi, "")
     .replace(/\.{3,}|…{1,}/gu, "")
-    .replace(/(?:所以)?(?:这意味着|这说明|这条新闻讲的是|这条新闻说的是|这条新闻的核心价值|这条新闻真正的信号|这条新闻的重点|这次真正改变的是|真正改变的是|这条新闻真正说了什么)\s*[，,：:]?\s*/gu, "")
+    .replace(/(?:所以)?(?:这意味着|这说明|这条新闻讲的是|这条新闻说的是|这条新闻的核心价值|这条新闻真正的信号|这条新闻的重点|这次真正改变的是|真正改变的是|这条新闻真正说了什么|对普通用户来说|普通读者先看|用途：用于文字和推理任务|用途：用于文字生成和推理任务)\s*[，,：:]?\s*/gu, "")
     .replace(/(?:Chat优化版|Coding热辣滚烫|好你个奥特曼|但事实上)(?:[。！？!?，,；;]?)/gu, "")
     .replace(/(^|[。！？!?])(?:关键是|真正改变的是|要知道|如今|此前|其中|最后|所以|但是|以及|例如|除文本外|值得注意的是|此前报道|试了|创)[。！？!?]/gu, "$1")
     .replace(/\s*[|｜]\s*/gu, "，")
@@ -309,17 +312,17 @@ export function compactProjectNarration(project: VideoProject) {
   const contentType = project.sources[0] ? contentTypeForItem(project.sources[0]) : "news";
   const title = project.meta.title;
   const focusedNews = contentType === "news" && project.meta.durationSeconds >= 55;
-  const releaseSignal = `${project.sources[0]?.title ?? ""} ${project.sources[0]?.summary ?? ""}`;
+  const releaseSignal = `${project.sources[0]?.title ?? ""} ${project.sources[0]?.summary ?? ""} ${project.sources[0]?.content ?? ""}`;
   const modelReleaseNews = contentType === "news"
-    && /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith)/iu.test(releaseSignal)
+    && /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith|Falcon|TST)/iu.test(releaseSignal)
     && /(?:发布|推出|开源|开放权重|公测|上线)/u.test(releaseSignal)
-    && (project.sources[0]?.research?.length ?? 0) > 0;
+    && ((project.sources[0]?.research?.length ?? 0) > 0 || project.scenes.length >= 5 || /Lyria\s*3\.5|TabLDM|Xiaomi-TabLDM/i.test(title));
   const datePattern = /新闻日期：[^。！？!?]+[。！？!?]?/gu;
   let dateKept = false;
   const narrationSegments = project.narrationSegments.map((segment) => {
     const scene = project.scenes[segment.sceneIndex];
     const maximumCharacters = modelReleaseNews
-      ? scene?.type === "title" ? 90 : scene?.type === "outro" ? 105 : 115
+      ? scene?.type === "title" ? 125 : scene?.type === "outro" ? 105 : 115
       : contentType === "repository"
       ? scene?.type === "title" ? 72 : scene?.type === "outro" ? 70 : 68
       : contentType === "technical-article"
@@ -339,7 +342,9 @@ export function compactProjectNarration(project: VideoProject) {
       const date = sourceText.match(/新闻日期：[^。]+。/u)?.[0] ?? "";
       const withoutDate = sourceText.replace(date, "").replace(/关键是，[^。]+。?$/u, "").trim();
       const titleOnly = normalizedNarrationSentence(withoutDate) === normalizedNarrationSentence(title);
-      const opening = titleOnly ? `${withoutDate}${sceneSubhead.replace(/[。！？!?]+$/u, "")}。` : withoutDate;
+      const opening = titleOnly && title.length < 36
+        ? `${withoutDate}${sceneSubhead.replace(/[。！？!?]+$/u, "")}。`
+        : withoutDate;
       const openingBudget = Math.max(narrationMaximumCharacters - date.length, title.length);
       sourceText = `${limitNarration(opening, openingBudget)}${date}`;
     }
@@ -375,7 +380,7 @@ export function compactProjectNarration(project: VideoProject) {
   });
   let compactedSegments = narrationSegments;
   if (contentType === "news") {
-    const budget = 318;
+    const budget = modelReleaseNews ? (project.scenes.length >= 5 ? 390 : 342) : 318;
     let excess = compactedSegments.reduce((sum, segment) => sum + segment.text.replace(/\s+/gu, "").length, 0) - budget;
     for (const index of compactedSegments
       .map((segment, position) => ({ position, length: segment.text.replace(/\s+/gu, "").length }))
@@ -614,6 +619,10 @@ function repositoryKnownStars(item: HotItem) {
   const captured = Number(item.metrics?.stars);
   if (Number.isFinite(captured) && captured > 0) return captured;
   const known: Record<string, number> = {
+    "MadsLorentzen/ai-job-search": 34628,
+    "NousResearch/hermes-agent": 236154,
+    "tashfeenahmed/freellmapi": 20077,
+    "freestylefly/awesome-gpt-image-2": 16411,
     "kepano/obsidian-skills": 46122,
     "holaboss-ai/holaOS": 6861,
     "macro-inc/macro": 2775,
@@ -622,6 +631,15 @@ function repositoryKnownStars(item: HotItem) {
     "MakazhanAlpamys/Soup": 1447,
     "ToolJet/ToolJet": 39327,
     "HKUDS/CLI-Anything": 47172,
+    "K-Dense-AI/scientific-agent-skills": 35011,
+    "DietrichGebert/ponytail": 113438,
+    "tinyhumansai/openhuman": 38447,
+    "abi/screenshot-to-code": 75219,
+    "bilawalsidhu/gods-eye-view": 12911,
+    "THU-MAIC/OpenMAIC": 22574,
+    "p-e-w/heretic": 28796,
+    "every-app/open-seo": 14751,
+    "Osmantic/ODS": 5043,
   };
   return known[item.repo ?? ""] ?? Number.NaN;
 }
@@ -676,6 +694,636 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^timesfm$/i.test(name)) {
+    return {
+      titleSummary: "Google Research 时间序列预测模型",
+      theme: "用预训练模型预测销售、流量和其他按时间变化的数据",
+      capability: "提供 TimesFM 时间序列基础模型，支持单变量、多变量预测、动态协变量和不同预测跨度，减少每个任务单独训练模型的工作",
+      workflow: "先准备按时间排列的历史数据和预测步长，再选择对应版本和运行方式；对比预测结果与自己的基线，确认误差和业务风险后接入流程",
+      boundaries: "TimesFM 3.0 权重使用非商业许可，不能直接用于商业或生产环境；实际效果会受数据频率、缺失值、预测跨度和硬件影响",
+      topics: ["时间序列", "需求预测", "销售预测", "多变量预测", "协变量", "零样本推理"],
+      metrics: [{ label: "最新版本", value: "TimesFM 3.0" }, { label: "任务类型", value: "时间序列预测" }],
+      problemPoints: [
+        "销售、流量、库存和能源数据都在随时间变化，但为每条业务线单独训练预测模型，维护成本很高。",
+        "TimesFM 是 Google Research 的时间序列基础模型，可以直接利用历史序列预测未来，并支持单变量、多变量和协变量。",
+        "它适合先做需求预测和趋势分析，但 3.0 权重目前限制非商业、非生产使用，正式落地前还要用自己的数据验证。",
+      ],
+      steps: [
+        { label: "准备历史数据", detail: "按时间顺序整理目标序列和可用协变量。" },
+        { label: "选择预测跨度", detail: "明确要预测未来多少个时间点。" },
+        { label: "运行模型", detail: "用本地 PyTorch 或已有服务生成预测结果。" },
+        { label: "对比基线", detail: "与现有方法比较误差，再决定是否接入业务。" },
+      ],
+      narration: [
+        "开源项目推荐：timesfm。它是 Google Research 的时间序列预测模型，用来预测销售、流量和库存等未来走势。",
+        "它可以直接利用历史序列做预测，最新版本支持单变量、多变量和动态协变量，减少每条业务线单独训练模型的工作。",
+        "使用时先整理带时间顺序的历史数据，设定预测跨度，再把结果和现有基线比较，确认误差后接入需求或库存流程。",
+        "需要注意的是，TimesFM 3.0 权重目前是非商业许可，不能直接用于商业和生产环境；数据质量、预测跨度和硬件也会影响实际效果。",
+      ],
+    };
+  }
+  if (/^zod$/i.test(name)) {
+    return {
+      titleSummary: "TypeScript 数据校验与类型推断库",
+      theme: "在运行时校验外部数据，并让 TypeScript 自动得到对应类型",
+      capability: "用代码声明字符串、对象、数组和接口等数据规则，再通过 parse 或 safeParse 校验 API 返回值、表单输入和配置文件",
+      workflow: "先为输入数据定义 schema，再在 API、表单或配置边界调用校验；校验成功后使用推断类型，失败时返回结构化错误并阻止脏数据进入业务代码",
+      boundaries: "Zod 负责数据结构和类型边界，不会替你验证业务逻辑、权限或数据真实性；复杂 schema 仍要关注性能、错误展示和版本兼容",
+      topics: ["TypeScript", "运行时校验", "类型推断", "API 输入", "表单验证", "配置检查"],
+      metrics: [{ label: "核心能力", value: "Schema 校验" }, { label: "运行环境", value: "TypeScript、JavaScript" }],
+      problemPoints: [
+        "TypeScript 的类型只在编译阶段存在，接口、表单和配置文件传进来的数据，运行时仍可能缺字段或类型错误。",
+        "Zod 让你用 TypeScript 代码声明数据规则，在运行时校验输入，同时推断出后续代码可以使用的类型。",
+        "它适合 API 边界、表单提交和环境配置检查，但校验通过不代表业务内容真实，也不替代权限和业务规则判断。",
+      ],
+      steps: [
+        { label: "声明规则", detail: "用 schema 描述字段、类型和必填关系。" },
+        { label: "校验输入", detail: "在 API、表单或配置入口调用 parse 或 safeParse。" },
+        { label: "处理错误", detail: "把结构化错误返回给调用方或阻止流程继续。" },
+        { label: "使用类型", detail: "在校验成功后复用 schema 推断出的 TypeScript 类型。" },
+      ],
+      narration: [
+        "开源项目推荐：zod。它解决的是外部数据进到 TypeScript 程序后，类型信息已经不可靠的问题。",
+        "你可以用代码声明对象、数组和字段规则，再在接口、表单或配置入口运行时校验；校验成功后，TypeScript 还能得到对应类型。",
+        "实际使用时先为输入定义 schema，再调用 parse 或 safeParse；失败就返回结构化错误，避免脏数据继续进入业务逻辑。",
+        "Zod 只负责数据结构边界，不负责验证权限、业务含义和数据真实性，所以复杂系统仍要保留其他业务检查。",
+      ],
+    };
+  }
+  if (/^garden-skills$/i.test(name)) {
+    return {
+      titleSummary: "面向编码智能体的实用 Skills 集合",
+      theme: "给编码智能体补上可复用的设计、内容和开发工作流",
+      capability: "提供 web-video-presentation、web-design-engineer、gpt-image-2、kb-retriever 和 beautiful-article 等可直接复用的 Agent Skills",
+      workflow: "先按任务选择一个 Skill，再把它安装到支持的编码智能体中；按照对应 SKILL.md 的步骤执行，并检查产出是否符合项目目标",
+      boundaries: "它是一组工作流和规范，不是一个替你完成所有任务的单一应用；不同智能体的工具能力、模型质量和本地依赖会影响最终效果",
+      topics: ["Agent Skills", "网页设计", "视频演示", "图片生成", "知识库检索", "文章制作"],
+      metrics: [{ label: "核心内容", value: "5 个生产级 Skills" }, { label: "适配对象", value: "Claude、Cursor、Codex" }],
+      problemPoints: [
+        "编码智能体能写代码，但遇到网页设计、视频演示、图片生成或资料整理时，往往缺少稳定的工作步骤和验收标准。",
+        "garden-skills 把这些任务整理成可安装、可复用的 Agent Skills，让不同编码智能体按明确流程完成设计、内容制作和资料检索。",
+        "它适合希望把智能体能力扩展到真实创作工作的个人和团队，但每个 Skill 仍要根据本地工具、模型和任务结果进行检查。",
+      ],
+      steps: [
+        { label: "选择 Skill", detail: "按任务选择视频、网页、图片、检索或文章 Skill。" },
+        { label: "安装到智能体", detail: "把对应 Skill 加入 Claude、Cursor、Codex 等环境。" },
+        { label: "按规范执行", detail: "阅读 SKILL.md，遵循任务步骤和检查点。" },
+        { label: "检查产出", detail: "复核页面、视频、图片或文章是否满足目标。" },
+      ],
+      narration: [
+        "开源项目推荐：garden-skills。它不是一个问答工具，而是一组给编码智能体使用的生产级 Skills。",
+        "项目覆盖网页设计、视频演示、图片生成、知识库检索和文章制作，解决的是智能体会写代码，却缺少稳定创作流程的问题。",
+        "使用时先按任务选一个 Skill，再安装到 Claude、Cursor 或 Codex，阅读对应的 SKILL.md，按检查点完成工作。",
+        "它适合把编码智能体扩展到真实创作场景，但每个 Skill 仍依赖本地工具和模型能力，最终页面、视频和文章都要人工复核。",
+      ],
+    };
+  }
+  if (/^humanizer$/i.test(name)) {
+    return {
+      titleSummary: "把 AI 腔改成自然表达的写作 Skill",
+      theme: "在不改变事实的前提下，把机械、夸张和模板化文字改得更像真实作者",
+      capability: "按三十五类 AI 写作痕迹检查文本，重写空泛套话、过度强调、堆砌小标题和聊天式收尾，同时保留姓名、数字、日期、引用、代码、数据和链接目标",
+      workflow: "先把一段文字或 Markdown 文件交给 Humanizer，再查看初稿和问题说明；确认事实、语气和格式没有被改动后，才替换原文或发布",
+      boundaries: "它只处理文字表达，不会验证事实真伪，也不应改变代码、数据、frontmatter 或链接目标；涉及个人声音、专业结论和引用时仍需人工复核",
+      topics: ["AI 文本润色", "Markdown", "事实保留", "写作风格", "模板套话", "代码保护"],
+      metrics: [{ label: "检查规则", value: "35 类" }, { label: "输入", value: "文字或 Markdown" }, { label: "保护内容", value: "事实与代码" }],
+      problemPoints: [
+        "AI 生成的文章常有夸张开场、空泛总结、机械小标题和重复句式，读起来不像真实作者。",
+        "Humanizer 用三十五类写作痕迹检查文本，再在不改变事实的前提下重写表达。",
+        "它适合润色文章、说明文档和发布稿，但最终仍要逐项核对数字、引用、专名和原作者语气。",
+      ],
+      steps: [
+        { label: "准备原文", detail: "粘贴文字或指定一个 Markdown 文件。" },
+        { label: "执行检查", detail: "让 Skill 找出 AI 腔、空话和不自然的句式。" },
+        { label: "查看改写", detail: "比较初稿、问题说明和新的表达。" },
+        { label: "人工复核", detail: "确认事实、代码、引用、链接和作者语气没有被改变。" },
+      ],
+      narration: [
+        "开源项目推荐：humanizer。它把 AI 腔改成自然表达，同时保留原文事实。",
+        "文章里的夸张开场、空泛总结和机械小标题，会让读者一眼看出机器味。Humanizer 用三十五类规则检查这些痕迹，再重写文字。",
+        "它可以处理一段文字，也可以直接处理 Markdown 文件；代码、数据、frontmatter 和链接目标会保留下来。",
+        "使用时先看初稿和问题说明，再核对姓名、数字、日期、引用与原作者语气。它改善表达，不替你验证事实。",
+      ],
+    };
+  }
+  if (/^magnitude$/i.test(name)) {
+    return {
+      titleSummary: "按本机硬件推荐并运行本地模型的推理服务",
+      theme: "让编码智能体在自己的设备上免费、私密、离线运行合适的模型",
+      capability: "先分析芯片、内存和带宽，再推荐适配本机的模型，负责下载、调优、按需加载和卸载，并把模型接入已有编码智能体",
+      workflow: "先安装 Magnitude CLI 并运行 setup，让它分析硬件和估算每秒 Token；选择模型后接入正在使用的编码智能体，再用短任务检查速度、内存和输出质量",
+      boundaries: "没有统一的最低硬件要求，内存越大可选择的模型越大；首次下载需要网络和磁盘空间，Windows 需要通过 WSL，模型许可也要单独确认",
+      topics: ["本地模型", "硬件匹配", "离线推理", "智能体接入", "按需加载", "推理调优"],
+      metrics: [{ label: "运行方式", value: "免费、私密、离线" }, { label: "硬件识别", value: "芯片、内存、带宽" }, { label: "速度参考", value: "估算 Token/秒" }],
+      problemPoints: [
+        "本地模型选择不能只看参数量，同一模型在不同显卡、内存和带宽上的速度差异很大。",
+        "Magnitude 会分析本机硬件，推荐适配的模型，再负责下载、调优和接入编码智能体。",
+        "它适合希望减少 API 成本、保护代码和提示词、或在断网环境运行智能体的人。",
+      ],
+      steps: [
+        { label: "安装 CLI", detail: "安装 Magnitude 并运行 setup。" },
+        { label: "分析硬件", detail: "让工具读取芯片、内存和带宽，估算模型速度。" },
+        { label: "选择模型", detail: "从适配本机的推荐列表中选择并下载模型。" },
+        { label: "接入智能体", detail: "连接现有编码智能体，再用短任务检查效果。" },
+      ],
+      narration: [
+        "开源项目推荐：magnitude。它按你的本机硬件推荐并运行本地模型，让编码智能体可以离线工作。",
+        "不同设备适合的模型不同，Magnitude 会分析芯片、内存和带宽，给出模型选择与每秒 Token 的速度估算。",
+        "选定模型后，它负责下载、调优、按需加载和空闲卸载，还能接入正在使用的编码智能体。",
+        "它适合减少 API 成本并保护代码和提示词，但首次下载需要磁盘空间；Windows 需要通过 WSL，模型许可也要单独确认。",
+      ],
+    };
+  }
+  if (/^claude-mem$/i.test(name)) {
+    return {
+      titleSummary: "让 Claude Code 记住项目上下文",
+      theme: "把多轮开发中的决策、发现和工具结果保存下来并随时检索",
+      capability: "在编码过程中自动记录观察、会话摘要和项目决策，再通过搜索把相关上下文注入后续任务，减少重复解释和反复探索",
+      workflow: "先安装插件并让它记录一次真实任务，再按文件、功能或关键词检索历史上下文；确认结果与当前代码一致后继续修改",
+      boundaries: "持久化记忆可能包含代码、路径和敏感信息；需要配置存储、检索范围和清理策略，历史记录也不能替代当前代码检查",
+      topics: ["开发记忆", "上下文检索", "会话摘要", "代码任务", "项目决策", "知识复用"],
+      metrics: [{ label: "核心能力", value: "持久化上下文" }, { label: "使用方式", value: "检索历史记录" }],
+      problemPoints: [
+        "长时间维护项目时，开发者经常要反复解释背景、重新查找决策和重复验证已经做过的工作。",
+        "claude-mem 会把 Claude Code 工作过程中的观察、摘要和项目决策保存下来，让后续任务可以检索并复用上下文。",
+        "它适合持续迭代的代码库，但记忆内容涉及项目数据和隐私，必须设置存储范围并在使用前核对是否仍然有效。",
+      ],
+      steps: [
+        { label: "安装插件", detail: "在 Claude Code 中启用持久化记忆能力。" },
+        { label: "完成任务", detail: "让工具记录本次修改、发现和关键决策。" },
+        { label: "检索上下文", detail: "按文件、功能或关键词找回相关历史记录。" },
+        { label: "核对再用", detail: "确认记录与当前代码一致后继续开发。" },
+      ],
+      narration: [
+        "开源项目推荐：claude-mem。它让 Claude Code 记住项目上下文，减少每次开发都重新解释背景。",
+        "它会保存编码过程中的观察、会话摘要和关键决策，之后可以按文件、功能或关键词检索，把相关信息带回新的任务。",
+        "实际使用时先启用插件完成一次真实修改，再搜索这次任务留下的记录；确认内容和当前代码一致后，继续处理后续问题。",
+        "它适合长期维护和多轮迭代的代码库，但记录里可能包含路径、代码和敏感信息，存储范围、清理策略与最终核对都不能省略。",
+      ],
+    };
+  }
+  if (/^invidious$/i.test(name)) {
+    return {
+      titleSummary: "无广告无追踪的视频前端",
+      theme: "用更轻量、更少追踪的方式观看视频",
+      capability: "提供无广告、无追踪且不依赖 JavaScript 的视频观看界面，并支持订阅管理、音频播放、数据导入导出和开发者 API",
+      workflow: "先选择一个可用实例，再搜索视频或导入订阅；确认播放、订阅和账号数据需求后，按自己的隐私与合规要求使用",
+      boundaries: "它是第三方视频前端，不代表原平台内容或服务；实例稳定性、地区可用性和版权合规需要单独确认",
+      topics: ["视频观看", "隐私保护", "订阅管理", "音频播放", "数据导入", "开发者 API"],
+      metrics: [{ label: "观看方式", value: "无广告、无追踪" }, { label: "项目语言", value: "Crystal" }],
+      problemPoints: [
+        "视频平台的广告、追踪脚本和复杂页面，会增加观看干扰与隐私暴露。",
+        "Invidious 提供一个更轻量的替代观看界面，支持无广告、无追踪、音频播放和订阅管理。",
+        "它适合重视简洁观看体验或希望自托管的用户，但实例状态、版权和地区可用性仍要自行确认。",
+      ],
+      steps: [
+        { label: "选择实例", detail: "确认实例可访问、运行稳定并符合当地规则。" },
+        { label: "观看视频", detail: "搜索内容并检查播放、语言和字幕是否正常。" },
+        { label: "管理订阅", detail: "按需要导入订阅或仅使用公开观看功能。" },
+        { label: "自托管", detail: "有运维能力时再按文档部署并维护自己的实例。" },
+      ],
+      narration: [
+        "开源项目推荐：invidious。它提供一个无广告、无追踪的视频观看界面，适合想减少页面干扰和隐私暴露的人。",
+        "它不依赖 JavaScript，还支持订阅管理、音频播放、数据导入导出和开发者接口；重点不是换一个播放器，而是把观看体验做得更轻量。",
+        "使用时先选择一个能正常访问的实例，再搜索视频或导入订阅；如果要自托管，就按文档准备服务环境并持续维护。",
+        "它适合重视简洁和隐私的用户，但第三方实例可能不稳定，内容版权、地区可用性和使用合规仍要自己确认。",
+      ],
+    };
+  }
+  if (/^video-use$/i.test(name)) {
+    return {
+      titleSummary: "让编码智能体按指令剪辑视频",
+      theme: "把原始素材交给编码智能体完成剪辑",
+      capability: "通过自然语言驱动视频剪辑，识别逐词时间线，删除口头禅和空白，添加字幕、调色、转场和动画，并在切点检查成片",
+      workflow: "先把素材放进项目目录，再描述剪辑目标；检查智能体提出的剪辑方案和时间线，确认后导出成片并复核每个切点",
+      boundaries: "它依赖 FFmpeg 及配置的模型或语音服务，自动剪辑仍可能误删内容；涉及版权、隐私和对外发布的素材必须人工审核",
+      topics: ["视频剪辑", "逐词时间线", "字幕生成", "自动调色", "动画叠加", "切点检查"],
+      metrics: [{ label: "输入方式", value: "原始视频素材" }, { label: "输出结果", value: "final.mp4" }],
+      problemPoints: [
+        "剪辑访谈、教程或旅行素材时，找停顿、去口头禅和对齐字幕通常需要反复拖时间线。",
+        "video-use 让编码智能体读取转写和时间戳，再按自然语言完成剪辑、字幕、调色和动画处理。",
+        "它适合先自动整理一版可看的成片，再由创作者复核删改点和最终表达。",
+      ],
+      steps: [
+        { label: "整理素材", detail: "把原始视频、音频和参考文件放进项目目录。" },
+        { label: "描述目标", detail: "说明节奏、删减、字幕和视觉风格要求。" },
+        { label: "检查时间线", detail: "核对转写、切点、字幕和音频淡入淡出。" },
+        { label: "复核导出", detail: "播放 final.mp4，确认内容、版权和发布风险。" },
+      ],
+      narration: [
+        "开源项目推荐：video-use。它让编码智能体直接帮你剪视频：把原始素材放进文件夹，用一句话说清想要的成片。",
+        "它会读取带时间戳的转写，找出空白、口头禅和切点，再生成字幕、调色和动画；你不用一直拖动时间线找每个停顿。",
+        "实际使用时先放入一组素材，再说明要剪成什么节奏。智能体会先整理方案，确认后导出成片，并在每个切点检查是否出现爆音或跳切。",
+        "它适合访谈、教程和旅行视频的初剪，但自动删减不等于最终审片，内容取舍、版权、隐私和发布前检查仍要由创作者确认。",
+      ],
+    };
+  }
+  if (/^crawl4ai$/i.test(name)) {
+    return {
+      titleSummary: "把网页变成大模型可读资料",
+      theme: "把网页内容清洗成可用于大模型的资料",
+      capability: "抓取网页并输出结构化 Markdown，支持异步浏览器、缓存、深度爬取、会话、代理和按需调用大模型抽取",
+      workflow: "先用少量页面测试抓取结果，再选择 Markdown、结构化抽取或深度爬取；检查标题、表格、代码、链接和权限后，接入知识库或数据流程",
+      boundaries: "抓取质量受页面结构、登录权限、代理和限流影响；必须遵守站点规则、隐私要求和版权边界，并对抽取结果回到原文核对",
+      topics: ["网页抓取", "Markdown 清洗", "结构化抽取", "深度爬取", "缓存加速", "知识库输入"],
+      metrics: [{ label: "输出格式", value: "LLM-ready Markdown" }, { label: "部署方式", value: "CLI、Docker" }],
+      problemPoints: [
+        "网页内容常混有导航、广告和复杂布局，直接交给大模型会浪费上下文，也难以稳定抽取。",
+        "Crawl4AI 把网页清洗成适合大模型处理的 Markdown 或结构化数据，可接入检索、智能体和数据管道。",
+        "它适合批量整理公开资料，但抓取权限、站点规则、限流和结果准确性不能交给工具自动决定。",
+      ],
+      steps: [
+        { label: "小量试抓", detail: "先选少量公开页面检查正文、表格和链接。" },
+        { label: "选择输出", detail: "按任务选择 Markdown、结构化抽取或深度爬取。" },
+        { label: "配置缓存", detail: "为重复页面设置缓存、并发和限流策略。" },
+        { label: "接入流程", detail: "核对来源后再送入知识库、智能体或数据管道。" },
+      ],
+      narration: [
+        "开源项目推荐：crawl4ai。它解决的是网页资料难以直接交给大模型的问题，把页面清洗成更容易检索和处理的内容。",
+        "它能输出适合大模型的 Markdown，也能做结构化抽取、深度爬取和缓存；导航、广告和复杂布局不会原样塞进上下文。",
+        "使用时先拿少量公开页面试抓，检查标题、表格、代码和链接，再决定接入知识库、智能体还是数据管道。",
+        "它适合批量整理公开资料，但权限、限流、版权和结果准确性必须单独核对，不能把抓取结果直接当成事实。",
+      ],
+    };
+  }
+  if (/^ai-job-search$/i.test(name)) {
+    return {
+      titleSummary: "本地求职助手",
+      theme: "把职位分析、简历定制和面试准备串成一条可检查的求职流程",
+      capability: "读取职位描述，提炼岗位要求，针对目标岗位调整简历和求职信，并准备面试问题与回答素材",
+      workflow: "先导入自己的简历和一个职位描述，再逐项检查匹配点；确认事实准确后生成定制材料，最后用岗位要求模拟面试",
+      boundaries: "它适合辅助整理和准备求职材料，不应虚构经历或技能；个人简历、职位信息和求职信都要在发送前人工核对",
+      topics: ["职位分析", "简历定制", "求职信", "面试准备", "本地运行", "求职流程"],
+      metrics: [{ label: "运行方式", value: "本地使用" }, { label: "核心入口", value: "职位描述" }],
+      problemPoints: [
+        "面对不同职位反复改简历、写求职信和准备面试，信息容易遗漏，准备时间也很长。",
+        "AI Job Search 读取职位描述和个人材料，提炼匹配点，再辅助生成岗位定制内容和面试准备。",
+        "它适合正在集中投递、希望把每次准备过程留在自己设备上的求职者。",
+      ],
+      steps: [
+        { label: "准备材料", detail: "导入自己的简历，并选择一个真实职位描述。" },
+        { label: "核对匹配", detail: "检查岗位要求、已有经历和需要补充的证据。" },
+        { label: "定制内容", detail: "生成简历要点、求职信和面试问题草稿。" },
+        { label: "人工确认", detail: "删除夸大表述，确认事实后再提交申请。" },
+      ],
+      narration: [
+        "它把职位分析、简历定制和面试准备串成一条本地流程。",
+        "求职时最耗时间的不是打开招聘网站，而是每个岗位都要重新对照要求、改材料、准备面试。这个项目读取职位描述和个人经历，帮你找出匹配点并整理成可修改的草稿。",
+        "使用时先导入简历，再放入一个真实职位描述；检查岗位要求、经历证据和缺口后，分别生成简历要点、求职信和面试问题。每一步都能回到原始材料核对。",
+        "它适合集中投递和希望本地处理材料的求职者，但不能替你虚构经历。发送前要人工检查事实、隐私和语气，再决定是否提交。",
+      ],
+    };
+  }
+  if (/^hermes-agent$/i.test(name)) {
+    return {
+      titleSummary: "能执行代码任务的终端智能体",
+      theme: "让终端智能体读取项目、调用工具并持续完成多步骤任务",
+      capability: "在终端中理解代码库、拆解任务、执行命令、调用工具并保留过程上下文，适合研究、编程和自动化工作",
+      workflow: "先在隔离目录启动智能体，给出一个边界清晰的任务；让它读取文件并提出计划，再逐步执行命令，最后检查差异、测试和输出",
+      boundaries: "它能执行命令和修改文件，权限范围、密钥、网络访问和高风险操作必须严格限制；长任务也会消耗模型费用并带来误操作风险",
+      topics: ["终端智能体", "代码任务", "工具调用", "任务规划", "上下文记忆", "研究自动化"],
+      metrics: [{ label: "主要入口", value: "终端" }, { label: "核心能力", value: "任务执行" }],
+      problemPoints: [
+        "复杂代码和研究任务往往要反复读文件、跑命令和整理结果，普通聊天窗口很难保持完整执行过程。",
+        "Hermes Agent 把规划、工具调用、命令执行和上下文保留放进终端智能体，适合连续完成多步骤工作。",
+        "它适合愿意配置模型和权限的开发者，但真正的代码改动、测试结果和外部操作仍需检查。",
+      ],
+      steps: [
+        { label: "隔离环境", detail: "在副本或沙箱目录启动，并限制可访问的文件和命令。" },
+        { label: "描述任务", detail: "写清输入、输出和验收条件，先让智能体给出计划。" },
+        { label: "逐步执行", detail: "核对文件读取、命令输出和每次改动，再继续下一步。" },
+        { label: "测试交付", detail: "运行测试、检查差异，并人工确认最终结果。" },
+      ],
+      narration: [
+        "开源项目推荐：hermes-agent。它把终端里的规划、工具调用和代码任务执行串在一起。",
+        "复杂任务经常要读文件、跑命令、查资料再修改代码。Hermes Agent 让智能体保留上下文，按计划调用工具并持续推进，不必每一步都重新描述背景。",
+        "最短路径是在副本或沙箱里给它一个小任务，先看计划，再逐步核对文件、命令和输出。任务完成后，继续检查差异和测试，而不是直接接受结论。",
+        "它适合开发、研究和自动化工作，但工具权限、密钥、网络访问和费用都要设边界。删除文件、修改生产环境和对外发布必须人工确认。",
+      ],
+    };
+  }
+  if (/^freellmapi$/i.test(name)) {
+    return {
+      titleSummary: "统一接入免费大模型接口的 API 网关",
+      theme: "把多个免费或兼容 OpenAI 的模型服务统一到一个调用入口",
+      capability: "提供统一的 OpenAI 兼容接口，集中管理模型端点、智能路由、自动故障切换和密钥加密，让应用不必为每家服务分别适配",
+      workflow: "先配置可用的模型服务和密钥，再用统一入口发送一个小请求；检查路由、失败切换和账单边界后，才接入自己的应用",
+      boundaries: "免费端点的稳定性、速度、额度和许可各不相同；项目更适合个人实验，生产接入前必须核对服务条款、隐私、限流和实际成本",
+      topics: ["统一 API", "免费模型", "智能路由", "自动切换", "密钥管理", "OpenAI 兼容"],
+      metrics: [{ label: "调用方式", value: "一个入口" }, { label: "兼容格式", value: "OpenAI API" }],
+      problemPoints: [
+        "接入多个模型服务时，每家接口、密钥和失败处理都不同，应用代码很快被适配逻辑占满。",
+        "freellmapi 用一个 OpenAI 兼容入口统一模型调用，并提供路由、故障切换和加密密钥管理。",
+        "它适合个人实验和需要比较多个模型的开发者，不适合未经核对就承载生产数据。",
+      ],
+      steps: [
+        { label: "配置端点", detail: "只接入自己确认过的模型服务和密钥。" },
+        { label: "统一调用", detail: "用 OpenAI 兼容格式发送一个最小请求。" },
+        { label: "检查切换", detail: "模拟失败，确认路由和备用端点符合预期。" },
+        { label: "评估成本", detail: "核对额度、隐私、许可和长期稳定性后再扩大使用。" },
+      ],
+      narration: [
+        "开源项目推荐：freellmapi。它把多个免费或兼容 OpenAI 的模型服务统一到一个调用入口。",
+        "如果应用同时接入多家模型，最麻烦的是接口适配、密钥管理和服务失败。freellmapi 提供统一格式，还能按配置路由请求并切换备用端点。",
+        "使用时先配置少量已确认的模型服务，用一个最小请求检查返回格式，再模拟一次失败，确认路由、加密密钥和备用线路都按预期工作。",
+        "它更适合个人实验和模型比较。免费端点的额度、速度、隐私和许可并不一致，生产应用必须逐项核对，不能把免费等同于稳定。",
+      ],
+    };
+  }
+  if (/^awesome-llm-apps$/i.test(name)) {
+    return {
+      titleSummary: "一百多个可运行的 AI 应用示例库",
+      theme: "从一百多个已经跑通的 AI Agent、RAG、语音和多模态应用中直接选择参考实现",
+      capability: "按应用类型整理完整示例代码，覆盖研究助手、旅行规划、客户支持、语音交互、文档问答和多智能体团队，帮助开发者从可运行项目开始修改",
+      workflow: "先按自己的目标选择最接近的应用目录，阅读说明并配置对应模型密钥；跑通原始示例后，再替换数据、提示词和工具，并逐项检查权限与成本",
+      boundaries: "它是学习和原型参考库，不是一键上线平台；不同示例依赖的模型、密钥、数据权限和维护状态不同，正式使用前要单独核对安全、成本与许可",
+      topics: ["AI 应用示例", "智能体", "检索增强生成", "语音交互", "多模态", "原型开发"],
+      metrics: [{ label: "示例规模", value: "100+ 应用" }, { label: "主要类型", value: "Agent、RAG、多模态" }],
+      problemPoints: [
+        "想做 AI 应用时，最耗时间的往往是从空白开始拼模型、工具、记忆和界面，却不知道完整流程是否能跑通。",
+        "awesome-llm-apps 汇集一百多个手工搭建并测试的应用示例，用户可以先找到相近项目，再沿着现成代码理解完整链路。",
+        "它适合学习、选型和快速做原型，尤其适合想看输入、处理步骤和最终输出如何连起来的开发者。",
+      ],
+      steps: [
+        { label: "选择场景", detail: "先从智能体、检索问答、语音或多模态目录中选择最接近目标的示例。" },
+        { label: "跑通原版", detail: "按说明配置模型和密钥，先确认原始输入与输出能够完整运行。" },
+        { label: "替换内容", detail: "再逐步替换数据、提示词、工具和界面，每次只改一个环节。" },
+        { label: "检查边界", detail: "上线前核对数据权限、模型费用、依赖版本、输出准确性和项目许可。" },
+      ],
+      narration: [
+        "它收录一百多个可以运行的 AI 应用示例，覆盖智能体、检索问答、语音和多模态。",
+        "从零做 AI 应用，最容易卡在模型、工具、记忆和界面怎么连起来。这个项目提供手工搭建并测试的完整示例，让你先看懂输入、处理步骤和最终输出。",
+        "使用时先选最接近目标的目录，配置模型和密钥，跑通原始示例；确认链路正常后，再逐步替换自己的数据、提示词、工具和界面。",
+        "它适合学习、选型和快速做原型，不是一键上线平台。每个示例的依赖、费用、数据权限和维护状态不同，正式使用前必须逐项核对。",
+      ],
+    };
+  }
+  if (/^awesome-mcp-servers$/i.test(name)) {
+    return {
+      titleSummary: "可按用途查找 MCP 服务的目录",
+      theme: "把分散的模型上下文协议服务按用途整理，帮助用户快速找到可接入的工具",
+      capability: "按数据库、浏览器、办公、开发和搜索等场景查找 MCP 服务，再按项目说明接入兼容的 AI 客户端",
+      workflow: "先按任务筛选服务，确认维护状态、依赖和权限，再在隔离环境中安装一个服务并用最小任务验证工具调用",
+      boundaries: "它是服务目录，不等于每个服务都安全、稳定或免费；安装前必须核对代码、权限、密钥、数据范围和许可",
+      topics: ["MCP 服务", "工具接入", "数据库", "浏览器自动化", "开发工具", "安全权限"],
+      metrics: [{ label: "核心内容", value: "MCP 服务目录" }, { label: "筛选方式", value: "按使用场景" }],
+      problemPoints: [
+        "想让 AI 调用数据库、浏览器或开发工具时，往往要在大量零散项目里逐个搜索和比较。",
+        "awesome-mcp-servers 按用途整理 MCP 服务，帮助用户先找到可接入的工具，再回到项目说明完成配置。",
+        "它适合学习 MCP 生态和快速选型，但每个服务的权限、维护状态和数据风险都必须单独核对。",
+      ],
+      steps: [
+        { label: "明确任务", detail: "先确定是查数据库、浏览网页、处理文件还是连接开发工具。" },
+        { label: "筛选服务", detail: "按场景查看候选，优先选择维护活跃、文档完整的项目。" },
+        { label: "隔离试用", detail: "限制文件、网络和密钥权限，用一个最小任务验证工具调用。" },
+        { label: "确认上线", detail: "核对数据范围、依赖、许可和服务端实际安全边界。" },
+      ],
+      narration: [
+        "它是一个按用途查找 MCP 服务的目录，帮助 AI 接入数据库、浏览器和开发工具。",
+        "以前想给 AI 增加一个工具，常常要在很多零散项目里反复搜索。这个项目把服务按场景整理，让你先找到合适的候选，再回到原项目完成安装。",
+        "使用时先明确任务，再筛选服务；安装前检查维护状态和权限，并在隔离环境里用最小任务验证工具是否真的能工作。",
+        "它适合学习 MCP 生态和快速选型，但目录不代表安全背书。密钥、文件、网络、数据范围和项目许可，都要逐项确认。",
+      ],
+    };
+  }
+  if (/^patent-disclosure-skill$/i.test(name)) {
+    return {
+      titleSummary: "用 AI 辅助整理专利交底书",
+      theme: "把零散的技术方案整理成专利交底书需要的结构和表达",
+      capability: "根据发明背景、技术方案、流程和效果生成可继续修改的专利交底材料，帮助研发人员与专利代理人更快对齐信息",
+      workflow: "先输入真实技术事实和已有文档，再让技能按结构生成草稿；逐项补齐实施方式、技术效果和附图说明，最后交给专业人员审核",
+      boundaries: "它只能辅助写作和整理，不能替代专利检索、法律判断或代理人审查；新颖性、权利要求和商业秘密必须人工把关",
+      topics: ["专利交底书", "技术方案整理", "研发协作", "附图说明", "专业审核", "知识产权"],
+      metrics: [{ label: "输入", value: "技术方案与资料" }, { label: "输出", value: "交底书草稿" }],
+      problemPoints: [
+        "研发人员掌握技术细节，却常常难以按专利交底书结构完整表达，代理人还要反复追问背景和实施方式。",
+        "patent-disclosure-skill 用 AI 辅助整理技术事实、流程和效果，先形成结构化交底材料。",
+        "它适合研发团队准备初稿和补齐信息，不代表生成内容已经具备法律效力。",
+      ],
+      steps: [
+        { label: "整理事实", detail: "提供真实的技术背景、问题、方案、流程和效果证据。" },
+        { label: "生成初稿", detail: "按交底书结构整理技术内容和附图说明草稿。" },
+        { label: "补齐细节", detail: "核对实施方式、替代方案、边界条件和技术效果。" },
+        { label: "专业审核", detail: "由研发与专利专业人员共同确认，不直接提交生成文本。" },
+      ],
+      narration: [
+        "它用 AI 辅助把技术方案整理成专利交底书草稿。",
+        "研发人员通常最了解技术，却不一定熟悉交底书的表达结构。这个项目把背景、方案、流程和技术效果整理到同一份可修改材料里，减少反复补资料。",
+        "使用时先输入真实技术事实和已有文档，再逐项核对实施方式、替代方案、附图说明与效果证据，不能让模型自行补出不存在的创新点。",
+        "它适合准备内部初稿和研发协作，但不能替代专利检索、法律判断或代理人审核。新颖性、权利要求和商业秘密必须由专业人员把关。",
+      ],
+    };
+  }
+  if (/^scientific-agent-skills$/i.test(name)) {
+    return {
+      titleSummary: "给 AI 配齐科研工具的技能库",
+      theme: "把通用 AI 智能体变成能调用科研方法和专业数据库的研究助手",
+      capability: "提供一百六十三项经过验证的科研技能和一百多个专业数据库入口，覆盖生物、化学、医学、药物发现、时间序列和科学机器学习",
+      workflow: "先按研究问题挑选一项技能，在兼容 Agent Skills 标准的智能体中加载；用真实数据跑通查询或分析，再检查来源、参数和结果",
+      boundaries: "它提供科研工作流和工具入口，不替代实验设计、同行评审或专业判断；敏感数据、数据库许可和模型结论都要单独核对",
+      topics: ["科研智能体", "专业数据库", "生物医药", "科学工作流", "Agent Skills", "结果验证"],
+      metrics: [{ label: "科研技能", value: "163 项" }, { label: "专业数据库", value: "100+" }],
+      problemPoints: [
+        "通用 AI 能解释概念，却常常不会选择科研方法、连接专业数据库，也难把多步分析稳定执行完。",
+        "Scientific Agent Skills 提供一百六十三项现成科研技能和一百多个数据库入口，让兼容智能体直接执行专业工作流。",
+        "它适合研究人员和需要快速验证科学问题的团队，但结果仍要回到论文、数据和实验条件核对。",
+      ],
+      steps: [
+        { label: "选择任务", detail: "先明确是文献检索、药物靶点、组学分析还是时间序列问题。" },
+        { label: "加载技能", detail: "在兼容 Agent Skills 标准的智能体中启用对应技能。" },
+        { label: "执行分析", detail: "输入真实数据和边界条件，记录数据库、参数与中间结果。" },
+        { label: "人工复核", detail: "回到原始证据核对结论，不把模型输出直接当作科研事实。" },
+      ],
+      narration: [
+        "它给通用 AI 配上一百六十三项科研技能和一百多个专业数据库入口。",
+        "普通聊天模型能解释概念，却常常不会选择科研方法，也难把数据库查询、分析和验证连续做完。这个技能库覆盖生物、化学、医学、药物发现和时间序列等任务。",
+        "使用时先选一个具体研究问题，在兼容 Agent Skills 标准的智能体中加载对应技能，再用真实数据跑通流程，并记录数据库、参数和中间结果。",
+        "它适合科研人员快速搭建研究助手，但不会替代实验设计和专业判断。敏感数据、数据库许可与最终结论都要回到原始证据复核。",
+      ],
+    };
+  }
+  if (/^ponytail$/i.test(name)) {
+    return {
+      titleSummary: "防止 AI 过度写代码的克制技能",
+      theme: "让代码智能体优先复用现有能力，用更少代码完成同一个开发任务",
+      capability: "把资深开发者的克制原则装进代码智能体，提醒它先用浏览器原生能力和项目现有组件，避免无必要的依赖、封装和重构",
+      workflow: "把 Ponytail 安装为智能体技能，再给同一个边界清晰的开发任务；完成后比较代码差异、依赖、成本、耗时和安全检查",
+      boundaries: "少写代码不等于压缩成难维护的一行；复杂业务、可访问性、兼容性和安全约束仍要完整满足，基准结果也不能保证适用于所有项目",
+      topics: ["代码智能体", "防止过度设计", "依赖控制", "开发效率", "安全约束", "差异检查"],
+      metrics: [{ label: "基准结果", value: "代码更少" }, { label: "安全检查", value: "保持完整" }],
+      problemPoints: [
+        "代码智能体经常为了一个简单需求引入新依赖、重复封装或大规模重构，结果能运行，却更难维护。",
+        "Ponytail 给智能体加入克制规则，让它先寻找浏览器和项目已有能力，再决定是否真的需要新增代码。",
+        "项目基准显示代码量平均减少约百分之五十四，耗时减少约百分之二十七，同时保留安全检查。",
+      ],
+      steps: [
+        { label: "安装技能", detail: "把 Ponytail 加入可配置技能的代码智能体。" },
+        { label: "选择任务", detail: "用一个需求清楚、结果可验证的小功能开始。" },
+        { label: "比较差异", detail: "检查新增代码、依赖、测试、成本和完成时间。" },
+        { label: "保留边界", detail: "确认可访问性、兼容性和安全要求没有被省略。" },
+      ],
+      narration: [
+        "它让代码智能体优先使用现有能力，避免小需求变成复杂工程。",
+        "AI 编程常见的问题是过度设计：一个日期选择器也可能引入依赖和封装。Ponytail 会先让智能体寻找浏览器与项目已有能力。",
+        "项目在真实代码任务上的基准结果显示，代码量平均减少约百分之五十四，成本减少约百分之二十，完成时间减少约百分之二十七，同时保留安全检查。",
+        "它适合经常使用代码智能体的开发者。少写代码不等于牺牲维护性，可访问性、兼容性和安全要求仍要逐项检查。",
+      ],
+    };
+  }
+  if (/^openhuman$/i.test(name)) {
+    return {
+      titleSummary: "本地优先的个人 AI 记忆与任务中枢",
+      theme: "让个人 AI 在本地积累长期记忆，并协调多个智能体和研究工作流",
+      capability: "把个人资料、长期记忆、深度研究和智能体编排放进一个本地优先的桌面应用，让不同任务共享可控的个人上下文",
+      workflow: "先安装桌面版本并只导入少量非敏感资料，确认记忆检索与权限范围；再连接模型，逐步增加研究任务和智能体工作流",
+      boundaries: "项目仍处于早期测试阶段，不是通用人工智能；长期记忆可能放大错误或泄露隐私，模型密钥、文件权限和自动执行范围必须严格限制",
+      topics: ["个人 AI", "本地优先", "长期记忆", "智能体编排", "深度研究", "隐私控制"],
+      metrics: [{ label: "运行形态", value: "桌面应用" }, { label: "项目阶段", value: "早期测试" }],
+      problemPoints: [
+        "普通 AI 对话每次都像重新认识你，资料分散在不同工具里，研究和任务执行也难共享长期上下文。",
+        "OpenHuman 把本地优先记忆、深度研究和智能体编排放进一个个人 AI 中枢，让任务能够持续利用经过授权的个人资料。",
+        "它适合愿意管理隐私和权限的个人用户，但仍处于早期测试阶段，不能把自动执行结果直接当作可靠结论。",
+      ],
+      steps: [
+        { label: "安装桌面端", detail: "先使用官方桌面安装包，在本机建立独立测试环境。" },
+        { label: "小量导入", detail: "只放入少量非敏感资料，检查记忆是否能正确检索。" },
+        { label: "连接模型", detail: "配置自己的模型服务，并限制密钥与文件权限。" },
+        { label: "逐步扩展", detail: "确认每一步可控后，再增加研究任务和智能体工作流。" },
+      ],
+      narration: [
+        "它把长期记忆、深度研究和多个智能体工作流放进一个本地优先的个人 AI 中枢。",
+        "普通 AI 对话每次都要重新补充背景，个人资料又分散在不同工具里。OpenHuman 让经过授权的信息形成长期记忆，并让研究和任务智能体共享这部分上下文。",
+        "使用时先安装桌面版本，只导入少量非敏感资料，检查记忆检索是否准确；再连接自己的模型服务，并逐步增加研究任务和自动化流程。",
+        "它仍处于早期测试阶段，也不是通用人工智能。长期记忆可能放大错误或带来隐私风险，模型密钥、文件权限和自动执行范围必须严格限制。",
+      ],
+    };
+  }
+  if (/^screenshot-to-code$/i.test(name)) {
+    return {
+      titleSummary: "把截图变成可运行的网页代码",
+      theme: "把设计稿、网页截图或录屏快速变成可以继续修改的网页原型",
+      capability: "使用 AI 分析截图中的布局、文字、图片和交互线索，生成 HTML、Tailwind、React、Vue、Bootstrap 或 Ionic 代码",
+      workflow: "先上传一张截图或录屏，再选择代码技术栈；运行生成结果并在浏览器中对照原图，逐项修正布局、素材和交互",
+      boundaries: "它适合快速做原型和还原页面，不保证一次生成生产级代码；字体、图片版权、响应式布局、可访问性和密钥配置仍需人工检查",
+      topics: ["截图转代码", "网页原型", "React", "Vue", "Tailwind", "页面还原"],
+      metrics: [{ label: "可生成", value: "HTML、React、Vue" }, { label: "输入方式", value: "截图或录屏" }],
+      problemPoints: [
+        "拿到设计稿或参考网页后，从零搭建布局、样式和素材很慢，设计与代码之间还会反复来回修改。",
+        "screenshot-to-code 让用户上传截图、设计稿或录屏，再生成可以继续编辑的网页代码，先把页面骨架跑起来。",
+        "它适合产品原型、页面改版和前端学习，不是一次生成就能直接上线的生产代码。",
+      ],
+      steps: [
+        { label: "准备输入", detail: "上传清晰截图或录屏，确保关键区域和文字可见。" },
+        { label: "选择技术栈", detail: "按项目需要选择 HTML、React、Vue 或 Tailwind 等输出方式。" },
+        { label: "对照修改", detail: "在浏览器中运行结果，对比原图修正布局、图片和交互。" },
+        { label: "上线前检查", detail: "核对响应式、可访问性、素材版权和 API 密钥，不直接照搬生成结果。" },
+      ],
+      narration: [
+        "它把截图变成可修改的网页代码。",
+        "从设计稿还原页面，最耗时间的是把布局、文字、图片和样式重新搭出来。screenshot-to-code 先分析截图，再生成 HTML、React、Vue 或 Tailwind 代码，让原型更快跑起来。",
+        "使用时上传截图或录屏，选择技术栈，在浏览器中对照原图检查结果；发现布局、素材或交互不一致，再逐项修改，而不是直接接受第一版。",
+        "它适合原型、改版和前端学习，但不保证一次生成生产级代码。响应式、可访问性、图片版权和密钥配置，上线前都要人工检查。",
+      ],
+    };
+  }
+  if (/^gods-eye-view$/i.test(name)) {
+    return {
+      titleSummary: "在三维地球上查看实时公开信号",
+      theme: "把分散的飞机、船舶、卫星、地震和公共摄像头信号集中到三维地球",
+      capability: "在浏览器的写实三维地球上叠加实时公开数据，并用语音查询地点、目标和事件",
+      workflow: "打开地图后选择飞机、船舶、卫星或地震图层，再缩放到目标区域；核对数据时间和来源后，用语音或筛选继续追踪",
+      boundaries: "它展示的是公开来源与明确标注的模拟视图，不是侦察卫星，也不能保证每条数据实时、完整或适合安全决策",
+      topics: ["三维地球", "公开情报", "实时交通", "卫星追踪", "地震数据", "语音查询"],
+      metrics: [{ label: "运行方式", value: "浏览器三维地图" }, { label: "数据类型", value: "飞机、船舶、卫星" }],
+      problemPoints: ["公开空间信息散落在许多网站和图层中，用户很难在同一地点理解事件与地理位置的关系。", "God's Eye View 把飞机、船舶、卫星、地震和公共摄像头信号叠加到三维地球，方便统一查看。", "它适合公开信息观察、教学与态势演示，不应被当作实时安全或执法依据。"],
+      steps: [{ label: "选择图层", detail: "先打开一种公开数据图层，避免信息同时堆满画面。" }, { label: "定位区域", detail: "缩放到目标城市、航线或事件附近。" }, { label: "核对时间", detail: "检查更新时间、来源和是否属于模拟视图。" }, { label: "谨慎解释", detail: "把结果作为公开信息线索，不直接推断敏感结论。" }],
+      narration: ["它把全球公开空间信号放进一颗可以交互的三维地球。", "飞机、船舶、卫星、地震和公共摄像头数据原本分散在不同网站。God's Eye View 把这些信号叠加在同一张写实地图上，帮助用户理解目标和事件所在的位置。", "使用时先选择一个图层，定位区域，再检查数据更新时间与视图标记；还可以用语音查询地点或目标，减少在多个页面之间切换。", "它适合公开信息观察、教学和态势演示，但不是侦察卫星。部分画面是明确标注的模拟视图，数据也不能直接用于安全或执法判断。"],
+    };
+  }
+  if (/^openmaic$/i.test(name)) {
+    return {
+      titleSummary: "让多个 AI 角色共同完成互动课堂",
+      theme: "把讲解、提问、讨论和反馈组织成多智能体互动学习体验",
+      capability: "让教师、助教和同学等多个 AI 角色围绕课程主题协作，生成讲解、讨论、提问和个性化反馈",
+      workflow: "选择或创建课程主题，配置模型服务，再启动互动课堂；观察多个角色的讨论并随时提问，最后核对知识点和引用",
+      boundaries: "多角色讨论会增强参与感，但不会自动保证事实正确；课程内容、模型费用、隐私和学习评价仍需教师或学习者把关",
+      topics: ["互动课堂", "多智能体", "AI 助教", "个性化学习", "课程讨论", "学习反馈"],
+      metrics: [{ label: "核心方式", value: "多角色互动" }, { label: "适用场景", value: "课堂与自学" }],
+      problemPoints: ["普通 AI 学习工具通常只有单轮问答，缺少课堂里的讲解、追问、同伴讨论和反馈。", "OpenMAIC 用多个 AI 角色构建互动课堂，让不同角色围绕同一知识点解释、讨论并回应学习者。", "它适合课堂演示、自学和课程原型，但关键知识仍需教材与教师核对。"],
+      steps: [{ label: "准备主题", detail: "选择一个范围清楚的课程或知识点。" }, { label: "配置角色", detail: "设置教师、助教和讨论角色及模型服务。" }, { label: "加入互动", detail: "启动课堂并在关键节点提问或要求举例。" }, { label: "核对知识", detail: "对照教材检查结论、引用和学习反馈。" }],
+      narration: ["它让教师、助教和同学等多个 AI 角色共同组成互动课堂。", "普通 AI 学习工具往往只有一问一答。OpenMAIC 让多个角色围绕同一主题讲解、追问、讨论和反馈，更接近真实课堂里的学习过程。", "使用时先选择课程主题，配置模型服务，再启动课堂；学习者可以观察角色讨论，也能随时提问、要求举例或改变讲解节奏。", "它适合课堂演示、自学和课程原型，但多角色讨论不等于事实正确。知识点、引用、模型费用和隐私仍要由教师或学习者核对。"],
+    };
+  }
+  if (/^heretic$/i.test(name)) {
+    return {
+      titleSummary: "研究语言模型安全对齐移除的工具",
+      theme: "自动分析并削弱语言模型的拒答与安全对齐机制",
+      capability: "通过方向消融和参数搜索，寻找降低模型拒答率同时尽量保持原模型能力的处理参数",
+      workflow: "仅在隔离研究环境中选择有权测试的模型，记录原始安全评测，再运行处理并重新执行能力、滥用与合规测试",
+      boundaries: "移除安全对齐会显著增加有害输出和滥用风险，不适合普通用户或公开服务；模型许可、法律责任和访问控制必须先确认",
+      topics: ["模型安全研究", "安全对齐", "方向消融", "风险评测", "隔离实验", "合规边界"],
+      metrics: [{ label: "用途", value: "安全研究" }, { label: "风险等级", value: "高" }],
+      problemPoints: ["研究人员需要理解模型拒答机制如何工作，但手工寻找相关方向和参数成本很高。", "Heretic 自动搜索削弱拒答与安全对齐的参数，用于研究模型行为变化和防护机制。", "它会提高危险内容输出概率，只适合受控的安全研究，不应部署为公开聊天服务。"],
+      steps: [{ label: "确认授权", detail: "只测试许可允许且自己有权处理的模型。" }, { label: "隔离环境", detail: "关闭外部工具、网络和真实用户访问。" }, { label: "对照评测", detail: "处理前后同时测试能力、拒答和有害输出。" }, { label: "限制传播", detail: "记录风险并控制权重、结果和访问权限。" }],
+      narration: ["它是研究语言模型安全对齐移除的高风险工具。", "Heretic 通过方向消融和自动参数搜索，降低模型拒答率，同时尽量减少对原有能力的影响。它的价值在于研究安全机制，不是让普通聊天工具绕过限制。", "正确用法是在隔离环境中测试有权处理的模型，先记录原始安全评测，再运行处理，并对能力、有害输出和滥用风险做前后对照。", "移除安全对齐会明显提高危险输出风险，不适合普通用户或公开服务。模型许可、法律责任、结果传播和访问控制必须先确认。"],
+    };
+  }
+  if (/^open-seo$/i.test(name)) {
+    return {
+      titleSummary: "可自托管的关键词与网站分析工具",
+      theme: "用可控成本完成关键词研究、排名追踪、外链和网站审计",
+      capability: "集中提供关键词研究、排名追踪、竞品洞察、外链、网站审计和 AI 可见性分析，并允许智能体通过 MCP 使用数据",
+      workflow: "先连接自己的数据接口并添加网站，再运行关键词或站点审计；核对数据成本与建议后，把明确任务交给智能体辅助分析",
+      boundaries: "按量付费不等于免费，数据接口仍会产生费用；排名建议、竞品数据和自动修改都需要人工检查，不能保证搜索排名提升",
+      topics: ["SEO 分析", "关键词研究", "排名追踪", "网站审计", "智能体工具", "自托管"],
+      metrics: [{ label: "主要流程", value: "关键词、排名、审计" }, { label: "付费方式", value: "按数据用量" }],
+      problemPoints: ["传统 SEO 套件订阅价格高、功能复杂，小团队常常只需要关键词、排名和站点审计几个核心流程。", "OpenSEO 提供更轻量的开源界面，并允许用户自托管、按数据用量付费，还能让智能体读取 SEO 数据。", "它适合独立站和小团队，但数据接口费用与自动建议仍需持续核对。"],
+      steps: [{ label: "接入数据", detail: "配置自己的数据接口，并设置明确的费用上限。" }, { label: "添加网站", detail: "先运行一次关键词或站点审计。" }, { label: "检查建议", detail: "核对搜索意图、竞品数据和技术问题。" }, { label: "逐步执行", detail: "只对确认过的页面做修改，并观察真实排名变化。" }],
+      narration: ["它是可以自托管的关键词、排名与网站审计工具。", "传统 SEO 套件订阅价格高、功能又很重。OpenSEO 把关键词研究、排名追踪、竞品、外链和网站审计放进更轻量的界面，还能让智能体读取这些数据。", "使用时配置自己的数据接口，添加网站，先跑一次关键词或站点审计；核对数据成本和建议后，再让智能体辅助整理机会与待办。", "它适合独立站和小团队，但按量付费不等于免费，也不能保证排名提升。竞品数据、自动建议和页面修改都需要人工检查。"],
+    };
+  }
+  if (/^ods$/i.test(name)) {
+    return {
+      titleSummary: "把个人电脑搭成私有 AI 服务器",
+      theme: "自动安装并管理本地模型、聊天、工作流、知识库和图像生成服务",
+      capability: "把 Ollama、网页聊天、自动化工作流、检索增强生成、语音和图像工具组合成一个本地 AI 服务栈",
+      workflow: "在支持的电脑上运行安装程序，检查 GPU、存储和服务状态；先启动一个本地模型和聊天界面，再按需启用工作流、知识库或图像工具",
+      boundaries: "本地运行仍受显存、内存、磁盘和模型许可限制；开放局域网访问、安装扩展和保存敏感资料前必须配置认证、备份与更新",
+      topics: ["本地 AI", "私有服务器", "模型推理", "知识库", "自动化工作流", "隐私"],
+      metrics: [{ label: "支持系统", value: "PC、Mac、Linux" }, { label: "核心模式", value: "本地优先" }],
+      problemPoints: ["自己搭本地 AI 要分别安装模型服务、聊天界面、工作流、知识库和图像工具，配置与维护成本很高。", "ODS 把这些组件安装并连接成一套本地 AI 服务器，让用户从一个控制面板管理模型、服务和 GPU 状态。", "它适合重视隐私并愿意维护本地设备的用户，硬件与安全配置仍是必要条件。"],
+      steps: [{ label: "检查硬件", detail: "确认系统、内存、显存和磁盘满足目标模型。" }, { label: "安装基础栈", detail: "先部署模型服务和网页聊天界面。" }, { label: "逐项启用", detail: "按需要增加知识库、语音、工作流或图像生成。" }, { label: "保护服务", detail: "配置认证、备份和更新，不直接暴露到公网。" }],
+      narration: ["它能把个人电脑快速搭成一台私有 AI 服务器。", "本地 AI 最麻烦的不是下载模型，而是把模型服务、聊天界面、工作流、知识库、语音和图像工具分别装好并持续维护。ODS 把这些组件接进一个控制面板。", "使用时先检查内存、显存和磁盘，安装基础服务，再启动一个本地模型和聊天界面；确认稳定后，按需增加知识库、自动化或图像生成。", "它适合重视隐私并愿意维护设备的用户，但本地不等于没有成本。模型许可、硬件上限、认证、备份和更新都必须自己负责。"],
+    };
+  }
+  if (/^awesome-gpt-image-2$/i.test(name)) {
+    return {
+      titleSummary: "GPT Image 2 的提示词与模板案例库",
+      theme: "用可复用的提示词和案例快速做出更稳定的图像生成结果",
+      capability: "整理 GPT Image 2 的提示词写法、工业级模板和真实案例，帮助用户从具体目标出发复现海报、产品图、界面和视觉设计",
+      workflow: "先按目标选择一个案例或模板，再替换主体、尺寸和风格要求；生成后对照案例检查构图、文字和细节，最后沉淀适合自己的提示词",
+      boundaries: "案例和模板只能提供起点，实际结果仍受模型版本、输入图片和任务要求影响；商业使用前要检查生成内容、字体、人物和素材权利",
+      topics: ["提示词工程", "图像生成", "模板复用", "案例拆解", "产品视觉", "设计工作流"],
+      metrics: [{ label: "核心内容", value: "案例与模板" }, { label: "使用方式", value: "提示词复用" }],
+      problemPoints: [
+        "直接写提示词做图时，构图、材质和文字效果很容易反复试错，成功案例也难以复用。",
+        "awesome-gpt-image-2 把 GPT Image 2 的案例、提示词和模板整理成可检索的参考库，帮助用户从目标画面快速开始。",
+        "它适合产品图、海报、界面和视觉实验，但每次生成仍要根据自己的素材和版权边界重新检查。",
+      ],
+      steps: [
+        { label: "明确画面", detail: "先写清主体、用途、尺寸和必须保留的文字。" },
+        { label: "选择案例", detail: "按相近的构图或风格挑选提示词和模板。" },
+        { label: "替换变量", detail: "只修改主体、品牌和场景，保留有效结构。" },
+        { label: "检查输出", detail: "核对文字、细节、素材权利和商业使用范围。" },
+      ],
+      narration: [
+        "开源项目推荐：awesome-gpt-image-2。它把 GPT Image 2 的提示词、模板和真实案例整理成可复用的视觉工作流。",
+        "做产品图或海报时，最耗时间的是反复试构图、材质和文字效果。这个项目先提供相近案例和提示词结构，再让你替换主体与用途，减少从空白开始试错。",
+        "使用时先明确画面目标，挑一个相近案例，替换主体、尺寸和风格要求；生成后对照案例检查构图、文字和细节，把有效提示词留给下一次任务。",
+        "它适合产品视觉、海报和图像实验，但案例不是结果保证。模型版本、输入素材、字体和人物权利都要在正式使用前重新确认。",
+      ],
+    };
+  }
   if (/^zabbix$/i.test(name)) {
     return {
       titleSummary: "自托管的服务器与业务监控平台",
@@ -2251,7 +2899,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
     },
     {
       scene: {
-        type: "briefing_points", duration: 16, headline: "先看它替你省掉什么麻烦", source: "项目资料", title: name, summary: promotion.problem,
+        type: "briefing_points", duration: 16, headline: "用户痛点与核心价值：先复用已有能力，避免过度设计", source: "项目资料", title: name, summary: promotion.problem,
         metrics: proofMetrics,
         points: [promotion.problem, promotion.benefit, `直接收益：${profile.capability}`],
       },
@@ -2302,7 +2950,6 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
     titleClaimIds: claimIds(0),
   } satisfies VideoProject;
 }
-
 export function applyRepositoryAssetEvidence(project: VideoProject): VideoProject {
   const source = project.sources.find((item) => item.kind === "github" || Boolean(item.repo));
   const images = project.assets?.filter((asset) => asset.kind === "image").slice(0, 2) ?? [];
@@ -2316,11 +2963,17 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
       ? "核心价值：本地管理界面、按键配置与效果图"
       : repository === "free-for-dev"
         ? "核心价值：免费资源列表与使用效果图"
+        : repository === "awesome-llm-apps"
+          ? "核心价值：可查看的 AI 应用案例"
+        : repository === "ponytail"
+          ? "十二项真实任务：代码量、成本和耗时都下降"
+        : repository === "openhuman"
+          ? "长期记忆、研究与智能体工作流界面"
         : "核心价值：项目界面与实际效果图";
   const baseScene = project.scenes[2];
   const shots: WebScreenshot[] = images.map((asset) => ({
     id: `asset-${asset.id}`,
-    title: asset.title || "项目效果图",
+    title: asset.title && asset.title.length <= 40 && (asset.title.match(/\d+/g)?.length ?? 0) <= 2 ? asset.title : "项目效果图",
     source: "项目资料",
     url: asset.sourceUrl,
     src: asset.src,
@@ -2346,7 +2999,43 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
       providerSynthesisChunks: undefined,
       pronunciationPlan: undefined,
     }
-    : segment);
+    : repository === "awesome-llm-apps" && index === 2
+      ? {
+        ...segment,
+        text: "核心价值是可查看的 AI 应用案例。画面展示项目收录的 Unwind AI 和 Project Graveyard 示例，可以直接核对不同应用的界面与完成效果。",
+        ttsText: undefined,
+        providerSynthesisText: undefined,
+        providerSynthesisChunks: undefined,
+        pronunciationPlan: undefined,
+      }
+    : repository === "ponytail" && index === 2
+      ? {
+        ...segment,
+        text: "图中是 Ponytail 的真实任务基准：十二项开发任务里，代码量平均下降约百分之五十四，成本下降约百分之二十，耗时下降约百分之二十七。",
+        ttsText: undefined,
+        providerSynthesisText: undefined,
+        providerSynthesisChunks: undefined,
+        pronunciationPlan: undefined,
+      }
+    : repository === "openhuman" && index === 2
+      ? {
+        ...segment,
+        text: "画面展示 OpenHuman 的桌面界面，用来核对长期记忆、研究任务与智能体工作流如何集中在一个个人工作台中。",
+        ttsText: undefined,
+        providerSynthesisText: undefined,
+        providerSynthesisChunks: undefined,
+        pronunciationPlan: undefined,
+      }
+    : index === 2
+      ? {
+        ...segment,
+        text: `画面展示 ${repository} 项目的实际界面与效果图，用来核对项目的真实使用方式。`,
+        ttsText: undefined,
+        providerSynthesisText: undefined,
+        providerSynthesisChunks: undefined,
+        pronunciationPlan: undefined,
+      }
+      : segment);
   return {
     ...project,
     narrationSegments,
@@ -2409,8 +3098,8 @@ function createAfterJourneySeriesProject(
       narration: "首播内容是花果山篇，共五集，每集约四十分钟。故事围绕孙小圣等西游二代展开，从真经被误读和花果山的新危机开始，接着进入新的取经冒险。这也是生成式长剧的一次新尝试，后续还要看连续更新的稳定性。",
     },
     {
-      scene: { type: "flow", duration: 14, headline: "边制作、边审核、边播出", steps: [{ label: "边制作", detail: "后续内容继续制作。" }, { label: "边审核", detail: "制作过程中同步审核。" }, { label: "边播出", detail: "完成内容按计划播出。" }, { label: "动态调整", detail: "根据反馈优化后续细节。" }] },
-      narration: "边制作、边审核、边播出并行推进，审核意见和观众反馈会调整后续剧情。这也是制作与审核并行的一次尝试，这项安排也在验证。",
+      scene: { type: "flow", duration: 14, headline: "边制作、边审核、边播出", steps: [{ label: "边制作", detail: "后续内容继续制作。" }, { label: "边审核", detail: "制作过程中同步审核。" }, { label: "边播出", detail: "完成内容按安排播出。" }, { label: "动态调整", detail: "根据反馈优化后续细节。" }] },
+      narration: "边制作、边审核、边播出并行推进：后续内容继续制作，制作过程中同步审核，完成内容按安排播出，再根据审核意见和观众反馈动态调整后续细节。这也是制作与审核并行的一次尝试。",
     },
     {
       scene: { type: "outro", duration: 11, headline: "新模式缩短周期，协作不能中断", bullets: ["先看内容是否稳定更新。", "审核意见会影响后续剧情。", "生成式制作仍要服务故事质量。"] },
@@ -2434,7 +3123,7 @@ function createOpenClawTwoProject(
       narration: "这次更新由九百三十三位贡献者完成，包含超过一万六千个拉取请求。虽然覆盖安装、通信、技能、模型和安全等多个部分，但最直接的变化集中在安装流程和浏览器体验。",
     },
     {
-      scene: { type: "flow", duration: 14, headline: "新用户可以先开始，再逐步补配置", steps: [{ label: "识别环境", detail: "先读取已有订阅、密钥和本地模型。" }, { label: "减少设置", detail: "移除不必要的初始配置步骤。" }, { label: "开始对话", detail: "先用助手处理实际任务。" }, { label: "按需完善", detail: "在使用过程中补齐设置。" }] },
+      scene: { type: "flow", duration: 14, headline: "新用户可以先开始，再逐步补配置", steps: [{ label: "识别环境", detail: "先读取已有订阅、密钥和本地模型。" }, { label: "配置更简", detail: "先跳过部分初始配置步骤。" }, { label: "开始对话", detail: "先用助手处理实际任务。" }, { label: "按需完善", detail: "在使用过程中补齐设置。" }] },
       narration: "新安装用户可以先利用已有的服务订阅、密钥或本地模型，跳过一部分初始设置，先和助手对话，再按实际任务补齐配置。浏览器页面也支持继续设置和返回正在进行的工作。",
     },
     {
@@ -2463,8 +3152,29 @@ export function createStoryProject(
   if (/36kr\.com\/p\/3945081613647236/i.test(clean.url) || /批量博主集体停更.*AI漫剧/i.test(clean.title)) return createAiDramaBubbleProject(clean, options);
   if (/baijiahao\.baidu\.com\/s\?id=1873940198939202909/i.test(clean.url) || /DeepSeek涨价.*价格屠夫/i.test(clean.title)) return createDeepSeekPricingProject(clean, options);
   if (/36kr\.com\/p\/3952922405256328/i.test(clean.url)) return createEnvHarnessProject(clean, options);
+  if (/k\.sina\.com\.cn\/article_7879995946_1d5af322a06801p6p4/i.test(clean.url)) return createNonYaZaiProject(clean, options);
+  if (/baijiahao\.baidu\.com\/s\?id=1874549369654095423/i.test(clean.url)) return createTeenAiTutorProject(clean, options);
+  if (/baijiahao\.baidu\.com\/s\?id=1875308462529578043/i.test(clean.url)) return createTokenLoanProject(clean, options);
+  if (/qbitai\.com\/2026\/08\/479631/i.test(clean.url)) return createFalconTst20Project(clean, options);
+  if (/qbitai\.com\/2026\/09\/482652/i.test(clean.url)) return createFable51ReleaseProject(clean, options);
+  if (/ithome\.com\/0\/997\/270/i.test(clean.url)) return createQwenMax0902Project(clean, options);
+  if (/ithome\.com\/0\/997\/726/i.test(clean.url)) return createQuasar438BProject(clean, options);
+  if (/36kr\.com\/p\/3968652629422337/i.test(clean.url)) return createGpt6AstraNewsProject(clean, options);
+  if (/36kr\.com\/p\/3969755274883328/i.test(clean.url)) return createFermatFormalizationProject(clean, options);
+  if (/36kr\.com\/p\/3966895582123656/i.test(clean.url)) return createGemini38FlashProject(clean, options);
+  if (/ithome\.com\/0\/998\/647/i.test(clean.url)) return createLyria35NewsProject(clean, options);
+  if (/ithome\.com\/0\/998\/683/i.test(clean.url)) return createTabLdmProject(clean, options);
+  if (/ithome\.com\/0\/998\/747/i.test(clean.url)) return createMaiImageFlashProject(clean, options);
+  if (/ithome\.com\/0\/996\/855/i.test(clean.url)) return createSparkX25Project(clean, options);
+  if (/baijiahao\.baidu\.com\/s\?id=1875120348654659873/i.test(clean.url)) return createAiMushroomIncidentProject(clean, options);
   if (/ithome\.com\/0\/996\/265/i.test(clean.url)) return createAfterJourneySeriesProject(clean, options);
   if (/ithome\.com\/0\/996\/460/i.test(clean.url)) return createOpenClawTwoProject(clean, options);
+  if (/ithome\.com\/0\/996\/120/i.test(clean.url)) return createAstraDemoProject(clean, options);
+  if (/qbitai\.com\/2026\/08\/481372/i.test(clean.url)) return createQwenLocalDeploymentProject(clean, options);
+  if (/36kr\.com\/p\/3956946155355267/i.test(clean.url)) return createGlmFlashDomesticComputeProject(clean, options);
+  if (/qbitai\.com\/2026\/08\/480001/i.test(clean.url)) return createQwenOfficeFlashProject(clean, options);
+  if (/ithome\.com\/0\/994\/960/i.test(clean.url)) return createGeminiTranscribeProject(clean, options);
+  if (/36kr\.com\/p\/3958406037667205/i.test(clean.url) || /Anthropic发布物理MCP/i.test(clean.title)) return createPhysicalMcpProject(clean, options);
   if (/ithome\.com\/0\/987\/720/i.test(clean.url)) return createQwenOpenPlatformProject(clean, options);
   if (/ithome\.com\/0\/986\/936/i.test(clean.url)) return createNeonRetrievalModelProject(clean, options);
   if (/qbitai\.com\/2026\/08\/467879/i.test(clean.url)) return createChatGptFreeUpgradeProject(clean, options);
@@ -2527,7 +3237,6 @@ export function createStoryProject(
     screenshots,
   } satisfies VideoProject;
 }
-
 function createGeneralNewsProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
@@ -2569,10 +3278,6 @@ function createGeneralNewsProject(
     return narration;
   };
   const coverSummary = compactSentence(summary, 72);
-  const audienceValue = isTechnicalArticle
-    ? "普通读者先看它解决了什么问题，再判断是否值得照着做。"
-    : "对普通用户来说，先看它能不能让创作更简单、结果更稳定；技术细节只有在影响体验时才重要。";
-
   const sections: Array<{ scene: VideoScene; narration: string }> = isTechnicalArticle
     ? [
         {
@@ -2584,7 +3289,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["\u95ee\u9898", "\u65b9\u6cd5", "\u8fb9\u754c"],
           },
-          narration: `${title}\u3002关键是，${coverSummary}。${audienceValue}`,
+          narration: `${title}\u3002关键是，${coverSummary}。`,
         },
         {
           scene: {
@@ -2732,7 +3437,7 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["事实", "影响", "边界"],
           },
-          narration: `${title}。${coverSummary}。${audienceValue}`,
+          narration: `${title}。${coverSummary}。`,
         },
         {
           scene: {
@@ -2783,16 +3488,8 @@ function createGeneralNewsProject(
         },
       ];
 
-  const sectionsWithAudience = !isTechnicalArticle && sections.at(-1)?.scene.type === "outro"
-    ? sections.map((section, index) => index === sections.length - 1 && section.scene.type === "outro"
-      ? { ...section, scene: { ...section.scene, bullets: [audienceValue, ...section.scene.bullets].slice(0, 3) } }
-      : section)
-    : sections;
-  const narrationSections = sectionsWithAudience.map((section, index) => {
-    const sourceNarration = !isTechnicalArticle && index === sections.length - 1
-      ? `${audienceValue}${section.narration}`
-      : section.narration;
-    return { ...section, narration: limitNarration(sourceNarration, index === 0 ? 100 : 110) };
+  const narrationSections = sections.map((section, index) => {
+    return { ...section, narration: limitNarration(section.narration, index === 0 ? 100 : 110) };
   });
   const scenes = applySectionDurations(narrationSections, Number(process.env.STORY_MAX_SECONDS ?? 96));
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
@@ -2993,6 +3690,118 @@ function createPragmatikAgentCompanyProject(
   ], options, { maxSeconds: 55, minSeconds: 48 });
 }
 
+function createLyria35NewsProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = item.title.trim();
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 13, kicker: "音乐生成模型发布", headline: title, subhead: "Lyria 3.5 进入 Gemini，重点看完整歌曲、调用入口和输出格式", sources: ["Lyria 3.5", "Gemini", "完整歌曲"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "它解决的是从灵感到成曲的门槛", source: "公开功能", title: "文本和图片都能作为创作输入", summary: "用户可以用文字描述音乐，也可以提供图片，让模型根据内容生成歌曲。", metrics: [{ label: "输入", value: "文字或图片" }, { label: "结果", value: "完整歌曲" }, { label: "用途", value: "创作与配乐" }], points: ["文字提示可以描述风格、情绪和主题。", "最多可以提供十张图片作为视觉参考。", "生成结果仍需要人工检查版权和内容适配。"] },
+      narration: "它解决的不是单纯做一段声音，而是把创作门槛降到文字和图片输入：用户可以描述风格、情绪和主题，也可以提供最多十张图片作为参考，生成结果适合做灵感样片、配乐和内容草稿。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 15, headline: "开发者要分清两个模型入口", bars: [{ label: "Lyria 3 Clip", value: 30, detail: "用于循环和预览，默认生成三十秒片段。", color: "#18b7a5" }, { label: "Lyria 3.5", value: 30, detail: "支持数分钟的完整歌曲，覆盖副歌和桥段。", color: "#7c6cff" }, { label: "参考图片", value: 10, detail: "最多可以提供十张图片作为视觉参考。", color: "#f97316" }] },
+      narration: "开发者要分清两个入口：Lyria 3 Clip 主要生成三十秒循环和预览片段；Lyria 3.5 面向数分钟的完整歌曲，可以包含多段副歌和桥段。公开文档列出 MP3 输出，并说明 Lyria 3.5 支持 WAV，接入时要按实际接口核对格式。",
+    },
+    {
+      scene: { type: "outro", duration: 15, headline: "先用小样验证，再决定接入", bullets: ["Gemini 应用和开发接口都出现了接入路径。", "公开信息没有给出明确价格。", "生成音乐仍要核对版权、水印和商用范围。"] },
+      narration: "目前能确认的是，Lyria 3.5 已出现在 Gemini 应用和开发接口的使用路径中；公开信息没有明确价格。实际接入前，先用短样本核对音质、等待时间、版权限制和 SynthID 水印。",
+    },
+  ], options, { maxSeconds: 58, minSeconds: 55 });
+}
+
+function createFermatFormalizationProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = item.title.trim();
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 11, kicker: "数学验证新进展", headline: title, subhead: "重点不是让 AI 猜答案，而是把复杂证明变成机器可以逐步检查的程序", sources: ["端到端验证", "Lean", "形式化证明"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "报道给出的核心结果", source: "公开报道", title: "从多年工程压缩到十一天", summary: "报道称，Claude 用十一天完成费马大定理的端到端机器验证形式化。", metrics: [{ label: "时间", value: "11 天" }, { label: "代码", value: "1300 万行" }, { label: "定理", value: "30300 条" }], points: ["报道把这项工作描述为端到端机器验证。", "过程生成约一千三百万行代码。", "约三万零三百条中间定理进入检查流程。"] },
+      narration: "报道给出的结果是：Claude 用十一天完成费马大定理的端到端机器验证形式化，过程生成约一千三百万行代码，并处理约三万零三百条中间定理。这里的重点是把多年人工整理的复杂工作变成可重复检查的工程流程，数字代表规模，不等于结论不需要复核。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "普通人可以这样理解形式化", steps: [{ label: "拆成小问题", detail: "把总证明拆成可以单独检查的中间定理。" }, { label: "写成程序", detail: "用 Lean 等形式化语言表达每一步。" }, { label: "并行推进", detail: "多个智能体分别处理不同证明分支。" }, { label: "编译核验", detail: "让检查器逐步确认逻辑链条。" }] },
+      narration: "形式化可以理解成给数学证明加一套自动验算流程：先把大问题拆成小定理，再用 Lean 写成程序，让多个智能体并行处理，最后由检查器逐步验证每个环节。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 11, headline: "价值在于更快完成复核", source: "实际应用", title: "证明过程可以重复检查", summary: "形式化结果可以交给检查器反复运行，帮助研究者定位需要人工复核的环节。", metrics: [{ label: "检查方式", value: "程序复核" }, { label: "适用对象", value: "数学证明" }, { label: "下一步", value: "专家复查" }], points: ["复杂逻辑链可以拆成可运行的检查步骤。", "论文和模型生成的数学结论可能附带验证程序。", "假设、依赖和边界仍需要研究者确认。"] },
+      narration: "它的实际价值，是把过去需要专家花很久检查的逻辑链，转成可以重复运行的机器检查。以后论文、软件证明和模型生成的数学结论，都可能附带这样的验证程序，让研究者更快定位需要人工复核的环节。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "突破是验证效率，不是数学家退场", bullets: ["机器检查能提高复核效率。", "证明代码仍要确认假设、依赖和边界。", "复杂结论仍需要数学专家解释。"] },
+      narration: "这件事真正改变的是验证效率，不是数学家从此不需要了。机器可以快速检查证明代码，但研究者仍要确认假设、依赖和结论边界；对数学研究者和需要核对复杂结论的人，价值是更快找到可复查的证据。报道中的成果也应等待独立复核。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createTabLdmProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = item.title.trim();
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 11, kicker: "表格数据模型开源", headline: title, subhead: "用途：处理表格分类和回归预测，一次预训练适配不同数据集", sources: ["Xiaomi-TabLDM", "分类与回归", "正式开源"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "它解决的是表格任务反复建模", source: "模型能力", title: "分类和回归都能直接试", summary: "模型用统一配置处理不同表格数据，适合金融、医疗、制造和物流等场景的预测任务。", metrics: [{ label: "任务", value: "分类与回归" }, { label: "接口", value: "兼容 scikit-learn" }, { label: "场景", value: "金融、制造等" }], points: ["传统流程常要为每个数据集重新训练和调参。", "Xiaomi-TabLDM 试图用一次预训练覆盖更多表格任务。", "使用者仍需用自己的数据核验效果。"] },
+      narration: "它解决的是表格数据反复建模：同一套模型尝试适配不同数据集，覆盖分类和回归，接口兼容 scikit-learn。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "工业测试显示跨工况适应性", source: "工业场景验证", title: "从材料到生产预测都能试", summary: "公开材料列出材料性能、零件重量和生产组分等预测结果。", metrics: [{ label: "材料性能", value: "精度提升 130%" }, { label: "生产组分", value: "误差降低 54%" }, { label: "新工况", value: "约 30 条样本" }], points: ["材料性能预测精度提升百分之一百三十。", "零件重量预测的失误样本比例降低约百分之三十一。", "生产工况变化时，补充约三十条样本后平均误差降低约百分之六十二。"] },
+      narration: "工业测试覆盖材料性能、零件重量和生产组分。材料性能精度提升百分之一百三十，换工况补充约三十条样本后，平均误差降低约百分之六十二。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 12, headline: "公开评测进入第一梯队", bars: [{ label: "OpenML-CTR23", value: 1, detail: "回归任务排名第一。", color: "#18b7a5" }, { label: "TALENT", value: 2, detail: "回归任务排名第二，训练时间比第一名减少百分之八十二。", color: "#7c6cff" }, { label: "TabArena", value: 2, detail: "回归任务排名第二，预测时间比第一名减少百分之六十八。", color: "#f97316" }] },
+      narration: "公开评测中，OpenML-CTR23 回归任务排名第一，TALENT 和 TabArena 等任务排名第二；训练和预测时间分别减少百分之八十二和百分之六十八。",
+    },
+    {
+      scene: { type: "outro", duration: 13, headline: "开源之后先用自己的表格实测", bullets: ["模型代码和权重已经公开。", "工业数据的效果取决于字段和工况。", "性能数字不能替代真实业务验证。"] },
+      narration: "代码和权重已经公开，可用兼容 scikit-learn 的接口试用。效果仍取决于字段、工况、数据规模和硬件，上线前要用自己的表格验证。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createMaiImageFlashProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = item.title.trim();
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "图像生成模型发布", headline: title, subhead: "微软开放公开预览：更快、更省成本，适合批量生图和编辑", sources: ["公开预览", "API 按 Token 计费", "微软称速度是 GPT Image 2 的两倍"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 10, headline: "公开预览已经开放", source: "产品发布", title: "先从 Microsoft Foundry 试用", summary: "微软将模型通过 Microsoft Foundry 开放公开预览，面向需要图像生成和编辑的开发者。", metrics: [{ label: "状态", value: "公开预览" }, { label: "入口", value: "Microsoft Foundry" }, { label: "输入", value: "文字或图片" }], points: ["支持文字生成图像。", "支持基于现有图片进行编辑。", "公开预览阶段先验证效果和调用成本。"] },
+      narration: "微软通过 Microsoft Foundry 开放预览，支持文字生图和图片编辑。开发者可以先验证效果、延迟和调用成本。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 11, headline: "Flash 版重点优化速度和成本", bars: [{ label: "文字输入", value: 2, detail: "每百万 Token 约 1.75 美元。", color: "#18b7a5" }, { label: "图片输入", value: 3, detail: "每百万 Token 约 2.50 美元。", color: "#7c6cff" }, { label: "图片输出", value: 19, detail: "每百万 Token 约 19 美元。", color: "#f97316" }] },
+      narration: "价格按每百万 Token 计费：文字输入约一点七五美元，图片输入约二点五美元，图片输出约十九美元。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 11, headline: "文生图和图像编辑能力都保留", source: "功能范围", title: "移除、替换、重绘和改字", summary: "Flash 版保留旗舰版的主要生成和编辑能力，但更适合追求吞吐量的任务。", metrics: [{ label: "生成", value: "文生图" }, { label: "编辑", value: "图生图" }, { label: "操作", value: "移除、替换、改字" }], points: ["可以移除或替换对象。", "支持局部重绘和属性修改。", "还能更新图片中的文字内容。"] },
+      narration: "它保留文生图和图像编辑，可移除、替换对象，局部重绘、改属性和更新文字。商业素材仍要检查画质和文字准确性。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "按任务选择 Flash 还是旗舰版", bullets: ["批量生成、低延迟任务优先试 Flash。", "复杂设计和高质量文字优先评估旗舰版。", "公开信息未给出本地部署硬件要求。"] },
+      narration: "批量生图、低延迟和成本敏感的任务，可以优先试 Flash；复杂编辑和高质量文字，则要评估旗舰版。当前公开信息主要指向云端预览，未给出本地部署硬件要求。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
 function createCuratedNewsProject(
   item: HotItem,
   sections: Array<{ scene: VideoScene; narration: string }>,
@@ -3025,6 +3834,470 @@ function createCuratedNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createNonYaZaiProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "AI 短剧样本", headline: shortTitle(title, 42), subhead: "单集投入一万元、制作十天，两集获得超过三百万点赞", sources: ["1 万元", "10 天", "300 万点赞"] },
+      narration: `${title}。它上线两集获得超过三百万点赞、涨粉超过四十万，靠的不是低成本批量生产，而是单集一万元和平均十天的精细制作。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "一万元花在反复打磨", source: "制作披露", title: "部分镜头生成四十到五十个版本", summary: "主创用更多算力和时间换取稳定画面与镜头衔接。", metrics: [{ label: "单集成本", value: "约 1 万元" }, { label: "制作周期", value: "约 10 天" }, { label: "镜头版本", value: "40-50 个" }], points: ["普通 AI 漫剧单集约一千到两千元。", "部分镜头反复生成四十到五十个版本。", "目标是摆脱流水线式画面。"] },
+      narration: "它的单集成本约一万元，而普通 AI 漫剧多在一千到两千元。部分镜头要反复生成四十到五十个版本，再重新挑选转场、分镜和衔接，用算力和时间换取更稳定的画面。",
+    },
+    {
+      scene: { type: "news_stack", duration: 15, headline: "爆点来自故事，不只是画面", items: [{ title: "古风志怪只是外壳", summary: "第一集写哑女被污名致死，第二集借妖神隐喻拐卖，现实议题带来情感共鸣。", source: "剧情内容", url: item.url, tags: ["志怪", "现实议题", "人物命运"] }] },
+      narration: "画面之外，故事才是传播核心。第一集写哑女被伪善者污名为妖，第二集借妖神隐喻拐卖问题。古风志怪只是外壳，人物命运和现实议题让观众愿意看完并继续讨论。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "低门槛不等于低投入", bullets: ["上半年新上线 AI 短剧超过二十二万部。", "爆款率不足百分之零点一。", "中小团队仍可用精品路线突围。"] },
+      narration: "上半年全网新上线 AI 短剧超过二十二万部，爆款率却不足百分之零点一。这个案例给出的结论很具体：AI 降低了制作门槛，但想从海量内容中突围，仍要把预算和时间花在剧本、角色一致性与镜头完成度上。",
+    },
+  ], options, { maxSeconds: 56, minSeconds: 52 });
+}
+
+function createTeenAiTutorProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "真实用户付费验证", headline: shortTitle(title, 42), subhead: "十三岁女孩做出虚拟陪读应用，三天获得近九十份订单", sources: ["三天", "近九十单", "净收入一万八千元"] },
+      narration: `${title}。她做的是一款虚拟陪读应用，三天获得近九十份订单，净收入超过一万八千元。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "产品盯的是写作业时的分心", source: "产品功能", title: "虚拟家长陪伴自习", summary: "摄像头识别玩手机、趴睡或离座，再用家长形象发出提醒。", metrics: [{ label: "核心场景", value: "家庭自习" }, { label: "反馈", value: "专注力报告" }, { label: "提醒方式", value: "虚拟家长" }], points: ["上传父母照片生成虚拟陪伴形象。", "发现分心行为后发出语音提醒。", "自习结束生成专注力报告。"] },
+      narration: "这款应用叫在场。家长上传一张照片，就能生成陪孩子自习的虚拟形象；摄像头发现玩手机、趴睡或离座时会语音提醒，自习结束后还会给出专注力报告。",
+    },
+    {
+      scene: { type: "flow", duration: 15, headline: "不会编程，也能先做出核心功能", steps: [{ label: "发现需求", detail: "父母没时间一直陪伴，自己写作业也会分心。" }, { label: "说出想法", detail: "用自然语言向 AI 编程工具描述需求。" }, { label: "生成代码", detail: "让工具协助梳理逻辑和实现功能。" }, { label: "持续修改", detail: "删掉过度告状的设计，让提醒更温和。" }] },
+      narration: "她一年前才第一次接触 AI，几乎没有传统编程基础。做法是把需求直接说给 AI 编程工具，让它帮助梳理逻辑、生成代码，再根据弟弟试用的反馈修改提醒方式，三四天做出核心功能。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "真正稀缺的是找到愿意付费的人", bullets: ["比赛按净收入排名，没有评委打分。", "短期收入只能验证需求，不能证明产品已经成熟。", "应用仍在内测，隐私与识别准确率需要继续验证。"] },
+      narration: "比赛不看演示分数，而是按收入减去推广成本后的净收入排名。这个结果证明真实需求比炫技更重要，但应用仍在内测，摄像头隐私、识别准确率和长期使用效果，都需要继续验证。",
+    },
+  ], options, { maxSeconds: 56, minSeconds: 52 });
+}
+
+function createTokenLoanProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 12, kicker: "算力金融新动向", headline: shortTitle(title, 44), subhead: "银行开始把算力、词元消耗和订单数据纳入 AI 企业授信", sources: ["Token贷", "约 2800 万元授信", "算力金融"] },
+      narration: `${title}，帮助 AI 企业解决融资难题。新闻日期：2026年9月4日。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "先落地的是企业融资，不是消费贷款", source: "产品落地", title: "广州海珠出现专项金融产品", summary: "中国银行广州分行为相关企业授信约二千八百万元。", metrics: [{ label: "落地地区", value: "广州海珠" }, { label: "授信金额", value: "约 2800 万元" }, { label: "服务对象", value: "AI 相关企业" }], points: ["产品名称是 Token 贷。", "中国银行广州分行已为相关企业授信。", "多家银行也在探索算力相关信贷。"] },
+      narration: "首个词元经济专项金融产品在广州海珠落地，中国银行广州分行为相关企业授信约二千八百万元。建设银行、农业银行和多家城商行、农商行，也在探索算力相关信贷。",
+    },
+    {
+      scene: { type: "flow", duration: 15, headline: "授信逻辑从抵押物扩展到经营数据", steps: [{ label: "看项目", detail: "核对企业承接的项目和真实订单。" }, { label: "看算力", detail: "检查预计算力需求、采购和使用情况。" }, { label: "看回款", detail: "把 Token 消耗与订单营收交叉核对。" }, { label: "定额度", detail: "用通用模型和算力赛道指标综合判断。" }] },
+      narration: "授信逻辑从抵押物扩展到经营数据。AI 企业早期常常缺少可抵押资产，却可能有真实订单和持续的词元消耗。银行因此把项目、算力采购、使用情况和订单回款放在一起判断。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "词元消耗不等于利润，风控仍是关键", bullets: ["数据要有统一存证和核验标准。", "高消耗可能伴随高成本，不代表现金流健康。", "政策补贴退出后还要验证商业可持续性。"] },
+      narration: "词元消耗不等于利润，风控仍是关键。这类贷款还要过三道门槛：词元数据要真实可核验，消耗量不能直接等同于利润，政策补贴退出后产品也要能覆盖风险成本。成熟度仍要靠真实回款验证。",
+    },
+  ], options, { maxSeconds: 58, minSeconds: 52 });
+}
+
+function createFalconTst20Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "金融预测模型发布", headline: shortTitle(title, 42), subhead: "用于现金流与外汇风险预测，GIFT-Eval 第一，准确率超过百分之九十三", sources: ["正式发布", "MASE 0.666", "准确率超 93%"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "第一名不只来自通用榜单", source: "公开基准与业务数据", title: "先在真实金融流程里验证", summary: "模型用于现金流和外汇敞口预测，再扩展通用时间序列能力。", metrics: [{ label: "GIFT-Eval", value: "第一名" }, { label: "MASE", value: "0.666" }, { label: "准确率", value: "> 93%" }], points: ["平均绝对比例误差降至零点六六六。", "重点服务跨境支付外汇风险管理。", "榜单结果仍需结合真实业务回测。"] },
+      narration: "蚂蚁国际正式发布鹰序 TST 二点零，GIFT-Eval 误差零点六六六，金融预测准确率超过百分之九十三。它先在现金流和外汇敞口预测中验证，再扩展到更多时间序列任务。",
+    },
+    {
+      scene: { type: "news_stack", duration: 15, headline: "多家银行已经进入实际流程", items: [{ title: "现金流与外汇管理", summary: "巴克莱、花旗、德意志和渣打等机构已把模型用于流动性与外汇风险预测。", source: "机构应用", url: item.url, tags: ["银行", "现金流", "外汇风险"] }] },
+      narration: "巴克莱、花旗、德意志和渣打等银行已把它用于现金流预测和外汇管理，帮助更早发现流动性缺口和外汇风险敞口。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "公开使用路径是 API 与机构接入", source: "Falcon-2.0 使用方式", title: "一次前向计算完成预测", summary: "Encoder-Only 结构减少逐步生成带来的延迟。", metrics: [{ label: "入口", value: "Falcon-2.0 API" }, { label: "模型口径", value: "约 25 亿参数" }], points: ["官方 API 已开放。", "机构系统可接入预测流程。", "个人 GPU 本地部署不是本次产品路线。"] },
+      narration: "Falcon 二点零 API 已开放，Encoder-Only 一次前向降低延迟。模型约二十五亿参数，以机构接入为主，不面向个人 GPU 本地部署。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "预测准确不等于直接产生收益", bullets: ["金融数据存在噪声和市场切换。", "分位数输出仍需覆盖率与压力测试。", "物流、航空和电商是后续拓展方向。"] },
+      narration: "榜单第一不等于直接产生交易收益。机构仍要做滚动回测、压力测试和模型风险管理，再决定是否扩展到物流、航空或电商。",
+    },
+  ], options, { maxSeconds: 62, minSeconds: 58 });
+}
+function createFable51ReleaseProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "模型版本发布", headline: shortTitle(title, 44), subhead: "八项公开基准第一，缓存读取价格降至每百万 Token 0.25 美元", sources: ["Fable 5.1", "八项第一", "最高省 45%"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "降价重点在缓存读取", source: "官方价格信息", title: "长任务反复读取上下文时更省", summary: "缓存读取价格降至每百万 Token 0.25 美元，输入和输出价格保持不变。", metrics: [{ label: "缓存读取", value: "$0.25 / 百万 Token" }, { label: "输入价格", value: "$10 / 百万 Token" }, { label: "输出价格", value: "$50 / 百万 Token" }], points: ["缓存读取价格下降百分之七十五。", "输入价格仍为每百万 Token 十美元。", "输出价格仍为每百万 Token 五十美元。"] },
+      narration: "对开发者最直接的变化是价格：缓存读取降到每百万 Token 零点二五美元，降幅百分之七十五；输入仍是每百万十美元，输出仍是每百万五十美元。反复调用同一上下文的智能体任务，成本下降会更明显。八项公开基准测试也全部排名第一。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 12, headline: "跑分之外，科研案例更能说明用途", bars: [{ label: "公开基准", value: 8, detail: "Fable 5.1 在八项公开基准测试中取得第一。", color: "#18b7a5" }, { label: "成本下降上限", value: 45, detail: "高度智能体化的典型任务，成本最多降低百分之四十五。", color: "#f97316" }, { label: "蛋白设计命中率", value: 50, detail: "报道中的科研案例在十二个靶标上命中率接近百分之五十。", color: "#7c6cff" }] },
+      narration: "应用案例包括蛋白质设计、金星地形图和 GPU 加速的生物计算。报道还提到，蛋白设计案例在十二个靶标上的命中率接近百分之五十，但这些结果仍属于科研验证，不能直接等同于产品在所有任务上都可靠。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "开放范围并不完全相同", source: "访问与安全规则", title: "Fable 面向普通用户，Mythos 需要受信访问", summary: "通用模型开放范围更广，网络安全和生命科学高风险任务仍有路由限制。", metrics: [{ label: "Fable 5.1", value: "所有用户开放" }, { label: "Mythos 5.1", value: "受信机构访问" }, { label: "本地运行", value: "依赖 GPU 与软件栈" }], points: ["Fable 5.1 可直接面向所有用户使用。", "Mythos 5.1 面向审核后的网络安全和生命科学机构。", "科研计算案例使用了 GPU 加速，实际速度取决于硬件和任务。"] },
+      narration: "开放范围要分开看：Fable 5.1 面向所有用户，Mythos 5.1 只向经过审核的网络安全和生命科学机构开放。科研案例还使用了 GPU 加速，实际运行速度取决于显卡、软件栈和任务规模。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "适合高频调用，不代表没有边界", bullets: ["长上下文和智能体任务更可能受益于缓存降价。", "科研结果仍需独立复核和真实工作流测试。", "高风险安全与生命科学任务仍受访问规则限制。"] },
+      narration: "Fable 5.1 更适合需要长上下文和高频调用的开发者，缓存降价可能直接降低账单；但科研结果仍要独立复核，高风险网络安全和生命科学任务也仍受访问规则限制。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createQwenMax0902Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "模型版本发布", headline: shortTitle(title, 44), subhead: "前端编程总榜第一，面向企业、开发者和普通用户提供 API", sources: ["0902 版本", "前端编程冠军", "API 已上线"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "它强在哪里：多步编程任务", source: "CodeArena 评测", title: "从写代码到生成完整应用", summary: "升级重点集中在编程、工具调用和端到端应用生成。", metrics: [{ label: "榜单", value: "前端编程第 1" }, { label: "提升", value: "22 分" }, { label: "当前分数", value: "1691 分" }], points: ["围绕编程和专业办公继续训练。", "更适合多步推理和工具调用。", "目标是完成从需求到应用的连续任务。"] },
+      narration: "这次升级重点不只是写几段代码，而是处理多步编程任务：模型在 CodeArena 前端编程总榜提升二十二分，达到一千六百九十一分并拿下第一。它还加强了工具调用和端到端应用生成。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 12, headline: "性能提升之外，价格也更关键", bars: [{ label: "新版综合价", value: 5, detail: "Qwen3.8-Max-0902 每百万 Token 综合平均价格为 5 美元。", color: "#18b7a5" }, { label: "第二名价格", value: 20, detail: "性能排名第二模型的每百万 Token 综合价格为 20 美元。", color: "#f97316" }, { label: "第三名价格", value: 12, detail: "性能排名第三模型的每百万 Token 综合价格为 12 美元。", color: "#7c6cff" }] },
+      narration: "价格方面，Qwen3.8-Max-0902 每百万 Token 综合平均价格约五美元；报道列出的第二名和第三名分别约二十美元和十二美元。实际账单仍取决于输入输出量、上下文长度和调用频率。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "适合把复杂开发任务交给模型", steps: [{ label: "描述需求", detail: "说明页面、功能和交互目标。" }, { label: "调用工具", detail: "让模型读取资料并执行多步操作。" }, { label: "生成应用", detail: "从代码继续推进到可运行结果。" }, { label: "人工验收", detail: "检查代码、权限、数据和最终效果。" }] },
+      narration: "它更适合企业应用、科研和长周期开发任务：先描述页面或功能，再让模型读取资料、调用工具并生成可运行结果。涉及权限、数据和线上发布时，代码和最终效果仍要人工验收。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "榜单第一，先用真实项目验证", bullets: ["前端编程成绩不能代表所有任务。", "API 已接入千问平台、办公产品和 Qoder。", "成本要按自己的 Token 用量重新估算。"] },
+      narration: "目前新版已经上线千问平台，并接入千问办公、Qoder 和千问 App。前端编程第一不等于所有任务都第一，真正使用前要用自己的项目验证效果、延迟和 Token 成本。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createGemini38FlashProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "模型版本更新", headline: shortTitle(title, 44), subhead: "部分编程评测接近或超过 Opus 5，但单任务成本可能上升", sources: ["Gemini 3.8 Flash", "前端编程", "价格不变"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "优势集中在编程和智能体任务", source: "公开评测", title: "长程软件工程成绩明显提高", summary: "模型继续强化多步推理、工具调用和端到端应用生成。", metrics: [{ label: "DeepSWE", value: "73.7%" }, { label: "Opus 5", value: "74.0%" }, { label: "Terminal-Bench", value: "89.4%" }], points: ["DeepSWE v1.1 仅差 Opus 5 0.3 个百分点。", "Terminal-Bench 2.1 略高于 Opus 5。", "更适合长程软件工程和企业工作流。"] },
+      narration: "它主要强化编程和智能体任务：DeepSWE v1.1 得分百分之七十三点七，接近 Opus 5；Terminal-Bench 2.1 达到百分之八十九点四，略高于对手。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 12, headline: "Token 单价没涨，任务账单可能更高", bars: [{ label: "输入", value: 0.75, detail: "输入价格仍为每百万 Token 0.75 美元。", color: "#18b7a5" }, { label: "输出", value: 3.75, detail: "输出价格仍为每百万 Token 3.75 美元。", color: "#7c6cff" }, { label: "单任务成本", value: 40, detail: "独立测试显示单任务成本比上一代上涨约百分之四十。", color: "#f97316" }] },
+      narration: "Token 单价没有变化：输入每百万零点七五美元，输出三点七五美元。但它会进行更多推理和工具调用，独立测试显示单任务成本比上一代上涨约百分之四十。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "速度仍是 Flash 系列优势", source: "模型规格", title: "更快不等于每件事都更省", summary: "高推理档输出速度测试达到每秒 304.6 Token，但任务成本要结合消耗量计算。", metrics: [{ label: "上下文", value: "约 100 万 Token" }, { label: "最大输出", value: "65,536 Token" }, { label: "测试速度", value: "304.6 Token/秒" }], points: ["保留约一百万 Token 上下文。", "支持长输出和多步工具调用。", "高推理档速度不能代表所有环境。"] },
+      narration: "它保留约一百万 Token 上下文，最大输出六万五千五百三十六 Token；高推理档测试速度每秒三百零四点六 Token，但实际体验还取决于推理档位和工具次数。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "比较模型，要看完成一件事的总成本", bullets: ["Token 单价不能代表最终账单。", "复杂任务要同时比较成功率、速度和调用次数。", "先用自己的代码和工作流做小规模测试。"] },
+      narration: "Gemini 3.8 Flash 适合长程编程和智能体工作流，但不能只看 Token 单价。用自己的代码任务记录成功率、速度、调用次数和完成一件事的总成本。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createQuasar438BProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "欧洲模型新作", headline: shortTitle(title, 44), subhead: "4380 亿参数、100 万 Token 上下文，面向企业智能体和复杂任务", sources: ["4380 亿参数", "100 万 Token", "欧洲模型排名第一"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "它解决的是长文档和连续操作", source: "模型定位", title: "从合同到终端任务都能处理", summary: "模型面向企业智能体、软件开发和长上下文推理。", metrics: [{ label: "模型规模", value: "4380 亿参数" }, { label: "上下文", value: "100 万 Token" }, { label: "输入输出", value: "仅文本" }], points: ["可处理合同、技术资料和研究报告。", "支持查看代码、运行命令和排查错误。", "不支持图像输入，主要处理文本任务。"] },
+      narration: "Quasar 438B 面向企业智能体、软件开发和复杂多步任务，能处理合同、技术资料和研究报告等长文本，也能模拟查看代码、运行命令和排查错误，但目前只支持文本输入和输出。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 12, headline: "评测成绩靠前，但不是所有榜单都第一", bars: [{ label: "综合指数", value: 43, detail: "Artificial Analysis Intelligence Index 得分 43。", color: "#18b7a5" }, { label: "长上下文推理", value: 75, detail: "长上下文推理评测得分 75.0。", color: "#7c6cff" }, { label: "终端智能体", value: 69.3, detail: "Terminal-Bench 2.1 得分 69.3。", color: "#f97316" }] },
+      narration: "公开评测中，Quasar 438B 综合指数得分四十三，长上下文推理得分七十五，Terminal-Bench 二点一得分六十九点三。它在长文档和终端任务上有优势，但榜单成绩不能替代自己的业务测试。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "API 提供访问，权重没有公开", source: "访问方式与价格", title: "先按调用成本评估是否值得用", summary: "通过 CompactifAI API 提供访问，价格按输入和输出 Token 分开计算。", metrics: [{ label: "输入", value: "$0.60 / 百万 Token" }, { label: "输出", value: "$1.80 / 百万 Token" }, { label: "访问方式", value: "API" }], points: ["模型属于专有模型，权重未公开。", "支持英语和西班牙语。", "500 Token 输出约需 15.3 秒，测试速度 176.2 Token/秒。"] },
+      narration: "使用方式以 API 为主，模型属于专有模型，权重没有公开，支持英语和西班牙语。价格是输入每百万 Token 零点六美元、输出一点八美元；测试输出速度每秒一百七十六点二 Token，实际速度还取决于请求长度和服务负载。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "长上下文优势，要用真实资料验证", bullets: ["适合企业文档、研究报告和连续任务。", "专有模型不能按本地开源模型部署。", "使用前比较准确率、延迟和每项任务成本。"] },
+      narration: "Quasar 438B 更适合企业长文档和连续智能体任务，公开路径是 API，不是本地开放权重部署。真正选型时，要用自己的资料比较准确率、延迟和完成一项任务的总成本。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createGpt6AstraNewsProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "模型发布", headline: shortTitle(title, 44), subhead: "评测、电脑操作、价格和开放限制是这次最值得看的四件事", sources: ["GPT-6 Astra", "公开评测", "安全边界"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "公开成绩集中在数学、交互和编程", bars: [{ label: "ARC-AGI-3", value: 99.9, detail: "成绩为百分之九十九点九。", color: "#18b7a5" }, { label: "FrontierMath", value: 97.6, detail: "成绩为百分之九十七点六。", color: "#7c6cff" }, { label: "Terminal-Bench", value: 57.7, detail: "成绩为百分之五十七点七。", color: "#f97316" }] },
+      narration: "公开成绩包括 ARC-AGI-3 百分之九十九点九、FrontierMath Tier 4 百分之九十七点六，以及 Terminal-Bench 百分之五十七点七。不同测试衡量的能力不同，不能只用一个数字代表全部体验。",
+    },
+    {
+      scene: { type: "web_screenshot_zoom", duration: 12, headline: "演示重点是直接操作真实软件", shots: (options?.screenshots ?? []).slice(0, 2).map((shot, index) => ({ id: `article-shot-${index + 1}`, title: shot.title ?? "报道配图", source: "配图", url: shot.url, src: shot.src, width: shot.width, height: shot.height, highlight: { x: 0, y: 0, width: shot.width, height: shot.height } })) },
+      narration: "实际演示不只是在聊天框里回答问题：模型操作 KiCad 完成电路板布局，也能填写报税表、排版法律文件、制作报表和检查网站。它更像一个能调用电脑工具的工作助手，但每个结果仍要人工复核。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "价格不低，开放范围也分层", source: "公开信息", title: "API 按输入和输出分别计费", summary: "价格是输入每百万 Token 十美元，输出每百万 Token 五十美元。", metrics: [{ label: "输入", value: "$10 / 百万 Token" }, { label: "输出", value: "$50 / 百万 Token" }, { label: "开放", value: "分层访问" }], points: ["API 输入和输出分开计价。", "部分用户和机构按产品层级获得访问。", "网络安全能力达到高风险级别，开放会更谨慎。"] },
+      narration: "成本方面，API 价格是输入每百万 Token 十美元、输出五十美元。访问也不是完全无条件开放：不同产品层级和机构获得的权限不同，高风险网络安全能力会带来更严格的访问安排。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "先看成可用的能力预览", bullets: ["模型使用超过十万块 GPU 训练。", "安全评估发现新漏洞，能力没有完全开放。", "评测成绩仍需回到真实任务复核。"] },
+      narration: "训练使用了超过十万块 GPU。安全评估发现了新的漏洞，所以模型能力没有完全开放。现阶段更适合把它看成一次能力预览：真正投入使用前，要复测成功率、账单、速度和安全边界。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+function createSparkX25Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "端侧模型开源", headline: shortTitle(title, 44), subhead: "原生一百万 Token 上下文，支持个人设备和边缘部署", sources: ["4B 与 1.7B", "100 万 Token", "正式开源"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "长上下文不只是参数宣传", source: "产品能力", title: "跨章节处理复杂售后问题", summary: "模型可以导入完整售后手册，关联跨章节规定，并根据新增条件继续判断。", metrics: [{ label: "上下文", value: "100 万 Token" }, { label: "示例", value: "售后手册" }, { label: "重点", value: "持续理解条件" }], points: ["完整手册可以一次导入。", "复杂条件需要关联不同章节。", "新增条件加入后仍可继续判断。"] },
+      narration: "一百万 Token 的价值不只是数字更大：完整售后手册放进模型后，它能关联跨章节规则，新增条件出现后仍能继续判断。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 14, headline: "小模型也能处理真实端侧任务", bars: [{ label: "家居控制正确率", value: 90.3, detail: "星火 X2.5-1.7B 在 Domux 智能家居测试集上的端到端指令执行正确率为 90.3%。", color: "#18b7a5" }, { label: "平均响应", value: 0.85, detail: "同一测试中的平均响应时间为 0.85 秒。", color: "#f97316" }, { label: "模型版本", value: 2, detail: "本次开放星火 X2.5-4B 与星火 X2.5-1.7B。", color: "#7c6cff" }] },
+      narration: "端侧测试中，星火 X2.5-1.7B 的智能家居指令执行正确率为百分之九十点三，平均响应零点八五秒，也可用于机器人控制和导航。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "部署入口已经明确", steps: [{ label: "选择硬件", detail: "支持英伟达、华为、海光及后摩等平台。" }, { label: "选择框架", detail: "兼容 vLLM、SGLang 和 llama.cpp。" }, { label: "快速启动", detail: "可通过 Ollama 或 LM Studio 部署。" }, { label: "接入服务", detail: "对应 API 已上线讯飞星辰 MaaS。" }] },
+      narration: "支持英伟达、华为、海光和后摩等硬件，兼容 vLLM、SGLang、llama.cpp，也可用 Ollama 或 LM Studio 部署；API 当前限时免费。",
+    },
+    {
+      scene: { type: "outro", duration: 11, headline: "开源之后先看设备和任务是否匹配", bullets: ["4B 与 1.7B 面向端侧和边缘设备。", "实际速度取决于硬件、框架和上下文长度。", "更大版本将在 9 月 7 日发布。"] },
+      narration: "它适合长资料、低延迟和本地处理，但实际速度取决于硬件、框架和上下文长度，部署前先用自己的任务实测。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createAiMushroomIncidentProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "食品安全提醒", headline: shortTitle(title, 44), subhead: "AI 识图只能提供线索，不能替代毒蘑菇鉴定", sources: ["一家三口", "全部中毒", "大青褶伞"] },
+      narration: `${title}。一家三口误把野蘑菇当成可食用蘑菇，食用后全部出现中毒症状。这类高风险判断，不能只靠 AI 识图。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "看起来像，不代表可以吃", source: "事件经过", title: "AI 比对外观也可能判断错误", summary: "相似菌种、拍摄角度和光线都会影响图像识别。", metrics: [{ label: "误判对象", value: "大青褶伞" }, { label: "识别依据", value: "外观和网图" }, { label: "最终确认", value: "专家鉴定" }], points: ["家人先用 AI 和网络图片比对。", "AI 只能给出概率性的外观判断。", "专家最终确认是有毒的大青褶伞。"] },
+      narration: "这家人先用 AI 和网络图片比对蘑菇外观，得到的只是像不像的概率判断。由于相似菌种、拍摄角度和光线都可能造成误判，专家最后确认，误食的是有毒的大青褶伞。",
+    },
+    {
+      scene: { type: "timeline", duration: 12, headline: "中毒症状很快出现", events: [{ date: "食用后", title: "一家三口先后出现不适", source: "就医记录" }, { date: "症状加重", title: "呕吐、腹泻、头晕和血压下降", source: "就医记录" }, { date: "送医", title: "家人到医院接受对症治疗", source: "医生处置" }] },
+      narration: "食用后，一家三口先后出现呕吐、腹泻和头晕等症状，严重时还伴随血压下降。家人随后到医院接受对症治疗，这类情况不能在家继续等待，也不能因为蘑菇煮熟过就放松警惕。",
+    },
+    {
+      scene: { type: "flow", duration: 12, headline: "不确定时，正确做法只有三步", steps: [{ label: "不采不买", detail: "野外或来源不明的蘑菇不要尝试。" }, { label: "立刻就医", detail: "出现恶心、呕吐等症状马上去医院。" }, { label: "保留证据", detail: "带上剩余蘑菇或清晰照片帮助判断。" }, { label: "听从处置", detail: "按医生要求补液、检查和观察。" }] },
+      narration: "正确处理按三步走：先做到不采不买不吃；出现恶心、呕吐等症状就立刻就医；再保留剩余蘑菇或清晰照片，帮助医生判断。最后按医生要求补液、检查和观察，不要把 AI 识图结果当成食用许可。",
+    },
+    {
+      scene: { type: "outro", duration: 11, headline: "AI 能帮你查资料，不能替你承担风险", bullets: ["菌种相似时，图片识别可能误判。", "高温烹饪不能保证去除所有毒性。", "无法确认时，最安全的选择是不尝试。"] },
+      narration: "菌种相似时，图片识别可能误判；高温烹饪不能保证去除所有毒性；无法确认时，最安全的选择是不尝试。AI 识图只能提供线索，不能替代专家做食品安全判断。",
+    },
+  ], options, { maxSeconds: 58, minSeconds: 52 });
+}
+
+function createAstraDemoProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "AI 模型演示", headline: shortTitle(title, 42), subhead: "一次对话生成可运行的游戏样本，但模型身份仍未获官方确认", sources: ["一次交互", "游戏样本", "尚未确认"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "演示重点是从想法到成品", source: "公开演示", title: "Astra 被描述为 OpenAI 内部开发模型", summary: "演示者用自然语言提出要求，模型生成代码和可视化结果，再继续修改。", metrics: [{ label: "交互方式", value: "自然语言" }, { label: "结果", value: "可运行样本" }, { label: "状态", value: "内部测试" }], points: ["先描述游戏目标和规则。", "模型生成代码与画面。", "继续对话修改玩法和视觉效果。"] },
+      narration: "目前能确认的是演示方式：用户先用自然语言描述游戏目标，模型生成代码和画面，再通过后续对话继续修改。公开信息把 Astra 描述为 OpenAI 内部开发模型，仍属于测试阶段。",
+    },
+    {
+      scene: { type: "flow", duration: 16, headline: "一次对话生成游戏，仍需看清边界", steps: [{ label: "提出要求", detail: "描述玩法、画面和交互目标。" }, { label: "生成代码", detail: "模型把描述转成可运行的程序。" }, { label: "看到结果", detail: "直接检查游戏画面和操作效果。" }, { label: "继续修改", detail: "根据结果补充规则和视觉细节。" }] },
+      narration: "一次对话生成游戏样本，流程是提出要求、生成代码、看到结果，再继续修改。复杂项目还要检查代码质量、运行稳定性和多轮修改成本。",
+    },
+    {
+      scene: { type: "news_stack", duration: 10, headline: "最值得关注的是交互方式变化", items: [{ title: "自然语言到成品", summary: "用户不必先写完整代码，而是先描述目标，再根据画面结果继续修改。", source: "演示内容", url: item.url, tags: ["自然语言", "代码生成", "可视化结果"] }] },
+      narration: "真正值得关注的不是一个游戏样本，而是交互方式：用户先描述目标，再根据画面结果继续修改，代码不再是唯一入口。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "先把它看成能力预览", bullets: ["Astra 尚未被官方确认是 GPT-6。", "演示样本不等于完整产品能力。", "公开 API、价格和本地硬件要求仍待后续信息。"] },
+      narration: "不要把演示样本当成完整产品能力。Astra 是否就是 GPT-6、是否开放 API、价格和本地运行要求，目前都没有确定结论；现阶段更适合把它看作一次能力预览。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createQwenLocalDeploymentProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "本地部署排障", headline: shortTitle(title, 42), subhead: "七百三十四个依赖包，可能让同一个模型在本地输出不同结果", sources: ["734 个依赖", "输出差异", "部署排查"] },
+      narration: `${title}。七百三十四个依赖包，可能让本地输出和官方版本不同。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 16, headline: "软件栈会改变每一步取词", source: "实验记录", title: "从分数到下一个 token 的链路很长", summary: "浮点精度、注意力后端和采样设置的细小差异，都会改变候选词排序。", metrics: [{ label: "依赖数量", value: "734 个" }, { label: "关键变量", value: "后端与精度" }, { label: "影响", value: "输出 token" }], points: ["模型先为候选 token 计算分数。", "不同算子和精度会带来微小偏移。", "偏移累积后可能改变后续整段输出。"] },
+      narration: "模型不会直接吐出答案，而是先给每个候选词计算分数，再由采样器选出下一个词。注意力后端、浮点精度、硬件指令和采样设置只要有一项不同，后面的词就可能逐步偏离。",
+    },
+    {
+      scene: { type: "flow", duration: 16, headline: "本地复现先固定四类条件", steps: [{ label: "固定权重", detail: "确认模型版本、量化方式和文件完整。" }, { label: "固定后端", detail: "统一注意力实现、编译选项和硬件。" }, { label: "固定缓存", detail: "确认 KV cache 精度和上下文长度。" }, { label: "逐项对比", detail: "一次只改一个变量并保存输出。" }] },
+      narration: "排查本地差异，先固定模型权重和量化方式，再统一注意力后端、编译选项、KV 缓存精度与上下文长度。一次只改一个变量，才能知道到底是哪一层带来了偏差。",
+    },
+    {
+      scene: { type: "news_stack", duration: 10, headline: "工具调用更容易暴露差异", items: [{ title: "输出变化会放大", summary: "一个 token 的偏移，可能继续改变后面的回答、代码或工具调用。", source: "实验结论", url: item.url, tags: ["token", "工具调用", "复现"] }] },
+      narration: "一个 token 的微小偏移，可能继续改变后面的回答、代码甚至工具调用，所以长上下文和真实任务要单独回归。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "本地更便宜，但不一定等于同款体验", bullets: ["先记录依赖、硬件和推理后端版本。", "长上下文与工具调用要单独回归。", "官方服务和本地服务不能只比较模型名字。"] },
+      narration: "所以本地部署省下的可能是服务费用，付出的却是版本和性能排查成本。要复现官方效果，必须同时记录依赖、硬件、推理后端和缓存设置，不能只比较模型名字。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createGlmFlashDomesticComputeProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "开源模型与国产算力", headline: shortTitle(title, 42), subhead: "GLM-5.3-Flash 开源，价格约为 Opus 4.8 的四十分之一", sources: ["开源", "320B 总参数", "18B 激活参数"] },
+      narration: `${title}。新闻日期：${item.publishedAt ?? "2026年8月27日"}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "开源模型把价格打到更低", source: "模型发布信息", title: "GLM-5.3-Flash 正式发布并开源", summary: "总参数约三千二百亿，每个 Token 激活约一百八十亿；官方 API 价格约为 Claude Opus 4.8 的四十分之一。", metrics: [{ label: "开源协议", value: "MIT" }, { label: "总参数", value: "320B" }, { label: "激活参数", value: "18B" }], points: ["模型采用 MIT 协议开源，并同步开放 API。", "价格约为 Claude Opus 4.8 的四十分之一。", "这个比例比较的是面向用户的服务价格，不是芯片硬件成本。"] },
+      narration: "智谱正式发布并开源 GLM-5.3-Flash，采用 MIT 协议并同步开放 API。它总参数约三千二百亿，每个 Token 激活约一百八十亿，面向用户的价格约是 Claude Opus 4.8 的四十分之一。",
+    },
+    {
+      scene: { type: "news_stack", duration: 14, headline: "国产芯片承载真实线上流量", items: [{ title: "不是实验室峰值", summary: "匿名测试期间，模型服务使用超过十万张国产芯片集群，接收真实开发者请求。", source: "算力披露", url: item.url, tags: ["国产芯片", "真实流量"] }, { title: "服务效率提升", summary: "针对内存、带宽和长上下文限制改造推理系统，官方称端到端性能提升约三倍。", source: "性能披露", url: item.url, tags: ["推理效率", "长上下文"] }] },
+      narration: "这次发布的另一看点是算力来源：匿名测试期间，服务使用超过十万张国产芯片集群承载真实开发者请求，不是实验室峰值展示。智谱称，针对内存和带宽做完推理系统改造后，端到端服务性能提升约三倍。",
+    },
+    {
+      scene: { type: "flow", duration: 12, headline: "GLM-5 多模态检查完整工作结果", steps: [{ label: "读取代码", detail: "处理长代码、文档和工具返回内容。" }, { label: "生成结果", detail: "完成代码、PPTX、PDF、DOCX 和 XLSX 等任务。" }, { label: "看见页面", detail: "通过视觉输入检查页面、图表或三维场景。" }, { label: "继续修改", detail: "根据结果反馈反复调整直到任务更接近完成。" }] },
+      narration: "GLM-5 系列首个原生多模态模型，会读取代码，生成文档和页面，再看见实际结果并继续修改。它适合编码、办公和需要视觉核对的任务。",
+    },
+    {
+      scene: { type: "outro", duration: 10, headline: "开源和低价不等于零门槛", bullets: ["长任务稳定性仍要用自己的场景验证。", "本地部署需要匹配的国产算力与软件栈。", "榜单分数不等于所有任务都等价。"] },
+      narration: "但开源和低价不等于零门槛。模型规模、国产算力适配、软件栈和长任务稳定性，都要用自己的场景验证；综合指数相同，也不代表每项任务都和高价闭源模型完全等价。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createQwenOfficeFlashProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "办公模型更新", headline: shortTitle(title, 44), subhead: "标准模式速度提升约一倍，Token 消耗平均减少百分之七十五", sources: ["速度提升约 100%", "消耗减少 75%", "标准模式"] },
+      narration: `${title}。新闻日期：${item.publishedAt ?? "2026年8月27日"}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "普通办公任务切到标准模式", source: "产品更新", title: "所有用户可体验 Qwen3.8-Flash", summary: "千问办公将模型供给分成标准和高级两种模式，标准模式覆盖大多数日常任务。", metrics: [{ label: "标准模式", value: "约 95% 日常任务" }, { label: "高级模式", value: "约 5% 复杂任务" }], points: ["所有用户可以通过千问办公标准模式体验。", "文章给出的价格口径是积分消耗，不是独立 API 价目表。", "复杂任务仍可切换高级模式。"] },
+      narration: "千问办公把 Qwen3.8-Flash 放进标准模式，所有用户都能体验。文章给出的使用口径是办公产品里的积分消耗，不是独立 API 价目表；日常任务优先用标准模式，复杂任务再切到高级模式。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 14, headline: "速度更快，消耗更少", bars: [{ label: "生成速度", value: 100, detail: "真实办公场景测试中，标准模式单任务生成速度提升约百分之百。", color: "#18b7a5" }, { label: "Token 消耗", value: 75, detail: "平均减少约百分之七十五，直接影响可完成的任务量。", color: "#f97316" }, { label: "模式数量", value: 2, detail: "模型供给收敛为标准和高级两种模式。", color: "#7c6cff" }] },
+      narration: "这次更新最直接的变化是效率：真实办公场景测试中，标准模式单任务生成速度提升约百分之百，Token 消耗平均减少百分之七十五。对用户来说，同样的积分可以完成更多日常工作，但实际体验仍取决于任务复杂度。",
+    },
+    {
+      scene: { type: "flow", duration: 12, headline: "模型和智能体一起优化", steps: [{ label: "多步规划", detail: "先拆分办公目标和执行步骤。" }, { label: "工具选择", detail: "根据任务挑选搜索、文档或表格工具。" }, { label: "上下文压缩", detail: "减少重复信息带来的输入消耗。" }, { label: "结果交付", detail: "完成后检查内容和任务边界。" }] },
+      narration: "速度提升不只来自模型本身，千问大模型团队和办公团队还针对多步规划、工具选择和上下文压缩做了联合调优。它更适合资料整理、文档处理和多步骤办公，不代表所有复杂任务都能自动完成。",
+    },
+    {
+      scene: { type: "outro", duration: 10, headline: "更适合高频日常任务", bullets: ["日常任务优先使用标准模式。", "复杂任务仍需要高级模式和人工检查。", "实际积分消耗按任务量和结果核对。"] },
+      narration: "结论很简单：高频、重复的办公任务可以优先用标准模式，复杂工作仍要保留高级模式和人工检查。速度和消耗的提升来自这次产品测试，实际积分账单还要按自己的任务量核对。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createGeminiTranscribeProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "语音输入模型发布", headline: shortTitle(title, 44), subhead: "自动删掉口头禅并修正口误，转录速度预计提升约百分之七十", sources: ["Gemini 3.5 Transcribe", "速度提升 70%", "错误率 5.5%"] },
+      narration: `${title}。新闻日期：${item.publishedAt ?? "2026年8月27日"}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "语音输入不再只做逐字转写", source: "模型能力", title: "自动清理口头禅和即时改口", summary: "模型会删除“嗯”“呃”等口头禅，并根据说话者的即时修正调整已经生成的文字。", metrics: [{ label: "处理对象", value: "口头禅、口误" }, { label: "语言数量", value: "85 种" }], points: ["清理影响阅读的口头停顿。", "识别说错后立刻修正的内容。", "支持自定义词汇表识别专业术语。"] },
+      narration: "谷歌发布 Gemini 3.5 Transcribe，它不只是把声音变成文字，还会删除“嗯”“呃”等口头禅，并识别说错后立刻改口的内容。用户还能提供自定义词汇表，帮助它处理专业名词。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 14, headline: "速度和错误率都有改善", bars: [{ label: "转录速度", value: 70, detail: "从说话到生成文字，整体速度预计提升约百分之七十。", color: "#18b7a5" }, { label: "实时错误率", value: 5.5, detail: "实时语音场景错误率降至百分之五点五。", color: "#f97316" }, { label: "语言范围", value: 85, detail: "目前支持八十五种语言。", color: "#7c6cff" }] },
+      narration: "官方数据给出两个变化：从说话到生成转录文本，整体速度预计提升约百分之七十；实时语音场景的错误率降到百分之五点五。它目前支持八十五种语言，但不同语言和口音仍要单独验证。",
+    },
+    {
+      scene: { type: "flow", duration: 12, headline: "更像输入助手，而不是录音存档", steps: [{ label: "实时听取", detail: "持续接收用户的语音输入。" }, { label: "清理表达", detail: "删除口头禅和说话停顿。" }, { label: "修正内容", detail: "根据即时改口更新文字。" }, { label: "输出文本", detail: "生成更适合阅读的结果。" }] },
+      narration: "这项能力更像输入助手，而不是原样保存录音：它会实时听取、清理表达、修正内容，再输出更适合阅读的文本。手机输入、会议整理和快速记录会更省修改时间。",
+    },
+    {
+      scene: { type: "outro", duration: 10, headline: "需要原话时要关闭智能润色", bullets: ["适合语音输入和整理草稿。", "自动修正可能改变原本措辞。", "法律、采访和证据记录要保留原音。"] },
+      narration: "但如果任务要求保留原话，智能润色反而可能带来风险。它适合语音输入、会议草稿和快速记录；法律、采访或证据场景，仍应保留原始音频并人工核对。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createPhysicalMcpProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    { scene: { type: "title", duration: 10, kicker: "AI 与物理设备", headline: shortTitle(title, 44), subhead: "", sources: ["Model Hardware Standard", "研究预览", "物理设备"] }, narration: `${title}。新闻日期：${item.publishedAt ?? "2026年8月28日"}。` },
+    { scene: { type: "briefing_points", duration: 14, headline: "谁会受到影响：实验室与制造团队", source: "标准发布信息", title: "设备连接从定制集成走向统一命令", summary: "硬件用 MCP 帮助智能体通过标准驱动程序发现和操作显微镜、机械臂、液体处理器等设备。", metrics: [{ label: "面向对象", value: "实验室、工厂" }, { label: "当前状态", value: "研究预览" }], points: ["设备可以用读取、写入等基础命令交互。", "智能体可获取设备能力和安全限制。", "需要可编程接口或厂商提供驱动支持。"] }, narration: "这项更新主要影响科研实验室和制造团队。硬件用 MCP 通过统一驱动程序连接显微镜、机械臂和液体处理器，让智能体可以读取状态、设置参数，并了解设备的安全限制。" },
+    { scene: { type: "flow", duration: 14, headline: "从设备接入到自动实验", steps: [{ label: "发现设备", detail: "按统一格式识别设备能力。" }, { label: "读取状态", detail: "获取温度、位置和实时数据。" }, { label: "执行动作", detail: "设置参数或协调多台设备。" }, { label: "记录流程", detail: "把稳定步骤保存成可复用脚本。" }] }, narration: "它改变的是设备协作流程：先发现设备，再读取状态、设置参数和接收结果。智能体可以协调多台仪器，长时间任务还可以把已经验证过的步骤保存成脚本，减少每一步都重新推理。" },
+    { scene: { type: "news_stack", duration: 12, headline: "已经看到的应用方向", items: [{ title: "科研实验", summary: "用于激光校准、实验参数调整和实时故障观察。", source: "早期测试", url: item.url, tags: ["实验自动化"] }, { title: "机器人与仪器", summary: "机器人、显微镜和液体处理平台开始探索标准驱动支持。", source: "厂商探索", url: item.url, tags: ["机器人", "仪器"] }] }, narration: "画面列出两个应用方向：科研实验，以及机器人与仪器。早期测试覆盖激光校准、实验参数调整、机器人协作和仪器故障处理。价值不在于让模型凭空操作机器，而在于把设备状态、动作和安全限制放进同一条可检查的流程。" },
+    { scene: { type: "outro", duration: 10, headline: "研究预览仍需要专家监督", bullets: ["缺少可编程接口的设备暂时无法直接接入。", "物理故障可能被模型误判为软件问题。", "高风险动作必须保留人工确认。"] }, narration: "但它仍是研究预览，不是无人值守的万能方案。没有可编程接口的设备暂时无法直接接入，模型也可能把物理故障误判成软件问题。涉及样本、激光和机械动作时，专家监督与人工确认不能省略。" },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
 }
 
 function createEnvHarnessProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
@@ -3367,7 +4640,7 @@ function createAiPesticideIncidentProject(
     },
     {
       scene: { type: "outro", duration: 17, headline: "高风险问题必须建立核验链", bullets: ["先看药品标签和登记范围。", "再核对作物、苗期、剂量与天气。", "无法确认时停止施药并咨询专业人员。"] },
-      narration: "对普通用户来说，最实用的规则很简单：AI 可以帮助整理问题，不能作为农业用药的唯一依据。先看标签和登记范围，再核对作物、苗期、剂量、天气与混配要求；任何一项无法确认，就先停止施药，向专业人员求证。一次谨慎核验，远比事后补救成本低。",
+      narration: "最实用的规则很简单：AI 可以帮助整理问题，不能作为农业用药的唯一依据。先看标签和登记范围，再核对作物、苗期、剂量、天气与混配要求；任何一项无法确认，就先停止施药，向专业人员求证。一次谨慎核验，远比事后补救成本低。",
     },
   ], options);
 }

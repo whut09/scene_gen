@@ -23,6 +23,8 @@ test("fact ledger extracts stable claims from every source", () => {
   assert.equal(ledger.claims.some((claim) => claim.evidenceText.includes("提升42%")), true);
   assert.equal(ledger.claims.some((claim) => claim.qualifiers.includes("部分用户")), true);
   assert.deepEqual(highRiskPredicatesInText("产品正式发布并开放"), ["正式发布", "发布", "开放"]);
+  assert.deepEqual(highRiskPredicatesInText("覆盖客户支持，不是一键上线平台。"), []);
+  assert.deepEqual(highRiskPredicatesInText("产品支持本地部署并正式上线。"), ["上线", "支持"]);
   assert.deepEqual(qualifiersInText("仅向部分用户开放，仍需测试"), ["部分用户", "仅", "仍需"]);
   assert.deepEqual(qualifiersInText("不仅如此，下载量已经超过四亿"), ["超过"]);
 });

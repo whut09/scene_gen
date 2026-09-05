@@ -6,7 +6,7 @@ import { fetchWithRetry } from "./external-operation";
 import { highRiskPredicatesInText } from "./fact-ledger";
 import { storyPlanResponseSchema } from "./schemas";
 import type { FactLedger, StoryPlanCandidate, StoryPlanRanking, StoryPlanningAudit, VideoProject } from "./types";
-import { fromRoot } from "./utils";
+import { chatCompletionCompatibility, fromRoot } from "./utils";
 import { recordProviderOutcome } from "../production/provider-stats";
 import { storyVisualSequence } from "./content-strategy";
 
@@ -154,6 +154,7 @@ export async function planStoryCandidates(input: {
     headers: { authorization: `Bearer ${input.apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({
       model: input.model,
+      ...chatCompletionCompatibility(input.model),
       temperature: requestedCandidates === 1 ? 0.15 : 0.55,
       response_format: { type: "json_object" },
       messages: [

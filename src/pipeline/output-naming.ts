@@ -10,7 +10,9 @@ export function videoFileNameFromTitle(title: string) {
 
 export function provisionalVideoFileName(title: string, fallback = "story") {
   const chineseCount = (title.match(/[\u4e00-\u9fff]/g) ?? []).length;
-  return chineseCount >= 4 ? videoFileNameFromTitle(title) : `${slugify(title, fallback)}.mp4`;
+  return chineseCount >= 4
+    ? path.basename(homepageTitleBasedVideoPath("video.mp4", title))
+    : `${slugify(title, fallback)}.mp4`;
 }
 
 export function titleBasedVideoPath(outputPath: string, title: string) {

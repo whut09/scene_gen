@@ -34,6 +34,13 @@ test("general news fallback creates five grounded scenes", () => {
   assert.equal(project.narrationSegments?.some((segment) => segment.ttsText?.includes("AI")), true);
   assert.equal(project.narrationSegments?.[0].ttsText?.includes("这条新闻讲的是"), false);
   assert.deepEqual(genericNarrationFillerMatches(project.narration), []);
+  assert.doesNotMatch(project.narration, /对普通用户来说|普通读者先看|能不能让创作更简单/);
+});
+
+test("generic model purpose fallback is not treated as project or news copy", () => {
+  assert.deepEqual(genericNarrationFillerMatches("用途：用于文字和推理任务。"), ["用途：用于文字和推理任务"]);
+  assert.deepEqual(genericNarrationFillerMatches("用途：用于文字生成和推理任务。"), ["用途：用于文字生成和推理任务"]);
+  assert.doesNotMatch(cleanNarrationNoise("标题。用途：用于文字和推理任务。具体事实。"), /用途：用于文字和推理任务/);
 });
 
 test("DeepSeek pricing news stays focused on pricing instead of release questions", () => {
@@ -119,6 +126,158 @@ test("AI drama bubble news explains regulation, economics and the surviving path
   assert.match(project.narration, /原创剧本、稳定角色和精细制作/);
   assert.doesNotMatch(project.narration, /外界老有一种幻觉|说明这个行业/);
   assert.deepEqual(genericNarrationFillerMatches(project.narration), []);
+});
+
+test("Non Ya Zai news uses specific evidence instead of generic audience filler", () => {
+  const project = createStoryProject({
+    id: "non-ya-zai", kind: "webpage", contentType: "news",
+    title: "1集成本1万，AI短剧《非妖哉》凭啥爆火？",
+    url: "https://k.sina.com.cn/article_7879995946_1d5af322a06801p6p4.html", source: "核心事实",
+    summary: "单集制作成本一万元，平均制作十天，上线两集获赞超过三百万。",
+    content: "部分镜头反复生成四十到五十个版本。第一集讲述哑女被污名为妖致死，第二集借妖神隐喻拐卖题材。上半年新上线AI短剧超过二十二万部，爆款率不足百分之零点一。",
+    publishedAt: "2026年8月25日", score: 1, tags: ["AI 短剧"],
+  });
+
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /一万元.*十天/s);
+  assert.match(project.narration, /四十到五十个版本/);
+  assert.match(project.narration, /剧本、角色一致性与镜头完成度/);
+  assert.doesNotMatch(project.narration, /对普通用户来说|普通读者先看|能不能让创作更简单/);
+  assert.deepEqual(genericNarrationFillerMatches(project.narration), []);
+});
+
+test("teen AI tutor news explains the product, result and validation boundary", () => {
+  const project = createStoryProject({
+    id: "teen-ai-tutor", kind: "webpage", contentType: "news",
+    title: "13岁女孩三天赚了1.8万元！当事人：一年前第一次接触AI",
+    url: "https://baijiahao.baidu.com/s?id=1874549369654095423", source: "核心事实",
+    summary: "十三岁女孩开发虚拟陪读应用，三天净收入超过一万八千元。",
+    content: "应用通过虚拟家长陪伴自习，识别玩手机、趴睡和离座。她用自然语言让AI工具协助生成代码。比赛按净收入排名。",
+    publishedAt: "2026年8月26日", score: 1, tags: ["AI 应用"],
+  });
+
+  assert.equal(project.scenes.length, 4);
+  assert.match(project.narration, /近九十份订单.*一万八千元/s);
+  assert.match(project.narration, /摄像头隐私、识别准确率和长期使用效果/);
+  assert.doesNotMatch(project.narration, /最终。|对普通用户来说|这意味着|这说明/);
+});
+
+test("Falcon TST 2.0 news covers benchmark, bank use and access path", () => {
+  const project = createStoryProject({
+    id: "falcon-tst-20", kind: "webpage", contentType: "news",
+    title: "Falcon TST 2.0获世界权威测评第一名，推动时间序列基础模型从通用预测走向金融应用",
+    url: "https://www.qbitai.com/2026/08/479631.html", source: "核心事实",
+    summary: "蚂蚁国际正式发布鹰序TST 2.0。",
+    content: "模型在GIFT-Eval取得第一，MASE为0.666，准确率稳定超过93%。多家银行用于现金流和外汇管理。Falcon-2.0 API已经开放，Encoder-Only结构减少延迟。",
+    publishedAt: "2026年8月26日", score: 1, tags: ["时间序列", "金融"],
+  });
+
+  assert.equal(project.scenes.length, 5);
+  assert.match(project.narration, /正式发布.*零点六六六/s);
+  assert.equal(project.narrationSegments?.[0].text, `${project.meta.title}。`);
+  assert.match(project.narration, /巴克莱、花旗、德意志和渣打/);
+  assert.match(project.narration, /API.*Encoder-Only/s);
+  assert.doesNotMatch(project.narration, /对普通用户来说|这意味着|这说明/);
+});
+
+test("awesome-llm-apps is described as an application example library", () => {
+  const project = createStoryProject({
+    id: "awesome-llm-apps", kind: "github", contentType: "repository",
+    title: "awesome-llm-apps: 100+ open-source AI agents, agent skills, and RAG apps",
+    url: "https://github.com/Shubhamsaboo/awesome-llm-apps", repo: "Shubhamsaboo/awesome-llm-apps", source: "项目资料",
+    summary: "100+ open-source AI agents, agent skills, and RAG apps. Hand-built and tested.",
+    content: "AI Agents, RAG, Voice AI, Multi-agent Teams, and Multimodal Apps.",
+    score: 1, tags: ["AI agents", "RAG"], metrics: { stars: 134493 },
+  });
+
+  assert.match(project.scenes[0].type === "title" ? project.scenes[0].headline : "", /一百多个可运行的 AI 应用示例库/);
+  assert.match(project.narration, /一百多个.*智能体.*检索问答.*语音.*多模态/s);
+  assert.doesNotMatch(project.narration, /把团队资料变成可检索问答/);
+  assert.match(project.narrationSegments?.[0].ttsText ?? "", /Awesome L-L-M Apps/);
+});
+
+test("new repository profiles keep their real product positioning", () => {
+  const fixtures: Array<{ repo: string; summary: string; expected: RegExp; forbidden: RegExp }> = [
+    {
+      repo: "K-Dense-AI/scientific-agent-skills",
+      summary: "163 ready-to-use scientific skills and 100+ scientific databases.",
+      expected: /一百六十三项科研技能.*一百多个专业数据库/s,
+      forbidden: /团队资料变成可检索问答/,
+    },
+    {
+      repo: "DietrichGebert/ponytail",
+      summary: "Makes your AI agent think like the laziest senior developer in the room.",
+      expected: /过度设计.*代码量平均减少约百分之五十四/s,
+      forbidden: /围绕实际开发任务整理/,
+    },
+    {
+      repo: "tinyhumansai/openhuman",
+      summary: "A local-first memory, agent orchestrator and deep researcher.",
+      expected: /长期记忆.*本地优先.*个人 AI 中枢/s,
+      forbidden: /智能编程工具|终端代码任务/,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({
+      id: name,
+      kind: "github",
+      contentType: "repository",
+      title: `${name}: ${fixture.summary}`,
+      url: `https://github.com/${fixture.repo}`,
+      repo: fixture.repo,
+      source: "项目资料",
+      summary: fixture.summary,
+      content: fixture.summary,
+      score: 1,
+      tags: [],
+      metrics: { stars: 1000 },
+    });
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, fixture.forbidden);
+    assert.match(project.scenes[0].type === "title" ? project.scenes[0].headline : "", new RegExp(name, "i"));
+  }
+});
+
+test("screenshot-to-code explains the screenshot-to-editable-code workflow", () => {
+  const project = createStoryProject({
+    id: "screenshot-to-code", kind: "github", contentType: "repository",
+    title: "screenshot-to-code: Convert screenshots into code", url: "https://github.com/abi/screenshot-to-code",
+    repo: "abi/screenshot-to-code", source: "项目资料", summary: "Convert screenshots into clean code.",
+    content: "HTML, Tailwind, React, Vue and screen recordings.", score: 1, tags: [], metrics: { stars: 75219 },
+  });
+  assert.match(project.narration, /截图.*网页代码.*HTML.*React.*Vue/s);
+  assert.match(project.narration, /响应式.*可访问性.*图片版权/s);
+  assert.doesNotMatch(project.narration, /围绕实际开发任务整理/);
+});
+
+test("physical MCP news explains affected users and safety boundary", () => {
+  const project = createStoryProject({
+    id: "physical-mcp", kind: "webpage", contentType: "news",
+    title: "刚刚，Anthropic发布物理MCP：Claude开始接管真实世界", url: "https://www.36kr.com/p/3958406037667205",
+    source: "36氪", summary: "Anthropic 发布硬件用 MCP 研究预览。", content: "实验室和制造商可以通过标准驱动程序连接显微镜、机械臂和液体处理器。", score: 1, tags: [], publishedAt: "2026年8月28日",
+  });
+  assert.match(project.narration, /实验室和制造团队.*统一驱动程序/s);
+  assert.match(project.narration, /研究预览.*专家监督/s);
+  assert.doesNotMatch(project.narration, /这意味着|这说明|对普通用户来说/);
+});
+
+test("current repository batch uses distinct grounded profiles", () => {
+  const fixtures: Array<[string, RegExp, RegExp]> = [
+    ["bilawalsidhu/gods-eye-view", /三维地球.*飞机、船舶、卫星、地震/s, /侦察卫星.*不能直接用于安全/s],
+    ["THU-MAIC/OpenMAIC", /多个 AI 角色.*互动课堂/s, /知识点、引用.*核对/s],
+    ["p-e-w/heretic", /方向消融.*拒答率/s, /不适合普通用户或公开服务/s],
+    ["every-app/open-seo", /关键词研究、排名追踪.*网站审计/s, /不能保证排名提升/s],
+    ["Osmantic/ODS", /个人电脑.*私有 AI 服务器/s, /认证、备份和更新/s],
+  ];
+  for (const [repo, expected, boundary] of fixtures) {
+    const name = repo.split("/").at(-1)!;
+    const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${repo}`, repo, source: "项目资料", summary: name, content: name, score: 1, tags: [], metrics: { stars: 1000 } });
+    assert.match(project.narration, expected);
+    assert.match(project.narration, boundary);
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理/);
+  }
 });
 
 test("national compute cluster news keeps deployment, workload and network implications", () => {
@@ -404,8 +563,25 @@ test("repository asset evidence replaces the middle proof scene and keeps narrat
   });
   assert.equal(withAssets.scenes[2]?.type, "web_screenshot_zoom");
   assert.match(withAssets.scenes[2]?.headline ?? "", /核心价值.*效果图/);
-  assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /最短路径|核心结果/);
+  assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /最短路径|核心结果|实际界面与效果图/);
   assert.equal(withAssets.scenes[2]?.type === "web_screenshot_zoom" && withAssets.scenes[2].shots[0]?.src, "/generated/assets/demo.png");
+});
+
+test("repository asset evidence keeps screenshot alt text and narration gate-safe", () => {
+  const project = createStoryProject({
+    id: "ponytail", kind: "github", contentType: "repository", title: "ponytail: less code",
+    url: "https://github.com/DietrichGebert/ponytail", source: "项目资料", summary: "Less code for AI agents.",
+    content: "Average LOC is down 54%, cost 20%, and time 27% across twelve tasks.", score: 1, tags: [],
+    repo: "DietrichGebert/ponytail", metrics: { stars: 113438 },
+  });
+  const withAssets = applyRepositoryAssetEvidence({
+    ...project,
+    assets: [{ id: "benchmark", kind: "image", role: "evidence", title: "LOC 46%, tokens 78%, cost 80%, time 73%, another 67%", sourceUrl: "https://example.com/benchmark.svg", src: "/generated/assets/benchmark.svg", contentType: "image/svg+xml", license: "MIT" }],
+  });
+  assert.equal(withAssets.scenes[2]?.type, "web_screenshot_zoom");
+  if (withAssets.scenes[2]?.type === "web_screenshot_zoom") assert.equal(withAssets.scenes[2].shots[0]?.title, "项目效果图");
+  assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /十二项开发任务.*百分之五十四.*百分之二十七/s);
+  assert.ok((withAssets.narrationSegments?.[2]?.text.length ?? 0) >= 40);
 });
 
 test("repository title screen displays the captured star count", () => {
@@ -811,6 +987,34 @@ test("current repository requests use project-specific value propositions", () =
     const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo, metrics: { stars: 1000 } });
     assert.match(project.narration, fixture.expected);
     assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|将项目资料中的核心功能和使用路径组织为可查阅的工作流/);
+  }
+});
+
+test("new repository profiles explain concrete user value", () => {
+  const fixtures = [
+    ["MadsLorentzen/ai-job-search", "简历定制"],
+    ["NousResearch/hermes-agent", "终端"],
+    ["tashfeenahmed/freellmapi", "统一"],
+    ["freestylefly/awesome-gpt-image-2", "提示词"],
+  ] as const;
+  for (const [repo, expected] of fixtures) {
+    const name = repo.split("/")[1];
+    const project = createStoryProject({
+      id: name,
+      kind: "github",
+      contentType: "repository",
+      title: name,
+      url: `https://github.com/${repo}`,
+      source: "项目资料",
+      summary: "A project with practical workflow and tools.",
+      content: "A project with practical workflow and tools.",
+      score: 1,
+      tags: [],
+      repo,
+      metrics: { stars: 1000 },
+    });
+    assert.match(project.narration, new RegExp(expected));
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具/);
   }
 });
 

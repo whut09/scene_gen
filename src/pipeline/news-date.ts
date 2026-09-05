@@ -100,7 +100,7 @@ export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {
     const nextSegments = segments.map((segment, index) => index === 0 ? {
       ...segment,
       text: isRepositoryOpening ? segment.text : removeRepeatedOpeningTitle(segment.text, title),
-      ttsText: isRepositoryOpening ? (segment.ttsText ?? segment.text) : removeRepeatedOpeningTitle(segment.text, title),
+      ttsText: isRepositoryOpening ? (segment.ttsText ?? segment.text) : removeRepeatedOpeningTitle(segment.ttsText ?? segment.text, title),
     } : segment);
     return { ...project, narrationSegments: nextSegments, narration: nextSegments.map((segment) => segment.text).join("\n") };
   }
@@ -114,7 +114,7 @@ export function ensureTitleSpokenFirst(project: VideoProject): VideoProject {
   const nextSegments = segments.map((segment, index) => index === 0 ? {
     ...segment,
     text: `${title}\u3002${textBody}`,
-    ttsText: `${title}\u3002${spokenBody}`,
+    ttsText: segment.ttsText ?? `${title}\u3002${spokenBody}`,
   } : segment);
   return { ...project, narrationSegments: nextSegments, narration: nextSegments.map((segment) => segment.text).join("\n") };
 }
@@ -135,7 +135,9 @@ export function ensureNewsDateNarration(project: VideoProject): VideoProject {
   const nextSegments = segments.map((segment, index) => index === 0 ? {
     ...segment,
     text: removeRepeatedOpeningTitle(datedOpening, title),
-    ttsText: removeRepeatedOpeningTitle(segment.text, title),
+    ttsText: segment.ttsText
+      ? `${removeRepeatedOpeningTitle(segment.ttsText, title)}${compact(segment.ttsText).includes(compact(date)) ? "" : `新闻日期：${date}。`}`
+      : removeRepeatedOpeningTitle(datedOpening, title),
   } : segment);
   return {
     ...project,
