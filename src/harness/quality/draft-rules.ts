@@ -149,7 +149,7 @@ const NEWS_TECHNICAL_TERMS = [
 ];
 const NEWS_EXPLANATION_PATTERN = /(?:也就是|简单说|换句话说|可以理解为|意味着|相当于|对普通人|对用户来说|不用懂技术|按每百万 Tokens 计价)/u;
 const NEWS_AUDIENCE_VALUE_PATTERN = /(?:普通用户|用户|消费者|开发者|企业|团队|学生|创作者|患者|司机|家庭|意味着|影响|能用来|可以用来|帮助|省下|减少|降低|提高|更快|更便宜|更方便|限制|风险|适合)/u;
-const MODEL_RELEASE_SUBJECT_PATTERN = /(?:新(?:一代|款)?大模型|大模型|语言模型|基础模型|视觉模型|推理模型|模型(?:版本|发布|开源|权重)|LLM|GPT(?:[-\s]?[\w.]+)?|Qwen(?:[-\s]?[\w.]+)?|DeepSeek[-\s]?[A-ZV\d.]+|GLM[-\s]?[\w.]+|Llama[-\s]?[\w.]+|Mistral[-\s]?[\w.]+|MiniMax[-\s]?[\w.]+|MAGI[-\s]?[\w.]+|Shieldstral[-\s]?[\w.]+)/iu;
+const MODEL_RELEASE_SUBJECT_PATTERN = /(?:模型|新(?:一代|款)?大模型|大模型|语言模型|基础模型|视觉模型|推理模型|模型(?:版本|发布|开源|权重)|LLM|GPT(?:[-\s]?[\w.]+)?|Qwen(?:[-\s]?[\w.]+)?|DeepSeek[-\s]?[A-ZV\d.]+|GLM[-\s]?[\w.]+|Llama[-\s]?[\w.]+|Mistral[-\s]?[\w.]+|MiniMax[-\s]?[\w.]+|MAGI[-\s]?[\w.]+|Shieldstral[-\s]?[\w.]+)/iu;
 const MODEL_RELEASE_EVENT_PATTERN = /(?:正式)?(?:发布|推出)|开源(?:发布)?|开放权重|权重开放|(?:正式版|预览版).{0,18}(?:发布|推出|上线|进入公测|开放公测)|(?:进入|开放)公测.{0,18}(?:正式版|预览版)/iu;
 const MODEL_ACCESS_DETAIL_PATTERNS = {
   openSource: /(?:开源|开放权重|开放模型|权重开放|闭源|仅提供 API|可下载|商业许可|许可证)/iu,
