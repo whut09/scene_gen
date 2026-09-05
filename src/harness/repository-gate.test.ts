@@ -100,3 +100,28 @@ test("repository gate rejects stock sources rendered with PCB narration", async 
   const result = await evaluateDraft(value, value.meta.durationSeconds, "");
   assert.equal(result.issues.some((issue) => issue.code === "repository_domain_mismatch"), true);
 });
+
+test("repository gate rejects Ruflo rendered as a knowledge-base project", async () => {
+  const value = createStoryProject({
+    id: "ruflo",
+    kind: "github",
+    contentType: "repository",
+    title: "ruflo: An agent meta-harness for Claude Code and Codex",
+    url: "https://github.com/ruvnet/ruflo",
+    source: "项目资料",
+    summary: "An agent meta-harness for Claude Code and Codex.",
+    content: "Agent orchestration, persistent memory, task loops, tool calls, sandboxing, and a ruflo-rag-memory plugin.",
+    score: 1,
+    tags: ["agents", "orchestration"],
+    repo: "ruvnet/ruflo",
+    metrics: { stars: 70561 },
+  });
+  value.narration = "开源项目推荐：ruflo。它把团队资料变成可检索问答。选择资料并建立知识库，再用内部问答检查结果。";
+  value.narrationSegments = value.narrationSegments?.map((segment, index) => ({
+    ...segment,
+    text: index === 0 ? value.narration : "它把团队资料变成可检索问答，建立知识库并检查内部问答结果。",
+  }));
+
+  const result = await evaluateDraft(value, value.meta.durationSeconds, "");
+  assert.equal(result.issues.some((issue) => issue.code === "repository_domain_mismatch"), true);
+});

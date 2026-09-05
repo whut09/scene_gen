@@ -64,6 +64,14 @@ const repositoryDomainPatterns = {
     /电路板/u, /自动走线/u, /板图/u, /禁布区/u, /板厂/u, /高速信号/u,
     /printed circuit board/i, /autorout(?:er|ing)/i, /freerouting/i, /(?:^|\W)pcb(?:\W|$)/i,
   ],
+  agent: [
+    /智能体/u, /多智能体/u, /agent(?:ic|s)?/i, /meta.?harness/i, /orchestrat(?:e|ion)/i,
+    /Claude Code/i, /Codex/i, /swarm/i, /任务循环/u, /持久记忆/u, /工具调用/u,
+  ],
+  knowledge: [
+    /团队资料/u, /知识库/u, /检索问答/u, /knowledge base/i, /knowledge.?graph/i,
+    /retrieval augmented/i, /\bRAG\b/i, /文档整理/u, /内部问答/u,
+  ],
 } as const;
 
 type RepositoryDomain = keyof typeof repositoryDomainPatterns;
