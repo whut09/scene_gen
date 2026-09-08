@@ -8,6 +8,7 @@ import { z } from "zod";
 import { videoSceneSchema } from "../pipeline/schemas";
 import { readJson } from "../pipeline/utils";
 import { getTemplateById, sceneIntent } from "../templates/template-registry";
+import { FRAME_DESIGN_VERSION } from "../templates/frame-design";
 import { persistMigratedJson, readVersionedFormat } from "../persistence/versioned-format";
 
 export type HtmlVideoGraphEdgeType = "sequence" | "contrast" | "dependency";
@@ -334,7 +335,7 @@ export function buildHtmlVideoContentGraph(project: VideoProject): HtmlVideoCont
     intent: graphIntent(project),
     synopsis: project.sources[0]?.summary || project.meta.title,
     visualSystem: {
-      family: "scene-gen-editorial-v2",
+      family: FRAME_DESIGN_VERSION,
       palette: "ocean-editorial",
       typography: "cn-sans-editorial",
       motionFamilies: [...new Set(productionDecisions.map((decision) => decision.templateSelection.motionFamily))],

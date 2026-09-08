@@ -1,6 +1,7 @@
 import type { VideoProject } from "../pipeline/types";
 import type { VideoScene } from "../pipeline/types";
 import { projectNewsDate, projectRepositoryDate } from "../pipeline/news-date";
+import { FRAME_DESIGN_VERSION, frameDesignCss, framePaletteFromText, frameTokens, type FramePalette } from "./frame-design";
 
 export function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -11,12 +12,10 @@ export function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
-export type VisualPalette = "ocean" | "violet" | "sunset" | "mint" | "coral";
+export type VisualPalette = FramePalette;
 
 function paletteFromText(text: string): VisualPalette {
-  let hash = 0;
-  for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return (["ocean", "violet", "sunset", "mint", "coral"] as const)[hash % 5];
+  return framePaletteFromText(text);
 }
 
 export function projectPalette(project: VideoProject): VisualPalette {
@@ -105,15 +104,8 @@ export function commonHtml({
     .kt-index { color:rgba(16,42,67,.07) !important; }
   `;
 
-  const paletteCss: Record<VisualPalette, { a: string; b: string; c: string; paper: string }> = {
-    ocean: { a: "#0847d7", b: "#0876ca", c: "#00a6bb", paper: "#eef7ff" },
-    violet: { a: "#4820a8", b: "#6756d9", c: "#a78bfa", paper: "#f3efff" },
-    sunset: { a: "#b63732", b: "#e8753d", c: "#f2c14e", paper: "#fff4e8" },
-    mint: { a: "#075e62", b: "#149b8f", c: "#8ee3c8", paper: "#edf9f4" },
-    coral: { a: "#9b2855", b: "#d95372", c: "#f4a261", paper: "#fff0f2" },
-  };
-  const colors = paletteCss[palette];
-  const background = theme === "paper" ? "#f7f3ea" : colors.paper;
+  const colors = frameTokens(palette);
+  const background = theme === "paper" ? colors.paper : colors.canvas;
 
   return `<!doctype html>
 <html>
@@ -133,7 +125,7 @@ export function commonHtml({
       --safe-right: 82px;
       --safe-top: 138px;
       --safe-bottom: 150px;
-      --hv-accent: ${colors.c};
+      --hv-accent: ${colors.accent};
       --hv-ink: #0b1018;
       --hv-paper: #f5f1e8;
       --hv-coral: #ff6b4a;
@@ -218,10 +210,13 @@ export function commonHtml({
     .hv-main, .hv-main * { max-width: 100%; }
     body.hv-theme-paper .hv-root::before { background-image:linear-gradient(rgba(11,16,24,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(11,16,24,.055) 1px,transparent 1px); }
     body.hv-theme-paper .hv-root::after { background:#d94f39; }
+    ${frameDesignCss({ width, height, durationSec, palette, theme })}
   </style>
 </head>
-<body class="hv-theme-${theme}">
+<body class="hv-theme-${theme} sg-frame" data-sg-design="${FRAME_DESIGN_VERSION}">
   <div class="hv-root">
+    <div class="sg-frame-header" aria-hidden="true"><span class="sg-frame-brand">SCENE / GEN</span><span class="sg-frame-rule"></span><span class="sg-frame-label">EDITORIAL FRAME</span></div>
+    <div class="sg-frame-footer" aria-hidden="true"><span>VISUAL BRIEF</span><span class="sg-frame-progress"></span><span>HTML / MP4</span></div>
     ${chrome ? `<header class="hv-top"><span class="hv-brand">SG</span><span>${escapeHtml(title)}</span><span>HTML Video</span></header>` : ""}
     ${body}
   </div>
