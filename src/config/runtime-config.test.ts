@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   compatibleStoredRuntimeConfigSnapshotHashes,
   buildRuntimeConfig,
+  createRuntimeConfig,
   restoreRuntimeConfig,
   runtimeConfigHash,
   runtimeConfigProcessEnv,
@@ -89,4 +90,22 @@ test("subprocess config propagation is validated and independent of ambient env"
   assert.equal(childConfig.tts.provider, "f5");
   assert.equal(childConfig.rendering.html.concurrency, 3);
   assert.equal(childEnv.PATH, "test-path");
+});
+
+test("locked TTS profiles override ambient provider and voice settings", async () => {
+  const config = await createRuntimeConfig("nvidia-api", testEnv({
+    TTS_PROVIDER: "indextts",
+    TTS_EXPECTED_PROVIDER: "indextts",
+    TTS_EXPECTED_VOICE: "IndexTTS2.Fixed.Reference",
+    TTS_EXPECTED_RATE: "1.22",
+    NVIDIA_TTS_VOICE: "ambient-voice",
+    NVIDIA_TTS_SPEED: "1.1",
+  }));
+  assert.equal(config.tts.narrationIdentity.locked, true);
+  assert.equal(config.tts.provider, "nvidia");
+  assert.equal(config.tts.narrationIdentity.expectedProvider, "nvidia");
+  assert.equal(config.tts.narrationIdentity.expectedVoice, "Magpie-Multilingual.ZH-CN.HouZhen");
+  assert.equal(config.tts.narrationIdentity.expectedRate, 1.5);
+  assert.equal(config.tts.nvidia.voice, "Magpie-Multilingual.ZH-CN.HouZhen");
+  assert.equal(config.tts.nvidia.speed, 1.5);
 });

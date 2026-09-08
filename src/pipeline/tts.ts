@@ -271,7 +271,20 @@ async function resolveTtsProvider(project: VideoProject, plan: PronunciationPlan
     explicitProvider: ttsProviderId(explicit ?? runtime.tts.provider),
   });
   if (!routed.selectedProvider) throw new Error("No TTS provider satisfies pronunciation capability and free-quota constraints; manual confirmation is required.");
-  return { provider: providerFromId(routed.selectedProvider), audit: routed.audit, routing: routed };
+  const provider = providerFromId(routed.selectedProvider);
+  const identity = runtime.tts.narrationIdentity;
+  const voice = providerVoice(provider);
+  const rate = providerRate(provider);
+  if (identity.locked && identity.expectedProvider && provider !== identity.expectedProvider) {
+    throw new Error(`Configured narration provider ${identity.expectedProvider} was not selected.`);
+  }
+  if (identity.locked && identity.expectedVoice && voice !== identity.expectedVoice) {
+    throw new Error("Configured narration voice was not selected.");
+  }
+  if (identity.locked && identity.expectedRate !== undefined && (rate === undefined || Math.abs(rate - identity.expectedRate) > identity.rateTolerance)) {
+    throw new Error("Configured narration speed was not selected.");
+  }
+  return { provider, audit: routed.audit, routing: routed };
 }
 
 function providerErrorType(error: unknown) {
@@ -820,6 +833,8 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
     await recordTtsProviderResult({ provider, project, startedAt, success: false, error, retryCount: error instanceof AzureTtsError ? error.result.retryCount : Math.max(0, (f5Runtime?.pool.metrics().workerStartCount ?? 1) - 1), billedCharacters: error instanceof AzureTtsError ? error.result.billedCharacters : undefined });
     console.warn(`[tts] primary provider failed: ${(error as Error).message}`);
     if (getRuntimeConfig().tts.failFast) throw error;
+    const narrationIdentity = getRuntimeConfig().tts.narrationIdentity;
+    if (narrationIdentity.locked || narrationIdentity.expectedProvider || narrationIdentity.expectedVoice) throw error;
 
     if (provider !== "local") {
       const fallbackLocalPath = path.join(generatedDir, `${basename}.wav`);

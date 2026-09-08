@@ -4,6 +4,12 @@
   "env": {
     "TTS_PROVIDER": "nvidia",
     "TTS_PROVIDER_FALLBACK": "f5",
+    "TTS_LOCK_IDENTITY": "1",
+    "TTS_EXPECTED_PROVIDER": "nvidia",
+    "TTS_EXPECTED_VOICE": "Magpie-Multilingual.ZH-CN.HouZhen",
+    "TTS_EXPECTED_RATE": "1.5",
+    "TTS_EXPECTED_RATE_TOLERANCE": "0.02",
+    "NVIDIA_TTS_VOICE": "Magpie-Multilingual.ZH-CN.HouZhen",
     "NVIDIA_TTS_SPEED": "1.5",
     "TTS_FAIL_FAST": "1",
     "NVIDIA_TTS_CONCURRENCY": "1",

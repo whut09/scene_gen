@@ -23,11 +23,12 @@ export const runtimeConfigSchema = z.object({
     provider: z.enum(["indextts", "nvidia", "azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]),
     providerFallback: z.enum(["indextts", "nvidia", "azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]).optional(),
     narrationIdentity: z.object({
+      locked: z.boolean().default(false),
       expectedProvider: z.enum(["indextts", "nvidia", "azure", "cloudflare-melotts", "edge", "openai", "f5", "local", "mock"]).optional(),
       expectedVoice: z.string().min(1).optional(),
       expectedRate: positiveNumber.optional(),
       rateTolerance: z.number().finite().min(0).max(0.25).default(0.02),
-    }).default({ rateTolerance: 0.02 }),
+    }).default({ locked: false, rateTolerance: 0.02 }),
     failFast: z.boolean(), durationPolicy: z.enum(["natural", "fit"]), fitTarget: z.boolean(), forceRebuild: z.boolean(), leadingSilenceSeconds: z.number().finite().min(0).max(3).default(1.8),
     fetchTimeoutMs: positiveInteger, minTempo: positiveNumber, maxTempo: positiveNumber, preprocessConcurrency: positiveInteger, ffmpegConcurrency: positiveInteger,
     azure: z.object({
@@ -130,6 +131,7 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
       provider: providerValue(stringValue(env, "TTS_PROVIDER"), profile === "local-f5" ? "f5" : "openai"),
       providerFallback: stringValue(env, "TTS_PROVIDER_FALLBACK") ? providerValue(stringValue(env, "TTS_PROVIDER_FALLBACK"), "local") : undefined,
       narrationIdentity: {
+        locked: booleanValue(env, "TTS_LOCK_IDENTITY"),
         expectedProvider: stringValue(env, "TTS_EXPECTED_PROVIDER") ? providerValue(stringValue(env, "TTS_EXPECTED_PROVIDER"), "local") : undefined,
         expectedVoice: stringValue(env, "TTS_EXPECTED_VOICE"),
         expectedRate: stringValue(env, "TTS_EXPECTED_RATE") ? numberValue(env, "TTS_EXPECTED_RATE", 1) : undefined,
@@ -170,7 +172,20 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv = process.env, profile
 
 export async function createRuntimeConfig(profileName: string, env: NodeJS.ProcessEnv = process.env) {
   const profile = await loadConfigProfile(profileName);
-  return buildRuntimeConfig({ ...profile.env, ...env, SCENE_GEN_PROFILE: profile.name }, profile.name);
+  const merged: NodeJS.ProcessEnv = { ...profile.env, ...env, SCENE_GEN_PROFILE: profile.name };
+  if (profile.env.TTS_LOCK_IDENTITY === "1") {
+    const identityKeys = [
+      "TTS_PROVIDER", "TTS_PROVIDER_FALLBACK", "TTS_EXPECTED_PROVIDER", "TTS_EXPECTED_VOICE", "TTS_EXPECTED_RATE", "TTS_EXPECTED_RATE_TOLERANCE", "TTS_FAIL_FAST",
+      "NVIDIA_TTS_FUNCTION_ID", "NVIDIA_TTS_MODEL", "NVIDIA_TTS_VOICE", "NVIDIA_TTS_SPEED", "NVIDIA_TTS_LANGUAGE",
+      "INDEXTTS_ROOT", "INDEXTTS_MODEL_DIR", "INDEXTTS_REF_AUDIO", "INDEXTTS_TEMPO", "OPENAI_TTS_VOICE", "OPENAI_TTS_SPEED", "F5_TTS_REF_AUDIO", "F5_TTS_SPEED", "F5_TTS_UNIFORM_SPEED",
+      "EDGE_TTS_VOICE", "LOCAL_TTS_VOICE", "LOCAL_TTS_RATE", "AZURE_TTS_VOICE", "AZURE_TTS_STYLE", "AZURE_TTS_ROLE",
+    ];
+    for (const key of identityKeys) {
+      if (profile.env[key] !== undefined) merged[key] = profile.env[key];
+    }
+    merged.TTS_LOCK_IDENTITY = "1";
+  }
+  return buildRuntimeConfig(merged, profile.name);
 }
 
 export function runtimeConfigSnapshot(config: RuntimeConfig): RuntimeConfigSnapshot {

@@ -3,6 +3,7 @@
   "description": "Fixed-reference IndexTTS2 Mandarin narration with deterministic speaker identity.",
   "env": {
     "TTS_PROVIDER": "indextts",
+    "TTS_LOCK_IDENTITY": "1",
     "TTS_FAIL_FAST": "1",
     "TTS_EXPECTED_PROVIDER": "indextts",
     "TTS_EXPECTED_VOICE": "IndexTTS2.Fixed.Reference",
