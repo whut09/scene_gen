@@ -90,7 +90,7 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/Qwen(?=\d|\b)/gi, "千问")
     .replace(/MoneyPrinterTurbo/gi, "Money Printer Turbo")
     .replace(/awesome-llm-apps/gi, "这个项目")
-    .replace(/\bRAG\b/gi, "检索增强生成")
+    .replace(/\bRAG\b/gi, "R-A-G")
     .replace(/K2[.]7 Code HighSpeed/gi, "K二点七代码高速版")
     .replace(/K2[.]7 Code/gi, "K二点七代码")
     .replace(/Coding Plan/gi, "编程套餐")

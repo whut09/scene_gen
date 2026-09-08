@@ -210,6 +210,62 @@ test("ruflo keeps agent orchestration separate from knowledge-base projects", ()
   assert.doesNotMatch(project.narration, /团队资料变成可检索问答|把文档整理为知识库/);
 });
 
+test("new repository profiles keep distinct product domains", () => {
+  const fixtures: Array<{ repo: string; title: string; summary: string; content: string; expected: RegExp; forbidden: RegExp }> = [
+    {
+      repo: "BraveOPotato/FckSignups",
+      title: "FckSignups: NoSignups",
+      summary: "A curated collection of open-source tools you can use instantly in your browser.",
+      content: "Open source tools with no accounts, no emails, no tracking. Categories include productivity, development, privacy and data.",
+      expected: /免注册.*开源.*工具目录/s,
+      forbidden: /团队资料变成可检索问答/,
+    },
+    {
+      repo: "xai-org/x-algorithm",
+      title: "X For You Feed Algorithm",
+      summary: "The core code that determines which posts a viewer sees in the For You feed.",
+      content: "Candidate retrieval, content filtering, behavior prediction and ranking for an information feed.",
+      expected: /推荐流.*召回.*排序/s,
+      forbidden: /团队资料变成可检索问答|围绕实际开发任务整理/,
+    },
+    {
+      repo: "vitali87/code-graph-rag",
+      title: "Code-Graph-RAG",
+      summary: "Parse a multi-language codebase and build a knowledge graph of its structure.",
+      content: "Tree-sitter parses functions, classes and call relationships for natural language code search and AST editing.",
+      expected: /代码库.*知识图谱/s,
+      forbidden: /团队资料变成可检索问答/,
+    },
+    {
+      repo: "public-apis/public-apis",
+      title: "public-apis",
+      summary: "A collective list of free APIs for use in software and web development.",
+      content: "Public APIs organized by category with authentication, HTTPS and CORS information.",
+      expected: /公共.*API.*目录/s,
+      forbidden: /团队资料变成可检索问答|围绕实际开发任务整理/,
+    },
+  ];
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({
+      id: name,
+      kind: "github",
+      contentType: "repository",
+      title: fixture.title,
+      url: `https://github.com/${fixture.repo}`,
+      repo: fixture.repo,
+      source: "项目资料",
+      summary: fixture.summary,
+      content: fixture.content,
+      score: 1,
+      tags: [],
+      metrics: { stars: 1000 },
+    });
+    assert.match(project.scenes[0].type === "title" ? project.scenes[0].headline : "", fixture.expected);
+    assert.doesNotMatch(project.narration, fixture.forbidden);
+  }
+});
+
 test("new repository profiles keep their real product positioning", () => {
   const fixtures: Array<{ repo: string; summary: string; expected: RegExp; forbidden: RegExp }> = [
     {
@@ -1028,6 +1084,34 @@ test("new repository profiles explain concrete user value", () => {
       metrics: { stars: 1000 },
     });
     assert.match(project.narration, new RegExp(expected));
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具/);
+  }
+});
+
+test("new repository profiles keep distinct domains", () => {
+  const fixtures = [
+    ["The-Swarm-Corporation/AutoHedge", "市场分析", /风险管理.*交易执行/],
+    ["aipoch/open-science", "科研工作台", /Python 和 R Notebook.*可复现/],
+    ["coreyhaines31/marketingskills", "营销技能库", /转化率优化.*文案.*搜索优化/],
+  ] as const;
+  for (const [repo, titleFragment, expected] of fixtures) {
+    const name = repo.split("/").at(-1)!;
+    const project = createStoryProject({
+      id: name,
+      kind: "github",
+      contentType: "repository",
+      title: name,
+      url: `https://github.com/${repo}`,
+      source: "项目资料",
+      summary: "A project with a focused workflow.",
+      content: "A project with a focused workflow.",
+      score: 1,
+      tags: [],
+      repo,
+      metrics: { stars: 1000 },
+    });
+    assert.match(project.scenes[0].headline, new RegExp(titleFragment));
+    assert.match(project.narration, expected);
     assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具/);
   }
 });

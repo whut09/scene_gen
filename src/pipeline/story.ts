@@ -1,4 +1,4 @@
-import type { HotItem, VideoProject, VideoScene, WebScreenshot } from "./types";
+import type { HotItem, ModelReleaseResearch, VideoProject, VideoScene, WebScreenshot } from "./types";
 
 import { buildFactLedger, claimIdsForText, sceneFactText } from "./fact-ledger";
 import { contentTypeForItem } from "./content-type";
@@ -619,6 +619,13 @@ function repositoryKnownStars(item: HotItem) {
   const captured = Number(item.metrics?.stars);
   if (Number.isFinite(captured) && captured > 0) return captured;
   const known: Record<string, number> = {
+    "BraveOPotato/FckSignups": 3017,
+    "xai-org/x-algorithm": 32741,
+    "vitali87/code-graph-rag": 5013,
+    "public-apis/public-apis": 476099,
+    "The-Swarm-Corporation/AutoHedge": 4977,
+    "aipoch/open-science": 4052,
+    "coreyhaines31/marketingskills": 47800,
     "MadsLorentzen/ai-job-search": 34628,
     "NousResearch/hermes-agent": 236154,
     "tashfeenahmed/freellmapi": 20077,
@@ -694,6 +701,202 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^autohedge$/i.test(name)) {
+    return {
+      titleSummary: "多智能体自动化市场分析与交易研究",
+      theme: "让多个智能体协作分析市场、评估风险和执行交易策略",
+      capability: "把市场数据、策略分析、风险管理和交易执行串成由多个智能体协作的流程，并保留每一步的决策结果",
+      workflow: "先接入市场数据并明确策略，再让不同智能体分别完成分析、风险评估和执行准备；最后检查信号、仓位和风险限制",
+      boundaries: "它适合研究和策略自动化实验，不代表稳定盈利；真实交易涉及资金损失、数据延迟和合规责任，必须保留风控与人工确认",
+      topics: ["多智能体交易", "市场分析", "风险管理", "量化研究", "策略执行", "决策复盘"],
+      metrics: [{ label: "协作方式", value: "多智能体" }, { label: "核心流程", value: "分析、风控、执行" }],
+      problemPoints: [
+        "市场研究往往要同时看数据、策略、风险和执行，单个脚本很难把不同判断串成可复盘的流程。",
+        "AutoHedge 让多个智能体分工完成市场分析、风险管理和交易执行，把每一步判断放到同一条策略链路里。",
+        "它更适合研究人员做策略实验和流程自动化，真实资金操作仍需要独立风控、合规检查和人工确认。",
+      ],
+      steps: [
+        { label: "接入数据", detail: "准备行情、公司基本面或其他可核验的市场数据。" },
+        { label: "拆分角色", detail: "让不同智能体分别分析信号、策略和风险。" },
+        { label: "检查决策", detail: "核对信号、仓位、止损和风险限制是否一致。" },
+        { label: "小范围验证", detail: "先用回测或模拟盘观察结果，不直接交给真实资金。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把市场分析、风险管理和交易执行拆给多个智能体协作完成。`,
+        "你可以让不同角色分别研究市场信号、评估风险并准备策略动作，最后把判断和过程集中起来复盘。",
+        "使用时先接入可核验的数据，再分别检查信号、仓位和风险限制；先做回测或模拟盘，不要把模型输出直接当成投资建议。",
+        "它适合研究量化策略和自动化流程，但真实交易有资金、延迟和合规风险，必须保留独立风控与人工确认。",
+      ],
+    };
+  }
+  if (/^open-science$/i.test(name)) {
+    return {
+      titleSummary: "本地优先的 AI 科研工作台",
+      theme: "把科研检索、数据分析和可复现实验放进一个本地工作台",
+      capability: "提供科学研究智能体、Python 和 R Notebook、数据连接器以及可追溯的实验记录，并支持多种模型后端",
+      workflow: "先选择模型和研究任务，再连接数据或文献，在 Notebook 中运行分析并保存代码、输入、输出和实验记录，最后复核实验是否能重现",
+      boundaries: "它是科研工作台而不是自动发表或自动验证结论的系统；模型输出、数据许可证、实验环境和研究结论仍需人工检查",
+      topics: ["科学研究", "本地优先", "Notebook", "数据连接器", "可复现实验", "模型无关"],
+      metrics: [{ label: "工作方式", value: "本地优先" }, { label: "分析环境", value: "Python、R Notebook" }],
+      problemPoints: [
+        "科研任务经常分散在文献、数据、代码和实验记录里，换工具或换模型后很难保留完整的可复现链路。",
+        "open-science 把科学研究智能体、Python 和 R Notebook、数据连接器与可复现实验记录放进一个本地优先工作台。",
+        "它适合研究人员整理资料、运行分析和复现实验，但数据质量、模型结论和研究方法仍必须由人核验。",
+      ],
+      steps: [
+        { label: "建立研究任务", detail: "明确问题、数据来源、模型和希望得到的可验证结果。" },
+        { label: "连接资料", detail: "导入文献、数据或已有研究文件，检查来源和许可。" },
+        { label: "运行 Notebook", detail: "在 Python 或 R 环境中执行分析并保存中间结果。" },
+        { label: "复核可复现性", detail: "核对代码、依赖、输入和来源，确认他人可以重跑实验。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它是一个本地优先、支持多种模型的 AI 科研工作台。`,
+        "它把科学研究智能体、Python 和 R Notebook、数据连接器以及可复现实验记录放在一起，适合从资料整理一路做到数据分析。",
+        "使用时先明确研究问题，再接入文献或数据，在 Notebook 中运行分析，并保存代码、输入、输出和实验记录，方便之后复现。",
+        "它适合需要本地处理研究资料的个人和团队；模型输出、数据许可、实验环境和最终结论，都要由人确认。开始前先用一份小数据试跑。",
+      ],
+    };
+  }
+  if (/^marketingskills$/i.test(name)) {
+    return {
+      titleSummary: "给 AI 智能体的营销技能库",
+      theme: "让 AI 智能体执行可复用的营销分析和增长任务",
+      capability: "提供转化率优化、文案、搜索优化、分析、客户研究和增长工程等营销技能，并把任务拆成可以复用的工作流",
+      workflow: "先补充产品、受众和目标，再选择对应技能执行研究、写作或实验；最后用数据和业务指标检查结果，不把生成文案直接当成结论",
+      boundaries: "技能库提供方法和工作流，不保证某个市场或渠道的效果；数据权限、事实、品牌语气、合规和最终发布仍需人工审核",
+      topics: ["营销技能", "转化率优化", "文案写作", "搜索优化", "数据分析", "增长工程"],
+      metrics: [{ label: "覆盖方向", value: "文案、SEO、分析" }, { label: "使用对象", value: "AI 智能体" }],
+      problemPoints: [
+        "营销工作常常不是缺少一个写作工具，而是研究、定位、文案、实验和数据复盘之间没有一套可复用的方法。",
+        "marketingskills 把转化率优化、文案、搜索优化、分析和增长工程整理成 AI 智能体可以调用的技能工作流。",
+        "它适合创始人和营销团队快速启动研究或实验，但品牌事实、数据权限、合规和最终发布仍需人工审核。",
+      ],
+      steps: [
+        { label: "补充上下文", detail: "写清产品、受众、目标、限制和现有数据。" },
+        { label: "选择技能", detail: "按任务选择客户研究、文案、SEO、转化或分析工作流。" },
+        { label: "执行并实验", detail: "让智能体生成方案，再用小范围实验验证关键假设。" },
+        { label: "复盘发布", detail: "核对事实、品牌语气、数据和合规要求后再发布。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它不是编程工具，而是一套给 AI 智能体使用的营销技能库。`,
+        "它覆盖客户研究、转化率优化、文案、搜索优化和数据分析，把原本零散的营销工作拆成可复用的任务流程。",
+        "使用时先补充产品、受众和目标，再选对应技能生成方案或实验；关键结论要用真实数据验证，不能只看生成结果。",
+        "它适合创始人和营销团队快速启动增长工作，但品牌事实、数据权限、合规和最终发布仍需要人工审核。",
+      ],
+    };
+  }
+  if (/^fcksignups$/i.test(name)) {
+    return {
+      titleSummary: "免注册即可使用的开源工具目录",
+      theme: "快速找到不强制注册、不收集追踪数据的在线工具",
+      capability: "按生产力、设计、开发、写作、隐私、数据和媒体等分类整理可直接使用的开源工具，并标注用途、标签和授权信息",
+      workflow: "先按分类或关键词找到工具，再打开条目查看用途和限制；确认工具的隐私、授权和数据处理方式后，直接完成一个小任务",
+      boundaries: "目录只负责收集和分类，条目中的第三方工具仍需单独检查安全性、许可证、可用性和数据处理方式",
+      topics: ["开源工具目录", "免注册", "隐私保护", "分类检索", "在线工具", "许可证"],
+      metrics: [{ label: "核心特点", value: "免注册工具" }, { label: "分类", value: "生产力、开发、隐私等" }],
+      problemPoints: [
+        "很多在线工具先要求注册、收集邮箱或追踪使用行为，用户很难快速找到真正能直接使用的替代品。",
+        "FckSignups 把免注册的开源工具按类别整理，并展示用途、标签、授权和直接使用入口。",
+        "它适合先找一个小工具解决具体任务，但每个条目的安全性、许可证和数据处理方式仍需单独确认。",
+      ],
+      steps: [
+        { label: "选择分类", detail: "从开发、写作、隐私、数据或媒体等分类开始。" },
+        { label: "查看条目", detail: "核对工具用途、标签、许可证和是否需要账号。" },
+        { label: "直接试用", detail: "先用一个低风险任务确认工具是否满足需求。" },
+        { label: "检查边界", detail: "涉及敏感数据时，复核第三方工具的隐私和安全规则。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把免注册、少追踪的开源在线工具整理成一个可搜索目录。`,
+        "你可以按生产力、设计、开发、写作、隐私和数据等分类查找工具，先看用途、标签和许可证，再直接完成具体任务。",
+        "最短路径是按分类找到一个工具，核对是否需要账号和如何处理数据，再用低风险任务试用；目录不替你保证每个工具都安全可靠。",
+        "它适合想少填表、少注册、快速找替代工具的人，但第三方工具的隐私、许可证、可用性和数据安全仍要单独检查。",
+      ],
+    };
+  }
+  if (/^x-algorithm$/i.test(name)) {
+    return {
+      titleSummary: "X For You 推荐流召回、排序与过滤代码",
+      theme: "理解推荐信息流如何召回、排序和过滤内容",
+      capability: "公开 For You 信息流的候选召回、内容过滤、行为预测、加权排序和最终选择流程，并提供部分模型训练与透明度工具代码",
+      workflow: "先从请求路径和候选来源理解数据流，再查看召回、过滤和排序模块；运行示例或阅读配置时，把推荐效果与过滤规则分开验证",
+      boundaries: "开源代码展示的是系统实现和设计取舍，不代表能复现完整线上数据、模型权重、用户行为或平台策略",
+      topics: ["推荐系统", "信息流排序", "候选召回", "内容过滤", "行为预测", "算法透明度"],
+      metrics: [{ label: "核心流程", value: "召回、过滤、排序" }, { label: "推荐场景", value: "For You 信息流" }],
+      problemPoints: [
+        "信息流为什么出现某条内容，通常藏在看不见的召回、预测、过滤和排序流程里。",
+        "x-algorithm 公开 For You 推荐流的核心代码，让开发者可以沿着真实系统理解内容如何进入候选、获得分数并被筛选。",
+        "它适合研究推荐系统和算法透明度，不等于一套拿来就能复现平台推荐效果的完整数据服务。",
+      ],
+      steps: [
+        { label: "看请求路径", detail: "先区分关注网络内容和站外召回内容。" },
+        { label: "读候选召回", detail: "查看候选如何被检索、补全和去重。" },
+        { label: "读排序过滤", detail: "分开理解行为预测、加权排序和可见性过滤。" },
+        { label: "核对边界", detail: "不要把公开实现直接当成完整线上效果或用户结论。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它公开了 X For You 推荐流如何召回、排序和过滤内容。`,
+        "一条内容进入信息流前，会经过候选召回、行为预测、加权排序和可见性过滤；这个项目把这些环节拆开，适合学习真实推荐系统。",
+        "阅读时先看关注网络和站外召回，再区分排序分数与能不能展示的过滤规则，这比只看一个最终推荐结果更容易理解。",
+        "它适合研究推荐算法和透明度，但公开代码不包含完整线上数据与策略，不能直接保证复现平台的实际推荐效果。",
+      ],
+    };
+  }
+  if (/^code-graph-rag$/i.test(name)) {
+    return {
+      titleSummary: "把代码库变成可查询的知识图谱",
+      theme: "让智能体按代码结构定位、解释和修改大型代码库",
+      capability: "用 Tree-sitter 解析多种语言的函数、类、模块和调用关系，写入图数据库，再用自然语言查询代码、追踪依赖、发现死代码并生成可预览的修改",
+      workflow: "先启动数据库并解析一个代码库，再用自然语言查询函数和调用关系；需要修改时先查看 AST 定位和 diff 预览，最后运行测试核对结果",
+      boundaries: "图谱和检索结果依赖代码版本、语言支持和数据库状态，AI 生成的查询或修改仍需检查权限、diff、测试和生产影响",
+      topics: ["代码知识图谱", "自然语言检索", "调用关系", "死代码检测", "AST 修改", "多语言解析"],
+      metrics: [{ label: "支持语言", value: "Python、TypeScript、Rust 等" }, { label: "核心链路", value: "解析、建图、查询" }],
+      problemPoints: [
+        "大型代码库里，单纯搜索文件很难回答一个函数被谁调用、数据如何流转或改动会影响哪些模块。",
+        "Code-Graph-RAG 先解析代码结构建立知识图谱，再让用户用自然语言查询真实函数、调用关系和依赖。",
+        "它适合维护大型多语言项目，也能辅助死代码检测和 AST 级修改，但每次改动仍必须经过 diff 和测试。",
+      ],
+      steps: [
+        { label: "启动图数据库", detail: "准备 Memgraph、向量检索和项目依赖。" },
+        { label: "解析代码库", detail: "让 Tree-sitter 建立函数、类和调用关系图。" },
+        { label: "自然语言查询", detail: "询问入口、依赖、实现位置和运行路径。" },
+        { label: "预览并测试", detail: "查看 AST 修改 diff，再运行测试确认影响范围。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把代码库变成可以用自然语言查询的知识图谱。`,
+        "传统搜索只能找到文字，Code-Graph-RAG 还会解析函数、类、模块和调用关系，帮助你追踪一段代码会影响哪些地方。",
+        "使用时先解析一个项目，再询问入口、依赖或死代码；需要修改时先看 AST 定位和 diff 预览，确认后运行测试。",
+        "它适合维护大型多语言项目，但图谱会随代码版本变化，AI 查询和修改仍要检查权限、测试和生产影响。",
+      ],
+    };
+  }
+  if (/^public-apis$/i.test(name)) {
+    return {
+      titleSummary: "按类别整理的公共 API 目录",
+      theme: "快速找到适合原型和应用开发的公共数据接口",
+      capability: "按动物、商业、日历、金融、地图、新闻、开放数据和机器学习等类别整理公共 API，并列出认证方式、HTTPS 和跨域支持",
+      workflow: "先按业务类别筛选接口，再核对认证、HTTPS、跨域、速率限制和数据许可证；用一个最小请求确认返回格式后再接入应用",
+      boundaries: "目录信息和第三方接口都会变化，免费不代表不限流或可商用；生产接入前必须查看服务条款、数据质量、稳定性和隐私要求",
+      topics: ["公共 API", "接口目录", "开放数据", "认证方式", "跨域支持", "原型开发"],
+      metrics: [{ label: "覆盖方向", value: "金融、地图、新闻等" }, { label: "核对字段", value: "认证、HTTPS、CORS" }],
+      problemPoints: [
+        "做原型时最费时间的往往不是写调用代码，而是找到可用、合规、支持当前认证方式的数据接口。",
+        "public-apis 把大量公共 API 按类别集中整理，并标注认证、HTTPS 和跨域支持，方便从一个目录开始筛选。",
+        "它适合寻找原型数据源和学习接口接入，但接口状态、配额、许可证和数据质量仍需在使用前逐个确认。",
+      ],
+      steps: [
+        { label: "选择类别", detail: "从金融、地图、新闻、开放数据或机器学习开始筛选。" },
+        { label: "核对条件", detail: "检查认证方式、HTTPS、跨域、配额和许可证。" },
+        { label: "最小请求", detail: "先验证返回格式、错误处理和数据更新时间。" },
+        { label: "再接入应用", detail: "确认服务条款和稳定性后，才放入真实业务流程。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把公共数据接口按类别整理，帮你更快找到能接入应用的 API。`,
+        "目录覆盖金融、地图、新闻、开放数据和机器学习等方向，并标注认证方式、HTTPS 和跨域支持，适合做原型和数据调研。",
+        "最短路径是先按类别选接口，再核对认证、配额和许可证，用一个最小请求确认返回格式和数据更新时间。",
+        "它适合寻找数据源，但免费不代表不限流或可商用；接口状态、服务条款、隐私和数据质量仍要在接入前逐个确认。",
+      ],
+    };
+  }
   if (/^timesfm$/i.test(name)) {
     return {
       titleSummary: "Google Research 时间序列预测模型",
@@ -2981,7 +3184,7 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
 }
 export function applyRepositoryAssetEvidence(project: VideoProject): VideoProject {
   const source = project.sources.find((item) => item.kind === "github" || Boolean(item.repo));
-  const images = project.assets?.filter((asset) => asset.kind === "image").slice(0, 2) ?? [];
+  const images = project.assets?.filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected").slice(0, 2) ?? [];
   if (!source || images.length === 0 || project.scenes.length < 3) return project;
   const repository = source.repo?.split("/").at(-1)?.toLowerCase() ?? "";
   const evidenceHeadline = repository === "zabbix"
@@ -3081,7 +3284,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
 
 export function applyArticleImageEvidence(project: VideoProject): VideoProject {
   const source = project.sources.find((item) => item.kind === "webpage");
-  const images = project.assets?.filter((asset) => asset.kind === "image" && asset.license.includes("watermark screen passed")).slice(0, 2) ?? [];
+  const images = project.assets?.filter((asset) => asset.kind === "image" && asset.license.includes("watermark screen passed") && asset.screening?.status !== "rejected").slice(0, 2) ?? [];
   if (!source || source.contentType !== "news" || images.length === 0 || project.scenes.length < 3) return project;
   const sceneIndex = Math.min(2, project.scenes.length - 1);
   const baseScene = project.scenes[sceneIndex];
@@ -3162,6 +3365,91 @@ function createOpenClawTwoProject(
   ], options, { maxSeconds: 55, minSeconds: 48 });
 }
 
+function modelReleaseResearchEntry(
+  item: HotItem,
+  research: Omit<ModelReleaseResearch, "retrievedAt">,
+): ModelReleaseResearch {
+  return { ...research, retrievedAt: new Date().toISOString() };
+}
+
+function createQwenDriveProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const research = modelReleaseResearchEntry(item, {
+    url: "https://huggingface.co/Qwen/Qwen-Drive-1.0-4B",
+    title: "Qwen-Drive-1.0-4B model card",
+    source: "Hugging Face model card",
+    kind: "official",
+    content: "Qwen-Drive-1.0-4B 采用 Apache-2.0 许可证，权重和配置可以在 Hugging Face 获取。模型卡给出的运行路径是 Transformers 或 vLLM 本地推理，示例要求 BF16、CUDA GPU 和 FlashAttention 2。文件体量约为 VLM 9.1GB、planner-sft 2.1GB、planner-rl 2.1GB、perception 0.5GB。页面显示没有托管推理提供商，因此当前没有可比较的按量云 API 价格；实际速度取决于 GPU、输入帧数和采样设置。",
+  });
+  const storyItem: HotItem = {
+    ...item,
+    publishedAt: /9\s*月\s*6\s*日/u.test(item.content ?? "") ? "2026年9月6日" : item.publishedAt,
+    research: [research],
+  };
+  const title = speechFriendlyTitle(storyItem.title);
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 9, kicker: "自动驾驶模型开源", headline: shortTitle(title, 46), subhead: "用途：用于自动驾驶的视觉语言模型，覆盖三维感知、场景理解和动作规划", sources: ["开源", "Qwen3.5-4B", "自动驾驶"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "它解决的是连续驾驶判断", source: "模型能力", title: "感知、理解和规划连成一条链", summary: "模型同时覆盖三维感知、驾驶场景理解、视觉问答和运动规划。", metrics: [{ label: "模型基础", value: "Qwen3.5-4B" }, { label: "能力链路", value: "感知→理解→规划" }], points: ["不只识别路况，还能理解驾驶场景。", "同时提供两个规划专家。", "保留通用视觉语言和指令理解能力。"] },
+      narration: "它不只识别路况，还同时处理三维感知、驾驶场景理解和运动规划，并保留通用视觉问答与指令理解能力。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "本地运行要给显存留余量", source: "模型卡文件信息", title: "主模型约 9.1GB，规划专家各约 2.1GB", summary: "文件体量不等于实际显存，还要为 BF16、上下文和运行框架留空间。", metrics: [{ label: "VLM", value: "9.1GB" }, { label: "规划专家", value: "2.1GB × 2" }, { label: "感知头", value: "0.5GB" }], points: ["需要 CUDA GPU。", "官方示例使用 BF16。", "上下文和输入帧数会继续占用显存。"] },
+      narration: "本地要用 CUDA 显卡，也就是能运行模型的 GPU。文件体量约为主模型 9.1GB、两个规划专家各 2.1GB，另有 0.5GB 感知头；显存还要留给 BF16 和上下文。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "从下载到仿真验证", steps: [{ label: "下载权重", detail: "获取模型和配置文件。" }, { label: "准备硬件", detail: "使用 CUDA GPU，并按 BF16 示例配置环境。" }, { label: "启动推理", detail: "用 Transformers 或 vLLM 运行。" }, { label: "验证任务", detail: "用仿真或驾驶数据检查感知和规划。" }] },
+      narration: "先下载权重、准备硬件，再用 Transformers 或 vLLM 启动推理；最后用仿真或驾驶数据验证任务。模型卡显示没有托管推理服务，因此没有按量 API 价格；速度取决于显卡和帧数。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "开源之后仍要验证安全", bullets: ["适合自动驾驶感知和规划研究。", "本地部署要按自己的 GPU 实测。", "闭环安全仍需独立验证。"] },
+      narration: "它适合自动驾驶团队做感知、场景理解和规划研究，用于本地实验或仿真验证。模型开源和单项评测都不能替代真实道路安全认证。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 48 });
+}
+
+function createHiDreamO1EmbodiedProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const research = modelReleaseResearchEntry(item, {
+    url: item.url,
+    title: "HiDream-O1-Embodied public evaluation information",
+    source: "公开评测资料",
+    kind: "official",
+    content: "HiDream-O1-Embodied 的公开发布信息聚焦具身世界模型和 RoboColiseum 评测。RoboColiseum 面向全球高校、科研机构、模型企业与研究者开放，提供四个维度和 78 个高保真仿真任务。公开入口是仿真评测平台，不是开放权重下载，也不是按量计费的通用 API，因此没有可比较的 API 调用价格。实际运行依赖 GPU、仿真环境和软件栈，吞吐与延迟取决于输入视角和任务设置。",
+  });
+  const storyItem: HotItem = { ...item, research: [research] };
+  const title = speechFriendlyTitle(storyItem.title);
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 9, kicker: "具身世界模型发布", headline: shortTitle(title, 46), subhead: "让机器人理解指令、环境变化，并持续完成动作", sources: ["具身智能", "Robustness 第一", "0.692"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "它要解决的是现实环境不稳定", source: "RoboColiseum 评测", title: "扰动条件下仍要保持判断", summary: "模型在改变背景、光照、相机和指令说法后继续完成任务。", metrics: [{ label: "Robustness", value: "0.692 第一" }, { label: "评测任务", value: "78 个" }, { label: "能力维度", value: "4 个" }], points: ["测试会改变背景和光照。", "也会改变相机位置与画面质量。", "指令改写后仍要识别原本意图。"] },
+      narration: "HiDream-O1-Embodied 在 RoboColiseum 的 Robustness 子榜平均 0.692、位居第一；测试会改变光照、背景、相机位置和指令说法。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "三个能力一起工作", steps: [{ label: "理解意图", detail: "识别不同说法背后的同一任务。" }, { label: "融合视角", detail: "用多个视角互相补足。" }, { label: "适应扰动", detail: "在遮挡和画质波动下继续判断。" }, { label: "执行动作", detail: "把判断交给后续机器人控制。" }] },
+      narration: "它能识别同一意图的不同说法，用多个视角互相补足，并在遮挡、画质波动等不理想条件下继续判断，再把结果交给动作执行。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "公开入口是仿真评测", source: "使用路径", title: "先在可复现环境验证，再谈真机", summary: "RoboColiseum 面向全球高校、机构、企业和研究者开放。", metrics: [{ label: "入口", value: "RoboColiseum" }, { label: "开放对象", value: "全球研究者" }, { label: "使用方式", value: "仿真评测" }], points: ["公开入口定位是模型评测。", "不是开放权重下载。", "也不是按量计费的通用 API。"] },
+      narration: "当前公开入口是 RoboColiseum 仿真评测，面向全球高校、机构、企业和研究者开放；它不是开放权重下载，也不是按量通用 API，因此没有可比较的调用价格。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "抗干扰成绩，不等于真机可用", bullets: ["适合具身智能仿真和规划研究。", "GPU、延迟和软件栈要单独实测。", "榜单不能替代真实机器人安全验证。"] },
+      narration: "它适合具身智能团队做仿真、感知和规划研究；部署要看 GPU、延迟、数据和真机安全验证，榜单成绩不能当成上路保证。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 48 });
+}
+
 export function createStoryProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
@@ -3200,6 +3488,8 @@ export function createStoryProject(
   if (/ithome\.com\/0\/996\/460/i.test(clean.url)) return createOpenClawTwoProject(clean, options);
   if (/ithome\.com\/0\/996\/120/i.test(clean.url)) return createAstraDemoProject(clean, options);
   if (/qbitai\.com\/2026\/08\/481372/i.test(clean.url)) return createQwenLocalDeploymentProject(clean, options);
+  if (/ithome\.com\/0\/998\/997/i.test(clean.url)) return createQwenDriveProject(clean, options);
+  if (/zhidx\.com\/p\/591381/i.test(clean.url)) return createHiDreamO1EmbodiedProject(clean, options);
   if (/36kr\.com\/p\/3956946155355267/i.test(clean.url)) return createGlmFlashDomesticComputeProject(clean, options);
   if (/qbitai\.com\/2026\/08\/480001/i.test(clean.url)) return createQwenOfficeFlashProject(clean, options);
   if (/ithome\.com\/0\/994\/960/i.test(clean.url)) return createGeminiTranscribeProject(clean, options);

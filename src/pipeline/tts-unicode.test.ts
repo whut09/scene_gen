@@ -24,3 +24,7 @@ test("normalizes Claude for Mandarin synthesis", () => {
 test("normalizes C2PA as a stable acronym", () => {
   assert.equal(prepareF5SynthesisText("使用 C2PA 元数据。"), "使用 C、二、P、A 元数据。");
 });
+
+test("keeps RAG as a continuous spelled acronym", () => {
+  assert.equal(prepareF5SynthesisText("Code-Graph-RAG 用于代码检索。"), "Code-Graph-R-A-G 用于代码检索。");
+});

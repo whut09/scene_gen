@@ -59,6 +59,9 @@ const repositoryDomainPatterns = {
   stock: [
     /股票/u, /证券/u, /(?:^|\W)stock(?:s| market)?(?:\W|$)/i, /行情/u, /K\s*线/iu,
     /A\s*股/iu, /港股/u, /美股/u, /量化/u, /回测/u, /买卖点/u, /决策看板/u,
+    /trading|trade execution|quantitative/i,
+    /market analysis|risk management/i,
+    /hedge fund|position sizing/i,
   ],
   pcb: [
     /电路板/u, /自动走线/u, /板图/u, /禁布区/u, /板厂/u, /高速信号/u,
