@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
 import type { ProjectAsset } from "./types";
 import { ensureDir, fromRoot } from "./utils";
+import { screenAssetFile, screenAssetMetadata } from "./asset-screening";
 
 const execFileAsync = promisify(execFile);
 const watermarkPattern = /水印|版权|版权所有|来源|copyright|watermark|logo|二维码|qr.?code|data-?vmark|vmark/i;
@@ -158,6 +159,8 @@ export async function collectArticleImages(input: {
   for (const candidate of candidates) {
     if (assets.length >= limit) break;
     if (isConservativeWatermarkDomain(candidate.url) || hasWatermarkSignal(candidateSignals(candidate))) continue;
+    const metadataScreening = screenAssetMetadata({ alt: candidate.alt, url: candidate.url, watermarkHint: candidate.watermarkHint });
+    if (metadataScreening.status === "rejected") continue;
     try {
       const { bytes, contentType: responseContentType } = await fetchImageBytes(candidate.url);
       if (bytes.length < 8 || bytes.length > 12_000_000) continue;
@@ -169,8 +172,16 @@ export async function collectArticleImages(input: {
       const fileName = id + extension(contentType, candidate.url);
       const filePath = path.join(assetDir, fileName);
       await writeFile(filePath, bytes);
+      const screening = await screenAssetFile({ filePath, contentType, alt: candidate.alt, url: candidate.url, watermarkHint: candidate.watermarkHint });
+      if (screening.status === "rejected") {
+        await unlink(filePath).catch(() => undefined);
+        continue;
+      }
       const ocrText = await optionalOcr(filePath);
-      if (hasWatermarkSignal(ocrText)) continue;
+      if (hasWatermarkSignal(ocrText)) {
+        await unlink(filePath).catch(() => undefined);
+        continue;
+      }
       assets.push({
         id,
         kind: "image",
@@ -180,6 +191,7 @@ export async function collectArticleImages(input: {
         src: `/generated/article-assets/${input.articleId}/${fileName}`,
         contentType,
         license: "article-provided; watermark screen passed",
+        screening,
       });
     } catch {
       continue;

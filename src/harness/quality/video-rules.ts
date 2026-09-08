@@ -16,6 +16,7 @@ import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifyScene
 import { analyzeFrameVisual } from "../frame-visual-analysis";
 import { readVisualAuditFile } from "../../html-video/visual-audit";
 import { expectedVideoFileName, projectHomepageTitle } from "../../pipeline/output-naming";
+import { screenAssetMetadata } from "../../pipeline/asset-screening";
 
 function runCapture(command: string, args: string[], signal?: AbortSignal) {
   return runExternalProcess(command, args, {
@@ -76,6 +77,22 @@ export interface VideoDurationDiagnosis {
   sceneDurationDeltas: string[];
   silentVideoDurationSeconds?: number;
   expectedSceneDurationSeconds?: number;
+}
+
+export function assetPromotionIssues(project: VideoProject): QualityIssueInput[] {
+  return (project.assets ?? []).flatMap((asset) => {
+    const metadata = screenAssetMetadata({ title: asset.title, url: asset.sourceUrl });
+    const reasons = [...new Set([...(asset.screening?.status === "rejected" ? asset.screening.reasons : []), ...(metadata.status === "rejected" ? metadata.reasons : [])])];
+    if (reasons.length === 0) return [];
+    return [{
+      severity: "error",
+      code: "asset_promotional_content_exposed",
+      message: `素材 ${asset.title || asset.id} 包含二维码或广告引导，禁止进入成片。`,
+      repairAction: "switch-template",
+      retryable: true,
+      evidence: { assetId: asset.id, assetTitle: asset.title, reasons },
+    } satisfies QualityIssueInput];
+  });
 }
 
 export async function diagnoseVideoDurationDrift(input: {
@@ -170,6 +187,7 @@ export async function evaluateVideo(
         },
       });
     }
+    issues.push(...assetPromotionIssues(options.project));
   }
   if (!video || !audio) issues.push({ severity: "error", code: "stream_missing", message: "成片缺少视频流或音频流。" });
   if (video?.width !== 1080 || video?.height !== 1920) {

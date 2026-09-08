@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { chromium, type Browser } from "playwright";
+import { screenAssetFile } from "./asset-screening";
 import type { HotItem, WebScreenshot } from "./types";
 import { ensureDir, fromRoot, stableId } from "./utils";
 
@@ -79,6 +81,37 @@ async function findHighlight(page: import("playwright").Page) {
   });
 }
 
+async function removeUnsafeVisualElements(page: import("playwright").Page) {
+  await page.evaluate(() => {
+    const contentPattern = /二维码|qr\s*code|qrcode|扫码|广告|推广|赞助|sponsored|advert(?:isement)?|加群|公众号|客服|微信|wechat|优惠券|下载app|下载客户端/i;
+    const adSelectorPattern = /(^|[-_\s])(ad|ads|advert|banner|sponsor|promotion)([-_\s]|$)/i;
+    const candidates = document.querySelectorAll(
+      "img, picture, iframe, aside, [role='banner'], [aria-label], [id], [class]",
+    );
+
+    for (const element of candidates) {
+      const htmlElement = element as HTMLElement;
+      const metadata = [
+        element.getAttribute("alt"),
+        element.getAttribute("title"),
+        element.getAttribute("src"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("id"),
+        typeof htmlElement.className === "string" ? htmlElement.className : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const isVisualContainer = /^(IMG|PICTURE|IFRAME|ASIDE)$/i.test(element.tagName) ||
+        element.getAttribute("role") === "banner";
+      const isAdSelector = adSelectorPattern.test(metadata);
+      if (!isVisualContainer || (!contentPattern.test(metadata) && !isAdSelector)) continue;
+
+      const removable = element.closest("a") ?? element;
+      if (removable !== document.body && removable.parentElement) removable.remove();
+    }
+  });
+}
+
 async function captureOne(browser: Browser, item: HotItem, index: number): Promise<WebScreenshot | null> {
   const page = await browser.newPage({
     viewport: { width: captureWidth, height: captureHeight },
@@ -103,6 +136,7 @@ async function captureOne(browser: Browser, item: HotItem, index: number): Promi
       throw new Error("page looked blank or errored");
     }
 
+    await removeUnsafeVisualElements(page);
     const highlight = await findHighlight(page);
     const id = stableId("shot", item.id, item.url);
     const fileName = `${String(index + 1).padStart(2, "0")}-${id}.png`;
@@ -113,6 +147,12 @@ async function captureOne(browser: Browser, item: HotItem, index: number): Promi
       type: "png",
       animations: "disabled",
     });
+    const screening = await screenAssetFile({ filePath: outputPath, contentType: "image/png" });
+    if (screening.status === "rejected") {
+      await unlink(outputPath).catch(() => undefined);
+      console.warn(`[screenshot] skipped unsafe page capture: ${screening.reasons.join(", ")}`);
+      return null;
+    }
 
     return {
       id,

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { access, copyFile, writeFile } from "node:fs/promises";
+import { access, copyFile, readFile, unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
 import type { HotItem, ProjectAsset } from "../pipeline/types";
 import { ensureDir, fromRoot } from "../pipeline/utils";
+import { screenAssetFile, screenAssetMetadata } from "../pipeline/asset-screening";
 
 const execFileAsync = promisify(execFile);
 
@@ -90,8 +91,14 @@ async function collectLocalGithubAssets(target: { owner: string; name: string },
       await access(sourcePath);
       const destination = path.join(assetDir, entry);
       await copyFile(sourcePath, destination);
-      const contentType = imageContentType(Buffer.alloc(0), "image/" + path.extname(sourcePath).slice(1), sourcePath);
+      const bytes = await readFile(sourcePath);
+      const contentType = imageContentType(bytes, "image/" + path.extname(sourcePath).slice(1), sourcePath);
       if (!contentType.startsWith("image/")) continue;
+      const screening = await screenAssetFile({ filePath: destination, contentType, title: entry, url: sourcePath });
+      if (screening.status === "rejected") {
+        await unlink(destination).catch(() => undefined);
+        continue;
+      }
       assets.push({
         id: createHash("sha1").update(`${target.owner}/${target.name}/${entry}`).digest("hex").slice(0, 12),
         kind: "image",
@@ -101,6 +108,7 @@ async function collectLocalGithubAssets(target: { owner: string; name: string },
         src: "/generated/assets/" + target.owner + "-" + target.name + "/" + entry,
         contentType,
         license: "user-provided asset",
+        screening,
       });
     } catch {
       continue;
@@ -135,10 +143,18 @@ export async function collectGithubAssets(item: HotItem, limit = 3): Promise<Pro
       const contentType = imageContentType(bytes, response.contentType, sourceUrl);
       if (!contentType.startsWith("image/")) continue;
       if (bytes.length < 4_000 || bytes.length > 8_000_000) continue;
+      const metadataScreening = screenAssetMetadata({ alt: candidate.alt, url: sourceUrl });
+      if (metadataScreening.status === "rejected") continue;
       const id = createHash("sha1").update(sourceUrl).digest("hex").slice(0, 12);
       const ext = extension(contentType, sourceUrl);
       const fileName = id + ext;
-      await writeFile(path.join(assetDir, fileName), bytes);
+      const filePath = path.join(assetDir, fileName);
+      await writeFile(filePath, bytes);
+      const screening = await screenAssetFile({ filePath, contentType, alt: candidate.alt, url: sourceUrl });
+      if (screening.status === "rejected") {
+        await unlink(filePath).catch(() => undefined);
+        continue;
+      }
       assets.push({
         id,
         kind: "image",
@@ -148,6 +164,7 @@ export async function collectGithubAssets(item: HotItem, limit = 3): Promise<Pro
         src: "/generated/assets/" + target.owner + "-" + target.name + "/" + fileName,
         contentType,
         license: "repository-provided; verify upstream project license",
+        screening,
       });
     } catch (error) {
       console.warn("[assets] skipped " + candidate.url + ": " + (error as Error).message);

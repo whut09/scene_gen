@@ -38,6 +38,11 @@ export interface ProjectAsset {
   src: string;
   contentType: string;
   license: string;
+  screening?: {
+    status: "passed" | "rejected";
+    reasons: string[];
+    detectorVersion: string;
+  };
 }
 
 export interface WebScreenshot {

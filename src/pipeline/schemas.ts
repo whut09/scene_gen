@@ -38,6 +38,7 @@ export const hotItemSchema = z.object({
     src: z.string(),
     contentType: z.string(),
     license: z.string(),
+    screening: z.object({ status: z.enum(["passed", "rejected"]), reasons: z.array(z.string()), detectorVersion: z.string().min(1) }).optional(),
   })).optional(),
 });
 

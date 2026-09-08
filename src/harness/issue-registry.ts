@@ -160,6 +160,7 @@ export const issueRegistry = {
   element_overlap: define("hard", "switch-template", true),
   key_text_not_visible: define("hard", "switch-template", true),
   key_text_ocr_missing: define("hard", "switch-template", true),
+  asset_promotional_content_exposed: define("hard", "switch-template", true),
   image_subject_crop_risk: define("soft", "switch-template", false),
   conclusion_hold_too_short: define("soft", "switch-template", false),
   sync_cue_visual_late: define("soft", "switch-template", false),
