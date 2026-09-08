@@ -21,6 +21,7 @@ Scene Gen 将新闻、技术文章或开源项目链接转换为中文竖屏视�
 - **事实约束生成**：从来源构建 `FactLedger`，让标题、场景和旁白引用可追溯声明。
 - **中文语音前端**：分离字幕文本与合成文本，通过 `PronunciationPlan`、短语词典和 provider 适配处理多音字、缩写和专有名词。
 - **场景级渲染**：共享 Chromium，以有界并发录制独立场景，再由 FFmpeg 拼接和封装。
+- **Frame 视觉系统**：统一浅色画布、主色、字体层级、卡片表面和竖屏安全区，避免模板风格漂移。
 - **质量 Harness**：对脚本、音频、发音、版式、画面、同步和最终媒体执行结构化质量门。
 - **局部修复**：音频问题只重建对应场景并 remux；画面问题只重录对应场景。
 - **内容寻址缓存**：跨 run 复用音频和场景视频，并使用 single-flight 避免并发重复生成。
@@ -166,6 +167,7 @@ Harness 将失败分为内容质量、音频结构、语义一致性、发音证
 | [Provider 选择](docs/PROVIDER_SELECTION.md) | 质量、延迟、成本和健康状态路由 |
 | [性能](docs/PERFORMANCE.md) | Worker、并发、缓存和 benchmark |
 | [协议与迁移](docs/PROTOCOL_SCHEMAS.md) | Zod 协议、JSON Schema 和版本迁移入口 |
+| [视频视觉规范](docs/VIDEO_STYLE.md) | Frame tokens、场景布局、动效和视觉门禁 |
 
 ## 开发与验证
 

@@ -3,6 +3,7 @@ import type { Page } from "playwright";
 import { z } from "zod";
 import type { SyncCue } from "../production/types";
 import { issueCodeSchema, type IssueCode } from "../harness/issue-registry";
+import { FRAME_DESIGN_VERSION } from "../templates/frame-design";
 
 export const visualAuditIssueSchema = z.object({
   code: issueCodeSchema,
@@ -41,9 +42,17 @@ export async function inspectSceneDom(page: Page, input: {
   syncCues?: SyncCue[];
 }) {
   await page.addScriptTag({ content: "globalThis.__name ||= ((target) => target);" });
-  const audit = await page.evaluate(async ({ width, height, durationSec, headline, syncCues }) => {
+  const audit = await page.evaluate(async ({ width, height, durationSec, headline, syncCues, frameDesignVersion }) => {
     type BrowserIssue = { code: IssueCode; severity: "warning" | "error"; message: string; evidence: Record<string, string | number | boolean | string[]> };
     const issues: BrowserIssue[] = [];
+    if (document.body.dataset.sgDesign !== frameDesignVersion) {
+      issues.push({ code: "frame_design_missing", severity: "error", message: "场景未声明当前 frame design system。", evidence: { expected: frameDesignVersion, actual: document.body.dataset.sgDesign ?? "missing" } });
+    } else {
+      const chromeElements = [document.querySelector<HTMLElement>(".sg-frame-header"), document.querySelector<HTMLElement>(".sg-frame-footer")];
+      if (chromeElements.some((element) => !element || Number(getComputedStyle(element).opacity) < 0.95 || getComputedStyle(element).visibility === "hidden")) {
+        issues.push({ code: "frame_first_frame_incomplete", severity: "error", message: "frame 页眉或页脚首帧不可见。", evidence: { header: Boolean(chromeElements[0]), footer: Boolean(chromeElements[1]) } });
+      }
+    }
     const normalize = (value: string) => value.toLowerCase().replace(/\s+|[^a-z0-9\u4e00-\u9fff]/g, "");
     const animations = document.getAnimations();
     const animationRecords = animations.map((animation) => {
@@ -227,7 +236,7 @@ export async function inspectSceneDom(page: Page, input: {
       }
     }
     return { elementCount: elementRecords.length, keyTextCount: keyTexts.length, maximumAnimationEndMs, issues };
-  }, { width: input.width, height: input.height, durationSec: input.durationSec, headline: input.headline, syncCues: input.syncCues ?? [] });
+  }, { width: input.width, height: input.height, durationSec: input.durationSec, headline: input.headline, syncCues: input.syncCues ?? [], frameDesignVersion: FRAME_DESIGN_VERSION });
 
   return sceneVisualAuditSchema.parse({
     sceneIndex: input.sceneIndex,
