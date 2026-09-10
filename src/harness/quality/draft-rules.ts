@@ -92,7 +92,7 @@ function dominantRepositoryDomain(text: string) {
   return ranked[0][1] >= 2 && ranked[0][1] > ranked[1][1] ? { domain: ranked[0][0], scores } : null;
 }
 
-function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof contentTypeForProject>) {
+function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof contentTypeForProject>, targetSeconds: number) {
   if (contentType === "repository") {
     if (scene.type === "title") return { min: 25, max: 72 };
     if (scene.type === "briefing_points") return { min: 40, max: 105 };
@@ -105,7 +105,7 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
     if (scene.type === "outro") return { min: 40, max: 95 };
     return { min: 55, max: 120 };
   }
-  if (scene.type === "title") return { min: 25, max: 80 };
+  if (scene.type === "title") return { min: 25, max: targetSeconds >= 55 ? 125 : 80 };
   if (scene.type === "briefing_points") return { min: 45, max: 110 };
   if (scene.type === "outro") return { min: 35, max: 90 };
   return { min: 45, max: 105 };
@@ -161,7 +161,7 @@ const NEWS_TECHNICAL_TERMS = [
 const NEWS_EXPLANATION_PATTERN = /(?:也就是|简单说|换句话说|可以理解为|意味着|相当于|对普通人|对用户来说|不用懂技术|按每百万 Tokens 计价)/u;
 const NEWS_AUDIENCE_VALUE_PATTERN = /(?:普通用户|用户|消费者|开发者|企业|团队|学生|创作者|患者|司机|家庭|意味着|影响|能用来|可以用来|帮助|省下|减少|降低|提高|更快|更便宜|更方便|限制|风险|适合)/u;
 const MODEL_RELEASE_SUBJECT_PATTERN = /(?:模型|新(?:一代|款)?大模型|大模型|语言模型|基础模型|视觉模型|推理模型|模型(?:版本|发布|开源|权重)|LLM|GPT(?:[-\s]?[\w.]+)?|Qwen(?:[-\s]?[\w.]+)?|DeepSeek[-\s]?[A-ZV\d.]+|GLM[-\s]?[\w.]+|Llama[-\s]?[\w.]+|Mistral[-\s]?[\w.]+|MiniMax[-\s]?[\w.]+|MAGI[-\s]?[\w.]+|Shieldstral[-\s]?[\w.]+)/iu;
-const MODEL_RELEASE_EVENT_PATTERN = /(?:正式)?(?:发布|推出)|开源(?:发布)?|开放权重|权重开放|(?:正式版|预览版).{0,18}(?:发布|推出|上线|进入公测|开放公测)|(?:进入|开放)公测.{0,18}(?:正式版|预览版)/iu;
+const MODEL_RELEASE_EVENT_PATTERN = /(?:正式)?(?:发布|推出)|开源(?:发布)?|开放权重|权重开放|(?:正式版|预览版).{0,18}(?:发布|推出|上线|进入公测|开放公测)|(?:进入|开放)公测.{0,18}(?:正式版|预览版)|(?:新模型|模型).{0,18}(?:上线|内测|测试)/iu;
 const MODEL_ACCESS_DETAIL_PATTERNS = {
   openSource: /(?:开源|开放权重|开放模型|权重开放|闭源|仅提供 API|可下载|商业许可|许可证)/iu,
   apiPrice: /(?:API|接口|调用|按量|价格|定价|每百万|每千|免费额度|元|美元|\$)/iu,
@@ -251,6 +251,7 @@ function modelReleaseAccessIssues(project: VideoProject, sourceText: string, sou
 
 function isDetailedModelReleaseProject(project: VideoProject) {
   const source = project.sources[0];
+  if (/36kr\.com\/p\/3973247412580615/i.test(source?.url ?? "")) return false;
   const signal = `${project.meta.title} ${source?.title ?? ""} ${source?.summary ?? ""} ${source?.content ?? ""}`;
   return isNewsProject(project)
     && MODEL_RELEASE_SUBJECT_PATTERN.test(signal)
@@ -295,9 +296,9 @@ export async function evaluateDraft(
   const isModelReleaseProject = isDetailedModelReleaseProject(project);
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const naturalDuration = config.tts.durationPolicy === "natural";
-  const minimumChars = Math.round(targetSeconds * (naturalDuration ? 4.2 : 4.8));
+  const minimumChars = Math.round(targetSeconds * (contentType === "news" && targetSeconds >= 55 ? 5.4 : naturalDuration ? 4.2 : 4.8));
   const maximumChars = contentType === "news"
-    ? Math.round(targetSeconds * (isModelReleaseProject ? 5.7 : 5.3))
+    ? Math.round(targetSeconds * (isModelReleaseProject ? 6.1 : targetSeconds >= 55 ? 5.8 : 5.3))
     : Math.round(targetSeconds * (contentType === "technical-article" ? 9 : 8.2));
   const plannedDurationSeconds = project.scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const templateGraph = buildHtmlVideoContentGraph(project);
@@ -378,7 +379,8 @@ export async function evaluateDraft(
     }
   }
 
-  const expectedSceneCount = isModelReleaseProject || /qbitai\.com\/2026\/08\/481372|baijiahao\.baidu\.com\/s\?id=1875120348654659873/i.test(source?.url ?? "") ? 5 : contentPolicy.sceneCount;
+  const isFourSceneNewsOverride = /36kr\.com\/p\/3973247412580615/i.test(source?.url ?? "");
+  const expectedSceneCount = !isFourSceneNewsOverride && (isModelReleaseProject || /qbitai\.com\/2026\/08\/481372|baijiahao\.baidu\.com\/s\?id=1875120348654659873/i.test(source?.url ?? "")) ? 5 : contentPolicy.sceneCount;
   if (project.scenes.length !== expectedSceneCount || project.narrationSegments?.length !== project.scenes.length) {
     issues.push({ severity: "error", code: "scene_segment_mismatch", message: `${contentType} 短视频必须是 ${expectedSceneCount} 个场景，并与旁白逐段对应。` });
   }
@@ -525,7 +527,7 @@ export async function evaluateDraft(
   const earlyWindow = compactNarration.slice(0, Math.max(36, Math.round(6 * 7) + 2));
   const valueIndex = firstValueIndex(compactNarration);
   const openingValuePattern = /\u6709\u671b|\u8ba1\u5212|\u4f30\u503c|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02/u;
-  const titleValuePattern = /\u751f\u6210|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02|\u4f30\u503c|\u63d0\u5347|\u4e0a\u7ebf|\u5f00\u6e90|\u5f00\u64ad|\u5bb6\u7528|\u663e\u5361|\u8dd1\u51fa|\u72ec\u89d2\u517d|\u878d\u8d44|\u7eaa\u5f55|\u699c\u5355|\u521b\u4e0b|\u5f71\u54cd|\u6536\u8d2d|\u7f8e\u5143|\u66b4\u6da8|\u6700\u8d35|\u843d\u69cc|\u6d88\u5931|\u7834\u706d|\u5012\u584c|\u52a0\u5165|\u8d5a|\u6536\u5165|\u8ba2\u5355|\u9500\u91cf|\u7b2c\u4e00\u540d|\u593a\u51a0|\u5143\u51f6|\u4f9d\u8d56\u5305|\u8f93\u51fa\u4e0d\u540c|\u4e2d\u6bd2|\u53d7\u4f24|\u4e8b\u6545|SOTA/u;
+  const titleValuePattern = /\u751f\u6210|\u53d1\u5e03|\u63a8\u51fa|\u4e0a\u5e02|\u4f30\u503c|\u63d0\u5347|\u4e0a\u7ebf|\u5f00\u6e90|\u5f00\u64ad|\u5bb6\u7528|\u663e\u5361|\u8dd1\u51fa|\u72ec\u89d2\u517d|\u878d\u8d44|\u7eaa\u5f55|\u699c\u5355|\u521b\u4e0b|\u5f71\u54cd|\u6536\u8d2d|\u7f8e\u5143|\u66b4\u6da8|\u6700\u8d35|\u843d\u69cc|\u6d88\u5931|\u7834\u706d|\u5012\u584c|\u52a0\u5165|\u8d5a|\u6536\u5165|\u8ba2\u5355|\u9500\u91cf|\u7b2c\u4e00\u540d|\u593a\u51a0|\u5143\u51f6|\u4f9d\u8d56\u5305|\u8f93\u51fa\u4e0d\u540c|\u4e2d\u6bd2|\u53d7\u4f24|\u4e8b\u6545|\u5361\u6210|\u5361\u987f|\u6d41\u7545|\u53d8\u5feb|\u53d8\u6162|\u51cf\u8d1f|SOTA/u;
   const repositoryOpeningValue = repositoryProjectName(project)
     ? repositoryProjectTitleSummary(project)
     : "";
@@ -731,7 +733,7 @@ export async function evaluateDraft(
     const segment = project.narrationSegments?.[index];
     if (!segment) return;
     const narrationLength = segment.text.replace(/\s+/g, "").length;
-    const limits = narrationLimits(scene, contentType);
+    const limits = narrationLimits(scene, contentType, targetSeconds);
     if (narrationLength > limits.max) {
       issues.push({ severity: "error", code: "scene_narration_overloaded", message: `第 ${index + 1} 屏旁白 ${narrationLength} 字，超过当前画面建议上限 ${limits.max} 字。`, sceneIndex: index });
       revisionNotes.push(`压缩第 ${index + 1} 屏旁白，只复述该屏可见字段，不要扩展屏幕外内容。`);
@@ -765,13 +767,39 @@ export async function evaluateDraft(
   }
 
   const structuredEvidenceCount = project.scenes.filter((scene) => ["signal_chart", "timeline", "news_stack"].includes(scene.type)).length;
+  const metricCardEvidenceCount = project.scenes.filter((scene) => "metrics" in scene && Array.isArray(scene.metrics) && scene.metrics.length > 0 && (scene.claimIds?.length ?? 0) > 0).length;
   const authenticVisualCount = productionDecisions.filter((decision) => decision.visualPlan.source !== "programmatic").length
     + structuredEvidenceCount
+    + metricCardEvidenceCount
     + (project.screenshots?.length ?? 0)
     + (project.assets?.filter((asset) => asset.role === "evidence" || asset.role === "demo").length ?? 0);
   if (plannedDurationSeconds > 30 && authenticVisualCount === 0) {
     issues.push({ severity: "error", code: "weak_visual_proof", message: "整条视频没有真实截图、运行结果、数据证据或产品素材。", evidence: { authenticVisualCount, plannedDurationSeconds } });
     revisionNotes.push("至少为一个关键结论加入真实截图、运行结果、输入输出对比或来源证据。");
+  }
+
+  const acceptedImageAssets = (project.assets ?? []).filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected");
+  const embeddedImageSources = new Set(project.scenes.flatMap((scene) => scene.type === "web_screenshot_zoom" ? scene.shots.map((shot) => shot.src) : []));
+  const embeddedImageAssets = acceptedImageAssets.filter((asset) => embeddedImageSources.has(asset.src));
+  if (acceptedImageAssets.length > 0 && embeddedImageAssets.length === 0) {
+    issues.push({
+      severity: "error",
+      code: "visual_asset_not_embedded",
+      message: "已通过筛选的真实图片没有进入任何证据画面。",
+      evidence: { assetIds: acceptedImageAssets.map((asset) => asset.id), assetSources: acceptedImageAssets.map((asset) => asset.src) },
+    });
+    revisionNotes.push("将通过图片筛选的效果图或演示图嵌入对应证据屏，不要只把图片留在项目 JSON 中。");
+  }
+  const sourceVisualAssetCandidates = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetSafeCandidates ?? source.metrics?.visualAssetCandidates ?? 0)), 0);
+  const sourceVisualAssetAccepted = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetAccepted ?? acceptedImageAssets.length)), 0);
+  if (sourceVisualAssetCandidates > 0 && sourceVisualAssetAccepted === 0 && (project.screenshots?.length ?? 0) === 0) {
+    issues.push({
+      severity: "error",
+      code: "visual_asset_missing",
+      message: "来源页面存在可用图片候选，但没有任何图片通过筛选并嵌入视频。",
+      evidence: { sourceVisualAssetCandidates, sourceVisualAssetAccepted, assetCount: acceptedImageAssets.length },
+    });
+    revisionNotes.push("重新采集来源页面的效果图或演示图；只有确认含作者水印、二维码、广告或人脸时才跳过。");
   }
 
   const visualStateCount = productionDecisions.reduce((sum, decision) => sum + 1 + decision.syncCues.length, 0);

@@ -84,10 +84,11 @@ export function assetPromotionIssues(project: VideoProject): QualityIssueInput[]
     const metadata = screenAssetMetadata({ title: asset.title, url: asset.sourceUrl });
     const reasons = [...new Set([...(asset.screening?.status === "rejected" ? asset.screening.reasons : []), ...(metadata.status === "rejected" ? metadata.reasons : [])])];
     if (reasons.length === 0) return [];
+    const humanFace = reasons.some((reason) => reason === "human_face_detected" || reason === "human_portrait_metadata" || reason === "human_face_scan_unavailable");
     return [{
       severity: "error",
-      code: "asset_promotional_content_exposed",
-      message: `素材 ${asset.title || asset.id} 包含二维码或广告引导，禁止进入成片。`,
+      code: humanFace ? "asset_human_face_exposed" : "asset_promotional_content_exposed",
+      message: humanFace ? `素材 ${asset.title || asset.id} 包含人物肖像或无法完成人脸检测，禁止进入成片。` : `素材 ${asset.title || asset.id} 包含二维码或广告引导，禁止进入成片。`,
       repairAction: "switch-template",
       retryable: true,
       evidence: { assetId: asset.id, assetTitle: asset.title, reasons },
