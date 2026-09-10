@@ -9,7 +9,8 @@ import { compactText, daysAgo, domainFromUrl, stableId } from "./utils";
 import { fetchWithRetry, runExternalProcess } from "./external-operation";
 import { classifyWebpageContent } from "./content-type";
 import { researchModelRelease } from "./model-release-research";
-import { collectArticleImages } from "./article-images";
+import { collectArticleImages, extractArticleImageCandidates } from "./article-images";
+import { githubVisualAssetCandidateCount } from "../production/github-assets";
 
 export { classifyWebpageContent } from "./content-type";
 
@@ -405,7 +406,7 @@ function githubReadmeItem(url: string, target: NonNullable<ReturnType<typeof git
     title: `${target.repo}：${description}`, url, source: "项目资料", summary: description,
     content: compactText(readme, 12000), publishedAt: new Date().toISOString(),
     score: scoreItem(joined, undefined, 1, config.keywords), tags: normalizeTags(joined, config.keywords).slice(0, 8),
-    repo: target.fullName, metrics: { language: "Unknown", license: "Unknown", branch: "HEAD", ...repositoryMetrics },
+    repo: target.fullName, metrics: { language: "Unknown", license: "Unknown", branch: "HEAD", visualAssetCandidates: githubVisualAssetCandidateCount(readme), visualAssetAccepted: 0, ...repositoryMetrics },
   };
 }
 
@@ -551,6 +552,8 @@ async function collectGithubRepository(url: string, config: SourceConfig): Promi
       language: repo.language || "Unknown",
       license: repo.license?.spdx_id || "Unknown",
       branch: repo.default_branch || "main",
+      visualAssetCandidates: githubVisualAssetCandidateCount(readme),
+      visualAssetAccepted: 0,
     },
   };
 }
@@ -569,6 +572,18 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
       const { title, content, summary } = extractReadableWebpage(dom.window.document, url);
       const joined = `${title} ${summary}`;
       const publishedAt = extractWebpagePublishedAt(dom.window.document) ?? new Date().toISOString();
+      const articleImageCandidates = extractArticleImageCandidates(dom.window.document, url);
+      const articleImageAudit = { candidateCount: 0, acceptedCount: 0, watermarkRejectedCount: 0, unsafeRejectedCount: 0 };
+      const articleImages = await collectArticleImages({
+        document: dom.window.document,
+        pageUrl: url,
+        articleId: stableId("article-assets", url),
+        limit: Number(process.env.ARTICLE_IMAGE_LIMIT ?? 3),
+        audit: articleImageAudit,
+      }).catch((error) => {
+        console.warn(`[article-images] ${url} skipped: ${(error as Error).message}`);
+        return [];
+      });
       const item: HotItem = {
         id: stableId("webpage", url, title),
         kind: "webpage",
@@ -582,15 +597,12 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         score: scoreItem(joined, publishedAt, 1, config.keywords),
         tags: normalizeTags(joined, config.keywords),
         domain: domainFromUrl(url),
-        articleImages: await collectArticleImages({
-          document: dom.window.document,
-          pageUrl: url,
-          articleId: stableId("article-assets", url),
-          limit: Number(process.env.ARTICLE_IMAGE_LIMIT ?? 3),
-        }).catch((error) => {
-          console.warn(`[article-images] ${url} skipped: ${(error as Error).message}`);
-          return [];
-        }),
+        metrics: {
+          visualAssetCandidates: Math.max(articleImageCandidates.length, articleImageAudit.candidateCount),
+          visualAssetSafeCandidates: Math.max(0, articleImageAudit.candidateCount - articleImageAudit.watermarkRejectedCount - articleImageAudit.unsafeRejectedCount),
+          visualAssetAccepted: articleImages.length,
+        },
+        articleImages,
       };
       const research = await researchModelRelease(item);
       items.push(research.length > 0 ? { ...item, research } : item);

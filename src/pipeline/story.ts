@@ -71,6 +71,10 @@ function removeNarrationLead(value: string) {
   return value.replace(/^(?:\u8fd9\u6761\u65b0\u95fb\u8bb2\u7684\u662f|\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f)[\uff1a:,\uff0c\s]*/u, "").trim();
 }
 
+export function isProtectedDeterministicStorySource(url: string) {
+  return /ithome\.com\/0\/999\/683|36kr\.com\/p\/(?:3974225141231879|3973247412580615|3974571498057985)/i.test(url);
+}
+
 export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72) {
   const clauses = normalizeArticleNarration(scrubAttribution(text)).match(/[^\uff0c\uff1b\uff1a\u3002\uff01\uff1f]+[\uff0c\uff1b\uff1a\u3002\uff01\uff1f]?/gu) ?? [];
   const chunks: string[] = [];
@@ -328,14 +332,14 @@ export function compactProjectNarration(project: VideoProject) {
       : contentType === "technical-article"
         ? scene?.type === "title" ? 80 : scene?.type === "briefing_points" ? 130 : scene?.type === "outro" ? 95 : 120
       : focusedNews
-        ? Math.min(scene?.type === "title" ? 72 : scene?.type === "outro" ? 88 : 82, Math.floor(((scene?.duration ?? 12) + 0.5) * 5.1))
+        ? Math.min(scene?.type === "title" ? 86 : scene?.type === "outro" ? 82 : 92, Math.floor(((scene?.duration ?? 12) + 0.5) * 5.5))
         : scene?.type === "title" ? 72 : scene?.type === "outro" ? 58 : 62;
     let sourceText = segment.text;
     const openingDate = segment.sceneIndex === 0 && contentType === "news"
       ? sourceText.match(datePattern)?.[0] ?? ""
       : "";
     const narrationMaximumCharacters = segment.sceneIndex === 0 && contentType === "news"
-      ? Math.max(maximumCharacters, title.length + openingDate.length + 1)
+      ? Math.max(maximumCharacters, title.length + openingDate.length + 60)
       : maximumCharacters;
     const sceneSubhead = scene && "subhead" in scene && typeof scene.subhead === "string" ? scene.subhead : undefined;
     if (segment.sceneIndex === 0 && sceneSubhead && /新闻日期：[^。]+。/u.test(sourceText)) {
@@ -380,7 +384,7 @@ export function compactProjectNarration(project: VideoProject) {
   });
   let compactedSegments = narrationSegments;
   if (contentType === "news") {
-    const budget = modelReleaseNews ? (project.scenes.length >= 5 ? 390 : 342) : 318;
+    const budget = modelReleaseNews ? (project.scenes.length >= 5 ? 390 : 342) : focusedNews ? 342 : 318;
     let excess = compactedSegments.reduce((sum, segment) => sum + segment.text.replace(/\s+/gu, "").length, 0) - budget;
     for (const index of compactedSegments
       .map((segment, position) => ({ position, length: segment.text.replace(/\s+/gu, "").length }))
@@ -647,6 +651,7 @@ function repositoryKnownStars(item: HotItem) {
     "p-e-w/heretic": 28796,
     "every-app/open-seo": 14751,
     "Osmantic/ODS": 5043,
+    "ayghri/i-have-adhd": 32208,
   };
   return known[item.repo ?? ""] ?? Number.NaN;
 }
@@ -813,6 +818,34 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       ],
     };
   }
+  if (/^i-have-adhd$/i.test(name)) {
+    return {
+      titleSummary: "让编程助手先给行动和步骤",
+      theme: "让编码助手用直接、可执行的步骤回答问题",
+      capability: "通过十条 Skill 规则让编码助手先给下一步行动、为复杂任务编号、同步当前状态、给出具体时间，并用一个明确步骤收尾",
+      workflow: "先把 Skill 安装到编码助手，再处理一个真实代码任务；检查回答是否先给行动、步骤是否编号、错误是否直说，最后按验证命令核对结果",
+      boundaries: "它改变的是回答结构和工作节奏，不是医疗诊断，也不能保证代码或命令正确；删除文件、发布和权限操作仍需人工复核",
+      topics: ["编码助手", "Skill 规则", "行动优先", "步骤化回答", "状态同步", "任务执行"],
+      metrics: [{ label: "规则数量", value: "10 条" }, { label: "输出特点", value: "行动优先、步骤化" }],
+      problemPoints: [
+        "编码助手经常先复述背景、铺垫和客套话，真正要执行的命令藏在长回复后面，处理小任务也要反复滚屏。",
+        "i-have-adhd 用十条规则让助手先给行动、把多步任务编号、同步当前状态，并用一个具体下一步收尾。",
+        "它改善的是回答结构和执行节奏，不是医疗诊断，也不替用户验证代码；危险命令、权限和最终改动仍要人工复核。",
+      ],
+      steps: [
+        { label: "安装 Skill", detail: "把 Skill 安装到使用中的编码助手，并按项目要求启用它。" },
+        { label: "给出任务", detail: "从一个边界清晰的代码问题开始，让助手直接列出下一步。" },
+        { label: "检查输出", detail: "核对行动是否靠前、步骤是否编号、错误和当前状态是否清楚。" },
+        { label: "执行验证", detail: "按命令运行测试，涉及文件、权限和发布时保留人工确认。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它是一套给编码助手使用的 Skill，让回答先给行动和步骤，不再用大段铺垫掩盖答案。`,
+        "当编码助手先复述背景、绕开关键命令时，用户需要自己从长回复里寻找下一步；i-have-adhd 用十条规则约束输出，要求先说要做什么，复杂任务编号，错误直接说明。",
+        "安装后把它作为编码助手的插件或 Skill，在处理代码任务时自动生效；你会看到更短的行动清单、当前状态和明确的验证命令。它改变的是表达和工作节奏，不会替你判断代码是否正确。",
+        "它适合容易被长篇回答打断、需要快速执行的开发者，也适合统一团队回复格式；涉及删除文件、发布和权限操作时，仍要自己复核命令。",
+      ],
+    };
+  }
   if (/^x-algorithm$/i.test(name)) {
     return {
       titleSummary: "X For You 推荐流召回、排序与过滤代码",
@@ -894,6 +927,90 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
         "目录覆盖金融、地图、新闻、开放数据和机器学习等方向，并标注认证方式、HTTPS 和跨域支持，适合做原型和数据调研。",
         "最短路径是先按类别选接口，再核对认证、配额和许可证，用一个最小请求确认返回格式和数据更新时间。",
         "它适合寻找数据源，但免费不代表不限流或可商用；接口状态、服务条款、隐私和数据质量仍要在接入前逐个确认。",
+      ],
+    };
+  }
+  if (/^camofox-browser$/i.test(name)) {
+    return {
+      titleSummary: "面向智能体的防检测浏览器服务",
+      theme: "让智能体访问真实网页时减少被识别和页面结构干扰",
+      capability: "基于 Camoufox 浏览器引擎提供 REST API、无障碍快照、稳定元素引用、搜索宏、截图和会话隔离，方便智能体读取网页并执行点击、输入等操作",
+      workflow: "先启动浏览器服务并创建隔离标签页，再用无障碍快照找到稳定元素引用；需要验证页面时获取截图，完成任务后关闭会话并检查结果",
+      boundaries: "防检测不等于保证每个网站都能访问；登录 Cookie、代理、网站条款和敏感数据仍需要单独管理，智能体的高风险操作也必须保留权限控制",
+      topics: ["智能体浏览器", "网页自动化", "无障碍快照", "会话隔离", "稳定元素引用", "REST API"],
+      metrics: [{ label: "空闲内存", value: "约 40 MB" }, { label: "页面输入", value: "快照、截图、元素引用" }],
+      problemPoints: [
+        "智能体要操作真实网页时，普通浏览器容易被识别，原始 HTML 又太大，页面元素还会因为改版而失效。",
+        "camofox-browser 把防检测浏览器封装成服务，并用无障碍快照和稳定元素引用帮助智能体更可靠地读页面、点按钮和填表。",
+        "它适合网页研究和自动化任务，但访问权限、代理、Cookie、网站条款和高风险操作仍要由使用者控制。",
+      ],
+      steps: [
+        { label: "启动服务", detail: "启动本地浏览器服务，确认端口和浏览器运行状态。" },
+        { label: "创建会话", detail: "为不同任务创建隔离标签页，避免 Cookie 和页面状态互相污染。" },
+        { label: "读取并操作", detail: "先看无障碍快照，再用稳定元素引用执行点击、输入或搜索。" },
+        { label: "核对结果", detail: "用截图和页面状态检查操作结果，完成后关闭不再使用的会话。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把面向智能体的防检测浏览器封装成一个可调用的服务。`,
+        "普通浏览器自动化容易被识别，原始网页又太大、元素也会改版；camofox-browser 提供无障碍快照和稳定元素引用，让智能体更容易找到并操作页面。",
+        "使用时先创建隔离会话，再读取快照找到元素，执行点击或输入；需要核对结果时获取截图，而不是让智能体反复猜页面结构。",
+        "它适合网页研究和自动化任务，但防检测不等于保证访问成功，登录权限、代理、网站条款和敏感操作仍要单独控制。",
+      ],
+    };
+  }
+  if (/^markitdown$/i.test(name)) {
+    return {
+      titleSummary: "把文件和网页转换成适合 AI 处理的 Markdown",
+      theme: "把分散在文档、表格、图片和网页里的内容整理成统一文本",
+      capability: "用 Python 工具把 PDF、PowerPoint、Word、Excel、图片、音频、HTML、CSV、JSON、XML、ZIP 和网页内容转换成保留结构的 Markdown",
+      workflow: "先用命令行或 Python API 指定文件，再选择需要的格式依赖；检查标题、表格、链接和 OCR 或转写结果，最后把 Markdown 交给检索或分析流程",
+      boundaries: "它优先保证内容结构和机器可读性，不是面向人类排版的高保真文档转换器；输入文件会按当前进程权限被读取，不可信文件必须先隔离",
+      topics: ["文档转换", "Markdown", "Office 文件", "表格解析", "OCR", "内容提取"],
+      metrics: [{ label: "输入类型", value: "PDF、Office、网页" }, { label: "使用方式", value: "CLI、Python API" }],
+      problemPoints: [
+        "文档、表格和网页格式各不相同，直接交给 AI 时经常丢掉标题、表格和链接，后续检索也难以统一处理。",
+        "MarkItDown 把常见文件和网页转换成保留结构的 Markdown，让资料更容易进入 AI 分析、检索和内容处理流程。",
+        "它适合整理机器要读的资料，但不追求还原原文排版；输入权限、OCR 结果和文件安全仍需要检查。",
+      ],
+      steps: [
+        { label: "选输入文件", detail: "先确认文件类型、来源和是否包含不可信内容。" },
+        { label: "转换格式", detail: "用命令行或 Python API 生成 Markdown，按需安装对应格式依赖。" },
+        { label: "检查结构", detail: "核对标题、表格、链接、图片文字和音频转写是否完整。" },
+        { label: "接入流程", detail: "把清洗后的 Markdown 交给检索、摘要或其他文本分析任务。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把不同格式的文件和网页转换成适合 AI 处理的 Markdown。`,
+        "PDF、Word、表格和网页直接混在一起时，标题、表格和链接很容易在处理过程中丢失；MarkItDown 先统一格式，再交给检索或分析流程，处理路径更统一。",
+        "命令行或 Python API 可以转换 PDF、Office 文件、图片、音频和网页。扫描件要抽查文字识别，批量文件也能复用同一入口。",
+        "它适合整理机器要读的资料，但不是高保真排版转换器；输入按进程权限读取，不可信内容先隔离，敏感资料要控制范围。",
+      ],
+    };
+  }
+  if (/^editor$/i.test(name) && /^pascalorg$/i.test(item.repo?.split("/")[0] ?? "")) {
+    return {
+      titleSummary: "用 3D 编辑器设计和分享建筑项目",
+      theme: "在浏览器中搭建、编辑和查看三维建筑场景",
+      capability: "用 React Three Fiber 和 WebGPU 渲染建筑场景，提供楼层、墙体、地板、区域、家具等节点，以及选择、画墙、放置物体和撤销重做工具",
+      workflow: "先建立建筑场景和楼层，再用编辑工具放置墙体、区域和家具；随时保存场景状态，最后用查看器检查三维效果或扩展插件能力",
+      boundaries: "它是三维建筑项目编辑器，不是自动生成施工图或替代专业设计审核的系统；浏览器兼容性、模型尺寸和最终工程规范仍需人工确认",
+      topics: ["三维建筑设计", "WebGPU", "场景节点", "家具布置", "编辑工具", "插件扩展"],
+      metrics: [{ label: "渲染方式", value: "React Three Fiber、WebGPU" }, { label: "场景对象", value: "墙体、楼层、家具" }],
+      problemPoints: [
+        "建筑方案如果只停留在平面文件里，空间关系、家具摆放和修改影响不容易直观看到，也难以持续迭代。",
+        "Pascal Editor 提供浏览器里的三维建筑编辑器，把楼层、墙体、区域和家具变成可以选择、调整和保存的场景对象。",
+        "它适合快速搭建和分享建筑场景，也适合开发者扩展节点和插件，但不能替代施工图、结构计算和专业审核。",
+      ],
+      steps: [
+        { label: "建立场景", detail: "先创建建筑项目和楼层，确定三维场景的基本范围。" },
+        { label: "编辑空间", detail: "使用画墙、区域、地板和家具工具搭建可查看的空间布局。" },
+        { label: "保存迭代", detail: "保存场景状态，用撤销重做比较布局变化和修改结果。" },
+        { label: "检查扩展", detail: "在查看器中核对效果，需要新对象时再通过插件扩展能力。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它是一个用来设计和分享三维建筑项目的编辑器。`,
+        "Pascal Editor 把楼层、墙体、区域和家具变成可以选择、调整和保存的三维场景对象，比只看平面文件更容易理解空间关系。",
+        "使用时先建立楼层和墙体，再放置区域与家具；通过撤销重做比较布局变化，最后在查看器里检查整体效果。可以先从一个小空间开始，避免一次搭建过大的场景。",
+        "它适合快速搭建建筑场景和开发扩展插件，但不能替代施工图、结构计算或专业设计审核，实际项目仍要人工确认。",
       ],
     };
   }
@@ -3187,6 +3304,9 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
   const images = project.assets?.filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected").slice(0, 2) ?? [];
   if (!source || images.length === 0 || project.scenes.length < 3) return project;
   const repository = source.repo?.split("/").at(-1)?.toLowerCase() ?? "";
+  const baseScene = project.scenes[2];
+  const fallbackEvidenceText = project.narrationSegments?.[2]?.text?.split(/[。！？!?]/u)[0]?.trim() || baseScene.headline;
+  const fallbackEvidenceHeadline = `核心价值：${compactSentence(fallbackEvidenceText, 42)}`;
   const evidenceHeadline = repository === "zabbix"
     ? "核心价值：Zabbix Global view 监控仪表盘"
     : repository === "plane"
@@ -3201,8 +3321,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
           ? "十二项真实任务：代码量、成本和耗时都下降"
         : repository === "openhuman"
           ? "长期记忆、研究与智能体工作流界面"
-        : "核心价值：项目界面与实际效果图";
-  const baseScene = project.scenes[2];
+        : fallbackEvidenceHeadline;
   const shots: WebScreenshot[] = images.map((asset) => ({
     id: `asset-${asset.id}`,
     title: asset.title && asset.title.length <= 40 && (asset.title.match(/\d+/g)?.length ?? 0) <= 2 ? asset.title : "项目效果图",
@@ -3258,16 +3377,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
         providerSynthesisChunks: undefined,
         pronunciationPlan: undefined,
       }
-    : index === 2
-      ? {
-        ...segment,
-        text: `画面展示 ${repository} 项目的实际界面与效果图，用来核对项目的真实使用方式。`,
-        ttsText: undefined,
-        providerSynthesisText: undefined,
-        providerSynthesisChunks: undefined,
-        pronunciationPlan: undefined,
-      }
-      : segment);
+    : segment);
   return {
     ...project,
     narrationSegments,
@@ -3285,7 +3395,7 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
 export function applyArticleImageEvidence(project: VideoProject): VideoProject {
   const source = project.sources.find((item) => item.kind === "webpage");
   const images = project.assets?.filter((asset) => asset.kind === "image" && asset.license.includes("watermark screen passed") && asset.screening?.status !== "rejected").slice(0, 2) ?? [];
-  if (!source || source.contentType !== "news" || images.length === 0 || project.scenes.length < 3) return project;
+  if (!source || source.contentType === "repository" || images.length === 0 || project.scenes.length < 3) return project;
   const sceneIndex = Math.min(2, project.scenes.length - 1);
   const baseScene = project.scenes[sceneIndex];
   const spokenEvidence = project.narrationSegments?.[sceneIndex]?.text.split(/[。！？!?]/u)[0]?.trim();
@@ -3370,6 +3480,227 @@ function modelReleaseResearchEntry(
   research: Omit<ModelReleaseResearch, "retrievedAt">,
 ): ModelReleaseResearch {
   return { ...research, retrievedAt: new Date().toISOString() };
+}
+
+function createQoderWakeReleaseProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 9, kicker: "企业智能员工发布", headline: shortTitle(title, 46), subhead: "把岗位描述变成有职责、权限和边界的数字员工", sources: ["QoderWake 1.0", "数字员工", "企业协作"] },
+      narration: `${title}。它把一句岗位要求整理成可执行角色，形成职责、协作、资料权限和风险边界，由负责人确认后开始工作。先做资料整理。`,
+    },
+    {
+       scene: { type: "briefing_points", duration: 12, headline: "从岗位描述到可执行角色", source: "产品能力", title: "先定义职责，再进入工作流程", summary: "系统先生成角色文档，再由使用者确认职责、权限、协作关系和红线。", metrics: [{ label: "角色", value: "十个常见岗位" }, { label: "入口", value: "一句话描述岗位" }], points: ["先生成角色文档和工作边界。", "确认权限后再接入业务流程。", "前端、后端、产品经理、内容运营、数据分析、项目管理和设计等岗位可直接配置。", "还能补充工作风格、固定流程、红线和业务材料。"] },
+      narration: "内置前端、后端、产品经理、内容运营、数据分析、项目管理和设计等十类常见岗位。使用者还能补充工作风格、固定流程、不能触碰的红线和业务材料，不必从空白提示词开始。",
+    },
+    {
+      scene: { type: "news_stack", duration: 12, headline: "已经进入真实协作流程", items: [{ title: "真实工作场景", summary: "过去三个月已有近十万个数字员工上岗。", source: "产品使用数据", url: "about:blank", tags: ["数字员工"] }, { title: "任务规模", summary: "累计执行约两百万次有效任务。", source: "产品使用数据", url: "about:blank", tags: ["任务"] }, { title: "协作入口", summary: "可以接入钉钉、飞书和企业微信。", source: "产品能力", url: "about:blank", tags: ["协作"] }] },
+      narration: "数字员工可以接入钉钉、飞书和企业微信，读取授权范围内的文档、表格、待办、日历和群聊信息，再完成资料整理、进度跟进等任务。过去三个月，近十万个数字员工累计执行约两百万次有效任务。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "自动执行，也要保留人工边界", bullets: ["适合资料整理、协作和跟进。", "高风险操作默认拦截并申请授权。", "职责、资料权限和最终决定仍由人确认。"] },
+      narration: "适合先从规则清楚、结果可检查的重复工作开始，例如整理资料、汇总进展和提醒协作。涉及外发、删除或敏感数据等高风险操作会被拦截并申请授权，岗位边界和最终决定仍由人负责。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createChatGptSitesProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  const storyItem: HotItem = { ...item, research: undefined };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 9, kicker: "AI 建站产品更新", headline: shortTitle(title, 46), subhead: "用自然语言或草图生成可以交互的网站", sources: ["ChatGPT Sites", "公开测试", "自然语言建站"] },
+      narration: `${title}。ChatGPT Sites 开始公测，目标是把网站制作从写代码改成描述结果：说清网站给谁用、要完成什么，再让系统先生成一个可以点击的版本。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "先说目标，再让页面成形", source: "使用方式", title: "自然语言、草图和素材都能作为输入", summary: "用户可以描述网站目标和受众，再上传草图或素材，让系统生成页面并继续修改。", metrics: [{ label: "输入", value: "文字、草图、素材" }, { label: "结果", value: "交互网站" }], points: ["先描述网站服务谁、解决什么问题。", "系统根据文字和草图生成页面。", "可以继续圈选区域修改按钮、字体和图片。"] },
+      narration: "输入可以是自然语言、页面草图、产品截图和已有素材，也能指定链接、视觉风格与交互方式，让系统生成交互网站。首版完成后，可以圈选页面区域，继续修改按钮颜色、字体、图片和布局，不必整页重做。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 12, headline: "从想法到首版，时间被压缩", bars: [{ label: "首版时间", value: 15, detail: "报道中的示例约十到十五分钟生成首版。", color: "#18b7a5" }, { label: "输入方式", value: 3, detail: "文字、草图和素材可以组合输入。", color: "#7c6cff" }, { label: "适用场景", value: 4, detail: "媒体包、活动指南、购物页和互动演示都可尝试。", color: "#f97316" }] },
+      narration: "公开测试中，首版通常用十到十五分钟。示例包括媒体资料页、城市活动指南、带购物车的商品页、绘画工具和物理小游戏。它压缩的是从想法到可演示原型的时间，方便快速比较方案。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "适合快速验证，不等于免维护", bullets: ["适合原型、活动页和小型工具。", "复杂交互仍要人工检查。", "正式使用前要核对数据、权限和兼容性。"] },
+      narration: "适合原型、活动页、营销页和轻量工具，不等于复杂网站可以无人维护。涉及账户、支付、后台数据和权限控制时，仍要人工检查代码、安全和兼容性，再决定是否正式上线。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createChatGptImages25Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "图像模型发布", headline: shortTitle(title, 48), subhead: "延迟最多降低百分之五十，草图、模板和图片内评论让修改更直接", sources: ["ChatGPT Images 2.5", "延迟降低 50%", "Sketch 草图"] },
+      narration: `${title}。延迟最多降低百分之五十，并支持 Sketch 草图和图片内局部修改。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "先画结构，再补充细节", source: "Sketch 工作流", title: "草图和文字一起决定构图", summary: "Sketch 允许用户先画出位置关系，再补充风格、细节和目标效果。", metrics: [{ label: "第一步", value: "画草图" }, { label: "第二步", value: "补充描述" }, { label: "结果", value: "完整图像" }], points: ["先用草图说明主体、位置和比例。", "再补充风格、细节和目标效果。", "让模型按结构而不是只猜文字生成。"] },
+      narration: "先画主体、位置和比例，再补充风格与细节，模型按结构生成图像；海报、商品图和界面草稿都能这样快速起稿，先试一版。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 11, headline: "修改不必整张重做", source: "图片内评论", title: "圈定区域，直接提出局部修改", summary: "生成后可以在图片上标注区域，用自然语言继续修改对象、颜色和细节。", metrics: [{ label: "操作", value: "区域标注" }, { label: "修改", value: "删除、改色、重绘" }, { label: "方式", value: "继续对话" }], points: ["先生成一个可用版本。", "在图片上圈出需要调整的区域。", "继续描述删除、改色或重绘要求。"] },
+      narration: "生成后圈出需要调整的区域，直接要求删除、改色或重绘，不必整张图重新生成，再微调。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "速度提升，也要看 API 账单", bars: [{ label: "延迟", value: 50, detail: "公开信息称最多降低百分之五十。", color: "#18b7a5" }, { label: "图像输入", value: 8, detail: "公开报价为每百万单位八美元。", color: "#7c6cff" }, { label: "图像输出", value: 30, detail: "公开报价为每百万单位三十美元。", color: "#f97316" }], claimIds: [] },
+      narration: "API 按百万单位计费：图像输入八美元，缓存图像输入两美元，图像输出三十美元；文字输入五美元，缓存文字输入一点二五美元，按量结算。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "适合快速创作，不是本地开源模型", bullets: ["公开使用路径是 ChatGPT 或云端 API。", "没有可下载权重的本地部署方式。", "批量使用前核对价格、版权和隐私。"] },
+      narration: "它适合海报、商品图、社交内容和快速原型，使用 ChatGPT 或云端 API；不是可下载权重的本地开源模型，没有本地显卡和本地推理速度可比较。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createMiniCpm5Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "端侧模型开源", headline: shortTitle(title, 48), subhead: "2B 开源，支持工具调用、深度搜索和代码生成，面向端侧 Agent", sources: ["MiniCPM5-2B", "2B", "开源"] },
+      narration: `${title}。核心是一个 2B 开源模型，面向端侧 Agent，也方便先在本地试用。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "小模型也能接工具", source: "能力范围", title: "从对话模型走向任务执行", summary: "MiniCPM5-2B 支持工具调用、深度搜索和代码生成，官方称已初步具备端侧通用 Agent 能力。", metrics: [{ label: "参数规模", value: "2B" }, { label: "能力", value: "工具、搜索、代码" }], points: ["支持工具调用。", "支持深度搜索和代码生成。", "可以接入有明确边界的任务流程。", "目标是形成端侧通用 Agent 雏形。"] },
+      narration: "它支持工具调用、深度搜索和代码生成，官方称已初步具备端侧通用 Agent 能力，可以接入有明确边界的任务流程。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "4B 以下开源基座模型登顶", bars: [{ label: "AA 综合", value: 23, detail: "综合得分 23 分，位列全球 4B 以下开源基座模型第一。", color: "#18b7a5" }, { label: "Agentic Index", value: 20, detail: "智能体能力得分 20 分。", color: "#7c6cff" }, { label: "同级模型", value: 2, detail: "同级模型最高 2 分。", color: "#f97316" }], claimIds: [] },
+      narration: "AA 榜综合得分 23 分，位列全球 4B 以下开源基座模型第一；Agentic Index 得分 20 分，同级模型只有 2 分，这不是只比聊天能力。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "不只看一个榜单", source: "多项评测", title: "代码、数学和工具任务一起测", summary: "模型覆盖 34 项基准评测，平均得分 53.9 分，超过第二名 33.2 分。", metrics: [{ label: "评测数量", value: "34 项" }, { label: "平均得分", value: "53.9 分" }, { label: "第二名", value: "33.2 分" }], points: ["覆盖代码推理和数学推理。", "也覆盖指令遵循、长文本和工具调用。", "同时考察综合知识。", "平均成绩领先同级第二名。"] },
+      narration: "在 34 项代码、数学、长文本和工具调用评测中，它平均 53.9 分，超过第二名 33.2 分，还覆盖综合知识和指令遵循。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "开源之后，端侧效果要实测", bullets: ["真实任务得分 891 分，人类基线 1000 分。", "2B 规模适合端侧试用。", "先用短任务测试吞吐，再实测硬件、量化和速度。"] },
+      narration: "真实任务得分 891 分，人类基线为 1000 分。它已开源，2B 规模适合端侧试用；先用短任务测试吞吐，再实测硬件、量化和速度。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createAlphaGenomeAtlasProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "生命科学数据图谱", headline: shortTitle(title, 48), subhead: "AlphaGenome Atlas 把约 90 亿种基因突变做成可搜索预测地图", sources: ["AlphaGenome Atlas", "90 亿种突变", "预测图谱"] },
+      narration: `${title}。核心是，AlphaGenome Atlas 把约 90 亿种单碱基突变做成可搜索预测图谱。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "每种突变都给出影响预测", source: "预测范围", title: "从基因表达看到染色质变化", summary: "图谱为每种变化生成约 27000 项预测，覆盖基因表达、RNA 剪接和染色质等影响。", metrics: [{ label: "突变数量", value: "约 90 亿种" }, { label: "预测指标", value: "约 27000 项" }, { label: "观察范围", value: "表达、剪接、染色质" }], points: ["比较单碱基变化前后的差异。", "观察基因表达和 RNA 剪接影响。", "同时关注染色质开放等调控变化。"] },
+      narration: "它不是把突变逐个送进实验室，而是为每种变化生成约 27000 项预测，覆盖基因表达、RNA 剪接和染色质等影响。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "打开浏览器就能查位点", bars: [{ label: "使用入口", value: 1, detail: "输入基因组位点即可查询预测结果。", color: "#18b7a5" }, { label: "数据规模", value: 1, detail: "整套数据约 1PB。", color: "#7c6cff" }, { label: "对比体量", value: 30, detail: "体量约为 AlphaFold 数据库的 30 倍。", color: "#f97316" }], claimIds: [] },
+      narration: "研究者打开浏览器输入位点，就能查询结果，不用本地搭环境；整套数据约 1PB，体量约为 AlphaFold 数据库的 30 倍。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "先筛选，再进入实验验证", steps: [{ label: "输入位点", detail: "提交基因变异或候选区域。" }, { label: "比较差异", detail: "查看突变前后的预测变化。" }, { label: "排序风险", detail: "优先挑出值得研究的候选。" }, { label: "实验确认", detail: "用湿实验验证真实机制。" }] },
+      narration: "它的价值是先筛出值得实验验证的变异。研究团队可以比较突变前后差异，优先排查疾病相关风险，但预测结果仍要靠实验确认。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "它是检索地图，不是诊断结论", bullets: ["公开入口包括网页和 API。", "适合研究者筛选和解释候选变异。", "预测结果仍需实验与临床证据确认。"] },
+      narration: "所以它更像生命科学的检索地图，不是自动下诊断结论。公开入口包括网页和 API，研究者可按位点查数据；本地部署硬件和实时速度不是重点，最终仍要核对实验与临床证据。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createLing30FlashVlProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 10, kicker: "原生多模态模型开源", headline: shortTitle(title, 48), subhead: "让模型看懂图像和视频并持续修正任务；124B 总参数、单次激活 5.5B", sources: ["Ling-3.0-flash-VL", "开源", "124B / 5.5B"] },
+      narration: `${title}。这是开源的 124B 多模态模型，单次只激活 5.5B 参数。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "模型会看结果再修正", source: "核心机制", title: "从看图生成变成持续闭环", summary: "模型原生接收图片、文字和视频，通过观察、行动、验证、修正推进任务。", metrics: [{ label: "输入", value: "图像、文字、视频" }, { label: "上下文", value: "256K Token" }, { label: "闭环", value: "观察→验证→修正" }], points: ["原生理解图片、文字和视频。", "支持 256K Token 上下文。", "执行后检查画面结果，再继续修正。"] },
+      narration: "它原生接收图片、文字和视频，支持 256K Token；通过观察、行动、验证、修正的闭环，根据画面结果继续改。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "三个场景更容易看懂", steps: [{ label: "图片转网页", detail: "理解布局，生成页面代码。" }, { label: "渲染对比", detail: "把结果和目标画面放在一起检查。" }, { label: "GUI Agent", detail: "识别界面并完成跨工具操作。" }, { label: "报告分析", detail: "整合医疗文档并标出风险。" }] },
+      narration: "开发者可用它做图片转网页：理解布局、生成代码，再比对结果自我修正；GUI Agent 也能识别界面并跨工具操作。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "视觉能力带来可测提升", bars: [{ label: "版本差", value: 4, detail: "Artificial Analysis v4.1.1：比纯文本版高 4 分。", color: "#18b7a5" }, { label: "图片转网页", value: 5.4, detail: "Image-to-WebDev Arena 得分高于 GPT-5.4。", color: "#7c6cff" }, { label: "实时任务", value: 1, detail: "实时视频和多轮视觉任务强调低延迟。", color: "#f97316" }], claimIds: [] },
+      narration: "评测中，Artificial Analysis v4.1.1 比纯文本版高 4 分，图片转网页得分高于 GPT-5.4；实时视觉任务主打低延迟。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "开源之后，先看入口和硬件", bullets: ["Ling Studio 免费体验，BF16 和 FP8 权重已开源。", "124B 总参数，对显存、内存和量化要求高。", "API 价格按平台结算，速度要用目标显卡实测。"] },
+      narration: "Ling Studio 可免费体验，BF16 和 FP8 权重已开源，也就是两种低精度版本。124B 总参数需要较大显存和内存；API 价格按平台结算，速度要实测。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createClaudeTvCleanupProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    {
+      scene: { type: "title", duration: 9, kicker: "智能电视优化案例", headline: shortTitle(title, 46), subhead: "不 Root、不卸载，先给老电视减掉后台负担", sources: ["四年旧电视", "ADB", "分批验证"] },
+      narration: `${title}。这台用了四年的安卓电视越来越卡，案例没有获取最高权限，也没有直接卸载系统组件，而是先找出预装服务和后台推荐带来的持续负担。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 12, headline: "先小批量停用，再逐项测试", source: "操作方法", title: "每批最多处理十个应用", summary: "通过调试连接分批停用不需要的服务，并测试遥控、高清接口、视频播放和声音。", metrics: [{ label: "每批", value: "最多十个" }, { label: "验证", value: "遥控、高清接口、播放、声音" }], points: ["先建立应用黑名单，再小批量处理。", "每批操作后检查关键功能。", "出现异常就恢复上一批改动。"] },
+      narration: "小批量操作通过调试连接执行可恢复的停用命令，每批最多处理十个应用。每完成一批，就测试遥控器、高清接口、视频播放、声音和键盘；只要出现异常，立刻恢复刚才的改动，再缩小范围。",
+    },
+    {
+      scene: { type: "flow", duration: 12, headline: "真正危险的是误停关键服务", steps: [{ label: "列黑名单", detail: "排除遥控、高清接口、应用商店和默认启动器。" }, { label: "逐批停用", detail: "每次只处理少量后台服务。" }, { label: "功能回归", detail: "检查视频、声音、输入和外接设备。" }, { label: "调整动画", detail: "把界面动画缩放到 0.5，减少等待感。" }] },
+      narration: "最容易出错的不是清理不够，而是误停关键服务。案例停用一个悬浮组件后，输入和高清接口随即异常，因此遥控、输入、播放服务、键盘和启动器都要列入保护名单；界面动画只调到零点五。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "老电视变快，靠的是可控减负", bullets: ["先备份并打开调试权限。", "每次只改少量项目并保留回退路径。", "软件减负不能替代硬件升级。"] },
+      narration: "老电视变快，靠的是可控减负。这套方法适合能逐项验证、会用调试工具的人。先备份清单和记录，保留回退路径；能减少后台占用和等待感，但不能提升处理器、内存和存储性能。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createDeepSeekV41FlashProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title.replace(/-36氪$/u, ""));
+  return createCuratedNewsProject({ ...item, title }, [
+    {
+      scene: { type: "title", duration: 10, kicker: "限时模型测试", headline: shortTitle(title, 46), subhead: "V4.1 Flash 原生支持多模态，重点测试速度、成本和复杂页面生成", sources: ["DeepSeek V4.1 Flash", "限时内测", "多模态"] },
+      narration: `${title}。V4.1 Flash 限时测试，支持多模态，重点看速度、成本和性能。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "接口不变，只替换模型名称", source: "测试规则", title: "现有接入方式可以直接试用", summary: "原有接口地址无需修改，测试模型在 9 月 10 日自动下线。", metrics: [{ label: "并发", value: "每账号最多 20 路" }, { label: "期限", value: "9 月 10 日下线" }], points: ["沿用原来的接口地址。", "替换为限时测试模型名称。", "到期前只适合评估，不宜直接绑定生产流程。"] },
+      narration: "接口地址不用改，替换限时测试模型名称即可调用。每个账号最多二十路并发，九月十日自动下线；适合短期验证，不要绑定生产系统。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 14, headline: "先看清楚试用边界", source: "测试规则", title: "计费沿用 V4 Flash，限时名称会自动失效", summary: "测试期使用旧版计费规则，每个账号最多二十路并发，模型名称在九月十日自动下线。", metrics: [{ label: "并发", value: "每账号最多 20 路" }, { label: "计费", value: "沿用 V4 Flash" }, { label: "期限", value: "9 月 10 日下线" }], points: ["测试期间沿用 V4 Flash 的计费规则。", "模型名称带有到期时间，不适合绑定生产系统。", "正式接入前要重新核对价格和限额。"] },
+      narration: "先看清楚试用边界：计费沿用 V4 Flash，每个账号最多二十路并发；它是临时测试模型，正式接入前要重新核对价格和限额。",
+    },
+    {
+      scene: { type: "flow", duration: 15, headline: "真实体验要看三类任务", steps: [{ label: "中文长文", detail: "观察开头、转折和收束是否自然。" }, { label: "互动页面", detail: "测试 HTML、CSS 和 JavaScript 的交付速度。" }, { label: "复杂网页", detail: "检查多轮修改后的完成度和稳定性。" }] },
+      narration: "真实体验要看三类任务：中文长文是否连贯，互动页面能否快速交付，复杂网页多轮修改后是否稳定。相机页面和科幻驾驶舱的效果，不能代表所有任务。",
+    },
+    {
+      scene: { type: "outro", duration: 13, headline: "快是优势，完成度仍要逐项检查", bullets: ["网页视觉层级和交互细节表现更成熟。", "复杂网页系统的完成度仍不稳定。", "先用真实任务测试，再决定是否切换。"] },
+      narration: "快是优势，完成度仍要逐项检查。适合快速验证，不宜直接替代生产链路。上线前比较实际效果、质量、速度、费用、稳定性和延迟。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
 }
 
 function createQwenDriveProject(
@@ -3457,6 +3788,14 @@ export function createStoryProject(
   const clean = cleanItem(item);
   if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
+  if (/ithome\.com\/0\/999\/683/i.test(clean.url)) return createQoderWakeReleaseProject(clean, options);
+  if (/36kr\.com\/p\/3974225141231879/i.test(clean.url)) return createChatGptSitesProject(clean, options);
+  if (/ithome\.com\/0\/999\/956/i.test(clean.url)) return createChatGptImages25Project(clean, options);
+  if (/ithome\.com\/1\/000\/198/i.test(clean.url)) return createMiniCpm5Project(clean, options);
+  if (/36kr\.com\/p\/3975775944405513/i.test(clean.url)) return createAlphaGenomeAtlasProject(clean, options);
+  if (/ithome\.com\/0\/999\/997/i.test(clean.url)) return createLing30FlashVlProject(clean, options);
+  if (/36kr\.com\/p\/3973247412580615/i.test(clean.url)) return createClaudeTvCleanupProject(clean, options);
+  if (/36kr\.com\/p\/3974571498057985/i.test(clean.url)) return createDeepSeekV41FlashProject(clean, options);
   if (/tmtpost\.com\/8088190/i.test(clean.url) || /Loop.*Graph|Graph.*Loop|AI Coding.*Graph/i.test(joinedContent)) return createLoopGraphEngineeringProject(clean, options);
   if (/tmtpost\.com\/8091801/i.test(clean.url)) return createAiOfficeCompetitionProject(clean, options);
   if (/tmtpost\.com\/8091516/i.test(clean.url)) return createModelKillZoneProject(clean, options);

@@ -632,7 +632,7 @@ test("repository asset evidence replaces the middle proof scene and keeps narrat
     assets: [{ id: "demo", kind: "image", role: "hero", title: "Dashboard screenshot", sourceUrl: "https://example.com/demo.png", src: "/generated/assets/demo.png", contentType: "image/png", license: "test" }],
   });
   assert.equal(withAssets.scenes[2]?.type, "web_screenshot_zoom");
-  assert.match(withAssets.scenes[2]?.headline ?? "", /核心价值.*效果图/);
+  assert.match(withAssets.scenes[2]?.headline ?? "", /核心价值：/);
   assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /最短路径|核心结果|实际界面与效果图/);
   assert.equal(withAssets.scenes[2]?.type === "web_screenshot_zoom" && withAssets.scenes[2].shots[0]?.src, "/generated/assets/demo.png");
 });
@@ -652,6 +652,21 @@ test("repository asset evidence keeps screenshot alt text and narration gate-saf
   if (withAssets.scenes[2]?.type === "web_screenshot_zoom") assert.equal(withAssets.scenes[2].shots[0]?.title, "项目效果图");
   assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /十二项开发任务.*百分之五十四.*百分之二十七/s);
   assert.ok((withAssets.narrationSegments?.[2]?.text.length ?? 0) >= 40);
+});
+
+test("repository asset evidence preserves the repository-specific narration", () => {
+  const project = createStoryProject({
+    id: "editor", kind: "github", contentType: "repository", title: "editor: 3D building editor",
+    url: "https://github.com/pascalorg/editor", source: "项目资料", summary: "A 3D building editor built with React Three Fiber and WebGPU.",
+    content: "A 3D building editor built with React Three Fiber and WebGPU with buildings, levels, walls, zones and items.", score: 1, tags: [],
+    repo: "pascalorg/editor", metrics: { stars: 1000 },
+  });
+  const withAssets = applyRepositoryAssetEvidence({
+    ...project,
+    assets: [{ id: "editor-shot", kind: "image", role: "demo", title: "3D editor", sourceUrl: "https://example.com/editor.png", src: "/generated/assets/editor.png", contentType: "image/png", license: "test" }],
+  });
+  assert.match(withAssets.narrationSegments?.[2]?.text ?? "", /楼层和墙体|区域与家具|小空间/s);
+  assert.doesNotMatch(withAssets.narrationSegments?.[2]?.text ?? "", /实际界面与效果图，用来核对项目的真实使用方式/);
 });
 
 test("repository title screen displays the captured star count", () => {
@@ -1046,6 +1061,53 @@ test("requested repository profiles generate project-specific narration", () => 
   assert.equal(new Set(narrations).size, fixtures.length);
 });
 
+test("new repository batch keeps browser, document and 3D editor domains distinct", () => {
+  const fixtures = [
+    { repo: "ayghri/i-have-adhd", content: "A coding assistant skill that leads with the next action, numbers multi-step tasks, suppresses tangents and ends with one concrete next step.", expected: /编码助手.*十条规则|先给行动.*步骤/s },
+    { repo: "jo-inc/camofox-browser", content: "Anti-detection browser server for AI agents powered by Camoufox with accessibility snapshots, stable element refs, search macros and session isolation.", expected: /无障碍快照.*稳定元素引用|隔离会话/s },
+    { repo: "microsoft/markitdown", content: "Python utility for converting PDF, PowerPoint, Word, Excel, images, audio, HTML and text formats to Markdown for LLMs and text analysis.", expected: /PDF、Office 文件、图片、音频和网页|Markdown/s },
+    { repo: "pascalorg/editor", content: "A 3D building editor built with React Three Fiber and WebGPU, with nodes for buildings, levels, walls, zones, slabs and items.", expected: /三维建筑编辑器|楼层、墙体、区域和家具/s },
+  ];
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({
+      id: name,
+      kind: "github",
+      contentType: "repository",
+      title: name,
+      url: `https://github.com/${fixture.repo}`,
+      source: "项目资料",
+      summary: fixture.content,
+      content: fixture.content,
+      score: 1,
+      tags: [],
+      repo: fixture.repo,
+      metrics: { stars: 1000 },
+    });
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|将项目资料中的核心功能和使用路径组织为可查阅的工作流/);
+  }
+});
+
+test("requested news URLs use concise grounded profiles", () => {
+  const fixtures = [
+    { url: "https://www.ithome.com/0/999/683.htm", title: "阿里发布数字员工产品 QoderWake 1.0，已有近 10 万个数字员工上岗", summary: "QoderWake 1.0 将岗位描述转成数字员工。", content: "QoderWake 1.0 可以把岗位描述生成角色文档，支持职责、权限、协作关系和红线配置，并接入钉钉、飞书和企业微信。", expected: /数字员工.*职责.*权限/s },
+    { url: "https://www.36kr.com/p/3974225141231879", title: "OpenAI放大招，一句话生成网站革了SaaS的命", summary: "ChatGPT Sites 开始公测。", content: "ChatGPT Sites 开始公测，可以用自然语言、草图和素材生成交互网站，公开示例约十到十五分钟生成首版。", expected: /自然语言.*草图.*交互网站/s },
+    { url: "https://www.36kr.com/p/3973247412580615", title: "先别换电视！用了4年的电视卡成PPT，他让Claude来修", summary: "作者通过调试连接分批清理安卓电视后台。", content: "作者通过调试连接分批停用不需要的电视服务，每批最多十个，测试遥控、高清接口、视频播放和声音，出现异常就恢复。", expected: /小批量.*遥控.*高清接口/s },
+    { url: "https://www.36kr.com/p/3974571498057985", title: "刚刚，DeepSeek 新模型突然上线，Flash 的模型，Pro 的野心", summary: "DeepSeek V4.1 Flash 开启限时测试。", content: "DeepSeek V4.1 Flash 原生支持多模态，沿用 API 接口和 V4 Flash 计费，测试模型会在九月十日下线。", expected: /限时测试.*二十路并发.*九月十日/s, sceneCount: 5, minimumNarrationLength: 300, maximumNarrationLength: 460 },
+  ];
+  for (const fixture of fixtures) {
+    const project = createStoryProject({ id: fixture.url, kind: "webpage", contentType: "news", title: fixture.title, url: fixture.url, source: "核心事实", summary: fixture.summary, content: fixture.content, score: 1, tags: [], publishedAt: "2026-09-08" });
+    assert.equal(project.scenes.length, fixture.sceneCount ?? 4);
+    assert.equal(project.narrationSegments?.length, fixture.sceneCount ?? 4);
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /这意味着|这说明|这条新闻讲的是|对普通用户来说|来自.*网站/);
+    const narrationLength = project.narration.replace(/\s+/gu, "").length;
+    assert.ok(narrationLength >= (fixture.minimumNarrationLength ?? 324), `${fixture.url} narration too short: ${narrationLength}`);
+    assert.ok(narrationLength <= (fixture.maximumNarrationLength ?? 348), `${fixture.url} narration too long: ${narrationLength}`);
+  }
+});
+
 test("current repository requests use project-specific value propositions", () => {
   const fixtures = [
     { repo: "TapXWorld/ChinaTextbook", content: "Chinese school textbooks organized by grade and subject for primary and middle school.", expected: /小学、初中、年级和学科/s },
@@ -1149,6 +1211,34 @@ test("requested repository batch uses distinct project-specific value propositio
 test("current news batch uses grounded complete deterministic profiles", () => {
   const fixtures = [
     {
+      url: "https://www.ithome.com/0/999/956.htm",
+      title: "OpenAI 最强 AI 生图模型：ChatGPT Images 2.5 登场，延迟降低 50%、新增 Sketch 草图",
+      type: "news" as const,
+      content: "ChatGPT Images 2.5 延迟最多降低百分之五十，新增 Sketch 草图、图片内评论和 API 模型。",
+      expected: /延迟最多降低百分之五十.*Sketch.*API.*云端/s,
+    },
+    {
+      url: "https://www.ithome.com/1/000/198.htm",
+      title: "面壁智能开源 MiniCPM5-2B AI 模型：AA 榜单全球 4B 以下第一，初具端侧通用 Agent 能力",
+      type: "news" as const,
+      content: "MiniCPM5-2B 参数规模为 2B，支持工具调用、深度搜索和代码生成，AA 榜综合得分 23 分，Agentic Index 得分 20 分。",
+      expected: /2B.*开源.*工具调用.*深度搜索.*23 分.*20 分.*34 项.*53\.9 分.*891 分/s,
+    },
+    {
+      url: "https://www.36kr.com/p/3975775944405513",
+      title: "刚刚，谷歌DeepMind破解人类生命天书，90亿种基因突变全部算穿",
+      type: "news" as const,
+      content: "AlphaGenome Atlas 把约 90 亿种单碱基突变做成可搜索预测图谱，为每种变化生成约 27000 项预测。",
+      expected: /AlphaGenome Atlas.*90 亿种.*27000.*浏览器.*1PB.*实验确认/s,
+    },
+    {
+      url: "https://www.ithome.com/0/999/997.htm",
+      title: "蚂蚁百灵系列首个原生多模态模型 Ling-3.0-flash-VL 发布开源，引入视觉反馈闭环机制",
+      type: "news" as const,
+      content: "Ling-3.0-flash-VL 总参数 124B，单次激活 5.5B，支持图像、文字和视频，BF16 与 FP8 权重开源。",
+      expected: /开源.*视觉反馈.*124B.*5\.5B.*Ling Studio.*显存.*API/s,
+    },
+    {
       url: "https://www.36kr.com/p/3934784382958726",
       title: "突发，Claude首破黎曼猜想新纪录",
       type: "news" as const,
@@ -1172,7 +1262,7 @@ test("current news batch uses grounded complete deterministic profiles", () => {
   ];
   for (const fixture of fixtures) {
     const project = createStoryProject({ id: fixture.title, kind: "webpage", contentType: fixture.type, title: fixture.title, url: fixture.url, source: "核心事实", summary: fixture.content, content: fixture.content, publishedAt: "2026年8月11日", score: 1, tags: [] });
-    assert.equal(project.scenes.length, fixture.type === "technical-article" ? 5 : 4);
+    assert.equal(project.scenes.length, fixture.type === "technical-article" || fixture.url.includes("999/956") || fixture.url.includes("1/000/198") || fixture.url.includes("3975775944405513") || fixture.url.includes("999/997") ? 5 : 4);
     assert.match(project.narration, fixture.expected);
     assert.equal(project.narrationSegments?.every((segment) => /[。！？!?]$/u.test(segment.text)), true);
     assert.doesNotMatch(project.narration, /(?:^|[。！？!?])(?:关键是|要知道|如今|此前|试了|创)[。！？!?]/u);
