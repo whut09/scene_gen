@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 // Scene-level median F0 is affected by sentence prosody. Keep the gate for
 // clear speaker changes while allowing ordinary Mandarin intonation movement.
-export const MAX_VOICE_PITCH_SPREAD_SEMITONES = 4.5;
+export const MAX_VOICE_PITCH_SPREAD_SEMITONES = 2.2;
 
 export interface AcousticVoiceProfile {
   index: number;
@@ -128,4 +128,13 @@ export function voicePitchSpreadSemitones(profiles: AcousticVoiceProfile[]) {
   const pitches = profiles.filter((profile) => profile.voicedFrames >= 3 && profile.medianF0Hz > 0).map((profile) => profile.medianF0Hz);
   if (pitches.length < 2) return 0;
   return 12 * Math.log2(Math.max(...pitches) / Math.min(...pitches));
+}
+
+export function voicePitchDistanceSemitones(leftHz: number, rightHz: number) {
+  if (leftHz <= 0 || rightHz <= 0) return Number.POSITIVE_INFINITY;
+  return Math.abs(12 * Math.log2(leftHz / rightHz));
+}
+
+export function medianVoicePitch(profiles: AcousticVoiceProfile[]) {
+  return median(profiles.filter((profile) => profile.voicedFrames >= 3 && profile.medianF0Hz > 0).map((profile) => profile.medianF0Hz));
 }

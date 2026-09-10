@@ -334,7 +334,7 @@ test("structural gate accepts normal scene-level pitch variation", async () => {
     await writeFile(audioPath, sineWavBuffer([120, 128]));
     const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root), probe: goodProbe });
     assert.equal(result.issues.some((issue) => issue.code === "audio_acoustic_voice_drift"), false);
-    assert.ok(Number(result.metrics.acousticVoiceSpreadSemitones) < 4.5);
+    assert.ok(Number(result.metrics.acousticVoiceSpreadSemitones) < 2.2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -367,9 +367,30 @@ test("structural gate rejects a provider fallback that changes the publishing vo
         concatenatedAudio: false, audioGenerationKey: "test", providerSelection: "{}", ttsRate: 1,
       },
     };
-    project.narrationSegments = project.narrationSegments!.map((segment) => ({ ...segment, ttsProvider: "nvidia", ttsVoice: "Magpie-Multilingual.ZH-CN.HouZhen", ttsLanguage: "zh-CN" }));
+    project.narrationSegments = project.narrationSegments!.map((segment) => ({ ...segment, ttsProvider: "nvidia", ttsVoice: "Magpie-Multilingual.ZH-CN.Siwei", ttsLanguage: "zh-CN" }));
     const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root, { TTS_EXPECTED_PROVIDER: "indextts", TTS_EXPECTED_VOICE: "IndexTTS2.Fixed.Reference", TTS_EXPECTED_RATE: "1.22" }), probe: goodProbe });
     assert.ok(result.issues.some((issue) => issue.code === "audio_narration_profile_mismatch"));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("structural gate rejects NVIDIA segmented HTTP fallback", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-nvidia-transport-"));
+  try {
+    const { project } = await fixture(root, { riskOnSecond: false });
+    project.audio = {
+      ...project.audio!,
+      provider: "nvidia",
+      metrics: {
+        workerStartCount: 0, workerStartupMs: 0, modelLoadMs: 0, queueWaitMs: 0, synthesisMs: 0,
+        cacheHitCount: 0, cacheMissCount: 2, generatedSceneCount: 2, reusedSceneCount: 0,
+        forcedAudioSceneIndexes: "", generatedAudioSceneIndexes: "0,1", reusedAudioSceneIndexes: "",
+        concatenatedAudio: true, audioGenerationKey: "test", providerSelection: "{}", ttsRate: 1.5,
+        ttsTransport: "http", ttsContinuousStream: false,
+      },
+    };
+    project.narrationSegments = project.narrationSegments!.map((segment) => ({ ...segment, ttsProvider: "nvidia", ttsVoice: "Magpie-Multilingual.ZH-CN.Siwei", ttsLanguage: "zh-CN" }));
+    const result = await runAudioStructuralGate({ project, targetSeconds: 4, config: config(root, { TTS_EXPECTED_PROVIDER: "nvidia", TTS_EXPECTED_VOICE: "Magpie-Multilingual.ZH-CN.Siwei", TTS_EXPECTED_RATE: "1.5" }), probe: goodProbe });
+    assert.ok(result.issues.some((issue) => issue.code === "audio_nvidia_transport_unstable"));
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

@@ -284,6 +284,11 @@ export interface VideoProject {
       minimumSpeakerSimilarity?: number;
       averageSpeakerSimilarity?: number;
       pitchAdjustedSceneIndexes?: string;
+      ttsTransport?: string;
+      ttsContinuousStream?: boolean;
+      voiceConsistencyRetryCount?: number;
+      voiceConsistencyRejectedCandidateCount?: number;
+      voiceRegeneratedSceneIndexes?: string;
     };
     sceneCacheSalts?: Record<string, string>;
     pronunciationPlansPath?: string;

@@ -14,7 +14,7 @@ import type { ProviderSelectionAudit } from "../production/types";
 import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-routing";
 import { getRuntimeConfig } from "../config/runtime-config";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
-import { nvidiaStableSynthesisText, nvidiaTts } from "./tts/providers/nvidia";
+import { nvidiaStableSynthesisText, nvidiaTts, nvidiaTtsBatch } from "./tts/providers/nvidia";
 import { indexTts, releaseIndexTtsWorker, splitIndexTtsText } from "./tts/providers/indextts";
 import { openAiTts } from "./tts/providers/openai";
 import { windowsTts } from "./tts/providers/windows";
@@ -26,6 +26,7 @@ import { prepareF5SynthesisText } from "./tts/text-normalization";
 import { audioGenerationKey, narrationSynthesisText, splitTitleNarration } from "./tts/segmentation";
 import { analyzeVoiceProfilesFromFiles, voicePitchSpreadSemitones } from "./tts/acoustic-stability";
 import { concatNarrationSegments, fitNarrationSegmentsToTarget, silentAudio } from "./tts/postprocess";
+import { stabilizeNvidiaSceneVoice } from "./tts/voice-consistency";
 import { compilePronunciationPlan } from "./pronunciation/compiler";
 import { G2pwWorkerClient } from "./pronunciation/g2pw-client";
 import { f5PronunciationInput, indexTtsPronunciationInput, localPronunciationText } from "./pronunciation/provider-adapters";
@@ -503,6 +504,33 @@ async function synthesizeF5TitleScene(
     generated: partResults.some((result) => !result.reused),
   };
 }
+
+type PronunciationCompilation = Awaited<ReturnType<typeof compilePronunciationPlan>>;
+
+interface PreparedNarrationSegment {
+  segment: NarrationSegment;
+  index: number;
+  segmentPath: string;
+  pronunciation: PronunciationCompilation;
+  plan: PronunciationPlan;
+  forceRebuild: boolean;
+  effectiveCacheSalt?: string;
+}
+
+interface AttachedNarrationSegmentResult {
+  segmentPath: string;
+  duration: number;
+  cacheHitCount: number;
+  cacheMissCount: number;
+  generated: boolean;
+  sceneIndex: number;
+  cacheSalt?: string;
+  azureResult?: AzureTtsResult;
+  pronunciationPlan: PronunciationPlan;
+  pronunciationIssues: PronunciationCompilation["issues"];
+  pronunciationIssueCount: number;
+}
+
 async function attachSegmentedNarration(
   project: VideoProject,
   basename: string,
@@ -526,7 +554,7 @@ async function attachSegmentedNarration(
   const synthesisQueue = new BoundedTaskQueue(providerConcurrency(provider, f5Runtime));
   const forcedScenes = new Set(forceSceneIndexes);
   const existingSceneCacheSalts = project.audio?.sceneCacheSalts ?? {};
-  const results = await mapWithConcurrency(segments, taskConcurrency, async (segment, index) => {
+  const preparedSegments = await mapWithConcurrency(segments, taskConcurrency, async (segment, index): Promise<PreparedNarrationSegment> => {
     if (segment.sceneIndex !== index || !segment.text.trim()) {
       throw new Error(`Invalid narration segment at scene ${index}.`);
     }
@@ -544,6 +572,41 @@ async function attachSegmentedNarration(
       const base = { ...plan, synthesisText: synthesisTextWithFallback };
       plan = { ...base, planHash: pronunciationPlanHash({ displayText: base.displayText, semanticText: base.semanticText, synthesisText: base.synthesisText, spans: base.spans, frontendVersion: base.frontendVersion }) };
     }
+    return { segment, index, segmentPath, pronunciation, plan, forceRebuild, effectiveCacheSalt };
+  });
+  const canUseContinuousNvidiaBatch = provider === "nvidia"
+    && !previousProvider
+    && (forcedScenes.size === segments.length || preparedSegments.every(({ segmentPath }) => !existsSync(segmentPath)));
+  let results: AttachedNarrationSegmentResult[];
+  if (canUseContinuousNvidiaBatch) {
+    const continuousPath = path.join(generatedDir, `${basename}-continuous.wav`);
+    const batch = await nvidiaTtsBatch({
+      plans: preparedSegments.map((prepared) => prepared.plan),
+      outputPath: continuousPath,
+      sceneOutputPaths: preparedSegments.map((prepared) => prepared.segmentPath),
+      force: forcedScenes.size === segments.length,
+      cacheSalt: preparedSegments[0]?.effectiveCacheSalt,
+      signal,
+    });
+    results = preparedSegments.map((prepared, index) => {
+      const azureResult = batch.results[index];
+      return {
+        segmentPath: prepared.segmentPath,
+        duration: azureResult.durationSeconds,
+        cacheHitCount: batch.reused ? 1 : 0,
+        cacheMissCount: batch.reused ? 0 : 1,
+        generated: !batch.reused,
+        sceneIndex: prepared.index,
+        cacheSalt: prepared.effectiveCacheSalt,
+        azureResult,
+        pronunciationPlan: prepared.plan,
+        pronunciationIssues: prepared.pronunciation.issues,
+        pronunciationIssueCount: prepared.pronunciation.issues.length,
+      };
+    });
+  } else {
+    results = await mapWithConcurrency(preparedSegments, taskConcurrency, async (prepared): Promise<AttachedNarrationSegmentResult> => {
+      const { segment, index, segmentPath, pronunciation, plan, forceRebuild, effectiveCacheSalt } = prepared;
     if (!forceRebuild && previousProvider && previousProvider !== provider) {
       const previousPath = path.join(generatedDir, `${basename}-scene-${String(index + 1).padStart(2, "0")}.${providerExtension(previousProvider)}`);
       if (existsSync(previousPath)) {
@@ -553,7 +616,7 @@ async function attachSegmentedNarration(
       }
     }
     if (provider === "f5" && index === 0) {
-      const titleResult = await synthesizeF5TitleScene(project, synthesisText, segmentPath, index, f5Runtime, forceRebuild, effectiveCacheSalt, signal);
+      const titleResult = await synthesizeF5TitleScene(project, plan.synthesisText, segmentPath, index, f5Runtime, forceRebuild, effectiveCacheSalt, signal);
       const duration = await probeDuration(segmentPath);
       if (duration <= 0) throw new Error(`Narration segment ${index + 1} is empty or invalid.`);
       return { segmentPath, duration, sceneIndex: index, cacheSalt: effectiveCacheSalt, pronunciationPlan: plan, pronunciationIssues: pronunciation.issues, pronunciationIssueCount: pronunciation.issues.length, ...titleResult };
@@ -581,10 +644,10 @@ async function attachSegmentedNarration(
         forceRebuild,
         cacheSalt: effectiveCacheSalt,
       }));
-      if (provider === "azure") {
+      if (provider === "azure" || provider === "nvidia") {
         reused = synthesis.reused;
         azureResult = synthesis.result;
-        if (!azureResult) throw new Error("Azure Speech synthesis result is missing.");
+        if (!azureResult) throw new Error(`${provider} synthesis result is missing.`);
       }
     }
     const duration = await probeDuration(segmentPath);
@@ -602,9 +665,23 @@ async function attachSegmentedNarration(
       pronunciationIssues: pronunciation.issues,
       pronunciationIssueCount: pronunciation.issues.length,
     };
-  });
+    });
+  }
   const segmentPaths = results.map((result) => result.segmentPath);
-  const acousticProfiles = provider === "nvidia" ? await analyzeVoiceProfilesFromFiles(segmentPaths) : undefined;
+  const voiceConsistency = provider === "nvidia"
+    ? await stabilizeNvidiaSceneVoice({
+      segmentPaths,
+      plans: results.map((result) => result.pronunciationPlan),
+      cacheSalts: results.map((result) => result.cacheSalt),
+      signal,
+    })
+    : undefined;
+  if (voiceConsistency) {
+    for (const [index, selectedCacheSalt] of voiceConsistency.selectedCacheSalts.entries()) {
+      results[index].cacheSalt = selectedCacheSalt;
+    }
+  }
+  const acousticProfiles = voiceConsistency?.profiles ?? (provider === "nvidia" ? await analyzeVoiceProfilesFromFiles(segmentPaths) : undefined);
   const acousticVoiceSpreadSemitones = acousticProfiles ? voicePitchSpreadSemitones(acousticProfiles) : undefined;
   const durations = results.map((result) => result.duration);
 
@@ -670,7 +747,7 @@ async function attachSegmentedNarration(
     leadingSilenceSeconds,
     audioGenerationKey: audioGenerationKey(sceneCacheSalts),
     requestMs: results.reduce((sum, result) => sum + (result.azureResult?.requestMs ?? 0), 0),
-    retryCount: results.reduce((sum, result) => sum + (result.azureResult?.retryCount ?? 0), 0),
+    retryCount: results.reduce((sum, result) => sum + (result.azureResult?.retryCount ?? 0), 0) + (voiceConsistency?.retryCount ?? 0),
     billedCharacters: results.reduce((sum, result) => sum + (result.azureResult?.billedCharacters ?? 0), 0),
     providerRequestIds: results.map((result) => result.azureResult?.providerRequestId).filter(Boolean).join(","),
     budgetUsedCharacters: Math.max(0, ...results.map((result) => result.azureResult?.budgetUsedCharacters ?? 0)),
@@ -684,6 +761,11 @@ async function attachSegmentedNarration(
     ttsLanguage: provider === "nvidia" ? getRuntimeConfig().tts.nvidia.language : "zh-CN",
     ttsRate: providerRate(provider),
     ttsSceneVoiceConsistency: new Set(alignedSegments.map((segment) => segment.ttsVoice).filter(Boolean)).size <= 1,
+    ttsTransport: [...new Set(results.map((result) => result.azureResult?.transport).filter(Boolean))].join(","),
+    ttsContinuousStream: provider !== "nvidia" || results.every((result) => result.azureResult?.continuousStream === true),
+    voiceConsistencyRetryCount: voiceConsistency?.retryCount ?? 0,
+    voiceConsistencyRejectedCandidateCount: voiceConsistency?.rejectedCandidateCount ?? 0,
+    voiceRegeneratedSceneIndexes: voiceConsistency?.regeneratedSceneIndexes.join(",") ?? "",
   };
   if (metrics.budgetRemainingCharacters === Number.MAX_SAFE_INTEGER) delete metrics.budgetRemainingCharacters;
 

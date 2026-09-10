@@ -39,9 +39,18 @@ def main():
                 try:
                     with wave.open(str(output_path), "wb") as output:
                         output.setnchannels(1); output.setsampwidth(2); output.setframerate(args.sample_rate)
-                        grpc_text = request.get("textChunks") or synthesis_text
-                        for response in service.synthesize_online(grpc_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate, custom_dictionary=custom_dictionary):
-                            output.writeframes(response.audio)
+                        if request.get("continuous"):
+                            continuous_text = request.get("textChunks") or synthesis_text
+                            if isinstance(continuous_text, list):
+                                for response in service.synthesize_online(continuous_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate, custom_dictionary=custom_dictionary):
+                                    output.writeframes(response.audio)
+                            else:
+                                response = service.synthesize(continuous_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate, custom_dictionary=custom_dictionary)
+                                output.writeframes(response.audio)
+                        else:
+                            grpc_text = request.get("textChunks") or synthesis_text
+                            for response in service.synthesize_online(grpc_text, voice_name=args.voice, language_code=args.language, sample_rate_hz=args.sample_rate, custom_dictionary=custom_dictionary):
+                                output.writeframes(response.audio)
                     transport = "grpc"
                 except grpc.RpcError:
                     if args.transport == "grpc": raise
@@ -64,7 +73,7 @@ def main():
                         audio_frames.append(source.readframes(source.getnframes()))
                 with wave.open(str(output_path), "wb") as output:
                     output.setnchannels(1); output.setsampwidth(2); output.setframerate(args.sample_rate); output.writeframes(b"".join(audio_frames))
-            emit({"type": "result", "requestId": request_id, "status": "succeeded", "outputPath": str(output_path), "requestMs": round((time.perf_counter() - request_started) * 1000), "synthesisText": http_synthesis_text if transport == "http" else synthesis_text, "appliedPronunciationPhrases": sorted((custom_dictionary or {}).keys()) if transport == "grpc" else [], "transport": transport, "continuousStream": transport == "grpc", "synthesisUnitCount": len(request.get("textChunks") or [synthesis_text]) if transport == "grpc" else len(http_chunks)})
+            emit({"type": "result", "requestId": request_id, "status": "succeeded", "outputPath": str(output_path), "requestMs": round((time.perf_counter() - request_started) * 1000), "synthesisText": http_synthesis_text if transport == "http" else synthesis_text, "appliedPronunciationPhrases": sorted((custom_dictionary or {}).keys()) if transport == "grpc" else [], "transport": transport, "continuousStream": transport == "grpc", "synthesisUnitCount": len(request.get("textChunks") or [synthesis_text]) if request.get("continuous") and transport == "grpc" else len(request.get("textChunks") or [synthesis_text]) if transport == "grpc" else len(http_chunks)})
         except grpc.RpcError as error:
             emit({"type": "result", "requestId": request.get("requestId", "unknown"), "status": "failed", "errorType": error.code().name.lower(), "retryable": error.code() in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.DEADLINE_EXCEEDED}, "error": str(error.details())})
         except Exception as error:

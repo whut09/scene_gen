@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildRuntimeConfig } from "../../src/config/runtime-config";
 import { compilePronunciationPlan } from "../../src/pipeline/pronunciation/compiler";
-import { encodeNvidiaWorkerRequest, isRetryableNvidiaTtsError, NVIDIA_TTS_FRONTEND_VERSION, NVIDIA_TTS_NORMALIZE_FILTER, nvidiaHttpFallbackText, nvidiaPronunciationDictionary, nvidiaStableSynthesisText, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
+import { encodeNvidiaWorkerRequest, isRetryableNvidiaTtsError, NVIDIA_TTS_BATCH_FRONTEND_VERSION, NVIDIA_TTS_FRONTEND_VERSION, NVIDIA_TTS_NORMALIZE_FILTER, nvidiaBatchTtsCacheIdentity, nvidiaContinuousTextWeights, nvidiaHttpFallbackText, nvidiaPronunciationDictionary, nvidiaStableSynthesisText, nvidiaTtsCacheIdentity, splitNvidiaSynthesisText } from "../../src/pipeline/tts/providers/nvidia";
 
 test("NVIDIA worker requests preserve Mandarin text as UTF-8", () => {
   const input = { requestId: "request-1", text: "系统完成核心模块重构，这项更新非常重要。", outputPath: "output.wav" };
@@ -13,14 +13,29 @@ test("NVIDIA worker requests preserve Mandarin text as UTF-8", () => {
 });
 
 test("NVIDIA cache identity invalidates the legacy whole-sentence pinyin frontend", async () => {
-  const config = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_MODEL: "magpie", NVIDIA_TTS_VOICE: "Magpie-Multilingual.ZH-CN.HouZhen" }, "test");
+  const config = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only", NVIDIA_TTS_MODEL: "magpie", NVIDIA_TTS_VOICE: "Magpie-Multilingual.ZH-CN.Siwei" }, "test");
   const { plan } = await compilePronunciationPlan({ displayText: "系统完成核心模块重构" });
   const identity = nvidiaTtsCacheIdentity({ plan }, config);
   assert.equal(identity.frontendVersion, NVIDIA_TTS_FRONTEND_VERSION);
-  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-hyphenated-acronyms-v28");
+  assert.equal(identity.frontendVersion, "nvidia-magpie-mandarin-grpc-continuous-narration-v30");
   assert.notEqual(identity.frontendVersion, "nvidia-magpie-pinyin-v1");
   assert.equal(identity.synthesisText, nvidiaStableSynthesisText(plan));
   assert.equal(identity.speed, 1.25);
+});
+
+test("NVIDIA batch cache identity includes every scene plan and continuous frontend", async () => {
+  const first = await compilePronunciationPlan({ displayText: "第一屏介绍重构" });
+  const second = await compilePronunciationPlan({ displayText: "第二屏说明重要限制" });
+  const config = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only" }, "test");
+  const identity = nvidiaBatchTtsCacheIdentity({ plans: [first.plan, second.plan] }, config);
+  assert.equal(identity.frontendVersion, NVIDIA_TTS_BATCH_FRONTEND_VERSION);
+  assert.deepEqual(identity.pronunciationPlanHashes, [first.plan.planHash, second.plan.planHash]);
+  assert.equal(identity.mode, "continuous-whole-narration");
+  assert.equal(identity.sceneSynthesisTexts.length, 2);
+});
+
+test("NVIDIA continuous scene weights are stable and never empty", () => {
+  assert.deepEqual(nvidiaContinuousTextWeights(["第一屏。", "", "AI 2.0"]), [3, 1, 4]);
 });
 
 test("NVIDIA cache identity changes when narration speed changes", async () => {
@@ -92,9 +107,10 @@ test("NVIDIA worker request serializes the custom pronunciation dictionary", () 
   assert.deepEqual(JSON.parse(encodeNvidiaWorkerRequest(input).toString("utf8")), input);
 });
 
-test("NVIDIA defaults to the configured native Mandarin HouZhen voice", () => {
+test("NVIDIA defaults to the previously approved native Mandarin female voice", () => {
   const config = buildRuntimeConfig({ NVIDIA_API_KEY: "test-only" }, "test");
-  assert.equal(config.tts.nvidia.voice, "Magpie-Multilingual.ZH-CN.HouZhen");
+  assert.equal(config.tts.nvidia.voice, "Magpie-Multilingual.ZH-CN.Siwei");
+  assert.equal(config.tts.nvidia.transport, "grpc");
 });
 
 test("NVIDIA retries closed Triton streams but not deterministic request errors", () => {

@@ -4,7 +4,7 @@ import type { QualityEvaluation, QualityIssue } from "./quality";
 import type { StoryManifestItem } from "../pipeline/story-manifest";
 import { readStoryManifest } from "../pipeline/story-manifest";
 import type { VideoProject } from "../pipeline/types";
-import { compactProjectNarration } from "../pipeline/story";
+import { compactProjectNarration, isProtectedDeterministicStorySource } from "../pipeline/story";
 import { videoProjectSchema } from "../pipeline/schemas";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJsonAtomic } from "../pipeline/utils";
 import { RunJournalStore } from "./run-journal";
@@ -261,6 +261,9 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       }
       if (iteration >= maxIterations) break;
       await enforceBudget(gate.value.evaluation.issues);
+      if (isProtectedDeterministicStorySource(url) && (gate.value.repairPlan.action === "revise-scenes" || gate.value.repairPlan.action === "regenerate-draft")) {
+        throw new Error("Deterministic curated story failed its draft gate; LLM revision and global regeneration are blocked to prevent content and audio regressions.");
+      }
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
         const beforeRevision = structuredClone(state.project);
         const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-draft-revision-result.json`);
@@ -398,6 +401,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         continue;
       }
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
+        if (isProtectedDeterministicStorySource(url)) throw new Error("Deterministic curated story failed its audio gate; LLM revision is blocked to prevent content and audio regressions.");
         const beforeRevision = structuredClone(state.project);
         const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-audio-revision-result.json`);
         const revision = await runStage({
@@ -419,21 +423,23 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         audioRepairReason = `${gate.value.repairPlan.reason}; strategy=${audioStrategy?.strategyId ?? "default"}`;
         audioCacheSalt = `audio:${audioRepairReason}:${forceAudioSceneIndexes.join(",") || "all"}`;
         const mismatchIssues = gate.value.evaluation.issues.filter((issue) => issue.code === "audio_pronunciation_mismatch");
-        const currentProvider = state.project.audio?.provider;
-        const nextProvider = pronunciationStrategy === "switch-tts-provider" ? currentProvider === "azure" ? "f5" : "azure" : audioProviderOverride ?? runtimeConfig.tts.provider;
-        const planHashes = mismatchIssues.map((issue) => String(issue.evidence.pronunciationPlanHash ?? "unknown"));
-        const claimed = forceAudioSceneIndexes.every((sceneIndex) => pronunciationAttempts.claim(sceneIndex, {
-          phraseFingerprint: phraseFingerprint(mismatchIssues.filter((issue) => issue.sceneIndex === sceneIndex).map((issue) => String(issue.evidence.phrase ?? issue.code))),
-          provider: nextProvider,
-          pronunciationStrategy: pronunciationStrategy ?? "switch-tts-provider",
-          pronunciationPlanHash: planHashes.join(",") || "unknown",
-        }));
-        if (!claimed) throw new Error("Duplicate pronunciation synthesis strategy was blocked; manual confirmation or a different provider is required.");
-        if (pronunciationStrategy === "switch-tts-provider") {
-          audioProviderOverride = nextProvider;
-          if (!pronunciationAttempts.claimProviderSwitch(forceAudioSceneIndexes[0] ?? 0)) pronunciationStrategy = "use-spoken-fallback";
+        if (mismatchIssues.length > 0) {
+          const currentProvider = state.project.audio?.provider;
+          const nextProvider = pronunciationStrategy === "switch-tts-provider" ? currentProvider === "azure" ? "f5" : "azure" : audioProviderOverride ?? runtimeConfig.tts.provider;
+          const planHashes = mismatchIssues.map((issue) => String(issue.evidence.pronunciationPlanHash ?? "unknown"));
+          const claimed = forceAudioSceneIndexes.every((sceneIndex) => pronunciationAttempts.claim(sceneIndex, {
+            phraseFingerprint: phraseFingerprint(mismatchIssues.filter((issue) => issue.sceneIndex === sceneIndex).map((issue) => String(issue.evidence.phrase ?? issue.code))),
+            provider: nextProvider,
+            pronunciationStrategy: pronunciationStrategy ?? "switch-tts-provider",
+            pronunciationPlanHash: planHashes.join(",") || "unknown",
+          }));
+          if (!claimed) throw new Error("Duplicate pronunciation synthesis strategy was blocked; manual confirmation or a different provider is required.");
+          if (pronunciationStrategy === "switch-tts-provider") {
+            audioProviderOverride = nextProvider;
+            if (!pronunciationAttempts.claimProviderSwitch(forceAudioSceneIndexes[0] ?? 0)) pronunciationStrategy = "use-spoken-fallback";
+          }
+          await writeJsonAtomic(pronunciationAttemptsPath, pronunciationAttempts.snapshot());
         }
-        await writeJsonAtomic(pronunciationAttemptsPath, pronunciationAttempts.snapshot());
       } else {
         throw new Error(`Audio gate requires ${gate.value.repairPlan.action}: ${gate.value.repairPlan.reason}`);
       }

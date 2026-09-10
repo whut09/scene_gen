@@ -104,8 +104,8 @@ test("locked TTS profiles override ambient provider and voice settings", async (
   assert.equal(config.tts.narrationIdentity.locked, true);
   assert.equal(config.tts.provider, "nvidia");
   assert.equal(config.tts.narrationIdentity.expectedProvider, "nvidia");
-  assert.equal(config.tts.narrationIdentity.expectedVoice, "Magpie-Multilingual.ZH-CN.HouZhen");
+  assert.equal(config.tts.narrationIdentity.expectedVoice, "Magpie-Multilingual.ZH-CN.Siwei");
   assert.equal(config.tts.narrationIdentity.expectedRate, 1.5);
-  assert.equal(config.tts.nvidia.voice, "Magpie-Multilingual.ZH-CN.HouZhen");
+  assert.equal(config.tts.nvidia.voice, "Magpie-Multilingual.ZH-CN.Siwei");
   assert.equal(config.tts.nvidia.speed, 1.5);
 });

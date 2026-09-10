@@ -66,6 +66,9 @@ export interface AzureTtsResult {
   budgetUsedCharacters: number;
   budgetRemainingCharacters: number;
   budgetWarning: boolean;
+  transport?: "grpc" | "http";
+  continuousStream?: boolean;
+  synthesisUnitCount?: number;
 }
 
 export class AzureTtsError extends Error {
