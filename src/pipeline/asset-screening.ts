@@ -1,7 +1,10 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { fromRoot } from "./utils";
 
-export const ASSET_SCREENING_VERSION = "asset-screen-v1";
+export const ASSET_SCREENING_VERSION = "asset-screen-v3-no-human-faces-no-watermark";
+
+const visibleWatermarkPattern = /水印|版权|版权所有|来源|copyright|watermark|IT之家|ithome|36氪|36kr|(?:www\.)?(?:ithome\.com|36kr(?:cdn)?\.com|qbitai\.com|tmtpost\.com)/i;
 
 export interface AssetScreeningResult {
   status: "passed" | "rejected";
@@ -13,6 +16,7 @@ const promotionalPatterns = [
   { pattern: /二维码|qr[\s_-]*code|qrcode/i, reason: "qr_code_metadata" },
   { pattern: /扫码|扫描(?:二维码|关注)|广告(?:位|图)?|推广|赞助|sponsored|advert(?:isement)?|promotional?/i, reason: "promotional_metadata" },
   { pattern: /加群|公众号|客服|微信|wechat|优惠券|购买链接|下载(?:app|客户端)?/i, reason: "call_to_action_metadata" },
+  { pattern: /portrait|headshot|avatar|人物肖像|人物照片|个人照片|人像(?:照|摄影)?/i, reason: "human_portrait_metadata" },
 ];
 
 function rejected(reasons: string[]): AssetScreeningResult {
@@ -181,6 +185,96 @@ function decodeGrayscaleFrame(filePath: string, signal?: AbortSignal) {
   });
 }
 
+function detectHumanFaces(filePath: string, signal?: AbortSignal) {
+  return new Promise<{ faces: number; largestAreaRatio: number }>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Face scan cancelled."));
+      return;
+    }
+    const python = process.env.ASSET_FACE_DETECTOR_PYTHON || (process.platform === "win32" ? "python" : "python3");
+    const child = spawn(python, [fromRoot("scripts", "detect-image-faces.py"), filePath], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(() => reject(new Error("Face scan timed out.")));
+    }, 20_000);
+    const onAbort = () => {
+      child.kill("SIGTERM");
+      finish(() => reject(signal?.reason instanceof Error ? signal.reason : new Error("Face scan cancelled.")));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-1000); });
+    child.on("error", (error) => finish(() => reject(error)));
+    child.on("close", (code) => finish(() => {
+      if (code !== 0) {
+        reject(new Error(`Face scan failed${stderr ? `: ${stderr}` : ""}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as { faces?: number; largestAreaRatio?: number };
+        resolve({ faces: Math.max(0, parsed.faces ?? 0), largestAreaRatio: Math.max(0, parsed.largestAreaRatio ?? 0) });
+      } catch {
+        reject(new Error("Face scan returned invalid JSON."));
+      }
+    }));
+  });
+}
+
+function detectVisibleText(filePath: string, signal?: AbortSignal) {
+  return new Promise<string>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Text scan cancelled."));
+      return;
+    }
+    const python = process.env.ASSET_TEXT_DETECTOR_PYTHON || (process.platform === "win32" ? "python" : "python3");
+    const child = spawn(python, [fromRoot("scripts", "scan-image-text.py"), filePath], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(() => reject(new Error("Text scan timed out.")));
+    }, 30_000);
+    const onAbort = () => {
+      child.kill("SIGTERM");
+      finish(() => reject(signal?.reason instanceof Error ? signal.reason : new Error("Text scan cancelled.")));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-1000); });
+    child.on("error", (error) => finish(() => reject(error)));
+    child.on("close", (code) => finish(() => {
+      if (code !== 0) {
+        reject(new Error(`Text scan failed${stderr ? `: ${stderr}` : ""}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as { text?: string };
+        resolve(parsed.text ?? "");
+      } catch {
+        reject(new Error("Text scan returned invalid JSON."));
+      }
+    }));
+  });
+}
+
 function hasKnownRasterSignature(bytes: Buffer) {
   return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
     || bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
@@ -214,7 +308,20 @@ export async function screenAssetFile(input: {
     return rejected(["visual_scan_unavailable"]);
   }
   const finderPoints = clusterFinderPoints(collectFinderPoints(pixels, 256, 256));
-  return hasFinderTriangle(finderPoints)
-    ? rejected(["qr_code_visual_pattern"])
-    : { ...metadataResult, reasons: [...metadataResult.reasons, "visual_qr_screen_passed"] };
+  if (hasFinderTriangle(finderPoints)) return rejected(["qr_code_visual_pattern"]);
+  let faceScan: { faces: number; largestAreaRatio: number };
+  try {
+    faceScan = await detectHumanFaces(input.filePath, input.signal);
+  } catch {
+    return rejected(["human_face_scan_unavailable"]);
+  }
+  if (faceScan.faces > 0) return rejected(["human_face_detected"]);
+  let visibleText: string;
+  try {
+    visibleText = await detectVisibleText(input.filePath, input.signal);
+  } catch {
+    return rejected(["watermark_scan_unavailable"]);
+  }
+  if (visibleWatermarkPattern.test(visibleText)) return rejected(["watermark_text_detected"]);
+  return { ...metadataResult, reasons: [...metadataResult.reasons, "visual_qr_screen_passed", "human_face_screen_passed", "visible_watermark_screen_passed"] };
 }

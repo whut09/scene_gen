@@ -59,6 +59,7 @@ function qrLikePng() {
 
 test("asset screening rejects QR and promotional metadata", () => {
   assert.equal(screenAssetMetadata({ alt: "扫码关注公众号", url: "https://cdn.example.com/demo.png" }).status, "rejected");
+  assert.equal(screenAssetMetadata({ alt: "创始人人物肖像", url: "https://cdn.example.com/founder.png" }).status, "rejected");
   assert.equal(screenAssetMetadata({ alt: "产品操作界面", url: "https://cdn.example.com/dashboard.png" }).status, "passed");
 });
 
@@ -95,4 +96,11 @@ test("video asset gate blocks rejected or promotional assets", () => {
   ] } as VideoProject);
   assert.equal(issues.length, 2);
   assert.ok(issues.every((issue) => issue.code === "asset_promotional_content_exposed"));
+});
+
+test("video asset gate blocks portrait assets with a dedicated issue", () => {
+  const issues = assetPromotionIssues({ assets: [
+    { id: "portrait", kind: "image", role: "evidence", title: "人物肖像", sourceUrl: "https://cdn.example.com/person.png", src: "/generated/person.png", contentType: "image/png", license: "test", screening: { status: "rejected", reasons: ["human_face_detected"], detectorVersion: "test" } },
+  ] } as VideoProject);
+  assert.equal(issues[0]?.code, "asset_human_face_exposed");
 });

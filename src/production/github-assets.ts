@@ -45,20 +45,32 @@ function repoParts(item: HotItem) {
 function markdownImages(markdown: string) {
   const markdownAssets = [...markdown.matchAll(/!\[([^\]]*)\]\((?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\)/g)]
     .map((match) => ({ alt: match[1].trim(), url: (match[2] ?? match[3] ?? "").trim() }));
-  const htmlAssets = [...markdown.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)]
-    .map((match) => ({
-      alt: (match[0].match(/\balt=["']([^"']*)["']/i)?.[1] ?? "").trim(),
-      url: match[1].trim(),
-    }));
+  const htmlAssets = [...markdown.matchAll(/<(?:img|source)\b[^>]*>/gi)]
+    .map((match) => {
+      const tag = match[0];
+      const src = tag.match(/\b(?:src|srcset)=["']([^"']+)["']/i)?.[1] ?? "";
+      const url = src.split(",")[0]?.trim().split(/\s+/u)[0] ?? "";
+      return {
+        alt: (tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? "").trim(),
+        url,
+      };
+    });
   const candidates = [...markdownAssets, ...htmlAssets]
     .filter((asset) => asset.url)
-    .filter((asset) => !/badge|shield|build|coverage|license|stars?|forks?|social-preview|repobeats|analytics|deploy(?:\s+with)?|hosting|button|(?:^|[\/_-])(?:logo|icon)(?:[._/-]|$)/i.test(asset.alt + " " + asset.url));
+    .filter((asset) => !/badge|shield|build|coverage|license|stars?|forks?|social-preview|repobeats|analytics|deploy(?:\s+with)?|hosting|button|(?:^|[\/_-])icon(?:[._/-]|$)/i.test(asset.alt + " " + asset.url))
+    .filter((asset) => !/^data:/i.test(asset.url));
   const score = (asset: { alt: string; url: string }) => {
     const value = `${asset.alt} ${asset.url}`;
-    return /screenshot|screen shot|demo|preview|dashboard|interface|ui|workflow|效果|页面|界面|演示/i.test(value) ? 2 : 0;
+    if (/screenshot|screen shot|demo|preview|dashboard|interface|ui|workflow|效果|页面|界面|演示/i.test(value)) return 2;
+    if (/logo|brand|标识/i.test(value)) return 1;
+    return 0;
   };
   return [...new Map(candidates.map((asset) => [asset.url, asset])).values()]
     .sort((left, right) => score(right) - score(left));
+}
+
+export function githubVisualAssetCandidateCount(markdown: string) {
+  return markdownImages(markdown).length;
 }
 
 function resolveAssetUrl(raw: string, owner: string, repo: string, branch: string) {

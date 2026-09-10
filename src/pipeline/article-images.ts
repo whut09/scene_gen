@@ -8,13 +8,20 @@ import { ensureDir, fromRoot } from "./utils";
 import { screenAssetFile, screenAssetMetadata } from "./asset-screening";
 
 const execFileAsync = promisify(execFile);
-const watermarkPattern = /水印|版权|版权所有|来源|copyright|watermark|logo|二维码|qr.?code|data-?vmark|vmark/i;
+const watermarkPattern = /水印|版权|版权所有|来源|copyright|watermark|logo|二维码|qr.?code|data-?vmark|vmark|IT之家|ithome|36氪|36kr/i;
 const ignoredImagePattern = /avatar|author|favicon|emoji|badge|shield|icon|logo|qr.?code|二维码|share|赞|评论|收藏/i;
 
 export interface ArticleImageCandidate {
   alt: string;
   url: string;
   watermarkHint?: string;
+}
+
+export interface ArticleImageCollectionAudit {
+  candidateCount: number;
+  acceptedCount: number;
+  watermarkRejectedCount: number;
+  unsafeRejectedCount: number;
 }
 
 function imageUrlFromElement(element: Element) {
@@ -34,7 +41,11 @@ function imageUrlFromElement(element: Element) {
 }
 
 export function extractArticleImageCandidates(document: Document, pageUrl: string): ArticleImageCandidate[] {
-  const roots = [...document.querySelectorAll("article img, main img, [role='main'] img, .article-content img, .content img")];
+  const roots = [
+    ...document.querySelectorAll(
+      "article img, main img, [role='main'] img, .article-content img, .articleDetailContent img, .article-detail-content img, .post_content img, .post-content img, .content img, picture source",
+    ),
+  ];
   const candidates = roots.map((element): ArticleImageCandidate | null => {
     const rawUrl = imageUrlFromElement(element);
     const alt = [element.getAttribute("alt"), element.getAttribute("title"), element.getAttribute("class")]
@@ -55,6 +66,18 @@ export function extractArticleImageCandidates(document: Document, pageUrl: strin
       return null;
     }
   }).filter((candidate): candidate is ArticleImageCandidate => candidate !== null && Boolean(candidate.url));
+  const metaCandidates = [...document.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"], meta[itemprop="image"]')]
+    .map((element): ArticleImageCandidate | null => {
+      const rawUrl = element.getAttribute("content")?.trim() ?? "";
+      if (!rawUrl) return null;
+      try {
+        return { alt: "报道主图", url: new URL(rawUrl, pageUrl).toString() };
+      } catch {
+        return null;
+      }
+    })
+    .filter((candidate): candidate is ArticleImageCandidate => candidate !== null);
+  candidates.push(...metaCandidates);
   const unique = new Map<string, ArticleImageCandidate>();
   for (const candidate of candidates) {
     if (ignoredImagePattern.test(candidate.alt) || unique.has(candidate.url)) continue;
@@ -136,21 +159,15 @@ function candidateSignals(candidate: ArticleImageCandidate) {
   return `${candidate.alt} ${candidate.watermarkHint ?? ""} ${url.pathname} ${url.search}`;
 }
 
-function isConservativeWatermarkDomain(value: string) {
-  try {
-    return /(^|\.)img\.ithome\.com$/i.test(new URL(value).hostname);
-  } catch {
-    return false;
-  }
-}
-
 export async function collectArticleImages(input: {
   document: Document;
   pageUrl: string;
   articleId: string;
   limit?: number;
+  audit?: ArticleImageCollectionAudit;
 }): Promise<ProjectAsset[]> {
   const candidates = extractArticleImageCandidates(input.document, input.pageUrl);
+  if (input.audit) input.audit.candidateCount = candidates.length;
   const limit = Math.max(0, input.limit ?? 3);
   if (limit === 0 || candidates.length === 0) return [];
   const assetDir = fromRoot("public", "generated", "article-assets", input.articleId);
@@ -158,16 +175,31 @@ export async function collectArticleImages(input: {
   const assets: ProjectAsset[] = [];
   for (const candidate of candidates) {
     if (assets.length >= limit) break;
-    if (isConservativeWatermarkDomain(candidate.url) || hasWatermarkSignal(candidateSignals(candidate))) continue;
+    if (hasWatermarkSignal(candidateSignals(candidate))) {
+      if (input.audit) input.audit.watermarkRejectedCount += 1;
+      continue;
+    }
     const metadataScreening = screenAssetMetadata({ alt: candidate.alt, url: candidate.url, watermarkHint: candidate.watermarkHint });
-    if (metadataScreening.status === "rejected") continue;
+    if (metadataScreening.status === "rejected") {
+      if (input.audit) input.audit.unsafeRejectedCount += 1;
+      continue;
+    }
     try {
       const { bytes, contentType: responseContentType } = await fetchImageBytes(candidate.url);
-      if (bytes.length < 8 || bytes.length > 12_000_000) continue;
+      if (bytes.length < 8 || bytes.length > 12_000_000) {
+        if (input.audit) input.audit.unsafeRejectedCount += 1;
+        continue;
+      }
       const contentType = imageContentType(bytes, responseContentType, candidate.url);
-      if (!contentType.startsWith("image/")) continue;
+      if (!contentType.startsWith("image/")) {
+        if (input.audit) input.audit.unsafeRejectedCount += 1;
+        continue;
+      }
       const dimensions = parseDimensions(bytes, contentType);
-      if ((dimensions.width && dimensions.width < 320) || (dimensions.height && dimensions.height < 180)) continue;
+      if ((dimensions.width && dimensions.width < 320) || (dimensions.height && dimensions.height < 180)) {
+        if (input.audit) input.audit.unsafeRejectedCount += 1;
+        continue;
+      }
       const id = createHash("sha1").update(candidate.url).digest("hex").slice(0, 12);
       const fileName = id + extension(contentType, candidate.url);
       const filePath = path.join(assetDir, fileName);
@@ -175,11 +207,16 @@ export async function collectArticleImages(input: {
       const screening = await screenAssetFile({ filePath, contentType, alt: candidate.alt, url: candidate.url, watermarkHint: candidate.watermarkHint });
       if (screening.status === "rejected") {
         await unlink(filePath).catch(() => undefined);
+        if (input.audit) {
+          if (screening.reasons.includes("watermark_text_detected")) input.audit.watermarkRejectedCount += 1;
+          else input.audit.unsafeRejectedCount += 1;
+        }
         continue;
       }
       const ocrText = await optionalOcr(filePath);
       if (hasWatermarkSignal(ocrText)) {
         await unlink(filePath).catch(() => undefined);
+        if (input.audit) input.audit.watermarkRejectedCount += 1;
         continue;
       }
       assets.push({
@@ -193,6 +230,7 @@ export async function collectArticleImages(input: {
         license: "article-provided; watermark screen passed",
         screening,
       });
+      if (input.audit) input.audit.acceptedCount += 1;
     } catch {
       continue;
     }
