@@ -72,7 +72,7 @@ function removeNarrationLead(value: string) {
 }
 
 export function isProtectedDeterministicStorySource(url: string) {
-  return /ithome\.com\/0\/999\/683|36kr\.com\/p\/(?:3974225141231879|3973247412580615|3974571498057985)/i.test(url);
+  return /ithome\.com\/(?:1\/000\/719|0\/999\/683)|36kr\.com\/p\/(?:3974225141231879|3973247412580615|3974571498057985)/i.test(url);
 }
 
 export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72) {
@@ -168,12 +168,13 @@ export function scrubAttribution(text: string) {
     .replace(forbiddenSourceAttribution, "")
     .replace(/(^|[。！？\s])作者(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "$1")
     .replace(/编辑(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "")
-    .replace(/来源\s*[：:|｜]?\s*[\u4e00-\u9fa5A-Za-z0-9_. -]{0,32}/g, "")
+    .replace(/(?:信息)?来源\s*[：:|｜]\s*[^。！？!?；;\n]*/gu, "")
     .replace(/图源\s*[：:|｜]?\s*[^，。！？；;\s]{0,32}/g, "")
     .replace(/(?:^|[。！？\s])记者\s+[\u4e00-\u9fa5]{2,4}(?=$|[“”"'，,。！？\s])/gu, " ")
     .replace(/[^。！？；;\n]*(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)[^。！？；;\n]*[。！？；;]?/gi, "")
     .replace(/^[，,：:；;\s]+/u, "")
     .replace(/[_-]\s*$/g, "")
+    .replace(/([。！？!?；;])\1+/gu, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -212,17 +213,12 @@ function compactSentence(text: string, max = 72) {
 }
 
 export function limitNarration(text: string, maxCharacters = 110) {
-  if (text.length <= maxCharacters) return text;
   const chunks = splitArticleIntoSemanticChunks(text, maxCharacters);
   const selected: string[] = [];
   let length = 0;
   for (const chunk of chunks) {
     if (!selected.length && chunk.length > maxCharacters) {
-      const prefix = chunk.slice(0, maxCharacters);
-      const boundary = prefix.match(/^.*[。！？；]/u)?.[0]
-        ?? prefix.match(/^.*[，、：,:]/u)?.[0]
-        ?? prefix;
-      selected.push(balancePairedPunctuation(boundary));
+      selected.push(chunk);
       break;
     }
     if (selected.length && length + chunk.length > maxCharacters) break;
@@ -231,14 +227,15 @@ export function limitNarration(text: string, maxCharacters = 110) {
   }
   let limited = selected.join("");
   if (!limited) {
-    const boundary = text.slice(0, maxCharacters).match(/^.*[。！？!?；;]/u)?.[0]
-      ?? text.slice(0, maxCharacters).match(/^.*[，、：:,]/u)?.[0];
-    limited = boundary?.trim() || `${text.slice(0, Math.max(1, maxCharacters - 1)).trim()}。`;
+    limited = text.trim();
   }
   limited = limited
     .replace(/[，、：；,:]*第[一二三四五六七八九十百]+[。！？!?]?$/u, "")
     .replace(/[，、：；,:]+$/u, "")
     .trim();
+  const withoutDanglingClause = limited.replace(danglingClauseEnding, "").trim();
+  if (withoutDanglingClause) limited = withoutDanglingClause;
+  if (!limited) return text.trim();
   return /[。！？!?]$/u.test(limited)
     ? limited
     : `${limited.replace(/[，、：；;,]+$/u, "")}。`;
@@ -311,7 +308,7 @@ function removeRepeatedTitle(text: string, title: string) {
   return text.replace(new RegExp(escaped, "giu"), "").replace(/^\s*[。！？!?，,：:]+/u, "").trim();
 }
 
-export function compactProjectNarration(project: VideoProject) {
+export function compactProjectNarration(project: VideoProject, targetSeconds?: number) {
   if (!project.narrationSegments?.length) return project;
   const contentType = project.sources[0] ? contentTypeForItem(project.sources[0]) : "news";
   const title = project.meta.title;
@@ -328,7 +325,7 @@ export function compactProjectNarration(project: VideoProject) {
     const maximumCharacters = modelReleaseNews
       ? scene?.type === "title" ? 125 : scene?.type === "outro" ? 105 : 115
       : contentType === "repository"
-      ? scene?.type === "title" ? 72 : scene?.type === "outro" ? 70 : 68
+      ? scene?.type === "title" ? 100 : scene?.type === "outro" ? 92 : 90
       : contentType === "technical-article"
         ? scene?.type === "title" ? 80 : scene?.type === "briefing_points" ? 130 : scene?.type === "outro" ? 95 : 120
       : focusedNews
@@ -384,7 +381,10 @@ export function compactProjectNarration(project: VideoProject) {
   });
   let compactedSegments = narrationSegments;
   if (contentType === "news") {
-    const budget = modelReleaseNews ? (project.scenes.length >= 5 ? 390 : 342) : focusedNews ? 342 : 318;
+    const defaultBudget = modelReleaseNews ? (project.scenes.length >= 5 ? 390 : 342) : focusedNews ? 342 : 318;
+    const budget = targetSeconds && targetSeconds > 0
+      ? Math.min(defaultBudget, Math.max(220, Math.floor(targetSeconds * 6.1)))
+      : defaultBudget;
     let excess = compactedSegments.reduce((sum, segment) => sum + segment.text.replace(/\s+/gu, "").length, 0) - budget;
     for (const index of compactedSegments
       .map((segment, position) => ({ position, length: segment.text.replace(/\s+/gu, "").length }))
@@ -406,6 +406,23 @@ export function compactProjectNarration(project: VideoProject) {
     ...project,
     narrationSegments: compactedSegments,
     narration: compactedSegments.map((segment) => segment.text).join("\n"),
+  } satisfies VideoProject;
+}
+
+export function retimeProjectToTarget(project: VideoProject, targetSeconds: number) {
+  if (!Number.isFinite(targetSeconds) || targetSeconds <= 0 || !project.scenes.length) return project;
+  const currentDuration = project.scenes.reduce((sum, scene) => sum + scene.duration, 0);
+  if (Math.abs(currentDuration - targetSeconds) < 0.01) return project;
+  const narrationByScene = new Map((project.narrationSegments ?? []).map((segment) => [segment.sceneIndex, segment.text.replace(/\\s+/gu, "").length]));
+  const minimumDurations = project.scenes.map((scene, index) => Math.max(2.5, (narrationByScene.get(index) ?? 0) / 6.1));
+  const minimumTotal = minimumDurations.reduce((sum, duration) => sum + duration, 0);
+  if (minimumTotal > targetSeconds) return project;
+  const spare = targetSeconds - minimumTotal;
+  const sceneDurations = project.scenes.map((scene, index) => minimumDurations[index] + spare * (scene.duration / currentDuration));
+  return {
+    ...project,
+    meta: { ...project.meta, durationSeconds: targetSeconds },
+    scenes: project.scenes.map((scene, index) => ({ ...scene, duration: Number(sceneDurations[index].toFixed(3)) })),
   } satisfies VideoProject;
 }
 
@@ -706,6 +723,118 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^llm_wiki$/i.test(name)) {
+    return {
+      titleSummary: "持续构建文档知识库",
+      theme: "把文档持续整理成可检索、可维护的个人知识库",
+      capability: "读取 PDF、Office、网页和图片等资料，增量生成带来源的 Wiki 页面，并提供搜索、知识图谱、聊天和深度研究入口",
+      workflow: "先导入一小批资料，再检查生成页面、来源链和搜索结果；确认召回准确后，逐步启用知识图谱、聊天或深度研究",
+      boundaries: "模型、文档解析器和搜索服务需要自行配置；自动生成的页面仍要回到原始来源核对，敏感资料也要先确认存储和访问范围",
+      topics: ["文档知识库", "来源追踪", "增量整理", "知识图谱", "语义搜索", "深度研究"],
+      metrics: [{ label: "输入", value: "PDF、Office、网页" }, { label: "输出", value: "带来源 Wiki" }],
+      problemPoints: [
+        "资料散落在 PDF、网页和文件夹里，每次提问都重新翻找，知识也很难持续维护。",
+        "llm_wiki 先把资料增量整理成带来源的 Wiki 页面，再用搜索、图谱和聊天按需查找。",
+        "它适合个人研究、读书和项目资料管理，但自动生成的内容仍要回到原始来源核对。",
+      ],
+      steps: [
+        { label: "导入资料", detail: "先加入一小批 PDF、Office、网页或图片，确认权限和解析结果。" },
+        { label: "检查页面", detail: "核对 Wiki 页面、来源链和增量处理结果是否符合预期。" },
+        { label: "按需检索", detail: "用搜索、知识图谱或聊天查找相关内容，并回看原始来源。" },
+        { label: "逐步扩展", detail: "确认质量后再接入深度研究、模型服务和更多资料。" },
+      ],
+      narration: [
+        "开源项目推荐：llm_wiki。它把 PDF、Office、网页和图片等资料整理成会持续更新的个人知识库。",
+        "资料散落在不同文件里，每次提问都重新翻找；llm_wiki 先增量生成带来源的 Wiki 页面，再用搜索、知识图谱和聊天按需查找。",
+        "使用时先导入一小批资料，检查生成页面、来源链和搜索结果，再逐步启用图谱、聊天或深度研究；资料变化时只处理新增或修改部分。",
+        "它适合个人研究、读书和项目资料管理，但模型、解析器和搜索服务需要自行配置，自动生成内容仍要回到原始来源核对。",
+      ],
+    };
+  }
+  if (/^teamai-cli$/i.test(name)) {
+    return {
+      titleSummary: "团队 AI 智能体协作配置",
+      theme: "让团队的 AI 智能体共享技能、规则、工具和知识",
+      capability: "用命令行初始化共享配置，让多个 AI 编程智能体自动拉取团队技能、规则、MCP 连接、钩子和知识，并持续同步更新",
+      workflow: "管理员维护共享配置并发布更新，成员用命令行初始化项目或用户范围；每次 AI 会话自动拉取最新资源，再按权限执行任务",
+      boundaries: "共享配置会影响团队所有智能体，权限、敏感信息、版本冲突和不同工具的兼容性必须先在小范围验证；部分能力仍处于测试阶段",
+      topics: ["团队技能", "规则同步", "MCP 工具", "知识共享", "多智能体", "配置审计"],
+      metrics: [{ label: "同步对象", value: "技能、规则、MCP" }, { label: "使用方式", value: "命令行初始化" }],
+      problemPoints: [
+        "团队成员各自配置 AI 智能体时，技能、规则和工具容易分散，更新后还要手工逐台同步。",
+        "teamai-cli 用共享配置仓库集中管理团队资源，让多个 AI 编程智能体自动拉取同一套工作方式。",
+        "它适合把团队经验沉淀成可复用配置，但权限、敏感信息和版本变更必须保留审核。",
+      ],
+      steps: [
+        { label: "建立配置", detail: "管理员整理团队技能、规则、MCP 和知识资源。" },
+        { label: "初始化项目", detail: "成员用命令行把共享配置安装到项目或用户范围。" },
+        { label: "自动同步", detail: "AI 会话启动时拉取最新资源，减少人工复制和遗漏。" },
+        { label: "检查变更", detail: "审核权限、版本冲突、敏感内容和不同工具的兼容性。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它用命令行把团队技能、规则和知识同步给多个 AI 编程智能体。`,
+        "团队成员各自配置智能体时，规则、技能和工具容易分散，更新后还要手工同步。teamai-cli 把这些资源集中维护，让不同智能体按同一套团队方式工作。",
+        "管理员先维护共享配置，成员再用命令行初始化项目或用户范围；之后每次 AI 会话自动拉取新资源，适合统一技能、规则、MCP 工具和知识。",
+        "它适合团队协作和经验沉淀，但共享配置会放大权限与版本风险。敏感信息、变更冲突和工具兼容性要先小范围验证，并保留审核。",
+      ],
+    };
+  }
+  if (/^system-design-notes$/i.test(name)) {
+    return {
+      titleSummary: "系统设计面试笔记",
+      theme: "用章节化笔记准备系统设计面试和分布式系统基础",
+      capability: "覆盖扩展、容量估算、限流、缓存、消息队列、搜索、支付和存储等系统设计案例，提供从需求到架构的复习路径",
+      workflow: "先读系统设计框架和容量估算，再选一个案例，按需求、数据、接口、扩展和故障边界画出方案并复盘",
+      boundaries: "它是持续完善的学习笔记，不是面试答案或生产架构模板；真实系统仍要结合流量、成本、可靠性和团队能力验证",
+      topics: ["系统设计面试", "容量估算", "分布式系统", "限流与缓存", "消息队列", "存储与检索"],
+      metrics: [{ label: "内容方式", value: "按章节复习" }, { label: "覆盖主题", value: "扩展、缓存、存储" }],
+      problemPoints: [
+        "系统设计面试涉及容量、数据、接口和故障边界，零散阅读很难形成一套答题顺序。",
+        "system-design-notes 按章节整理常见设计题，从扩展和估算一路覆盖限流、缓存、消息队列、搜索、支付和存储。",
+        "它适合先建立框架，再用一个具体案例练习需求澄清、架构取舍和故障复盘。",
+      ],
+      steps: [
+        { label: "先学框架", detail: "先看需求澄清、容量估算和系统边界的通用步骤。" },
+        { label: "选择案例", detail: "从限流、短链接、消息队列或存储等章节选一个问题。" },
+        { label: "画出方案", detail: "写清接口、数据流、扩展方式、热点和故障处理。" },
+        { label: "复盘取舍", detail: "对照流量、成本、延迟和可靠性检查设计是否成立。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把系统设计面试和分布式系统案例整理成可按章节复习的笔记。`,
+        "很多人准备系统设计时，知道组件名称，却答不清容量、数据流和故障边界。这个项目从扩展和容量估算开始，继续覆盖限流、缓存、消息队列、搜索、支付和存储。",
+        "使用时先学通用框架，再挑一个案例练习：澄清需求，估算流量，画接口和数据流，最后说明扩展方式与故障处理。这样练的是取舍，不是背固定答案。",
+        "它适合面试准备和分布式系统入门，内容仍在持续完善。真实项目不能直接照搬笔记，还要结合流量、成本、延迟和可靠性重新验证。",
+      ],
+    };
+  }
+  if (/^pi-desktop$/i.test(name)) {
+    return {
+      titleSummary: "本地优先的编程智能体桌面工作台",
+      theme: "把本地项目、模型和编程智能体放进一个可检查的桌面工作台",
+      capability: "在同一界面连接云端或本地模型，打开项目，运行 Agent、Plan 或 Goal 工作流，并查看文件改动、命令输出和预览",
+      workflow: "先配置模型供应商和模型，再打开一个本地项目；选择 Agent、Plan 或 Goal 执行任务，最后在 Review 面板检查改动、命令和测试结果",
+      boundaries: "它仍处于早期预览，智能体可以读写文件和运行命令；权限、敏感操作、模型费用和最终合并必须由使用者审核",
+      topics: ["本地项目", "编程智能体", "模型切换", "权限审核", "代码复核", "长期会话"],
+      metrics: [{ label: "运行方式", value: "本地优先" }, { label: "工作模式", value: "Agent、Plan、Goal" }],
+      problemPoints: [
+        "代码智能体常常分散在终端、编辑器插件和托管服务里，项目、会话和权限很难一起查看。",
+        "PI-Desktop 提供一个本地优先的桌面工作台，把项目、模型、智能体会话、审查和预览放到同一处。",
+        "它适合想使用自己的模型、又希望逐步审核代码改动的个人开发者和小团队。",
+      ],
+      steps: [
+        { label: "配置模型", detail: "选择云端、本地或兼容接口，并保存对应凭据。" },
+        { label: "打开项目", detail: "从工作台加入本地代码目录或已有项目。" },
+        { label: "选择模式", detail: "按风险选择 Agent、Plan 或 Goal 工作流。" },
+        { label: "复核结果", detail: "检查文件改动、命令输出、预览和测试，再决定是否合并。" },
+      ],
+      narration: [
+        `开源项目推荐：${name}。它把本地项目、模型和 AI 编程智能体放进一个可检查的桌面工作台。`,
+        "代码智能体常分散在终端和编辑器里，项目、会话和权限很难一起查看。PI-Desktop 把这些内容集中到一个工作区，还能查看文件改动、命令输出和预览。",
+        "使用时先配置云端或本地模型，再打开项目；按任务风险选择 Agent、Plan 或 Goal，完成后在 Review 面板检查改动和测试结果。",
+        "它仍处于早期预览，智能体可以读写文件和运行命令。敏感操作、模型费用和最终合并必须保留权限控制与人工审核。",
+      ],
+    };
+  }
   if (/^autohedge$/i.test(name)) {
     return {
       titleSummary: "多智能体自动化市场分析与交易研究",
@@ -3299,10 +3428,36 @@ function createRepositoryProject(item: HotItem, options?: { width?: number; heig
     titleClaimIds: claimIds(0),
   } satisfies VideoProject;
 }
+
+function uniqueEvidenceShots(shots: WebScreenshot[]) {
+  return [...new Map(shots.map((shot) => [shot.src, shot])).values()].slice(0, 2);
+}
+
+function projectAssetShot(asset: NonNullable<VideoProject["assets"]>[number], source: string, fallbackTitle: string): WebScreenshot {
+  return {
+    id: `asset-${asset.id}`,
+    title: asset.title && asset.title.length <= 40 && (asset.title.match(/\d+/g)?.length ?? 0) <= 2 ? asset.title : fallbackTitle,
+    source,
+    url: asset.sourceUrl,
+    src: asset.src,
+    width: 1200,
+    height: 900,
+    highlight: { x: 0, y: 0, width: 1200, height: 900 },
+  };
+}
+
+function projectScreenshotEvidence(project: VideoProject, source: string) {
+  return (project.screenshots ?? []).map((shot) => ({ ...shot, source: shot.source || source }));
+}
+
 export function applyRepositoryAssetEvidence(project: VideoProject): VideoProject {
   const source = project.sources.find((item) => item.kind === "github" || Boolean(item.repo));
   const images = project.assets?.filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected").slice(0, 2) ?? [];
-  if (!source || images.length === 0 || project.scenes.length < 3) return project;
+  const shots = uniqueEvidenceShots([
+    ...images.map((asset) => projectAssetShot(asset, "项目资料", "项目效果图")),
+    ...projectScreenshotEvidence(project, "项目资料"),
+  ]);
+  if (!source || shots.length === 0 || project.scenes.length < 3) return project;
   const repository = source.repo?.split("/").at(-1)?.toLowerCase() ?? "";
   const baseScene = project.scenes[2];
   const fallbackEvidenceText = project.narrationSegments?.[2]?.text?.split(/[。！？!?]/u)[0]?.trim() || baseScene.headline;
@@ -3322,16 +3477,6 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
         : repository === "openhuman"
           ? "长期记忆、研究与智能体工作流界面"
         : fallbackEvidenceHeadline;
-  const shots: WebScreenshot[] = images.map((asset) => ({
-    id: `asset-${asset.id}`,
-    title: asset.title && asset.title.length <= 40 && (asset.title.match(/\d+/g)?.length ?? 0) <= 2 ? asset.title : "项目效果图",
-    source: "项目资料",
-    url: asset.sourceUrl,
-    src: asset.src,
-    width: 1200,
-    height: 900,
-    highlight: { x: 0, y: 0, width: 1200, height: 900 },
-  }));
   const narrationSegments = project.narrationSegments?.map((segment, index) => repository === "zabbix" && index === 2
     ? {
       ...segment,
@@ -3395,21 +3540,15 @@ export function applyRepositoryAssetEvidence(project: VideoProject): VideoProjec
 export function applyArticleImageEvidence(project: VideoProject): VideoProject {
   const source = project.sources.find((item) => item.kind === "webpage");
   const images = project.assets?.filter((asset) => asset.kind === "image" && asset.license.includes("watermark screen passed") && asset.screening?.status !== "rejected").slice(0, 2) ?? [];
-  if (!source || source.contentType === "repository" || images.length === 0 || project.scenes.length < 3) return project;
+  const shots = uniqueEvidenceShots([
+    ...images.map((asset) => projectAssetShot(asset, "文章配图", "报道配图")),
+    ...projectScreenshotEvidence(project, "文章页面"),
+  ]);
+  if (!source || source.contentType === "repository" || shots.length === 0 || project.scenes.length < 3) return project;
   const sceneIndex = Math.min(2, project.scenes.length - 1);
   const baseScene = project.scenes[sceneIndex];
   const spokenEvidence = project.narrationSegments?.[sceneIndex]?.text.split(/[。！？!?]/u)[0]?.trim();
   const evidenceHeadline = spokenEvidence || baseScene.headline;
-  const shots: WebScreenshot[] = images.map((asset) => ({
-    id: `article-image-${asset.id}`,
-    title: "报道配图",
-    source: "文章配图",
-    url: asset.sourceUrl,
-    src: asset.src,
-    width: 1200,
-    height: 900,
-    highlight: { x: 0, y: 0, width: 1200, height: 900 },
-  }));
   const narrationSegments = project.narrationSegments;
   return {
     ...project,
@@ -3703,6 +3842,36 @@ function createDeepSeekV41FlashProject(
   ], options, { maxSeconds: 60, minSeconds: 55 });
 }
 
+function createDeepSeekV41FlashReleaseProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const title = speechFriendlyTitle(item.title);
+  const storyItem: HotItem = { ...item, research: undefined };
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 8, kicker: "大模型正式发布", headline: shortTitle(title, 48), subhead: "用于多模态理解和智能体任务，权重与 API 已上线", sources: ["552B MoE", "多模态任务", "API 已上线"] },
+      narration: `${title}。新闻日期：2026年9月10日。它用于多模态理解和智能体任务，权重公开，API 已上线。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 11, headline: "模型很大，但每次只激活一部分", source: "模型结构", title: "552B 总参数，输入激活 8B、输出激活 16B", summary: "混合专家结构把总参数规模和每次请求的计算量分开。", metrics: [{ label: "总参数", value: "552B" }, { label: "输入激活", value: "8B" }, { label: "输出激活", value: "16B" }], points: ["总参数规模达到 552B。", "输入只激活 8B 参数。", "输出激活 16B 参数，目标是降低成本。"] },
+      narration: "它是 552B 参数的混合专家模型，输入只激活 8B，输出激活 16B。总模型很大，但每次请求只调用一部分，目标是降低成本。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 12, headline: "上下文缓存也在压缩", bars: [{ label: "HBM 需求", value: 4, detail: "降到上一代的 1/4。", color: "#18b7a5" }, { label: "SSD 需求", value: 8, detail: "降到上一代的 1/8。", color: "#7c6cff" }, { label: "KV Cache", value: 437, detail: "相较初代为 1/437。", color: "#f97316" }], claimIds: [] },
+      narration: "缓存也更省，简单说：相比上一代，HBM 需求降到四分之一，SSD 降到八分之一；相较初代，KV Cache 只有四百三十七分之一，长上下文任务更容易控制成本。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "开源权重和 API 都能用", steps: [{ label: "获取权重", detail: "模型权重和论文已经公开。" }, { label: "接入 API", detail: "把模型名改成 deepseek-flash。" }, { label: "核对价格", detail: "新价格最高降 60%，仍保留峰谷计费。" }, { label: "验证任务", detail: "先检查多模态、工具调用和兼容性。" }] },
+      narration: "模型权重和论文已经公开，云端接入 DeepSeek API 后，把模型名改成 deepseek-flash 即可调用。新价格九月十日十二点生效，最高降价百分之六十，闲时价格是高峰的一半。",
+    },
+    {
+      scene: { type: "outro", duration: 12, headline: "普通团队先用 API，本地部署要看硬件", bullets: ["本地运行需要大显存或多卡环境。", "先用短任务测试吞吐、延迟和成本。", "接入前核对模型名、价格和兼容性。"] },
+      narration: "普通团队可以先用 API；本地部署要准备大显存或多卡环境，先用短任务测试吞吐和延迟，再决定量化与并发。公开测试不能直接等同每台机器的固定速度，接入前还要核对模型名、价格和兼容性。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
 function createQwenDriveProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
@@ -3781,6 +3950,32 @@ function createHiDreamO1EmbodiedProject(
   ], options, { maxSeconds: 60, minSeconds: 48 });
 }
 
+function createAiHumanValueProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, contentType: "news" };
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 10, kicker: "AI 与人的新问题", headline: title, subhead: "AI 越会复用已有知识，人越要保住个性、判断和创造", sources: ["外滩大会", "刘震云", "马毅"] },
+      narration: `${title}。AI 替代谁？关键是人怎样保住自己的独特性。AI 不是答案。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 15, headline: "AI 擅长复用共性，不等于会创造新视角", source: "刘震云的判断", title: "模仿得像，仍然不是新的创作", summary: "AI 可以处理已有知识和表达方式，但尚难凭空生成尚未出现的独特视角。", metrics: [{ label: "强项", value: "已有知识" }, { label: "边界", value: "未写出的新视角" }], points: ["AI 能快速整理过去和现在的知识。", "也能把已有表达模仿得很像。", "但尚未出现的作品和视角没有现成样本可照搬。"] },
+      narration: "刘震云的判断是，AI 很会处理过去和现在的知识，也能把已有风格模仿得很像，但还不能凭空模仿一部尚未写出来的作品。像把《一地鸡毛》改成《一地鹅毛》，仍然是已有经验的变体。",
+    },
+    {
+      scene: { type: "flow", duration: 16, headline: "真正难复制的是每个人的个性", steps: [{ label: "共享知识", detail: "模型更擅长归纳多数人已有的表达和经验。" }, { label: "个人经历", detail: "每个人的记忆、情绪和选择都不同。" }, { label: "价值判断", detail: "同一件事，不同的人会做出不同取舍。" }, { label: "重新学习", detail: "人要重新理解学习、工作和自己的价值。" }] },
+      narration: "真正难复制的是每个人的个性。马毅把问题落到个体：AI 可以把共享知识和共性的内容讲得很好，却很难理解一个人的经历、情绪、价值判断，以及为什么做出这个选择。个体不能合并。",
+    },
+    {
+      scene: { type: "outro", duration: 14, headline: "结论不是拒绝 AI，而是重新分工", bullets: ["把整理、复述和重复工作交给 AI。", "把个性、判断和新问题留给人。", "教育与工作方式都要重新设计。"] },
+      narration: "这场讨论给普通人的建议很直接：把资料整理、重复表达和已有知识交给 AI，把问题意识、个性判断和真正的新想法留给人。AI 越强，人越需要重新设计学习与工作的分工。先从小任务开始。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 52 });
+}
+
 export function createStoryProject(
   item: HotItem,
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
@@ -3789,11 +3984,13 @@ export function createStoryProject(
   if (clean.kind === "github" || clean.contentType === "repository") return createRepositoryProject(clean, options);
   const joinedContent = `${clean.title} ${clean.summary} ${clean.content ?? ""}`;
   if (/ithome\.com\/0\/999\/683/i.test(clean.url)) return createQoderWakeReleaseProject(clean, options);
+  if (/ithome\.com\/1\/000\/719/i.test(clean.url)) return createDeepSeekV41FlashReleaseProject(clean, options);
   if (/36kr\.com\/p\/3974225141231879/i.test(clean.url)) return createChatGptSitesProject(clean, options);
   if (/ithome\.com\/0\/999\/956/i.test(clean.url)) return createChatGptImages25Project(clean, options);
   if (/ithome\.com\/1\/000\/198/i.test(clean.url)) return createMiniCpm5Project(clean, options);
   if (/36kr\.com\/p\/3975775944405513/i.test(clean.url)) return createAlphaGenomeAtlasProject(clean, options);
   if (/ithome\.com\/0\/999\/997/i.test(clean.url)) return createLing30FlashVlProject(clean, options);
+  if (/techweb\.com\.cn\/internet\/2026-09-11\/2978959/i.test(clean.url)) return createAiHumanValueProject(clean, options);
   if (/36kr\.com\/p\/3973247412580615/i.test(clean.url)) return createClaudeTvCleanupProject(clean, options);
   if (/36kr\.com\/p\/3974571498057985/i.test(clean.url)) return createDeepSeekV41FlashProject(clean, options);
   if (/tmtpost\.com\/8088190/i.test(clean.url) || /Loop.*Graph|Graph.*Loop|AI Coding.*Graph/i.test(joinedContent)) return createLoopGraphEngineeringProject(clean, options);
@@ -4466,8 +4663,20 @@ function createCuratedNewsProject(
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
   duration?: { maxSeconds?: number; minSeconds?: number },
 ): VideoProject {
+  const curatedSections = /ithome\.com\/1\/000\/719/i.test(item.url)
+    ? sections.map((section, index) => ({
+      ...section,
+      narration: [
+        `${speechFriendlyTitle(item.title)}。新闻日期：2026年9月10日。它用于多模态理解和智能体任务，开放权重，API 已上线。`,
+        "这是 552B 参数的混合专家模型，输入激活 8B，输出激活 16B；每次请求只调用一部分，总体目标是降低调用成本。",
+        "缓存也更省：HBM 和 SSD 需求分别降到上一代的四分之一和八分之一；KV Cache 相较初代为四百三十七分之一。",
+        "模型权重已公开，API 可直接调用。价格九月十日十二点生效，最高降价百分之六十，闲时为高峰一半。",
+        "先用 API 验证任务；本地部署需要大显存或多卡，再测试吞吐和延迟。公开测试不代表固定速度，接入前核对价格和兼容性，适合先小规模试用，再决定是否自建和扩容。",
+      ][index] ?? section.narration,
+    }))
+    : sections;
   const scenes = applySectionDurations(
-    sections,
+    curatedSections,
     duration?.maxSeconds ?? Number(process.env.STORY_MAX_SECONDS ?? 80),
     duration?.minSeconds ?? 55,
   );
@@ -4481,8 +4690,8 @@ function createCuratedNewsProject(
       durationSeconds: scenes.reduce((sum, scene) => sum + scene.duration, 0),
       sourceCount: 1,
     },
-    narration: sections.map((section) => scrubSpokenAttribution(section.narration)).join("\n"),
-    narrationSegments: sections.map((section, sceneIndex) => ({
+    narration: curatedSections.map((section) => scrubSpokenAttribution(section.narration)).join("\n"),
+    narrationSegments: curatedSections.map((section, sceneIndex) => ({
       sceneIndex,
       text: scrubSpokenAttribution(section.narration),
       ttsText: speechFriendlyText(scrubSpokenAttribution(section.narration)),

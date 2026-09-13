@@ -40,3 +40,16 @@ test("incomplete GitHub runs are not cache hits", async () => {
   await writeFile(path.join(runsDir, "failed", "run.json"), JSON.stringify({ status: "failed", artifacts: {} }));
   assert.equal(await findCompletedGithubCache({ url: "https://github.com/p-e-w/heretic", storiesDir, runsDir, manifest: [] }), null);
 });
+
+test("fixed-reference cache rejects legacy projects without provider provenance", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "scene-gen-github-cache-legacy-"));
+  const storiesDir = path.join(root, "stories");
+  const runsDir = path.join(root, "runs");
+  await mkdir(path.join(runsDir, "completed"), { recursive: true });
+  const projectPath = path.join(runsDir, "completed", "project.json");
+  const outputPath = path.join(runsDir, "completed", "heretic.mp4");
+  await writeFile(projectPath, JSON.stringify(project("https://github.com/p-e-w/heretic")));
+  await writeFile(outputPath, "mp4");
+  await writeFile(path.join(runsDir, "completed", "run.json"), JSON.stringify({ status: "succeeded", artifacts: { projectPath, outputPath } }));
+  assert.equal(await findCompletedGithubCache({ url: "https://github.com/p-e-w/heretic", storiesDir, runsDir, manifest: [], requireFixedReferenceNarration: true }), null);
+});

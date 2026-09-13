@@ -193,7 +193,7 @@ test("awesome-llm-apps is described as an application example library", () => {
   assert.match(project.scenes[0].type === "title" ? project.scenes[0].headline : "", /一百多个可运行的 AI 应用示例库/);
   assert.match(project.narration, /一百多个.*智能体.*检索问答.*语音.*多模态/s);
   assert.doesNotMatch(project.narration, /把团队资料变成可检索问答/);
-  assert.match(project.narrationSegments?.[0].ttsText ?? "", /Awesome L-L-M Apps/);
+  assert.match(project.narrationSegments?.[0].ttsText ?? "", /Awesome LLM Apps/);
 });
 
 test("ruflo keeps agent orchestration separate from knowledge-base projects", () => {
@@ -433,6 +433,8 @@ test("semantic article chunks repair punctuation inserted inside model versions"
 test("attribution scrubber preserves natural sentences beginning with editing", () => {
   assert.equal(scrubAttribution("编辑和视觉指令更稳定"), "编辑和视觉指令更稳定");
   assert.equal(scrubAttribution("编辑：测试人员"), "");
+  assert.equal(scrubAttribution("带来源的 Wiki 页面，再用搜索定位内容。"), "带来源的 Wiki 页面，再用搜索定位内容。");
+  assert.equal(scrubAttribution("页面内容。来源：IT之家。"), "页面内容。");
 });
 
 test("spoken attribution scrubber removes URLs without changing visible source fields", () => {
@@ -654,6 +656,15 @@ test("repository asset evidence keeps screenshot alt text and narration gate-saf
   assert.ok((withAssets.narrationSegments?.[2]?.text.length ?? 0) >= 40);
 });
 
+test("repository evidence embeds a screened webpage screenshot when README assets are unavailable", () => {
+  const project = createStoryProject({
+    id: "screenshot-repo", kind: "github", contentType: "repository", title: "screenshot-repo: local workspace", url: "https://github.com/example/screenshot-repo", source: "项目资料", summary: "A local workspace.", content: "A local workspace.", score: 1, tags: [], repo: "example/screenshot-repo",
+  }, { screenshots: [{ id: "shot", title: "项目界面", source: "项目资料", url: "https://github.com/example/screenshot-repo", src: "/generated/screenshots/repo.png", width: 1280, height: 1600, highlight: { x: 0, y: 0, width: 1280, height: 1600 } }] });
+  const result = applyRepositoryAssetEvidence(project);
+  assert.equal(result.scenes[2]?.type, "web_screenshot_zoom");
+  assert.equal(result.scenes[2]?.type === "web_screenshot_zoom" && result.scenes[2].shots[0]?.src, "/generated/screenshots/repo.png");
+});
+
 test("repository asset evidence preserves the repository-specific narration", () => {
   const project = createStoryProject({
     id: "editor", kind: "github", contentType: "repository", title: "editor: 3D building editor",
@@ -820,6 +831,18 @@ test("Bifrost repository draft explains the model gateway and direct setup path"
   assert.match(project.narration, /启动网关.*密钥权限.*故障切换/s);
   assert.doesNotMatch(project.narrationSegments!.map((segment) => segment.text).join(" "), /选择主题|阅读结构|下面看/);
   assert.ok(project.narrationSegments!.every((segment) => segment.text.length <= 130));
+});
+
+test("PI-Desktop repository draft stays a local coding-agent workspace", () => {
+  const project = createStoryProject({
+    id: "pi-desktop", kind: "github", contentType: "repository", title: "PI-Desktop: local-first desktop workspace for AI coding agents", url: "https://github.com/vastsa/PI-Desktop", source: "项目资料", summary: "Bring your own model. Open any local project. Let agents work.", content: "A standalone desktop workspace for coding agents, projects, models, tools and long-running sessions. Supports local and remote models, Agent, Plan and Goal workflows, permission-aware tools, project review and previews.", score: 1, tags: [], repo: "vastsa/PI-Desktop",
+  });
+
+  assert.equal(project.meta.title, "PI-Desktop");
+  assert.match(project.narrationSegments![0].text, /桌面工作台/);
+  assert.match(project.narrationSegments![1].text, /项目、会话和权限/);
+  assert.match(project.narration, /Agent、Plan 或 Goal.*Review 面板/s);
+  assert.doesNotMatch(project.narration, /模型网关|Bifrost|二十三家/);
 });
 
 test("T3 Code repository draft explains its coding-agent workspace", () => {
@@ -1106,6 +1129,25 @@ test("requested news URLs use concise grounded profiles", () => {
     assert.ok(narrationLength >= (fixture.minimumNarrationLength ?? 324), `${fixture.url} narration too short: ${narrationLength}`);
     assert.ok(narrationLength <= (fixture.maximumNarrationLength ?? 348), `${fixture.url} narration too long: ${narrationLength}`);
   }
+});
+
+test("DeepSeek V4.1 Flash release profile keeps access and deployment facts", () => {
+  const project = createStoryProject({
+    id: "deepseek-v41-flash-release",
+    kind: "webpage",
+    contentType: "news",
+    title: "DeepSeek V4.1 Flash 模型正式发布：全面超越 V4 Pro、原生多模态视觉理解，最高降价 60%",
+    url: "https://www.ithome.com/1/000/719.htm",
+    source: "IT之家",
+    summary: "DeepSeek V4.1 Flash 正式发布，原生多模态，API 最高降价 60%。",
+    content: "9 月 10 日消息，DeepSeek V4.1 Flash 正式发布，552B 参数，输入激活 8B，输出激活 16B，原生多模态，API 已上线，最高降价 60%，闲时价格为高峰的一半，并附模型开源链接。",
+    publishedAt: "2026年9月10日",
+    score: 1,
+    tags: [],
+  });
+  assert.equal(project.scenes.length, 5);
+  assert.match(project.narration, /权重.*API.*显存.*吞吐/s);
+  assert.doesNotMatch(project.narration, /这意味着|这说明|这条新闻讲的是|对普通用户来说/);
 });
 
 test("current repository requests use project-specific value propositions", () => {

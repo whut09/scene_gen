@@ -20,6 +20,7 @@ import { findCompletedGithubCache, githubRepositoryKey } from "./github-cache";
 import { ASSET_SCREENING_VERSION } from "./asset-screening";
 
 loadDotEnv();
+if (!process.env.SCENE_GEN_PROFILE) process.env.SCENE_GEN_PROFILE = "indextts-local";
 
 const args = parseArgs(process.argv.slice(2));
 const urls = typeof args.url === "string" ? [args.url] : [];
@@ -53,6 +54,9 @@ if (urls.length === 1 && !args["force-rebuild"]) {
     storiesDir: fromRoot("public", "generated", "stories"),
     manifest: await readStoryManifest(manifestPath).catch(() => []),
     runsDir: fromRoot("dist", "runs"),
+    requireFixedReferenceNarration: process.env.SCENE_GEN_PROFILE === "production"
+      || process.env.SCENE_GEN_PROFILE === "indextts-local"
+      || (process.env.TTS_LOCK_IDENTITY === "1" && process.env.TTS_EXPECTED_PROVIDER === "indextts"),
   });
   if (cached) {
     const cachedRepositories = cached.project.sources.map((source) => source.repo).filter((repo): repo is string => Boolean(repo));
@@ -239,7 +243,7 @@ for (const [index, item] of items.entries()) {
     index: storyNo,
   });
   project = fitProjectDuration(project, effectiveTargetSeconds);
-  const deterministicShortStory = /ithome\.com\/0\/(?:989\/505|989\/497|989\/689|989\/722|986\/936|988\/286|988\/766|992\/441|996\/120|996\/265|996\/460|996\/855|997\/270|997\/726|998\/647|998\/683|998\/747|998\/997|999\/683|999\/956)|qbitai\.com\/2026\/08\/(?:473379|473597|467879|467877|471642|481372)|qbitai\.com\/2026\/09\/482652|tmtpost\.com\/(?:8102019|8110595)|36kr\.com\/p\/(?:3952922405256328|3933115490368647|3934784382958726|3935913818684545|3935738007485574|3948524254723461|3966895582123656|3968652629422337|3969755274883328|3974225141231879|3973247412580615|3974571498057985)|zhidx\.com\/p\/(?:583895|587260|587032|591381)|techweb\.com\.cn\/it\/2026-08-11\/2978138|baijiahao\.baidu\.com\/s\?id=(?:1875120348654659873|1875308462529578043)/i.test(item.url);
+  const deterministicShortStory = /ithome\.com\/(?:1\/000\/719|1\/001\/072|0\/(?:989\/505|989\/497|989\/689|989\/722|986\/936|988\/286|988\/766|992\/441|996\/120|996\/265|996\/460|996\/855|997\/270|997\/726|998\/647|998\/683|998\/747|998\/997|999\/683|999\/956))|qbitai\.com\/2026\/08\/(?:473379|473597|467879|467877|471642|481372)|qbitai\.com\/2026\/09\/482652|tmtpost\.com\/(?:8102019|8110595)|36kr\.com\/p\/(?:3952922405256328|3933115490368647|3934784382958726|3935913818684545|3935738007485574|3948524254723461|3966895582123656|3968652629422337|3969755274883328|3974225141231879|3973247412580615|3974571498057985|3978268468525825)|zhidx\.com\/p\/(?:583895|587260|587032|591381)|techweb\.com\.cn\/(?:it\/2026-08-11\/2978138|internet\/2026-09-11\/2978959)|baijiahao\.baidu\.com\/s\?id=(?:1875120348654659873|1875308462529578043|1876009244570260662)/i.test(item.url);
   if (!deterministicShortStory && (item.kind !== "github" || process.env.REPOSITORY_LLM_EXPANSION === "1")) {
     project = await improveWithOpenAI(project, {
       targetSeconds: effectiveTargetSeconds,
@@ -347,6 +351,13 @@ for (const [index, item] of items.entries()) {
   };
   project = applyRepositoryAssetEvidence(project);
   project = applyArticleImageEvidence(project);
+  const embeddedVisualAssetCount = project.scenes.reduce((count, scene) => count + (scene.type === "web_screenshot_zoom" ? scene.shots.length : 0), 0);
+  project = {
+    ...project,
+    sources: project.sources.map((source, sourceIndex) => sourceIndex === 0
+      ? { ...source, metrics: { ...source.metrics, visualAssetEmbedded: embeddedVisualAssetCount } }
+      : source),
+  };
   if (!skipTts) {
     project = await attachNarrationAudio(project, `narration-${String(storyNo).padStart(2, "0")}-${item.id}`);
     if (

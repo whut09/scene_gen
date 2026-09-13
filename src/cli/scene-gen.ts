@@ -23,6 +23,7 @@ import { readProject } from "../harness/video-stages";
 import { runAudioPronunciationGate } from "../harness/quality/audio-pronunciation-gate";
 
 const profileOption = { type: "string" as const, description: `Configuration profile (${builtInProfileNames.join(", ")} or config/profiles/<name>.json).` };
+const defaultGenerationProfile = "indextts-local";
 const jsonOption = { type: "boolean" as const, description: "Print machine-readable JSON." };
 const runOptions = {
   url: { type: "string" as const, required: true, description: "Article or GitHub URL." },
@@ -251,7 +252,7 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
   }
   if (command === "pronunciation") {
     if (parsed.positionals[0] !== "inspect") throw new Error("Pronunciation action must be inspect.");
-    const runtimeConfig = await createRuntimeConfig(String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? "local-f5"));
+    const runtimeConfig = await createRuntimeConfig(String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? defaultGenerationProfile));
     const { plan, issues } = await compilePronunciationPlan({ displayText: String(parsed.options.text), domain: runtimeConfig.tts.pronunciation.domain, signal });
     const ssml = buildAzurePronunciationSsml(plan, {
       voice: runtimeConfig.tts.azure.voice,
@@ -272,7 +273,7 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
   if (command === "tts") {
     const action = parsed.positionals[0];
     if (!new Set(["providers", "quota", "smoke"]).has(action)) throw new Error("TTS action must be providers, quota or smoke.");
-    const profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? "local-f5");
+    const profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? defaultGenerationProfile);
     const runtimeConfig = await createRuntimeConfig(profileName);
     if (action === "providers") {
       const providers = await Promise.all(listProviders({ profile: profileName, language: "zh-CN" }).filter((provider) => provider.capability === "tts").map(async (provider) => ({
@@ -319,7 +320,7 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
     console.log(parsed.options.json ? JSON.stringify(result, null, 2) : `Migrated ${result.migratedCount} artifact(s) for ${result.runId}.\nRun: ${result.runDir}`);
     return;
   }
-  let profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? (command === "doctor" ? "ci-offline" : "local-f5"));
+  let profileName = String(parsed.options.profile ?? process.env.SCENE_GEN_PROFILE ?? (command === "doctor" ? "ci-offline" : defaultGenerationProfile));
   if (command === "resume" && !parsed.options.profile) {
     const direct = path.resolve(parsed.positionals[0]);
     const runDir = existsSync(path.join(direct, "run.json")) ? direct : fromRoot("dist", "runs", parsed.positionals[0]);

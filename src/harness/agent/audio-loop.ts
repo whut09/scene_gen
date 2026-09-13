@@ -4,7 +4,7 @@ export function generatedAudioSceneIndexes(value: unknown) {
 
 export function verificationRetrySceneIndexes(issues: Array<{ code: string; sceneIndex?: number }>) {
   return [...new Set(issues
-    .filter((issue) => issue.code === "verification_inconclusive")
+    .filter((issue) => ["verification_inconclusive", "audio_entity_mismatch", "audio_number_mismatch", "audio_semantic_mismatch", "audio_segment_cross_talk", "audio_opening_mismatch", "speech_alignment_unavailable"].includes(issue.code))
     .map((issue) => issue.sceneIndex ?? 0))];
 }
 

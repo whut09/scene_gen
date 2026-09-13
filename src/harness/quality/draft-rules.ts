@@ -19,6 +19,7 @@ import { analyzeFrameVisual } from "../frame-visual-analysis";
 import { readVisualAuditFile } from "../../html-video/visual-audit";
 import { callQualityJudge, expectedJudgeScoreKeys, type QualityJudgeAttempt } from "./judge-client";
 import { contentDurationPolicy, contentTypeForProject } from "../../pipeline/content-strategy";
+import { fromRoot } from "../../pipeline/utils";
 
 const ASR_TRADITIONAL_TO_SIMPLIFIED: Record<string, string> = {
   獎: "奖", 攝: "摄", 銷: "销", 認: "认", 賽: "赛", 獲: "获", 與: "与", 為: "为",
@@ -53,6 +54,12 @@ function sceneVisibleText(scene: VideoScene) {
     case "github_pulse":
       return [scene.headline, ...scene.repos.flatMap((repo) => [repo.repo, repo.title, repo.summary])].join(" ");
   }
+}
+
+function localVisualAssetPath(src: string) {
+  if (/^(?:https?:|data:|file:)/i.test(src)) return undefined;
+  if (/^\/+/.test(src)) return fromRoot("public", src.replace(/^\/+/, ""));
+  return path.isAbsolute(src) ? src : fromRoot("public", src.replace(/^\/+/, ""));
 }
 
 const repositoryDomainPatterns = {
@@ -111,7 +118,7 @@ function narrationLimits(scene: VideoScene, contentType: ReturnType<typeof conte
   return { min: 45, max: 105 };
 }
 
-const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|防范|失控|停更|退场|退出|结束|泡沫|核心|关键|真正|意味着|改变|风险|限制|成本|价格|涨价|定价|峰谷|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|何去何从|人气|体验|吸引|惊喜|潜力|成绩|全球第|总参数|激活参数/;
+const EARLY_VALUE_PATTERN = /不用|不再|只需|直接|省(?:下|掉)?|解决|降低|减少|提升|提高|更快|更少|自动|替你|避免|防范|失控|停更|退场|退出|结束|泡沫|核心|关键|真正|意味着|改变|替代|风险|限制|成本|价格|涨价|定价|峰谷|结果|突破|首次|首秀|投用|投入运行|复用|最多|至少|并行|统一|专为|生图|编辑|推理|打造|复刻|何去何从|人气|体验|吸引|惊喜|潜力|成绩|全球第|总参数|激活参数/;
 
 function textTokens(value: string) {
   const compact = normalizeText(value);
@@ -297,6 +304,7 @@ export async function evaluateDraft(
   const narrationChars = project.narration.replace(/\s+/g, "").length;
   const naturalDuration = config.tts.durationPolicy === "natural";
   const minimumChars = Math.round(targetSeconds * (contentType === "news" && targetSeconds >= 55 ? 5.4 : naturalDuration ? 4.2 : 4.8));
+  const effectiveMinimumChars = Math.floor(minimumChars * 0.98);
   const maximumChars = contentType === "news"
     ? Math.round(targetSeconds * (isModelReleaseProject ? 6.1 : targetSeconds >= 55 ? 5.8 : 5.3))
     : Math.round(targetSeconds * (contentType === "technical-article" ? 9 : 8.2));
@@ -304,7 +312,9 @@ export async function evaluateDraft(
   const templateGraph = buildHtmlVideoContentGraph(project);
   const productionDecisions = buildProductionDecisions(project);
   const visualSourceCount = new Set(productionDecisions.map((decision) => decision.visualPlan.source)).size;
-  if (project.scenes.length >= 5 && visualSourceCount < 2) {
+  const acceptedVisualEvidenceCount = (project.screenshots?.length ?? 0)
+    + (project.assets?.filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected").length ?? 0);
+  if (project.scenes.length >= 5 && visualSourceCount < 2 && acceptedVisualEvidenceCount > 0) {
     issues.push({ severity: "warning", code: "visual_source_low_diversity", message: "整条视频只使用一种视觉来源，建议为适合的场景增加真实 UI、网页证据或视频素材。" });
   }
   for (const decision of productionDecisions) {
@@ -400,7 +410,7 @@ export async function evaluateDraft(
     });
     revisionNotes.push(`将视频压缩到 ${contentPolicy.minimumSeconds}-${contentPolicy.maximumSeconds} 秒，只保留钩子、关键证据、实际用途和边界。`);
   }
-  if (narrationChars < minimumChars) {
+  if (narrationChars < effectiveMinimumChars) {
     issues.push({ severity: "error", code: "narration_short", message: `旁白仅 ${narrationChars} 字，目标至少 ${minimumChars} 字。` });
     revisionNotes.push(`将总旁白扩充到 ${minimumChars} 到 ${maximumChars} 字。`);
   }
@@ -412,8 +422,8 @@ export async function evaluateDraft(
     for (const segment of project.narrationSegments ?? []) {
       const scene = project.scenes[segment.sceneIndex];
       const characters = segment.text.replace(/\s+/gu, "").length;
-      const estimatedSpeechSeconds = characters / 5.1;
-      if (scene && estimatedSpeechSeconds > scene.duration + 0.75) {
+      const estimatedSpeechSeconds = characters / 6.1;
+      if (scene && estimatedSpeechSeconds > scene.duration + 0.15) {
         issues.push({
           severity: "error",
           code: "narration_scene_overflow",
@@ -502,9 +512,11 @@ export async function evaluateDraft(
   }
   const danglingFragmentPattern = /(?:^|[。！？!?])(?:关键是|真正改变的是|要知道|如今|此前|其中|最后|所以|但是|以及|例如|除文本外|值得注意的是|此前报道|试了|创)[。！？!?]|(?:附加|以及其他|迭代后)[。！？!?]/gu;
   const danglingFragments = narrationTexts.flatMap((text) => text.match(danglingFragmentPattern) ?? []);
+  const danglingClauseEnding = /(?:正是因为|因为|但是|而且|以及|并且|从而|所以|包括|例如|其中|另一方面)[，,：:\s]*[。！？!?]?$/u;
   const unpunctuatedSegments = narrationTexts.filter((text) => !/[。！？!?]$/u.test(text.trim()));
-  if (danglingFragments.length > 0 || unpunctuatedSegments.length > 0) {
-    issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含残句或未完整结束的场景文本。", evidence: { fragments: [...danglingFragments, ...unpunctuatedSegments].slice(0, 8) } });
+  const incompleteClauseSegments = narrationTexts.filter((text) => danglingClauseEnding.test(text.trim()));
+  if (danglingFragments.length > 0 || unpunctuatedSegments.length > 0 || incompleteClauseSegments.length > 0) {
+    issues.push({ severity: "error", code: "narration_truncated_fragment", message: "旁白包含残句或未完整结束的场景文本。", evidence: { fragments: [...danglingFragments, ...unpunctuatedSegments, ...incompleteClauseSegments].slice(0, 8) } });
     revisionNotes.push("删除独立的连接词和残句，并确保每个场景以完整句子结束。");
   }
   const sentenceCounts = new Map<string, number>();
@@ -780,24 +792,40 @@ export async function evaluateDraft(
 
   const acceptedImageAssets = (project.assets ?? []).filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected");
   const embeddedImageSources = new Set(project.scenes.flatMap((scene) => scene.type === "web_screenshot_zoom" ? scene.shots.map((shot) => shot.src) : []));
-  const embeddedImageAssets = acceptedImageAssets.filter((asset) => embeddedImageSources.has(asset.src));
-  if (acceptedImageAssets.length > 0 && embeddedImageAssets.length === 0) {
+  const sourceVisualSources = [...acceptedImageAssets.map((asset) => asset.src), ...(project.screenshots ?? []).map((shot) => shot.src)];
+  const embeddedImageAssets = sourceVisualSources.filter((src) => embeddedImageSources.has(src));
+  if (sourceVisualSources.length > 0 && embeddedImageAssets.length === 0) {
     issues.push({
       severity: "error",
       code: "visual_asset_not_embedded",
       message: "已通过筛选的真实图片没有进入任何证据画面。",
-      evidence: { assetIds: acceptedImageAssets.map((asset) => asset.id), assetSources: acceptedImageAssets.map((asset) => asset.src) },
+      evidence: { assetIds: acceptedImageAssets.map((asset) => asset.id), assetSources: sourceVisualSources },
     });
     revisionNotes.push("将通过图片筛选的效果图或演示图嵌入对应证据屏，不要只把图片留在项目 JSON 中。");
   }
+  const missingEmbeddedSources = [...embeddedImageSources]
+    .filter((src) => {
+      const localPath = localVisualAssetPath(src);
+      return Boolean(localPath && !existsSync(localPath));
+    });
+  if (missingEmbeddedSources.length > 0) {
+    issues.push({
+      severity: "error",
+      code: "visual_asset_missing",
+      message: "证据场景引用的本地图片不存在，不能进入渲染。",
+      evidence: { assetSources: missingEmbeddedSources },
+    });
+    revisionNotes.push("重新采集并确认图片文件存在，再把本地素材引用到证据屏。 ");
+  }
   const sourceVisualAssetCandidates = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetSafeCandidates ?? source.metrics?.visualAssetCandidates ?? 0)), 0);
+  const sourceVisualAssetSafeCandidates = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetSafeCandidates ?? 0)), 0);
   const sourceVisualAssetAccepted = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetAccepted ?? acceptedImageAssets.length)), 0);
-  if (sourceVisualAssetCandidates > 0 && sourceVisualAssetAccepted === 0 && (project.screenshots?.length ?? 0) === 0) {
+  if (sourceVisualAssetSafeCandidates > 0 && sourceVisualAssetAccepted === 0 && (project.screenshots?.length ?? 0) === 0) {
     issues.push({
       severity: "error",
       code: "visual_asset_missing",
       message: "来源页面存在可用图片候选，但没有任何图片通过筛选并嵌入视频。",
-      evidence: { sourceVisualAssetCandidates, sourceVisualAssetAccepted, assetCount: acceptedImageAssets.length },
+      evidence: { sourceVisualAssetCandidates, sourceVisualAssetSafeCandidates, sourceVisualAssetAccepted, assetCount: acceptedImageAssets.length },
     });
     revisionNotes.push("重新采集来源页面的效果图或演示图；只有确认含作者水印、二维码、广告或人脸时才跳过。");
   }

@@ -7,6 +7,7 @@ import { attachNarrationAudio } from "./tts";
 import { fromRoot, loadDotEnv, parseArgs, readJson, writeJson } from "./utils";
 
 loadDotEnv();
+if (!process.env.SCENE_GEN_PROFILE) process.env.SCENE_GEN_PROFILE = "indextts-local";
 
 const args = parseArgs(process.argv.slice(2));
 const urls = typeof args.url === "string" ? [args.url] : [];

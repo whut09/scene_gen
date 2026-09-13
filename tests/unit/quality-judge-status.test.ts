@@ -105,6 +105,25 @@ test("partial judge scores are averaged only across measured dimensions", { conc
   });
 });
 
+test("valid judge scores survive malformed advisory issues", { concurrency: false }, async () => {
+  await withJudgeServer([{ scores: completeScores, issues: [{ code: "not-a-registered-issue", severity: "invalid" }, { code: "title_not_chinese_summary", stage: "draft", severity: "warning", evidence: { summary: "valid issue" }, repairAction: "regenerate-draft", retryable: true }], revisionNotes: [] }], async (baseUrl) => {
+    await withJudgeEnvironment({
+      QUALITY_GATE_PROFILE: "strict",
+      QUALITY_LLM_API_KEY: "test",
+      QUALITY_LLM_BASE_URL: baseUrl,
+      QUALITY_LLM_MODEL: "mock",
+      QUALITY_JUDGE_SAMPLES: "1",
+    }, async () => {
+      const evaluation = await evaluateDraft(createFixtureProject(), 100, "");
+      assert.equal(evaluation.scoreStatus, "measured");
+      assert.deepEqual(evaluation.scores, completeScores);
+      assert.equal(evaluation.issues.some((issue) => issue.code === "judge_unavailable"), false);
+      assert.equal(evaluation.issues.some((issue) => issue.code === "title_not_chinese_summary"), true);
+      assert.equal(evaluation.revisionNotes.some((note) => note.includes("malformed issue")), true);
+    });
+  });
+});
+
 test("strict double sampling marks large judge disagreement as unstable", { concurrency: false }, async () => {
   const lowScores = Object.fromEntries(Object.keys(completeScores).map((key) => [key, 50]));
   await withJudgeServer([

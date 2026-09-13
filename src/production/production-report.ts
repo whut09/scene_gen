@@ -6,6 +6,7 @@ import { z } from "zod";
 import { readJson } from "../pipeline/utils";
 import { persistMigratedJson, readVersionedFormat } from "../persistence/versioned-format";
 import { pronunciationPlanSchema } from "../pipeline/pronunciation/schema";
+import { getRuntimeConfig } from "../config/runtime-config";
 
 export const productionReportSchema = z.object({
   specVersion: z.literal(2),
@@ -67,7 +68,7 @@ export async function readProductionReportFile(filePath: string, persistMigratio
 }
 
 export function buildProductionReport(project: VideoProject, renderEngine = "html-video"): ProductionReport {
-  const providers = listProviders();
+  const providers = listProviders({ profile: getRuntimeConfig().profile });
   const decisions = buildProductionDecisions(project);
   let audioSelection: ProductionReport["providerSelections"][number] | undefined;
   try {

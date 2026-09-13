@@ -30,11 +30,11 @@ async function withRoutingEnv(env: NodeJS.ProcessEnv, task: () => Promise<void>)
 test("production high-risk text selects Azure explicit phoneme", { concurrency: false }, async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "scene-gen-routing-"));
   try {
-    await withRoutingEnv({ AZURE_SPEECH_KEY: "test", AZURE_SPEECH_REGION: "eastasia", SCENE_GEN_CACHE_DIR: directory, PROVIDER_OUTCOME_FILE: path.join(directory, "outcomes.jsonl") }, async () => {
-      const config = buildRuntimeConfig(process.env, "production");
+    await withRoutingEnv({ AZURE_SPEECH_KEY: "test", AZURE_SPEECH_REGION: "eastasia", INDEXTTS_ROOT: directory, INDEXTTS_MODEL_DIR: directory, SCENE_GEN_CACHE_DIR: directory, PROVIDER_OUTCOME_FILE: path.join(directory, "outcomes.jsonl") }, async () => {
+      const config = buildRuntimeConfig({ ...process.env, INDEXTTS_ROOT: directory, INDEXTTS_MODEL_DIR: directory }, "production");
       await runWithRuntimeConfig(config, async () => {
         const routed = await routeTtsProvider({ profile: "production", plan: plan("系统完成重构", true) });
-        assert.equal(routed.selectedProvider, "azure");
+        assert.equal(routed.selectedProvider, "indextts");
         assert.equal(routed.pronunciationStrategy, "switch-pronunciation-mode");
       });
     });
@@ -45,14 +45,14 @@ test("Azure hard quota falls back and Edge is excluded from production", { concu
   const directory = await mkdtemp(path.join(os.tmpdir(), "scene-gen-routing-quota-"));
   try {
     await writeFile(path.join(directory, "metadata", "placeholder"), "", { flag: "a" }).catch(() => undefined);
-    await withRoutingEnv({ AZURE_SPEECH_KEY: "test", AZURE_SPEECH_REGION: "eastasia", AZURE_TTS_MONTHLY_CHARACTER_BUDGET: "1", EDGE_TTS_COMMAND: "edge-tts", F5_TTS_PYTHON: "python", SCENE_GEN_CACHE_DIR: directory }, async () => {
+    await withRoutingEnv({ AZURE_SPEECH_KEY: "test", AZURE_SPEECH_REGION: "eastasia", AZURE_TTS_MONTHLY_CHARACTER_BUDGET: "1", EDGE_TTS_COMMAND: "edge-tts", F5_TTS_PYTHON: "python", INDEXTTS_ROOT: directory, INDEXTTS_MODEL_DIR: directory, SCENE_GEN_CACHE_DIR: directory }, async () => {
       const config = buildRuntimeConfig(process.env, "production");
       await runWithRuntimeConfig(config, async () => {
         const usagePath = path.join(directory, "metadata", "azure-tts-usage.json");
         await import("node:fs/promises").then(({ mkdir }) => mkdir(path.dirname(usagePath), { recursive: true }));
         await writeFile(usagePath, JSON.stringify({ version: 1, month: new Date().toISOString().slice(0, 7), usedCharacters: 1, updatedAt: new Date().toISOString() }));
         const routed = await routeTtsProvider({ profile: "production", plan: plan("系统完成重构", true) });
-        assert.equal(routed.selectedProvider, "f5");
+        assert.equal(routed.selectedProvider, "indextts");
         assert.equal(routed.candidates.find((candidate) => candidate.providerId === "azure")?.eliminated, true);
         assert.equal(routed.candidates.find((candidate) => candidate.providerId === "edge")?.eliminated, true);
       });

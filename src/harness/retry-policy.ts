@@ -28,9 +28,15 @@ export interface RepairPlan {
 }
 
 function pronunciationStrategyFor(issues: QualityIssue[]): PronunciationStrategy | undefined {
-  if (issues.some((issue) => issue.code === "verification_inconclusive")) return "retry-verifier";
   if (issues.some((issue) => issue.code === "audio_pronunciation_mismatch")) return "switch-tts-provider";
+  if (issues.some((issue) => verifierOnlyIssue(issue))) return "retry-verifier";
   return undefined;
+}
+
+function verifierOnlyIssue(issue: QualityIssue) {
+  if (["audio_number_mismatch", "audio_semantic_mismatch", "audio_segment_cross_talk", "audio_opening_mismatch", "speech_alignment_unavailable", "verification_inconclusive"].includes(issue.code)) return true;
+  if (issue.code !== "audio_entity_mismatch") return false;
+  return Array.isArray(issue.evidence.verifierActions) && issue.evidence.verifierActions.includes("retry-verifier");
 }
 
 const defaultWeights: RepairPolicyWeights = { costWeight: 0.28, latencyWeight: 0.18, riskWeight: 0.24 };
@@ -201,7 +207,11 @@ export function planRepair(
 
   const inferredSceneCount = sceneCount ?? Math.max(0, ...errors.map((issue) => (issue.sceneIndex ?? -1) + 1));
   const specialDriftCandidates = driftCandidates(errors, inferredSceneCount, attempt, weights);
-  const genericIssues = errors.filter((issue) => issue.code !== "video_project_duration_drift");
+  const genericIssues = errors
+    .filter((issue) => issue.code !== "video_project_duration_drift")
+    .map((issue) => verifierOnlyIssue(issue)
+      ? { ...issue, issueClass: "environment" as const, repairAction: "retry-stage" as const }
+      : issue);
   const genericCandidates = [...new Set(genericIssues.map((issue) => issue.repairAction))].map((action) => {
     const actionIssues = genericIssues.filter((issue) => issue.repairAction === action);
     const actionPlan = dirtyPlanFromIssues(actionIssues, inferredSceneCount);

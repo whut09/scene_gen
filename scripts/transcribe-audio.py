@@ -63,13 +63,16 @@ def transcribe_whisper_with_confidence(recognizer, audio, language, include_word
     samples /= 32768.0
     target_rate = int(getattr(recognizer.feature_extractor, "sampling_rate", 16000))
     samples = resample_audio(samples, sample_rate, target_rate)
-    inputs = recognizer.feature_extractor(samples, sampling_rate=target_rate, return_tensors="pt")
+    inputs = recognizer.feature_extractor(samples, sampling_rate=target_rate, return_attention_mask=True, return_tensors="pt")
     device = next(recognizer.model.parameters()).device
     input_features = inputs.input_features.to(device)
+    attention_mask = getattr(inputs, "attention_mask", None)
+    if attention_mask is not None:
+        attention_mask = attention_mask.to(device)
     generation_config = recognizer.model.generation_config
     decoder_input_ids = torch.ones((input_features.shape[0], 1), device=device, dtype=torch.long) * generation_config.decoder_start_token_id
     with torch.no_grad():
-        language_logits = recognizer.model(input_features=input_features, decoder_input_ids=decoder_input_ids, use_cache=False).logits[:, -1]
+        language_logits = recognizer.model(input_features=input_features, attention_mask=attention_mask, decoder_input_ids=decoder_input_ids, use_cache=False).logits[:, -1]
     language_ids = list(generation_config.lang_to_id.values())
     language_probabilities = torch.softmax(language_logits[:, language_ids], dim=-1)
     detected_index = int(language_probabilities.argmax(dim=-1)[0].item())
@@ -77,7 +80,8 @@ def transcribe_whisper_with_confidence(recognizer, audio, language, include_word
     detected_language = recognizer.tokenizer.decode([detected_language_id]).replace("<|", "").replace("|>", "")
     language_confidence = float(language_probabilities[0, detected_index].item())
     generated = recognizer.model.generate(
-        input_features,
+        input_features=input_features,
+        attention_mask=attention_mask,
         language=language,
         task="transcribe",
         return_dict_in_generate=True,
@@ -99,14 +103,17 @@ def transcribe_whisper_with_confidence(recognizer, audio, language, include_word
         "languageConfidence": max(0.0, min(1.0, language_confidence)),
     }
     if include_words:
-        timestamped = recognizer(
-            {"array": samples, "sampling_rate": target_rate},
-            return_timestamps="word",
-            generate_kwargs={"language": language, "task": "transcribe"},
-        )
-        result["words"] = words_from_result(timestamped)
-        if timestamped.get("text"):
-            result["text"] = timestamped["text"].strip()
+        try:
+            timestamped = recognizer(
+                {"array": samples, "sampling_rate": target_rate},
+                return_timestamps="word",
+                generate_kwargs={"language": language, "task": "transcribe"},
+            )
+            result["words"] = words_from_result(timestamped)
+            if timestamped.get("text"):
+                result["text"] = timestamped["text"].strip()
+        except (RuntimeError, ValueError):
+            result["wordTimestampsUnavailable"] = True
     return result
 
 

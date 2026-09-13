@@ -413,6 +413,26 @@ test("TTS convention gate keeps AI and reads four-digit years digit by digit", a
   }
 });
 
+test("TTS convention gate rejects legacy AI and LLM readings for IndexTTS", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "scene-gen-tts-acronym-readings-"));
+  try {
+    const { project } = await fixture(root);
+    project.narrationSegments![0] = {
+      ...project.narrationSegments![0],
+      text: "AI 和 LLM 负责检索。",
+      ttsText: "AI 和 LLM 负责检索。",
+      providerSynthesisText: "诶爱 和 艾勒艾姆 负责检索。",
+      ttsProvider: "indextts",
+    };
+    const invalidIssues = ttsConventionIssues(project);
+    assert.ok(invalidIssues.some((issue) => issue.code === "audio_acronym_plan_unprotected" || issue.code === "tts_ai_pronunciation_invalid"));
+    project.narrationSegments![0].providerSynthesisText = "A-I 和 L-L-M 负责检索。";
+    assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected" || issue.code === "tts_ai_pronunciation_invalid"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("TTS convention gate preserves product names and blocks a repeated title", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "scene-gen-tts-proper-name-"));
   try {

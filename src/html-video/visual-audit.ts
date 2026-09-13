@@ -63,6 +63,7 @@ export async function inspectSceneDom(page: Page, input: {
       return {
         id: animation.id,
         target: animation.effect instanceof KeyframeEffect && animation.effect.target instanceof Element ? animation.effect.target : null,
+        startTimeMs: typeof configured?.delay === "number" && Number.isFinite(configured.delay) ? Math.max(0, configured.delay) : 0,
         endTimeMs: typeof timing?.endTime === "number" && Number.isFinite(timing.endTime) ? timing.endTime : 0,
         reveal: !animation.id.startsWith("sg-sync-emphasis-") && iterations <= 1 && configuredDuration > 0 && configuredDuration <= Math.min(2500, durationSec * 400),
       };
@@ -219,9 +220,11 @@ export async function inspectSceneDom(page: Page, input: {
       const normalizedCue = normalize(cue.text);
       const target = elementRecords.filter((record) => normalize(record.text).includes(normalizedCue)).sort((left, right) => left.text.length - right.text.length)[0]?.element;
       if (!target) continue;
-      const revealEndMs = Math.max(...animationRecords.filter((record) => record.reveal && record.target && (target.contains(record.target) || record.target.contains(target))).map((record) => record.endTimeMs), 0);
+      const revealAnimations = animationRecords.filter((record) => record.reveal && record.target && (target.contains(record.target) || record.target.contains(target)));
+      const revealStartMs = Math.min(...revealAnimations.map((record) => record.startTimeMs), Number.POSITIVE_INFINITY);
+      const revealEndMs = Math.max(...revealAnimations.map((record) => record.endTimeMs), 0);
       const expectedMs = cue.startRatio * durationSec * 1000;
-      if (revealEndMs > expectedMs + 500) issues.push({ code: "sync_cue_visual_late", severity: "warning", message: `关键词“${cue.text}”出现晚于旁白提示。`, evidence: { keyText: cue.text, revealEndMs: Math.round(revealEndMs), expectedMs: Math.round(expectedMs) } });
+      if (Number.isFinite(revealStartMs) && revealStartMs > expectedMs + 500) issues.push({ code: "sync_cue_visual_late", severity: "warning", message: `关键词“${cue.text}”出现晚于旁白提示。`, evidence: { keyText: cue.text, revealStartMs: Math.round(revealStartMs), revealEndMs: Math.round(revealEndMs), expectedMs: Math.round(expectedMs) } });
     }
 
     const maximumAnimationEndMs = Math.max(...animationRecords.filter((record) => record.reveal && record.target && normalize(record.target.textContent ?? "").length > 0).map((record) => record.endTimeMs), 0);
@@ -231,6 +234,9 @@ export async function inspectSceneDom(page: Page, input: {
     for (const image of document.querySelectorAll<HTMLImageElement>("img")) {
       const style = getComputedStyle(image);
       const rect = image.getBoundingClientRect();
+      if (!image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+        issues.push({ code: "visual_asset_missing", severity: "error", message: "证据图片未成功加载，禁止生成成片。", evidence: { src: (image.currentSrc || image.src).slice(0, 240) } });
+      }
       if (style.objectFit === "cover" && image.naturalWidth > image.naturalHeight && rect.height > rect.width * 1.3 && !image.dataset.focalPoint && style.objectPosition === "50% 50%") {
         issues.push({ code: "image_subject_crop_risk", severity: "warning", message: "横向图片在竖屏 cover 裁切中未声明主体焦点。", evidence: { src: (image.currentSrc || image.src).slice(0, 200), naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight, objectPosition: style.objectPosition } });
       }

@@ -6,10 +6,10 @@ import type { RuntimeConfig } from "../../config/runtime-config";
 import type { VideoProject } from "../../pipeline/types";
 import { ensureDir, readJson, writeJsonAtomic } from "../../pipeline/utils";
 import { speechNormalizationDictionaryHash } from "../speech-normalization";
-import { storedNarrationSceneTranscripts, transcribeNarrationScenes, verifySceneTranscripts, type AsrSceneTranscript } from "../scene-audio-verification";
+import { transcribeNarrationScenes, verifySceneTranscripts, type AsrSceneTranscript } from "../scene-audio-verification";
 import { projectAudioPath } from "./audio-structural-gate";
 
-export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v5-asr-entity-aliases";
+export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v11-canonical-ai-lama-hard-ending";
 export type AsrProviderId = "whisper" | "sensevoice" | "funasr" | "mock";
 
 const cachedAsrSchema = z.object({ version: z.literal(1), key: z.string().length(64), transcripts: z.array(z.object({ sceneIndex: z.number().int().nonnegative(), text: z.string(), confidence: z.number().nullable().optional(), detectedLanguage: z.string().min(1), languageConfidence: z.number().min(0).max(1), words: z.array(z.object({ text: z.string(), startSeconds: z.number(), endSeconds: z.number(), confidence: z.number().nullable().optional() })).optional() })) }).strict();
@@ -33,8 +33,6 @@ export async function transcribeScenesCached(input: {
   transcribe?: (project: VideoProject, signal?: AbortSignal) => Promise<AsrSceneTranscript[] | null>;
   signal?: AbortSignal;
 }) {
-  const stored = storedNarrationSceneTranscripts(input.project);
-  if (stored) return { transcripts: stored, cacheHit: true, provider: "whisper" as AsrProviderId };
   const audioPath = projectAudioPath(input.project);
   if (!audioPath) return { transcripts: null, cacheHit: false, provider: (input.provider ?? input.config.asr.provider) as AsrProviderId };
   const provider = input.provider ?? input.config.asr.provider;
@@ -44,7 +42,9 @@ export async function transcribeScenesCached(input: {
   const cached = await readJson<unknown>(cachePath).then((value) => cachedAsrSchema.parse(value)).catch(() => undefined);
   if (cached) return { transcripts: cached.transcripts, cacheHit: true, provider };
   if (!input.transcribe && provider !== "whisper") throw new Error(`ASR provider '${provider}' requires a registered adapter.`);
-  const transcripts = await (input.transcribe ?? transcribeNarrationScenes)(input.project, input.signal);
+  const transcripts = input.transcribe
+    ? await input.transcribe(input.project, input.signal)
+    : await transcribeNarrationScenes(input.project, input.signal, input.config);
   if (transcripts) {
     await ensureDir(path.dirname(cachePath));
     await writeJsonAtomic(cachePath, { version: 1, key, transcripts });
@@ -59,6 +59,7 @@ export async function runAudioSemanticGate(input: {
   transcribe?: (project: VideoProject, signal?: AbortSignal) => Promise<AsrSceneTranscript[] | null>;
   signal?: AbortSignal;
 }) {
+  const strictVerification = input.config.profile === "production" || input.config.quality.profile === "strict";
   const transcription = await transcribeScenesCached(input);
   if (!transcription.transcripts?.length) {
     const blocking = input.config.profile === "production" || input.config.quality.profile === "strict";
@@ -69,16 +70,27 @@ export async function runAudioSemanticGate(input: {
     };
   }
   const expectedLanguage = /^(chinese|zh(?:-cn)?)$/i.test(input.config.asr.language) ? "zh" : input.config.asr.language;
-  const configuredMinimumConfidence = Number(process.env.ASR_SCENE_CONFIDENCE_MIN ?? 0.65);
-  const minimumConfidence = input.config.profile === "production" ? Math.max(0.8, configuredMinimumConfidence) : configuredMinimumConfidence;
-  const verification = verifySceneTranscripts(input.project, transcription.transcripts, { expectedLanguage, minimumLanguageConfidence: input.config.asr.languageConfidenceMin, minimumConfidence });
-  const alignmentIssues = input.config.profile === "production"
+  const configuredMinimumConfidence = input.config.asr.sceneConfidenceMin;
+  const minimumConfidence = strictVerification ? Math.max(0.8, configuredMinimumConfidence) : configuredMinimumConfidence;
+  const verification = verifySceneTranscripts(input.project, transcription.transcripts, {
+    expectedLanguage,
+    minimumLanguageConfidence: input.config.asr.languageConfidenceMin,
+    minimumConfidence,
+    minimumCoverage: input.config.asr.sceneTokenCoverageMin,
+    minimumPrecision: input.config.asr.sceneTokenPrecisionMin,
+    minimumEntityRecall: input.config.asr.entityRecallMin,
+    semanticMinimumConfidence: input.config.asr.semanticConfidenceMin,
+    boundaryLeakMinimum: input.config.asr.boundaryLeakMin,
+    endingRecallMinimum: strictVerification ? Math.max(0.85, input.config.asr.endingRecallMin) : input.config.asr.endingRecallMin,
+  });
+  const alignmentIssues = strictVerification
     ? transcription.transcripts.filter((item) => !item.words?.length).map((item) => ({ severity: "error" as const, code: "speech_alignment_unavailable" as const, message: `Scene ${item.sceneIndex + 1} lacks word timestamps, so audio/visual synchronization cannot be verified.`, sceneIndex: item.sceneIndex, issueClass: "environment" as const, repairAction: "retry-stage" as const, retryable: true, evidence: { verifier: transcription.provider, transcript: item.text, reason: "missing_word_timestamps" } }))
     : [];
   const issues = [...verification.issues, ...alignmentIssues]
     .filter((issue) => issue.code !== "audio_pronunciation_mismatch")
-    .map((issue) => input.config.quality.profile === "lenient" && ["audio_semantic_mismatch", "audio_entity_mismatch", "audio_number_mismatch"].includes(issue.code)
-      ? {
+    .map((issue) => {
+      if (input.config.quality.profile === "lenient" && ["audio_semantic_mismatch", "audio_entity_mismatch", "audio_number_mismatch"].includes(issue.code)) {
+        return {
           ...issue,
           severity: "warning" as const,
           code: "verification_inconclusive",
@@ -86,7 +98,19 @@ export async function runAudioSemanticGate(input: {
           issueClass: "soft" as const,
           repairAction: "retry-stage" as const,
           evidence: { ...issue.evidence, originalCode: issue.code, verifier: transcription.provider, reason: "semantic_asr_disagreement" },
-        }
-      : issue);
+        };
+      }
+      if (strictVerification && issue.code === "verification_inconclusive") {
+        return {
+          ...issue,
+          severity: "error" as const,
+          issueClass: "environment" as const,
+          repairAction: "retry-stage" as const,
+          retryable: true,
+          evidence: { ...issue.evidence, verifier: transcription.provider, reason: issue.evidence?.reason ?? "strict_requires_audio_evidence", requiredQualityProfile: input.config.quality.profile, requiredRuntimeProfile: input.config.profile },
+        };
+      }
+      return issue;
+    });
   return { ...verification, issues, metrics: { semanticVerifiedCount: verification.results.length, semanticAsrCacheHit: transcription.cacheHit, semanticAsrProvider: transcription.provider, semanticGateVersion: AUDIO_SEMANTIC_GATE_VERSION } };
 }

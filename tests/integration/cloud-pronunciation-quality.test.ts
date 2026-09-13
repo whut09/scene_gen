@@ -51,12 +51,12 @@ async function mockAzure() {
 
 function config(cacheRoot: string, endpoint: string, budget = 500_000) {
   return buildRuntimeConfig({
-    ...process.env, SCENE_GEN_CACHE_DIR: cacheRoot, SCENE_GEN_PROFILE: "production", TTS_PROVIDER: "azure",
+    ...process.env, SCENE_GEN_CACHE_DIR: cacheRoot, SCENE_GEN_PROFILE: "default", TTS_PROVIDER: "azure",
     AZURE_SPEECH_KEY: "mock-key", AZURE_SPEECH_ENDPOINT: endpoint, AZURE_TTS_VOICE: "zh-CN-XiaoxiaoNeural",
     AZURE_TTS_OUTPUT_FORMAT: "riff-24khz-16bit-mono-pcm", AZURE_TTS_MAX_RETRIES: "0", AZURE_TTS_CONCURRENCY: "2",
     AZURE_TTS_REQUESTS_PER_MINUTE: "1000", AZURE_TTS_MONTHLY_CHARACTER_BUDGET: String(budget),
     ASR_PROVIDER: "mock", PRONUNCIATION_VERIFIER_PROVIDER: "mock", PRONUNCIATION_VERIFIER_MIN_AUDIO_MS: "1",
-  }, "production");
+  }, "default");
 }
 
 test("cloud pronunciation regression covers cache, repair, verification and quota", { timeout: 120_000, concurrency: false }, async () => {
@@ -123,7 +123,7 @@ test("cloud pronunciation regression covers cache, repair, verification and quot
     const ledger = new PronunciationAttemptLedger();
     const identity = { phraseFingerprint: "重构", provider: "f5", pronunciationStrategy: "switch-pronunciation-mode" as const, pronunciationPlanHash: plans[2].planHash };
     assert.equal(ledger.claim(2, identity), true); assert.equal(ledger.claim(2, identity), false);
-    const routed = await runWithRuntimeConfig(runtimeConfig, () => routeTtsProvider({ profile: "production", plan: plans[2], explicitProvider: "azure" }));
+    const routed = await runWithRuntimeConfig(runtimeConfig, () => routeTtsProvider({ profile: "default", plan: plans[2], explicitProvider: "azure" }));
     assert.equal(routed.selectedProvider, "azure"); assert.equal(routed.pronunciationStrategy, "switch-pronunciation-mode");
 
     const cachedAudioPath = path.join(root, "cached.wav");
@@ -147,7 +147,7 @@ test("cloud pronunciation regression covers cache, repair, verification and quot
     await writeFile(path.join(quotaRoot, "metadata", "azure-tts-usage.json"), JSON.stringify({ version: 1, month: new Date().toISOString().slice(0, 7), usedCharacters: 1, updatedAt: new Date().toISOString() }));
     const quotaConfig = config(quotaRoot, server.endpoint, 1);
     process.env.SCENE_GEN_CACHE_DIR = quotaRoot; process.env.AZURE_TTS_MONTHLY_CHARACTER_BUDGET = "1";
-    const quotaRoute = await runWithRuntimeConfig(quotaConfig, () => routeTtsProvider({ profile: "production", plan: plans[2] }));
+    const quotaRoute = await runWithRuntimeConfig(quotaConfig, () => routeTtsProvider({ profile: "default", plan: plans[2] }));
     assert.equal(quotaRoute.selectedProvider, "f5");
     assert.equal(quotaRoute.candidates.find((candidate) => candidate.providerId === "azure")?.reasons.some((reason) => reason.includes("hard limit")), true);
 

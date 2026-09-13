@@ -170,6 +170,17 @@ async function acquireLock(lockPath: string, signal?: AbortSignal) {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const lockInfo = await stat(lockPath).catch(() => undefined);
+      const lockOwner = await readFile(lockPath, "utf8").then((value) => JSON.parse(value) as { pid?: unknown }).catch(() => undefined);
+      if (typeof lockOwner?.pid === "number" && Number.isInteger(lockOwner.pid) && lockOwner.pid !== process.pid) {
+        try {
+          process.kill(lockOwner.pid, 0);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+            await rm(lockPath, { force: true });
+            continue;
+          }
+        }
+      }
       if (lockInfo && Date.now() - lockInfo.mtimeMs > staleMs) {
         await rm(lockPath, { force: true }).catch(() => undefined);
         continue;

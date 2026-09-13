@@ -47,10 +47,10 @@ npm.cmd run doctor -- --profile production
 }
 ```
 
-默认 `production` profile 使用 NVIDIA TTS。将密钥写入 `.env.local`，不要提交：
+默认 `production` profile 使用固定参考音色的本地 IndexTTS2，不会调用 NVIDIA、Azure 或其他云端 TTS。将大模型密钥写入 `.env.local`，不要提交：
 
 ```dotenv
-NVIDIA_API_KEY=your-nvidia-api-key
+NEWS_LLM_API_KEY=your-llm-api-key
 ```
 
 先检查执行计划，再生成视频：
@@ -130,7 +130,7 @@ npm.cmd run scene-gen -- check --project "<project.json>" --video "<video.mp4>"
 
 | Profile | 用途 | 默认语音 | 渲染与质量策略 |
 | --- | --- | --- | --- |
-| `production` | 正式成片 | NVIDIA Magpie | HTML Video、严格质量门、多轮修复 |
+| `production` | 正式成片 | IndexTTS2 固定参考音色 | HTML Video、严格质量门、多轮修复 |
 | `nvidia-api` | NVIDIA 云语音 | NVIDIA Magpie | HTML Video、balanced gate |
 | `indextts-local` | 固定本地音色 | IndexTTS2 | 单 GPU 串行语音、严格音色一致性 |
 | `local-f5` | 本地 F5 环境 | F5-TTS | CUDA、持久化 worker、HTML Video |

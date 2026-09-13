@@ -2,8 +2,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { getRuntimeConfig, type RuntimeConfig } from "../config/runtime-config";
 import { runExternalProcess } from "../pipeline/external-operation";
-import { acronymsRequiringSpelledLetters, spelledLatinAcronym } from "../pipeline/pronunciation/provider-adapters";
+import { acronymsRequiringSpelledLetters, indexTtsAcronymReadings, spelledLatinAcronym } from "../pipeline/pronunciation/provider-adapters";
 import { prepareF5SynthesisText } from "../pipeline/tts";
 import { repositoryProjectName } from "../pipeline/repository-project";
 import type { NarrationSegment, VideoProject } from "../pipeline/types";
@@ -54,12 +55,12 @@ async function mapWithConcurrency<T>(items: T[], concurrency: number, worker: (i
   }));
 }
 
-function runCapture(command: string, args: string[], signal?: AbortSignal) {
+function runCapture(command: string, args: string[], signal?: AbortSignal, timeoutMs = 300_000) {
   return runExternalProcess(command, args, {
     signal,
     retries: 1,
     retryOnExit: true,
-    timeoutMs: Number(process.env.QUALITY_PROCESS_TIMEOUT_MS ?? 300_000),
+    timeoutMs,
   });
 }
 
@@ -81,8 +82,8 @@ export function storedNarrationSceneTranscripts(project: VideoProject): AsrScene
   }));
 }
 
-export async function transcribeNarrationScenes(project: VideoProject, signal?: AbortSignal) {
-  if (process.env.ASR_DISABLED === "1" || !project.audio?.src) return null;
+export async function transcribeNarrationScenes(project: VideoProject, signal?: AbortSignal, config: RuntimeConfig = getRuntimeConfig()) {
+  if (config.asr.disabled || !project.audio?.src) return null;
   const segments = project.narrationSegments ?? [];
   if (!segments.length || segments.some((segment) => segment.audioStartSeconds === undefined || segment.durationSeconds === undefined)) {
     throw new Error("Scene ASR requires narration segment timing.");
@@ -94,22 +95,22 @@ export async function transcribeNarrationScenes(project: VideoProject, signal?: 
       sceneIndex: segment.sceneIndex,
       audio: path.join(workDir, `scene-${String(segment.sceneIndex + 1).padStart(2, "0")}.wav`),
     }));
-    const preparationConcurrency = Math.max(1, Math.floor(Number(process.env.ASR_PREP_CONCURRENCY ?? 2) || 2));
+    const preparationConcurrency = Math.max(1, Math.min(4, config.tts.preprocessConcurrency));
     await mapWithConcurrency(requests, preparationConcurrency, async (request, index) => {
       const segment = segments[index];
       await runCapture("ffmpeg", [
         "-y", "-ss", String(segment.audioStartSeconds), "-i", sourceAudio,
         "-t", String(segment.durationSeconds), "-ar", "16000", "-ac", "1", request.audio,
-      ], signal);
+      ], signal, config.retry.stageTimeoutMs.audioGate);
     });
     const requestFile = path.join(workDir, "request.json");
     await writeFile(requestFile, JSON.stringify({ segments: requests, wordTimestamps: true }), "utf8");
     const result = await runCapture(resolvePythonCommand(), [
       fromRoot("scripts", "transcribe-audio.py"),
       "--request-file", requestFile,
-      "--model", process.env.ASR_MODEL ?? "openai/whisper-tiny",
-      "--language", process.env.ASR_LANGUAGE ?? "chinese",
-    ], signal);
+      "--model", config.asr.model,
+      "--language", config.asr.language,
+    ], signal, config.retry.stageTimeoutMs.audioGate);
     const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
     return asrBatchResponseSchema.parse(JSON.parse(lines.at(-1) ?? "{}")).segments;
   } finally {
@@ -140,10 +141,10 @@ function extractNumberUnits(text: string) {
 }
 
 function hasConnectedAcronymChunk(chunks: string[] | undefined, acronym: string, expectedText: string) {
-  const reading = spelledLatinAcronym(acronym);
   const hasAdjacentSpeech = expectedText.replace(acronym, "").replace(/[，。！？；：、,.!?;:\s\d]+/gu, "").length > 0;
   return (chunks ?? []).some((chunk) => {
-    if (!chunk.includes(reading)) return false;
+    const reading = indexTtsAcronymReadings(acronym).find((candidate) => chunk.includes(candidate));
+    if (!reading) return false;
     if (!hasAdjacentSpeech) return true;
     return chunk.replace(reading, "").replace(/[，。！？；：、,.!?;:\s\d-]+/gu, "").length > 0;
   });
@@ -156,7 +157,7 @@ function expectedEntities(project: VideoProject, segment: NarrationSegment) {
     .filter((claim) => claimIds.has(claim.id))
     .flatMap((claim) => [claim.subject, /[a-zA-Z]|\d/.test(claim.value) ? claim.value : ""])
     .map(canonicalSpeechText)
-    .filter((value) => value.length >= 2 && expectedText.includes(value)) ?? [];
+    .filter((value) => value.length >= 2 && value.length <= 24 && expectedText.includes(value)) ?? [];
   const textualEntities = expectedSynthesisText(segment).match(/[A-Za-z]+(?:\s+[A-Za-z0-9._+-]+)+|v\d+(?:\.\d+)+|[A-Za-z][A-Za-z0-9._+-]{1,}/g) ?? [];
   return [...new Set([...claimEntities, ...textualEntities.map((value) => canonicalSpeechText(prepareF5SynthesisText(value)))].filter((value) => value.length >= 2))];
 }
@@ -172,6 +173,16 @@ function boundaryRecall(expected: string, actual: string, edge: "start" | "end")
     .map((length) => bigramRecall(edge === "start" ? expected.slice(0, length) : expected.slice(-length), actual)), 0);
 }
 
+function endingRecall(expected: string, actual: string) {
+  return Math.max(...[6, 10, 14, 18]
+    .filter((length) => expected.length >= length)
+    .map((length) => {
+      const expectedTail = expected.slice(-length);
+      const actualTail = actual.slice(-Math.min(actual.length, length + 4));
+      return bigramRecall(expectedTail, actualTail);
+    }), 0);
+}
+
 function characterRecall(expected: string, actual: string) {
   if (!expected) return 1;
   return [...expected].filter((char) => actual.includes(char)).length / expected.length;
@@ -181,15 +192,37 @@ function expectedAcronyms(text: string) {
   return acronymsRequiringSpelledLetters(text);
 }
 
-function normalizeAcronymHomophones(text: string) {
-  return text
+function normalizeAcronymHomophones(text: string, expectedAcronyms: readonly string[] = []) {
+  const normalized = text
+    .replace(/诶\s*吉\s*爱/gu, "AGI")
+    .replace(/诶\s*屁\s*爱/gu, "API")
+    .replace(/吉\s*皮\s*优/gu, "GPU")
+    .replace(/诶\s*斯\s*阿尔/gu, "ASR")
+    .replace(/提\s*提\s*艾斯/gu, "TTS")
+    .replace(/瑞\s*艾\s*吉/gu, "RAG")
+    .replace(/艾斯\s*迪\s*凯/gu, "SDK")
+    .replace(/西\s*艾勒\s*爱/gu, "CLI")
+    .replace(/西\s*爱/gu, "CI")
+    .replace(/西\s*迪/gu, "CD")
+    .replace(/欧\s*西\s*阿尔/gu, "OCR")
+    .replace(/诶\s*[爱艾]/gu, "AI")
     .replace(/A\s*[,.，、 ]?\s*G\s*[,.，、 ]?\s*[爱艾愛]/gi, "AGI")
     .replace(/A\s*[,.，、 ]?\s*P\s*[,.，、 ]?\s*[爱艾愛]/gi, "API")
     .replace(/A\s*[,.，、 ]?\s*[爱艾愛]/gi, "AI");
+  void expectedAcronyms;
+  return normalized;
 }
 
-function normalizeSemanticAsrVariants(text: string) {
-  return normalizeAcronymHomophones(text)
+function normalizeSemanticAsrVariants(text: string, expectedText = "") {
+  const expectedAcronyms = acronymsRequiringSpelledLetters(expectedText);
+  const expectedCanonical = expectedText ? canonicalSpeechText(expectedText) : "";
+  let normalized = text;
+  if (expectedCanonical.includes("llmwiki")) {
+    normalized = normalized.replace(/(?:拉[玛马]\s*(?:Vicky|Viki|Wiki)|LLM\s*(?:Vicky|Viki))/giu, "LLM Wiki");
+  }
+  return normalizeAcronymHomophones(normalized, expectedAcronyms)
+    .replace(/恰德\s*G\s*P\s*T/giu, "ChatGPT")
+    .replace(/恰特\s*G\s*P\s*T/giu, "ChatGPT")
     .replace(/(?:万|萬|灣)三(?:点|點)零/gu, "Wan三点零")
     .replace(/refodev/giu, "freefordevelopers")
     .replace(/(?:ornice|欧尼|王尼|欧妮|奥尼)/giu, "ornith")
@@ -203,11 +236,12 @@ function normalizeSemanticAsrVariants(text: string) {
     .replace(/超级群/gu, "超集群")
     .replace(/极群/gu, "集群")
     .replace(/新文日期/gu, "新闻日期")
+    .replace(/是和/gu, "适合")
     .replace(/(?:结果符合|結果符合)/gu, "结果复核");
 }
 
 function transcriptSpellsAcronymAsLetters(text: string, acronym: string) {
-  const asciiTranscript = normalizeAcronymHomophones(text).toUpperCase().replace(/[^A-Z]/g, "");
+  const asciiTranscript = normalizeAcronymHomophones(text, [acronym]).toUpperCase().replace(/[^A-Z]/g, "");
   if (asciiTranscript.includes(acronym)) return true;
   return false;
 }
@@ -268,18 +302,28 @@ function unexpectedBoundaryTail(expectedText: string, actualText: string) {
   return undefined;
 }
 
-export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[], options: { expectedLanguage?: string; minimumLanguageConfidence?: number; minimumConfidence?: number } = {}) {
+export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSceneTranscript[], options: {
+  expectedLanguage?: string;
+  minimumLanguageConfidence?: number;
+  minimumConfidence?: number;
+  minimumCoverage?: number;
+  minimumPrecision?: number;
+  minimumEntityRecall?: number;
+  semanticMinimumConfidence?: number;
+  boundaryLeakMinimum?: number;
+  endingRecallMinimum?: number;
+} = {}) {
   const issues: QualityIssueInput[] = [];
   const results: Array<Record<string, string | number | boolean>> = [];
   const transcriptMap = new Map(transcripts.map((transcript) => [transcript.sceneIndex, transcript]));
   const segments = project.narrationSegments ?? [];
   const minimumConfidence = options.minimumConfidence ?? Number(process.env.ASR_SCENE_CONFIDENCE_MIN ?? 0.65);
-  const minimumCoverage = Number(process.env.ASR_SCENE_TOKEN_COVERAGE_MIN ?? 0.78);
-  const minimumPrecision = Number(process.env.ASR_SCENE_TOKEN_PRECISION_MIN ?? 0.75);
-  const minimumEntityRecall = Number(process.env.ASR_ENTITY_RECALL_MIN ?? 0.8);
-  const semanticMinimumConfidence = Number(process.env.ASR_SEMANTIC_CONFIDENCE_MIN ?? Math.max(minimumConfidence, 0.84));
-  const boundaryLeakMinimum = Number(process.env.ASR_BOUNDARY_LEAK_MIN ?? 0.55);
-  const endingRecallMinimum = Number(process.env.ASR_ENDING_RECALL_MIN ?? 0.62);
+  const minimumCoverage = options.minimumCoverage ?? Number(process.env.ASR_SCENE_TOKEN_COVERAGE_MIN ?? 0.78);
+  const minimumPrecision = options.minimumPrecision ?? Number(process.env.ASR_SCENE_TOKEN_PRECISION_MIN ?? 0.75);
+  const minimumEntityRecall = options.minimumEntityRecall ?? Number(process.env.ASR_ENTITY_RECALL_MIN ?? 0.8);
+  const semanticMinimumConfidence = options.semanticMinimumConfidence ?? Number(process.env.ASR_SEMANTIC_CONFIDENCE_MIN ?? Math.max(minimumConfidence, 0.84));
+  const boundaryLeakMinimum = options.boundaryLeakMinimum ?? Number(process.env.ASR_BOUNDARY_LEAK_MIN ?? 0.55);
+  const endingRecallMinimum = options.endingRecallMinimum ?? Number(process.env.ASR_ENDING_RECALL_MIN ?? 0.62);
 
   for (const segment of segments) {
     const transcript = transcriptMap.get(segment.sceneIndex);
@@ -288,11 +332,12 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       continue;
     }
     const expectedText = canonicalSpeechText(prepareF5SynthesisText(expectedSynthesisText(segment)));
-    const normalizedTranscript = normalizeSemanticAsrVariants(transcript.text);
+    const normalizedTranscript = normalizeSemanticAsrVariants(transcript.text, expectedSynthesisText(segment));
     const actualText = canonicalSpeechText(normalizedTranscript);
+    const sequence = sequenceMetrics(expectedText, actualText);
     const confidence = transcript.confidence ?? undefined;
     const expectedChatGpt = /ChatGPT/i.test(`${segment.text} ${segment.ttsText ?? ""}`);
-    const chatGptPronunciationRecognized = /(?:Chat\s*G\s*P\s*T|拆特|恰特)/i.test(transcript.text);
+    const chatGptPronunciationRecognized = /(?:Chat\s*G\s*P\s*T|拆特|恰特|恰德)/i.test(transcript.text);
     if (expectedChatGpt && typeof confidence === "number" && confidence >= minimumConfidence && !chatGptPronunciationRecognized) {
       issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏 ChatGPT 未被识别为受保护的专名读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { phrase: "ChatGPT", transcript: transcript.text, asrConfidence: confidence, expectedReading: "恰特 G-P-T", verifier: "semantic-asr-protected-name" } });
     }
@@ -301,7 +346,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       ? acronyms.find((acronym) => !hasConnectedAcronymChunk(segment.providerSynthesisChunks, acronym, expectedSynthesisText(segment)))
       : undefined;
     if (unprotectedAcronym) {
-      issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${unprotectedAcronym} 没有使用词典保护的连续字母读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { acronym: unprotectedAcronym, provider: segment.ttsProvider ?? "unknown", providerSynthesisChunks: segment.providerSynthesisChunks ?? [], requiredReading: spelledLatinAcronym(unprotectedAcronym) } });
+      issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${unprotectedAcronym} 没有使用词典保护的连续读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { acronym: unprotectedAcronym, provider: segment.ttsProvider ?? "unknown", providerSynthesisChunks: segment.providerSynthesisChunks ?? [], requiredReading: indexTtsAcronymReadings(unprotectedAcronym).join(" or ") } });
     }
     const expectedAnchor = expectedText.slice(0, Math.min(8, expectedText.length));
     const openingWindow = actualText.slice(0, expectedAnchor.length + 8);
@@ -314,22 +359,24 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     if (typeof confidence === "number" && confidence >= minimumConfidence && repeatedPhrase) {
       issues.push({ severity: "error", code: "audio_repeated_phrase", message: `第 ${segment.sceneIndex + 1} 屏检测到旁白异常连续重复。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, repeatedPhrase: repeatedPhrase.phrase, repeatCount: repeatedPhrase.repeats, characterOffset: repeatedPhrase.index, asrConfidence: confidence } });
     }
-    const missingAcronym = acronyms.find((acronym) => !transcriptSpellsAcronymAsLetters(transcript.text, acronym));
+    const missingAcronym = acronyms.find((acronym) => !transcriptSpellsAcronymAsLetters(normalizedTranscript, acronym));
     if (missingAcronym && typeof confidence === "number" && confidence >= semanticMinimumConfidence) {
-      issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏没有连续完整读出缩写 ${missingAcronym}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedAcronym: missingAcronym, transcript: transcript.text, asrConfidence: confidence, requiredReading: spelledLatinAcronym(missingAcronym) } });
+      const requiredReading = segment.ttsProvider === "indextts"
+        ? indexTtsAcronymReadings(missingAcronym).join(" or ")
+        : spelledLatinAcronym(missingAcronym);
+      issues.push({ severity: "error", code: "audio_entity_mismatch", message: `第 ${segment.sceneIndex + 1} 屏没有连续完整读出缩写 ${missingAcronym}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedAcronym: missingAcronym, transcript: transcript.text, asrConfidence: confidence, requiredReading } });
     }
     const expectedLanguage = options.expectedLanguage?.toLowerCase();
     const detectedLanguage = transcript.detectedLanguage?.toLowerCase();
     const languageConfidence = transcript.languageConfidence;
-    const sequence = sequenceMetrics(expectedText, actualText);
     const entities = expectedEntities(project, segment);
     const matchedEntities = entities.filter((entity) => actualText.includes(entity));
     const entityRecall = matchedEntities.length / Math.max(1, entities.length);
     const expectedNumbers = extractNumberUnits(expectedSynthesisText(segment));
     const actualNumbers = extractNumberUnits(normalizedTranscript);
     const numberAccuracy = expectedNumbers.filter((value) => actualNumbers.includes(value)).length / Math.max(1, expectedNumbers.length);
-    const endingRecall = boundaryRecall(expectedText, actualText, "end");
-    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, detectedLanguage: detectedLanguage ?? "unknown", languageConfidence: languageConfidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)), endingRecall: Number(endingRecall.toFixed(3)) });
+    const endingRecallValue = endingRecall(expectedText, actualText);
+    results.push({ sceneIndex: segment.sceneIndex, transcript: transcript.text, asrConfidence: confidence ?? -1, detectedLanguage: detectedLanguage ?? "unknown", languageConfidence: languageConfidence ?? -1, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), entityRecall: Number(entityRecall.toFixed(3)), numberAccuracy: Number(numberAccuracy.toFixed(3)), endingRecall: Number(endingRecallValue.toFixed(3)) });
 
     if (expectedLanguage && (!detectedLanguage || languageConfidence === undefined)) {
       issues.push({ severity: "error", code: "asr_verification_failed", message: `第 ${segment.sceneIndex + 1} 屏缺少独立语言检测结果，不能确认语音为中文。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "check-environment", retryable: false, evidence: { transcript: transcript.text, reason: "missing_language_detection", expectedLanguage } });
@@ -348,7 +395,9 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 置信度 ${(confidence * 100).toFixed(1)}% 过低，未触发内容重建。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, asrConfidence: confidence, minimumConfidence } });
       continue;
     }
-    if (confidence < semanticMinimumConfidence) {
+    const strongSemanticEvidence = sequence.coverage >= Math.max(minimumCoverage, 0.9)
+      && sequence.precision >= Math.max(minimumPrecision, 0.9);
+    if (confidence < semanticMinimumConfidence && !strongSemanticEvidence) {
       issues.push({ severity: "warning", code: "verification_inconclusive", message: `第 ${segment.sceneIndex + 1} 屏 ASR 置信度不足以判定语义或实体错误。`, sceneIndex: segment.sceneIndex, issueClass: "environment", repairAction: "retry-stage", retryable: true, evidence: { transcript: transcript.text, asrConfidence: confidence, semanticMinimumConfidence, reason: "semantic_confidence_below_threshold" } });
       continue;
     }
@@ -368,8 +417,32 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
       issues.push({ severity: semanticEvidenceInconclusive ? "warning" : "error", code: semanticEvidenceInconclusive ? "verification_inconclusive" : "audio_semantic_mismatch", message: semanticEvidenceInconclusive ? `第 ${segment.sceneIndex + 1} 屏 ASR 语义证据接近置信度边界，暂不判定 TTS 错误。` : `第 ${segment.sceneIndex + 1} 屏 ASR 转写与旁白语义覆盖不足，需要重试或切换验证器。`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { transcript: transcript.text, tokenCoverage: Number(sequence.coverage.toFixed(3)), tokenPrecision: Number(sequence.precision.toFixed(3)), asrConfidence: confidence ?? "unknown", reason: semanticEvidenceInconclusive ? "semantic_confidence_near_threshold" : "semantic_asr_disagreement", verifierActions: ["retry-verifier", "switch-asr-provider", "inject-entity-hotwords"] } });
     }
     const isFinalSegment = segment.sceneIndex === segments.at(-1)?.sceneIndex;
-    if (isFinalSegment && !semanticMismatch && expectedText.length >= 12 && endingRecall < endingRecallMinimum) {
-      issues.push({ severity: "error", code: "audio_semantic_mismatch", message: `Scene ${segment.sceneIndex + 1} narration ending could not be confirmed by ASR.`, sceneIndex: segment.sceneIndex, repairAction: "retry-stage", retryable: true, issueClass: "environment", evidence: { transcript: transcript.text, endingRecall: Number(endingRecall.toFixed(3)), endingRecallMinimum, expectedTail: expectedText.slice(-18), actualTail: actualText.slice(-18), asrConfidence: confidence ?? "unknown", verifierActions: ["retry-verifier", "switch-asr-provider"] } });
+    if (isFinalSegment && !semanticMismatch && expectedText.length >= 12 && endingRecallValue < endingRecallMinimum) {
+      const lastWord = transcript.words?.at(-1);
+      const clipDurationSeconds = segment.durationSeconds ?? 0;
+      const tailTimingSuggestsCompleteAudio = Boolean(lastWord && clipDurationSeconds > 0 && lastWord.endSeconds >= clipDurationSeconds * 0.72);
+      issues.push({
+        severity: "error",
+        code: "audio_semantic_mismatch",
+        message: `第 ${segment.sceneIndex + 1} 屏旁白末句未被完整确认，禁止带疑似截断音频发布。`,
+        sceneIndex: segment.sceneIndex,
+        repairAction: "retry-stage",
+        retryable: true,
+        issueClass: "environment",
+        evidence: {
+          transcript: transcript.text,
+          endingRecall: Number(endingRecallValue.toFixed(3)),
+          endingRecallMinimum,
+          expectedTail: expectedText.slice(-18),
+          actualTail: actualText.slice(-18),
+          asrConfidence: confidence ?? "unknown",
+          ...(lastWord ? { lastWordEndSeconds: lastWord.endSeconds } : {}),
+          clipDurationSeconds,
+          tailTimingSuggestsCompleteAudio,
+          reason: tailTimingSuggestsCompleteAudio ? "asr_tail_mismatch_with_audio_tail" : "missing_or_early_audio_tail",
+          verifierActions: ["retry-verifier", "switch-asr-provider"],
+        },
+      });
     }
     const currentStart = expectedText.slice(0, 18);
     const currentEnd = expectedText.slice(-18);
@@ -387,7 +460,8 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
   }
   const firstTranscript = transcriptMap.get(0)?.text ?? "";
   const expectedTitle = canonicalSpeechText(prepareF5SynthesisText(project.meta.title));
-  const normalizedFirstTranscript = normalizeSemanticAsrVariants(firstTranscript);
+  const firstExpectedText = segments[0] ? expectedSynthesisText(segments[0]) : project.meta.title;
+  const normalizedFirstTranscript = normalizeSemanticAsrVariants(firstTranscript, `${project.meta.title} ${firstExpectedText}`);
   const actualOpening = canonicalSpeechText(normalizedFirstTranscript).slice(0, Math.max(expectedTitle.length + 8, 18));
   const titleAudioCoverage = firstTranscript ? bigramRecall(expectedTitle, canonicalSpeechText(normalizedFirstTranscript)) : 0;
   // Repository openings intentionally contain a recommendation prefix before

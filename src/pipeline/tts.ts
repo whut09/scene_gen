@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { NarrationSegment, VideoProject } from "./types";
 import { ensureDir, fromRoot, writeJsonAtomic } from "./utils";
@@ -13,6 +13,7 @@ import { recordProviderOutcome } from "../production/provider-stats";
 import type { ProviderSelectionAudit } from "../production/types";
 import { routeTtsProvider, type PronunciationStrategy } from "../production/tts-routing";
 import { getRuntimeConfig } from "../config/runtime-config";
+import { FIXED_REFERENCE_TTS_PROVIDER, FIXED_REFERENCE_TTS_VOICE, requiresFixedReferenceNarration } from "./tts-identity";
 import { AzureTtsError, azureTts, type AzureTtsResult } from "./tts/providers/azure";
 import { nvidiaStableSynthesisText, nvidiaTts, nvidiaTtsBatch } from "./tts/providers/nvidia";
 import { indexTts, releaseIndexTtsWorker, splitIndexTtsText } from "./tts/providers/indextts";
@@ -263,6 +264,13 @@ function ttsDomain(project: VideoProject) {
 
 async function resolveTtsProvider(project: VideoProject, plan: PronunciationPlan, explicit?: TtsProvider) {
   const runtime = getRuntimeConfig();
+  const fixedReferenceProfile = requiresFixedReferenceNarration(runtime);
+  if (fixedReferenceProfile && runtime.tts.provider !== "indextts") {
+    throw new Error("The fixed-reference narration profile is locked to the local IndexTTS provider; refusing another TTS provider.");
+  }
+  if (fixedReferenceProfile && explicit !== undefined && explicit !== "indextts") {
+    throw new Error("NVIDIA and other fallback TTS providers are forbidden for the fixed-reference narration profile.");
+  }
   const routed = await routeTtsProvider({
     profile: runtime.profile,
     plan,
@@ -540,7 +548,6 @@ async function attachSegmentedNarration(
   signal?: AbortSignal,
   forceSceneIndexes: number[] = [],
   cacheSalt?: string,
-  previousProvider?: TtsProvider,
   pronunciationStrategy?: PronunciationStrategy,
 ) {
   const segments = [...(project.narrationSegments ?? [])].sort((a, b) => a.sceneIndex - b.sceneIndex);
@@ -575,7 +582,6 @@ async function attachSegmentedNarration(
     return { segment, index, segmentPath, pronunciation, plan, forceRebuild, effectiveCacheSalt };
   });
   const canUseContinuousNvidiaBatch = provider === "nvidia"
-    && !previousProvider
     && (forcedScenes.size === segments.length || preparedSegments.every(({ segmentPath }) => !existsSync(segmentPath)));
   let results: AttachedNarrationSegmentResult[];
   if (canUseContinuousNvidiaBatch) {
@@ -607,14 +613,6 @@ async function attachSegmentedNarration(
   } else {
     results = await mapWithConcurrency(preparedSegments, taskConcurrency, async (prepared): Promise<AttachedNarrationSegmentResult> => {
       const { segment, index, segmentPath, pronunciation, plan, forceRebuild, effectiveCacheSalt } = prepared;
-    if (!forceRebuild && previousProvider && previousProvider !== provider) {
-      const previousPath = path.join(generatedDir, `${basename}-scene-${String(index + 1).padStart(2, "0")}.${providerExtension(previousProvider)}`);
-      if (existsSync(previousPath)) {
-        if (path.resolve(previousPath) !== path.resolve(segmentPath)) await copyFile(previousPath, segmentPath);
-        const duration = await probeDuration(segmentPath);
-        if (duration > 0) return { segmentPath, duration, cacheHitCount: 1, cacheMissCount: 0, generated: false, sceneIndex: index, cacheSalt: effectiveCacheSalt, pronunciationPlan: plan, pronunciationIssues: pronunciation.issues, pronunciationIssueCount: pronunciation.issues.length };
-      }
-    }
     if (provider === "f5" && index === 0) {
       const titleResult = await synthesizeF5TitleScene(project, plan.synthesisText, segmentPath, index, f5Runtime, forceRebuild, effectiveCacheSalt, signal);
       const duration = await probeDuration(segmentPath);
@@ -810,6 +808,7 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
   const projectPronunciation = await pronunciationPlanFor(project.narration, undefined, options.signal);
   const selection = await resolveTtsProvider(project, projectPronunciation.plan, options.provider);
   const provider = selection.provider;
+  console.log(`[tts] selected provider=${provider} voice=${providerVoice(provider) ?? "default"} rate=${providerRate(provider) ?? "default"} profile=${getRuntimeConfig().profile}`);
   const allSceneIndexes = project.scenes.map((_, index) => index);
   const forceSceneIndexes = options.forceAudioRebuild
     ? options.forceSceneIndexes?.length ? options.forceSceneIndexes : allSceneIndexes
@@ -825,11 +824,14 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
       f5Runtime = await createF5Runtime(limitToSingleWorker);
     }
     if (project.narrationSegments?.length) {
-      const attached = await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal, forceSceneIndexes, cacheSalt, project.audio?.provider === "silent" ? undefined : project.audio?.provider, options.pronunciationStrategy);
+      const attached = await attachSegmentedNarration(project, basename, provider, generatedDir, f5Runtime, options.signal, forceSceneIndexes, cacheSalt, options.pronunciationStrategy);
       const result = {
         ...attached,
         audio: attached.audio ? { ...attached.audio, metrics: { ...attached.audio.metrics!, providerSelection: JSON.stringify(selection.audit), selectedProvider: provider, providerCandidates: JSON.stringify(selection.routing.candidates), pronunciationStrategy: options.pronunciationStrategy ?? selection.routing.pronunciationStrategy, quotaConsumed: selection.routing.quota?.consumed ?? 0, quotaRemaining: selection.routing.quota?.remaining ?? -1, providerSwitchCount: project.audio?.provider && project.audio.provider !== provider ? 1 : 0, avoidedTtsRegenerationCount: project.audio?.provider && project.audio.provider !== provider ? Math.max(0, project.scenes.length - forceSceneIndexes.length) : 0 } } : attached.audio,
       } satisfies VideoProject;
+      if (requiresFixedReferenceNarration(getRuntimeConfig()) && (result.audio?.provider !== FIXED_REFERENCE_TTS_PROVIDER || result.audio.metrics?.selectedProvider !== FIXED_REFERENCE_TTS_PROVIDER || result.audio.metrics?.ttsVoice !== FIXED_REFERENCE_TTS_VOICE)) {
+        throw new Error("Fixed-reference narration produced audio without the locked IndexTTS provenance; refusing to continue.");
+      }
       if ((result.audio?.metrics?.generatedSceneCount ?? 0) > 0) {
         await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: result.audio?.metrics?.retryCount ?? Math.max(0, (result.audio?.metrics?.workerStartCount ?? 1) - 1), billedCharacters: result.audio?.metrics?.billedCharacters });
       }
@@ -909,6 +911,9 @@ export async function attachNarrationAudio(project: VideoProject, basename = "na
         pronunciationPlansPath,
       },
     } satisfies VideoProject;
+    if (requiresFixedReferenceNarration(getRuntimeConfig()) && (result.audio.provider !== FIXED_REFERENCE_TTS_PROVIDER || result.audio.metrics.selectedProvider !== FIXED_REFERENCE_TTS_PROVIDER || result.audio.metrics.ttsVoice !== FIXED_REFERENCE_TTS_VOICE)) {
+      throw new Error("Fixed-reference narration produced audio without the locked IndexTTS provenance; refusing to continue.");
+    }
     if (!reused) await recordTtsProviderResult({ provider, project, startedAt, success: true, retryCount: metrics.retryCount ?? Math.max(0, (metrics.workerStartCount ?? 1) - 1), billedCharacters: metrics.billedCharacters });
     return result;
   } catch (error) {

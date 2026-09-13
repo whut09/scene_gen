@@ -66,6 +66,7 @@ function healthValue(health: ProviderDescriptor["health"]) {
 }
 
 function dynamicDescriptor(definition: ProviderDefinition, context: ProviderSelectionContext, outcomes = readProviderOutcomes()): ProviderDescriptor {
+  const productionDisabled = (context.profile === "production" || context.profile === "indextts-local") && definition.id === "nvidia";
   const stats = calculateProviderStats(definition.id, context, {
     quality: definition.priorQuality,
     cost: definition.priorCost,
@@ -79,14 +80,14 @@ function dynamicDescriptor(definition: ProviderDefinition, context: ProviderSele
     id: definition.id,
     name: definition.name,
     capability: definition.capability,
-    enabled: definition.enabled,
+    enabled: productionDisabled ? false : definition.enabled,
     local: definition.local,
     quality: stats.qualityScore,
     cost: providerCostMetric(stats, definition.capability, definition.priorCost),
     latency,
     supportsPortrait: definition.supportsPortrait,
     commercialUse: definition.commercialUse,
-    reason: definition.reason,
+    reason: productionDisabled ? "NVIDIA is forbidden for fixed-reference narration; use the locked local IndexTTS2 provider" : definition.reason,
     health: stats.health,
     stats,
     ttsCapabilities: definition.ttsCapabilities,

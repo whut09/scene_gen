@@ -17,6 +17,7 @@ import { analyzeFrameVisual } from "../frame-visual-analysis";
 import { readVisualAuditFile } from "../../html-video/visual-audit";
 import { expectedVideoFileName, projectHomepageTitle } from "../../pipeline/output-naming";
 import { screenAssetMetadata } from "../../pipeline/asset-screening";
+import { fromRoot } from "../../pipeline/utils";
 
 function runCapture(command: string, args: string[], signal?: AbortSignal) {
   return runExternalProcess(command, args, {
@@ -94,6 +95,30 @@ export function assetPromotionIssues(project: VideoProject): QualityIssueInput[]
       evidence: { assetId: asset.id, assetTitle: asset.title, reasons },
     } satisfies QualityIssueInput];
   });
+}
+
+function localVisualAssetPath(src: string) {
+  if (/^(?:https?:|data:|file:)/i.test(src)) return undefined;
+  if (/^\/+/.test(src)) return fromRoot("public", src.replace(/^\/+/, ""));
+  return path.isAbsolute(src) ? src : fromRoot("public", src.replace(/^\/+/, ""));
+}
+
+export function visualEvidenceIssues(project: VideoProject): QualityIssueInput[] {
+  const embeddedSources = [...new Set(project.scenes.flatMap((scene) => scene.type === "web_screenshot_zoom" ? scene.shots.map((shot) => shot.src) : []))];
+  const acceptedSources = [
+    ...(project.assets ?? []).filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected").map((asset) => asset.src),
+    ...(project.screenshots ?? []).map((shot) => shot.src),
+  ];
+  if (acceptedSources.length > 0 && !acceptedSources.some((src) => embeddedSources.includes(src))) {
+    return [{ severity: "error", code: "visual_asset_not_embedded", message: "已通过筛选的视觉素材没有出现在最终证据场景。", repairAction: "revise-scenes", retryable: true, evidence: { assetSources: acceptedSources } }];
+  }
+  const missingSources = embeddedSources.filter((src) => {
+    const localPath = localVisualAssetPath(src);
+    return Boolean(localPath && !existsSync(localPath));
+  });
+  return missingSources.length > 0
+    ? [{ severity: "error", code: "visual_asset_missing", message: "最终证据场景引用的本地视觉素材不存在。", repairAction: "revise-scenes", retryable: true, evidence: { assetSources: missingSources } }]
+    : [];
 }
 
 export async function diagnoseVideoDurationDrift(input: {
@@ -189,6 +214,7 @@ export async function evaluateVideo(
       });
     }
     issues.push(...assetPromotionIssues(options.project));
+    issues.push(...visualEvidenceIssues(options.project));
   }
   if (!video || !audio) issues.push({ severity: "error", code: "stream_missing", message: "成片缺少视频流或音频流。" });
   if (video?.width !== 1080 || video?.height !== 1920) {
@@ -227,6 +253,11 @@ export async function evaluateVideo(
   }
   const streamDelta = Math.abs(Number(video?.duration ?? duration) - Number(audio?.duration ?? duration));
   if (streamDelta > 0.2) issues.push({ severity: "error", code: "stream_duration_drift", message: `音视频流相差 ${streamDelta.toFixed(3)} 秒。` });
+  const expectedAudioDuration = options.project?.audio?.durationSeconds;
+  const outputAudioDuration = Number(audio?.duration ?? 0);
+  if (expectedAudioDuration && outputAudioDuration > 0 && outputAudioDuration + 0.08 < expectedAudioDuration) {
+    issues.push({ severity: "error", code: "audio_tail_truncated", message: `成片音频 ${outputAudioDuration.toFixed(3)} 秒，短于旁白源 ${expectedAudioDuration.toFixed(3)} 秒，疑似截断最后一句。`, repairAction: "remux", retryable: true, evidence: { expectedAudioDurationSeconds: expectedAudioDuration, outputAudioDurationSeconds: outputAudioDuration, missingTailSeconds: Number((expectedAudioDuration - outputAudioDuration).toFixed(3)) } });
+  }
 
   const motion = await sampleMotionMetrics(videoPath, sceneDurations, signal);
   if (motion.longestStaticRun >= 6 || motion.activeMotionRatio < 0.22) {

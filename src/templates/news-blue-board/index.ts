@@ -88,7 +88,7 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
       body = `<main class="hv-main"><h1>${escapeHtml(scene.headline)}</h1>
         <section style="display:grid;grid-template-columns:repeat(${Math.min(2, Math.max(1, scene.shots.length))},1fr);gap:18px;margin-top:34px;align-items:start;">
           ${scene.shots.slice(0, 2).map((shot) => `<article class="hv-card" style="padding:12px;">
-            <img src="${escapeHtml(shot.src)}" style="display:block;width:100%;height:650px;object-fit:cover;filter:saturate(.9) brightness(1.08);opacity:.9;" />
+            <img src="${escapeHtml(shot.src)}" data-focal-point="center" style="display:block;width:100%;height:650px;object-fit:contain;object-position:50% 50%;background:#eef2f7;filter:saturate(.9) brightness(1.08);opacity:.9;" />
             <p style="margin:16px 8px 8px;font-size:25px;line-height:1.25;">${escapeHtml(shot.title || sceneHeadline(scene))}</p>
           </article>`).join("")}
         </section></main>`;

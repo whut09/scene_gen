@@ -9,6 +9,10 @@ export function spelledLatinAcronym(acronym: string) {
   return [...acronym.toUpperCase()].join("-");
 }
 
+export function contiguousLatinAcronym(acronym: string) {
+  return acronym.toUpperCase();
+}
+
 export function acronymsRequiringSpelledLetters(text: string) {
   return [...new Set([...text.matchAll(standaloneAcronymPattern)].map((match) => match[1].toUpperCase()).filter((value) => SPELLED_ACRONYMS.has(value)))];
 }
@@ -18,6 +22,36 @@ export function replaceAcronymsWithSpelledLetters(text: string) {
     const upper = match.toUpperCase();
     return SPELLED_ACRONYMS.has(upper) ? spelledLatinAcronym(upper) : match;
   });
+}
+
+export function indexTtsSpokenReading(acronym: string) {
+  return spelledLatinAcronym(acronym);
+}
+
+export function normalizeIndexTtsAcronyms(text: string) {
+  let normalized = text;
+  for (const acronym of SPELLED_ACRONYMS) {
+    const separated = [...acronym].join("[\\s._-]*");
+    normalized = normalized.replace(new RegExp(`(?<![A-Za-z])${separated}(?![A-Za-z])`, "gi"), spelledLatinAcronym(acronym));
+  }
+  return replaceAcronymsWithSpelledLetters(normalized)
+    .replace(/(?<![A-Za-z])([0-9]+)\s*[Gg][\s._-]*[Bb](?![A-Za-z])/g, "$1G-B");
+}
+
+export function indexTtsAcronymReadings(acronym: string) {
+  return [...new Set([indexTtsSpokenReading(acronym), contiguousLatinAcronym(acronym)])];
+}
+
+export function assertIndexTtsAcronymReadings(sourceText: string, providerText: string) {
+  for (const acronym of acronymsRequiringSpelledLetters(sourceText)) {
+    const expectedReading = indexTtsSpokenReading(acronym);
+    const normalizedProviderText = providerText.replace(/[‐‑‒–—―-]/gu, "");
+    const hasContinuousReading = normalizedProviderText.includes(expectedReading.replace(/[‐‑‒–—―-]/gu, ""));
+    const separatedLetters = new RegExp([...acronym].join("[\\s、，,。.;；:]+"), "i");
+    if (!hasContinuousReading || separatedLetters.test(providerText)) {
+      throw new Error("IndexTTS pronunciation input must contain a continuous reading for " + acronym + ".");
+    }
+  }
 }
 
 export function escapeXml(value: string) {
@@ -55,7 +89,7 @@ export function indexTtsPronunciationInput(plan: PronunciationPlan) {
       protectedPinyin.set(marker, pinyin);
       return `${value.slice(0, span.start)}${marker}${value.slice(span.end)}`;
     }, plan.synthesisText);
-  let text = replaceAcronymsWithSpelledLetters(textWithProtectedPinyin);
+  let text = normalizeIndexTtsAcronyms(textWithProtectedPinyin);
   for (const [marker, pinyin] of protectedPinyin) text = text.replaceAll(marker, pinyin);
   return { text, mixedPinyin, pronunciationPlanHash: plan.planHash };
 }

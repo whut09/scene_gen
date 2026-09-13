@@ -99,7 +99,7 @@ export interface HtmlVideoCacheFingerprint {
   rendererVersion: string;
 }
 
-const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v6-frame";
+const HTML_RENDERER_VERSION = "scene-gen-html-renderer-v7-asset-gate";
 let browserVersionPromise: Promise<string> | undefined;
 
 function emptyVisualAudit(sceneIndex: number, width: number, height: number, durationSec: number) {
@@ -251,6 +251,7 @@ async function hashDirectory(directory: string) {
 function localAssetPath(src: string) {
   if (/^file:/i.test(src)) return fileURLToPath(src);
   if (/^(https?:|data:)/i.test(src)) return undefined;
+  if (/^\/+/.test(src)) return fromRoot("public", src.replace(/^\/+/, ""));
   if (path.isAbsolute(src)) return src;
   return fromRoot("public", src.replace(/^\/+/, ""));
 }
@@ -519,6 +520,47 @@ async function hasAudioStream(filePath: string) {
   });
 }
 
+async function probeMediaDuration(filePath: string, signal?: AbortSignal) {
+  return new Promise<number>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason instanceof Error ? signal.reason : new Error("ffprobe aborted."));
+      return;
+    }
+    const child = spawn("ffprobe", ["-v", "error", "-show_entries", "stream=duration:format=duration", "-of", "json", filePath], { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const onAbort = () => {
+      if (!child.killed) child.kill();
+      if (!settled) reject(signal?.reason instanceof Error ? signal.reason : new Error("ffprobe aborted."));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("error", (error) => {
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      if (code !== 0) {
+        if (!signal?.aborted) reject(new Error(`ffprobe exited ${code}: ${stderr}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout) as { streams?: Array<{ duration?: string }>; format?: { duration?: string } };
+        const duration = Number(parsed.streams?.find((stream) => stream.duration)?.duration ?? parsed.format?.duration ?? 0);
+        if (!Number.isFinite(duration) || duration <= 0) throw new Error(`Invalid media duration for ${filePath}.`);
+        resolve(duration);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
 async function muxAudio(project: VideoProject, videoPath: string, outputPath: string, signal?: AbortSignal) {
   const audioPath = resolveAudioPath(project);
   if (!audioPath || project.audio?.provider === "silent") {
@@ -526,7 +568,15 @@ async function muxAudio(project: VideoProject, videoPath: string, outputPath: st
     return;
   }
   if (!existsSync(audioPath)) throw new Error(`Narration audio is configured but missing: ${audioPath}`);
-  const duration = String(project.meta.durationSeconds);
+  const [videoDuration, audioDuration] = await Promise.all([
+    probeMediaDuration(videoPath, signal),
+    probeMediaDuration(audioPath, signal),
+  ]);
+  const targetDuration = Math.max(project.meta.durationSeconds, videoDuration, audioDuration);
+  const needsVideoTail = targetDuration > videoDuration + 0.02;
+  const videoArguments = needsVideoTail
+    ? ["-vf", `tpad=stop_mode=clone:stop_duration=${(targetDuration - videoDuration + 0.1).toFixed(3)}`, "-t", targetDuration.toFixed(3), "-c:v", "libx264", "-r", String(project.meta.fps), "-pix_fmt", "yuv420p", "-preset", getRuntimeConfig().rendering.html.preset, "-crf", "20"]
+    : ["-c:v", "copy"];
   await ffmpeg([
     "-y",
     "-i",
@@ -537,8 +587,7 @@ async function muxAudio(project: VideoProject, videoPath: string, outputPath: st
     "0:v:0",
     "-map",
     "1:a:0",
-    "-c:v",
-    "copy",
+    ...videoArguments,
     "-c:a",
     "aac",
     "-b:a",
@@ -546,12 +595,16 @@ async function muxAudio(project: VideoProject, videoPath: string, outputPath: st
     "-af",
     "apad",
     "-t",
-    duration,
+    targetDuration.toFixed(3),
     "-movflags",
     "+faststart",
     outputPath,
   ], signal);
   if (!await hasAudioStream(outputPath)) throw new Error(`Audio mux completed without an audio stream: ${outputPath}`);
+  const outputAudioDuration = await probeMediaDuration(outputPath, signal);
+  if (outputAudioDuration + 0.08 < audioDuration) {
+    throw new Error(`Audio mux truncated the narration tail (${audioDuration.toFixed(3)}s -> ${outputAudioDuration.toFixed(3)}s).`);
+  }
 }
 
 export async function writeHtmlVideoContentGraph(project: VideoProject, graphPath: string) {

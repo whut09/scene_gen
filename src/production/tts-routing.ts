@@ -103,10 +103,10 @@ export class PronunciationAttemptLedger {
 
 function preferredProviders(profile: string, highRisk: boolean) {
   if (profile === "ci-offline") return ["mock"];
-  if (profile === "indextts-local" || profile === "production") return ["indextts", "nvidia", "f5", "openai", "windows"];
+  if (profile === "indextts-local" || profile === "production") return ["indextts"];
   if (profile === "fast-preview") return ["cloudflare-melotts", "edge", "f5", "windows"];
-  if (profile === "local-f5") return ["f5", "nvidia", "openai", "windows"];
-  return ["indextts", "nvidia", "openai", "f5", "windows"];
+  if (profile === "local-f5") return ["f5", "openai", "windows"];
+  return ["indextts", "openai", "f5", "windows"];
 }
 
 export async function routeTtsProvider(input: { profile: string; plan: PronunciationPlan; domain?: string; device?: string; memoryPressure?: boolean; explicitProvider?: string }): Promise<TtsRoutingDecision> {
@@ -137,6 +137,16 @@ export async function routeTtsProvider(input: { profile: string; plan: Pronuncia
         candidate.reasons.push("production high-risk pronunciation requires explicit phoneme, custom lexicon, or manual confirmation");
       }
     }
+  }
+  if (input.profile === "production" || input.profile === "indextts-local") {
+    for (const candidate of result.audit.candidates) {
+      if (candidate.providerId !== "indextts" && !candidate.eliminated) {
+        candidate.eliminated = true;
+        candidate.reasons.push("narration identity is locked to the fixed-reference local IndexTTS provider");
+      }
+    }
+    const nvidia = result.audit.candidates.find((candidate) => candidate.providerId === "nvidia");
+    if (nvidia && !nvidia.reasons.some((reason) => reason.includes("NVIDIA is forbidden"))) nvidia.reasons.push("NVIDIA is forbidden for the fixed-reference narration profile");
   }
   if (highRisk && !input.plan.spans.some((span) => span.risk === "high" && span.spokenFallback)) {
     const edge = result.audit.candidates.find((candidate) => candidate.providerId === "edge");

@@ -232,6 +232,7 @@ export async function collectArticleImages(input: {
       });
       if (input.audit) input.audit.acceptedCount += 1;
     } catch {
+      if (input.audit) input.audit.unsafeRejectedCount += 1;
       continue;
     }
   }

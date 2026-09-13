@@ -4,6 +4,7 @@ import { chatCompletionCompatibility, loadDotEnv, parseArgs, readJson, writeJson
 import { sceneRevisionResponseSchema, videoProjectSchema } from "../pipeline/schemas";
 import { fetchWithRetry } from "../pipeline/external-operation";
 import { attachFactReferences } from "../pipeline/fact-ledger";
+import { limitNarration } from "../pipeline/story";
 
 function narrationMax(scene: VideoScene) {
   if (scene.type === "title") return 150;
@@ -13,15 +14,7 @@ function narrationMax(scene: VideoScene) {
 }
 
 function fitNarration(text: string, max: number) {
-  const clean = text.trim();
-  if (clean.length <= max) return clean;
-  const sentences = clean.match(/[^。！？!?]+[。！？!?]?/g) ?? [clean];
-  let result = "";
-  for (const sentence of sentences) {
-    if ((result + sentence).length > max) break;
-    result += sentence;
-  }
-  return (result || clean.slice(0, max)).replace(/[，、；：\s]+$/, "") + (/[。！？!?]$/.test(result) ? "" : "。");
+  return limitNarration(text, max);
 }
 
 loadDotEnv();
@@ -67,7 +60,27 @@ const payload = await response.json() as {
 };
 const content = payload.choices?.[0]?.message?.content;
 if (!content) throw new Error("Scene revision returned no content.");
-const revisions = sceneRevisionResponseSchema.parse(JSON.parse(content)).revisions;
+const rawPayload = JSON.parse(content) as { revisions?: unknown };
+if (!Array.isArray(rawPayload.revisions)) throw new Error("Scene revision returned an invalid revisions array.");
+const normalizedRevisions = rawPayload.revisions.map((rawRevision) => {
+  if (!rawRevision || typeof rawRevision !== "object") return rawRevision;
+  const candidate = rawRevision as { sceneIndex?: unknown; scene?: unknown };
+  const sceneIndex = typeof candidate.sceneIndex === "number" ? candidate.sceneIndex : -1;
+  const originalScene = project.scenes[sceneIndex];
+  if (!originalScene || !candidate.scene || typeof candidate.scene !== "object") return rawRevision;
+  const candidateScene = candidate.scene as Record<string, unknown>;
+  const originalMetrics = "metrics" in originalScene ? originalScene.metrics : undefined;
+  return {
+    ...candidate,
+    scene: {
+      ...originalScene,
+      ...candidateScene,
+      type: originalScene.type,
+      ...(candidateScene.metrics === undefined && originalMetrics !== undefined ? { metrics: originalMetrics } : {}),
+    },
+  };
+});
+const revisions = sceneRevisionResponseSchema.parse({ revisions: normalizedRevisions }).revisions;
 const scenes = [...project.scenes];
 const narrationSegments = [...(project.narrationSegments ?? project.scenes.map((_, sceneIndex) => ({ sceneIndex, text: "" })))];
 for (const revision of revisions) {

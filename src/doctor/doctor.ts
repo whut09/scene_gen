@@ -124,7 +124,10 @@ async function speechVerificationChecks(config: RuntimeConfig): Promise<DoctorCh
   const asrReady = config.asr.disabled || config.asr.provider === "mock" || Boolean(config.asr.python);
   const verifier = config.asr.pronunciation;
   const verifierReady = verifier.provider === "disabled" || verifier.provider === "mock" || Boolean(verifier.apiKey && (verifier.region || verifier.endpoint));
-  const providerIds = listProviders({ profile: config.profile, language: "zh-CN" }).filter((provider) => provider.capability === "tts" && provider.enabled).map((provider) => provider.id);
+  const providerIds = listProviders({ profile: config.profile, language: "zh-CN" })
+    .filter((provider) => provider.capability === "tts" && provider.enabled)
+    .filter((provider) => config.profile !== "production" || provider.id === "indextts")
+    .map((provider) => provider.id);
   const quota = await providerQuotaStatus("azure", config);
   return [{
     id: "asr-provider", status: asrReady ? "pass" : "warn", required: false,
@@ -137,11 +140,11 @@ async function speechVerificationChecks(config: RuntimeConfig): Promise<DoctorCh
   }, {
     id: "tts-fallback-chain", status: providerIds.length ? "pass" : "fail", required: true,
     summary: providerIds.length ? `Available TTS chain: ${providerIds.join(" -> ")}` : "No TTS provider is available",
-    details: "Production high-risk pronunciation excludes unofficial Edge TTS.",
+    details: config.profile === "production" ? "Production narration is locked to fixed-reference IndexTTS; NVIDIA and cloud fallbacks are blocked." : "Production high-risk pronunciation excludes unofficial Edge TTS.",
   }, {
     id: "tts-cost-hard-limit", status: quota.hardLimitReached ? "warn" : "pass", required: false,
     summary: quota.hardLimitReached ? "Azure free character hard limit reached" : `Azure hard limit active; ${quota.remaining ?? 0} characters remain`,
-    details: "Paid cloud usage requires explicit opt-in; routing falls back when the hard limit is reached.",
+    details: "Paid cloud usage requires explicit opt-in; production does not switch away from the locked local voice.",
   }];
 }
 
@@ -234,10 +237,14 @@ export async function runDoctor(profile: ConfigProfile, config: RuntimeConfig): 
   if (config.rendering.ocr.enabled) checks.push(await commandCheck("video-ocr", config.rendering.ocr.command, ["--version"], true));
   const browserPath = chromium.executablePath();
   checks.push({ id: "playwright", status: existsSync(browserPath) ? "pass" : profile.doctor.requireBrowser ? "fail" : "warn", required: profile.doctor.requireBrowser, summary: existsSync(browserPath) ? "Playwright Chromium installed" : "Playwright Chromium missing", details: browserPath });
-  checks.push(await commandCheck("python", config.asr.python ?? config.tts.f5.python ?? resolvePythonCommand({}), ["--version"], profile.doctor.requireF5 || profile.doctor.requireWhisper));
+  checks.push(await commandCheck("python", config.asr.python ?? resolvePythonCommand({}), ["--version"], profile.doctor.requireWhisper));
   const cuda = await commandCheck("cuda", "nvidia-smi", ["--query-gpu=name,memory.total", "--format=csv,noheader"], profile.doctor.requireCuda);
   checks.push(cuda);
   checks.push(await commandCheck("cuda-python", config.tts.f5.python, ["-c", "import torch; assert torch.cuda.is_available(), 'torch.cuda.is_available() is false'; print(torch.version.cuda)"], profile.doctor.requireCuda));
+  const indexTtsRequired = config.profile === "production" || config.tts.provider === "indextts";
+  const indexTtsPathsReady = existsSync(config.tts.indextts.root) && existsSync(config.tts.indextts.modelDir) && existsSync(config.tts.indextts.refAudio) && existsSync(config.tts.indextts.glossary);
+  const indexTtsInterpreter = await commandCheck("indextts", config.tts.indextts.python, ["--version"], indexTtsRequired);
+  checks.push({ ...indexTtsInterpreter, id: "indextts", required: indexTtsRequired, status: indexTtsInterpreter.status === "pass" && indexTtsPathsReady ? "pass" : indexTtsRequired ? "fail" : "warn", summary: indexTtsInterpreter.status === "pass" && indexTtsPathsReady ? "IndexTTS fixed-reference runtime and assets ready" : "IndexTTS fixed-reference runtime or assets incomplete", details: `${config.tts.indextts.python}; root=${config.tts.indextts.root}; model=${config.tts.indextts.modelDir}; reference=${config.tts.indextts.refAudio}` });
   const f5Python = config.tts.f5.python;
   const f5 = await commandCheck("f5", f5Python, ["-c", "import f5_tts; print(f5_tts.__file__)"], profile.doctor.requireF5);
   const f5Cache = existsSync(huggingFaceCachePath("SWivid/F5-TTS", config)) || existsSync(huggingFaceCachePath("SWivid/F5-TTS_v1_Base", config));

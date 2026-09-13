@@ -100,7 +100,7 @@ test("global audio failures request a full audio rebuild", () => {
   assert.equal(plan.muxRequired, true);
 });
 
-test("high-confidence semantic mismatch requests scene-scoped audio regeneration", () => {
+test("semantic ASR mismatch retries verification without dirtying TTS", () => {
   const plan = planRepair("audio", [{
     severity: "error",
     code: "audio_semantic_mismatch",
@@ -110,8 +110,9 @@ test("high-confidence semantic mismatch requests scene-scoped audio regeneration
     retryable: true,
     evidence: { asrConfidence: 0.82, tokenCoverage: 0.71, tokenPrecision: 0.76 },
   }], undefined, 5);
-  assert.equal(plan.action, "resynthesize-audio");
-  assert.deepEqual(plan.audioSceneIndexes, [3]);
-  assert.equal(plan.dirtyPlan.concatAudio, true);
-  assert.equal(plan.muxRequired, true);
+  assert.equal(plan.action, "retry-stage");
+  assert.deepEqual(plan.audioSceneIndexes, []);
+  assert.equal(plan.dirtyPlan.concatAudio, false);
+  assert.equal(plan.muxRequired, false);
+  assert.equal(plan.pronunciationStrategy, "retry-verifier");
 });

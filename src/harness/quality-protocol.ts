@@ -104,13 +104,38 @@ export function normalizeQualityIssue(stage: QualityStage, issue: QualityIssueIn
   });
 }
 
+function stableIssueValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableIssueValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, stableIssueValue(child)]));
+  }
+  return value;
+}
+
+function deduplicateQualityIssues(issues: QualityIssue[]) {
+  const seen = new Set<string>();
+  return issues.filter((issue) => {
+    const key = JSON.stringify(stableIssueValue({ code: issue.code, stage: issue.stage, severity: issue.severity, sceneIndex: issue.sceneIndex }));
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function finalizeQualityEvaluation(input: Omit<QualityEvaluation, "profile" | "outcome" | "passed" | "issues" | "scoreStatus"> & {
   issues: QualityIssueInput[];
   profile?: QualityProfile;
   scoreStatus?: QualityScoreStatus;
 }): QualityEvaluation {
   const profile = input.profile ?? loadQualityProfile();
-  const issues = input.issues.map((issue) => normalizeQualityIssue(input.stage, issue));
+  const normalizedIssues = input.issues.map((issue) => normalizeQualityIssue(input.stage, issue));
+  const issues = deduplicateQualityIssues(profile.name === "strict"
+    ? normalizedIssues.map((issue) => issue.code === "verification_inconclusive" && issue.severity === "warning"
+      ? { ...issue, severity: "error" as const, issueClass: "environment" as const, repairAction: "retry-stage" as const, retryable: true, message: `${issue.message} Strict quality requires conclusive independent evidence.` }
+      : issue)
+    : normalizedIssues);
   const environmentBlocked = issues.some((issue) => issue.issueClass === "environment" && issue.severity === "error");
   const hardFailed = issues.some((issue) => issue.issueClass === "hard" && issue.severity === "error");
   const softFailed = issues.some((issue) => issue.issueClass === "soft" && issue.severity === "warning"

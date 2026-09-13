@@ -244,6 +244,14 @@ export const videoProjectSchema = z.object({
       leadingSilenceSeconds: z.number().nonnegative().optional(),
       audioGenerationKey: z.string().default("default"),
       providerSelection: z.string().default("{}"),
+      selectedProvider: z.string().min(1).optional(),
+      providerCandidates: z.string().optional(),
+      pronunciationStrategy: z.string().optional(),
+      quotaConsumed: z.number().nonnegative().optional(),
+      quotaRemaining: z.number().optional(),
+      providerSwitchCount: z.number().int().nonnegative().optional(),
+      verifierRetryCount: z.number().int().nonnegative().optional(),
+      avoidedTtsRegenerationCount: z.number().int().nonnegative().optional(),
       requestMs: z.number().nonnegative().optional(),
       retryCount: z.number().int().nonnegative().optional(),
       billedCharacters: z.number().int().nonnegative().optional(),
@@ -354,17 +362,19 @@ export const sceneRevisionResponseSchema = z.object({
   })),
 });
 
+export const qualityJudgeIssueSchema = z.object({
+  code: issueCodeSchema,
+  stage: z.literal("draft"),
+  severity: issueSeveritySchema,
+  sceneIndex: z.number().int().nonnegative().optional(),
+  evidence: issueEvidenceSchema,
+  repairAction: repairActionSchema,
+  retryable: z.boolean(),
+});
+
 export const qualityJudgeResponseSchema = z.object({
   scores: z.record(z.string(), z.number()).optional(),
-  issues: z.array(z.object({
-    code: issueCodeSchema,
-    stage: z.literal("draft"),
-    severity: issueSeveritySchema,
-    sceneIndex: z.number().int().nonnegative().optional(),
-    evidence: issueEvidenceSchema,
-    repairAction: repairActionSchema,
-    retryable: z.boolean(),
-  })).optional(),
+  issues: z.array(qualityJudgeIssueSchema).optional(),
   revisionNotes: z.array(z.string()).optional(),
 });
 

@@ -10,6 +10,7 @@ import { ensureRepositoryProjectIdentity } from "./repository-project";
 import { assertProjectReadyForSynthesis, synthesisTargetSeconds } from "./synthesis-readiness";
 
 loadDotEnv();
+if (!process.env.SCENE_GEN_PROFILE) process.env.SCENE_GEN_PROFILE = "indextts-local";
 
 const args = parseArgs(process.argv.slice(2));
 if (typeof args.project !== "string") {

@@ -292,7 +292,7 @@ export function frameDesignCss(input: {
       color: var(--sg-accent-strong) !important;
     }
     .sg-frame .ge-issue { border-color: var(--sg-accent) !important; }
-    .sg-frame .ge-cover::after { display: none !important; }
+    .sg-frame .ge-cover::after { display: block !important; }
     .sg-frame .ge-date,
     .sg-frame .ge-stars {
       border-radius: 8px !important;

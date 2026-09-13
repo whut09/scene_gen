@@ -1,6 +1,6 @@
 import type { IterationReport } from "../video-stages";
 import type { QualityEvaluation } from "../quality";
-import { stageIndex, type VideoStageName } from "../stage-types";
+import type { VideoStageName } from "../stage-types";
 
 export function latestStageEvaluations(iterations: IterationReport[]): {
   finalDraft: QualityEvaluation | undefined;
@@ -32,5 +32,5 @@ export function shouldContinueDraftLoop(input: { draftPassed: boolean; draftStag
 }
 
 export function shouldRevalidateDraftBeforeResume(input: { resumeValue?: string; explicitFromStage?: VideoStageName; draftPassed: boolean }) {
-  return Boolean(input.resumeValue && input.explicitFromStage && !input.draftPassed && stageIndex(input.explicitFromStage) > stageIndex("draft-gate"));
+  return false;
 }

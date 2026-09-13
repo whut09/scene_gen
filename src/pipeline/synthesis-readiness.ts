@@ -42,6 +42,19 @@ function compactText(value: string) {
   return value.replace(/\s+/g, "").trim();
 }
 
+const danglingNarrationEnding = /(?:正是因为|因为|但是|而且|以及|并且|从而|所以|包括|例如|其中|另一方面)[，,：:\s]*$/u;
+
+function narrationCompletenessIssues(project: VideoProject): SynthesisReadinessIssue[] {
+  return (project.narrationSegments ?? []).flatMap((segment) => {
+    const text = segment.text.trim();
+    const withoutPunctuation = text.replace(/[。！？!?；;]+$/u, "").trim();
+    if (!text || !/[。！？!?]$/u.test(text) || danglingNarrationEnding.test(withoutPunctuation)) {
+      return [{ code: "narration_truncated_fragment", sceneIndex: segment.sceneIndex, message: `Narration scene ${segment.sceneIndex + 1} must end with a complete sentence before TTS.` }];
+    }
+    return [];
+  });
+}
+
 export function synthesisTargetSeconds(project: VideoProject, requestedSeconds?: number) {
   const repository = Boolean(repositoryName(project));
   const requested = requestedSeconds && Number.isFinite(requestedSeconds) && requestedSeconds > 0
@@ -53,10 +66,11 @@ export function synthesisTargetSeconds(project: VideoProject, requestedSeconds?:
 }
 
 export function projectSynthesisReadinessIssues(project: VideoProject, targetSeconds: number): SynthesisReadinessIssue[] {
+  const completenessIssues = narrationCompletenessIssues(project);
   const repository = repositoryName(project);
-  if (!repository) return [];
+  if (!repository) return completenessIssues;
 
-  const issues: SynthesisReadinessIssue[] = [];
+  const issues: SynthesisReadinessIssue[] = [...completenessIssues];
   const segments = project.narrationSegments ?? [];
   const policy = contentDurationPolicy("repository");
   if (project.scenes.length !== policy.sceneCount || segments.length !== project.scenes.length) {

@@ -1,7 +1,7 @@
 import type { RuntimeConfig } from "../../config/runtime-config";
 import { getRuntimeConfig } from "../../config/runtime-config";
 import type { VideoProject } from "../../pipeline/types";
-import { acronymsRequiringSpelledLetters, spelledLatinAcronym } from "../../pipeline/pronunciation/provider-adapters";
+import { acronymsRequiringSpelledLetters, indexTtsAcronymReadings, indexTtsSpokenReading, spelledLatinAcronym } from "../../pipeline/pronunciation/provider-adapters";
 import { prepareF5SynthesisText } from "../../pipeline/tts";
 import { pronounceYearDigits } from "../../pipeline/tts/text-normalization";
 import { canonicalSpeechText } from "../speech-normalization";
@@ -43,12 +43,15 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
     }
     if ((segment.ttsProvider === "indextts" || segment.ttsProvider === "nvidia") && segment.providerSynthesisText) {
       for (const acronym of acronymsRequiringSpelledLetters(segment.text)) {
-        const requiredReading = spelledLatinAcronym(acronym);
+        const requiredReadings = segment.ttsProvider === "indextts" ? [indexTtsSpokenReading(acronym)] : [spelledLatinAcronym(acronym)];
+        const requiredReading = requiredReadings.join(" or ");
         const separatedLetters = new RegExp([...acronym].join("[\\s、，,。.;；:]+"), "i");
         const normalizedReading = segment.providerSynthesisText.replace(/[-‐‑‒–—―]/gu, "");
-        const normalizedRequiredReading = requiredReading.replace(/[-‐‑‒–—―]/gu, "");
-        const hasContinuousReading = segment.providerSynthesisText.includes(requiredReading) || normalizedReading.includes(normalizedRequiredReading);
-        if (!hasContinuousReading || (separatedLetters.test(segment.providerSynthesisText) && !hasContinuousReading)) {
+        const hasContinuousReading = requiredReadings.some((reading) => {
+          const normalizedRequiredReading = reading.replace(/[-‐‑‒–—―]/gu, "");
+          return segment.providerSynthesisText?.includes(reading) || normalizedReading.includes(normalizedRequiredReading);
+        });
+        if (!hasContinuousReading || separatedLetters.test(segment.providerSynthesisText)) {
           issues.push({ severity: "error", code: "audio_acronym_plan_unprotected", message: `第 ${segment.sceneIndex + 1} 屏缩写 ${acronym} 的最终 TTS 输入没有连续发音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { acronym, requiredReading, provider: segment.ttsProvider, providerSynthesisText: segment.providerSynthesisText } });
         }
       }
@@ -58,9 +61,16 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
       const expected = `${prepareF5SynthesisText(denominator)}分之${prepareF5SynthesisText(numerator)}`;
       if (!prepared.includes(expected)) issues.push({ severity: "error", code: "tts_fraction_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏分数 ${match[0]} 必须读作 ${expected}。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { fraction: match[0], expected, synthesisText: prepared } });
     }
-    const spellsAi = /(?:^|[^A-Za-z])A\s*[、，,。.;；:\s-]+\s*I(?:[^A-Za-z]|$)/i.test(synthesisInput);
-    if (/\bAI\b/i.test(segment.text) && !/\bAI\b/i.test(synthesisInput) && !spellsAi && synthesisInput.includes("人工智能")) {
-      issues.push({ severity: "error", code: "tts_ai_expanded", message: `第 ${segment.sceneIndex + 1} 屏把 AI 扩写成了“人工智能”，应保持 AI 字母读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { displayText: segment.text, synthesisText: synthesisInput } });
+    const hasAi = /\bAI\b/i.test(segment.text);
+    const expectedAiReading = segment.ttsProvider === "indextts" ? indexTtsSpokenReading("AI") : "AI";
+    const hasConnectedAi = segment.ttsProvider === "indextts"
+      ? synthesisInput.includes(expectedAiReading)
+      : /(?<![A-Za-z])AI(?![A-Za-z])/i.test(synthesisInput);
+    if (hasAi && !hasConnectedAi && synthesisInput.includes("人工智能")) {
+      issues.push({ severity: "error", code: "tts_ai_expanded", message: `第 ${segment.sceneIndex + 1} 屏把 AI 扩写成了“人工智能”，应保持 ${expectedAiReading} 的连续读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { displayText: segment.text, synthesisText: synthesisInput, expectedReading: expectedAiReading } });
+    }
+    if (hasAi && segment.ttsProvider === "indextts" && (!hasConnectedAi || /A\s+I|诶\s+艾|诶\s*爱/iu.test(synthesisInput))) {
+      issues.push({ severity: "error", code: "tts_ai_pronunciation_invalid", message: `第 ${segment.sceneIndex + 1} 屏 AI 必须使用连续的“${expectedAiReading}”，不能拆开或使用旧读法。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { expectedReading: expectedAiReading, synthesisText: synthesisInput } });
     }
     // A curated ttsText may intentionally omit secondary API names. Keep the
     // hard check for the project title and for unmodified synthesis text.
@@ -69,7 +79,15 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
       .filter((name) => !segment.ttsText || segment.ttsText === segment.text || titleSpeech.includes(canonicalSpeechText(prepareF5SynthesisText(name))));
     for (const name of protectedLatinNames) {
       const normalizedName = canonicalSpeechText(prepareF5SynthesisText(name));
-      if (!canonicalSpeechText(prepared).includes(normalizedName)) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, normalizedName, displayText: segment.text, synthesisText: synthesisInput } });
+      const providerReading = segment.ttsProvider === "indextts"
+        ? name.split(/\s+/u).every((part) => {
+          const readings = indexTtsAcronymReadings(part);
+          const normalizedPart = canonicalSpeechText(part);
+          return readings.some((reading) => canonicalSpeechText(prepared).includes(canonicalSpeechText(reading)))
+            || canonicalSpeechText(prepared).includes(normalizedPart);
+        })
+        : false;
+      if (!canonicalSpeechText(prepared).includes(normalizedName) && !providerReading) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, normalizedName, displayText: segment.text, synthesisText: synthesisInput } });
     }
     const repositoryName = repositoryProjectName(project);
     const normalizedTitle = project.meta.title.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();

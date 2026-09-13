@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { VideoProject } from "../pipeline/types";
 import { generationResultSchema, type StoryManifestItem } from "../pipeline/story-manifest";
@@ -20,6 +20,7 @@ import { recordProviderOutcome } from "../production/provider-stats";
 import { findTtsPronunciations } from "../pipeline/tts-pronunciation";
 import { getRuntimeConfig, runtimeConfigProcessEnv, runtimeConfigWithTemplateExclusions } from "../config/runtime-config";
 import { latestStageEvaluations } from "./agent/draft-loop";
+import { hasFixedReferenceNarrationProvenance, requiresFixedReferenceNarration } from "../pipeline/tts-identity";
 
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
@@ -273,7 +274,30 @@ export async function runPublishStage(input: {
   reportDir: string;
 }) {
   const { finalDraft, finalAudio } = latestStageEvaluations(input.iterations);
-  const passed = Boolean(finalDraft?.passed && finalAudio?.passed && input.video.passed);
+  const fixedReferenceNarration = requiresFixedReferenceNarration(getRuntimeConfig());
+  const narrationProvenancePassed = !fixedReferenceNarration || hasFixedReferenceNarrationProvenance(input.project);
+  const publishGuardIssues = narrationProvenancePassed ? [] : [{
+    severity: "error" as const,
+    code: "audio_identity_metadata_missing",
+    message: "发布前固定音色证明缺失，已阻止输出；不能使用 NVIDIA 或未知 provider 的缓存音频。",
+    issueClass: "hard" as const,
+    repairAction: "check-environment" as const,
+    retryable: false,
+    evidence: { expectedProvider: "indextts", expectedVoice: "IndexTTS2.Fixed.Reference", actualProvider: input.project.audio?.provider ?? "missing", selectedProvider: input.project.audio?.metrics?.selectedProvider ?? "missing" },
+  }];
+  const passed = Boolean(finalDraft?.passed && finalAudio?.passed && input.video.passed && narrationProvenancePassed);
+  let outputPath = input.story.outputPath;
+  if (!passed && outputPath) {
+    const failedOutputDir = path.join(path.dirname(input.journalPath), "failed-output");
+    await mkdir(failedOutputDir, { recursive: true });
+    const quarantinedPath = path.join(failedOutputDir, path.basename(outputPath));
+    try {
+      await rename(outputPath, quarantinedPath);
+      outputPath = quarantinedPath;
+    } catch {
+      outputPath = input.story.outputPath;
+    }
+  }
   const production = buildProductionReport(input.project, input.engine);
   const dirtyPlan = mergeDirtyPlans(
     ...input.iterations.map((iteration) => iteration.dirtyPlan ?? emptyDirtyPlan()),
@@ -310,7 +334,8 @@ export async function runPublishStage(input: {
       feedback: input.feedback,
     }).catch(() => ({ recorded: 0, filePath: "" }))
     : { recorded: 0, filePath: "" };
-  const audioProviderId = input.project.audio?.provider === "azure" ? "azure-speech"
+  const audioProviderId = input.project.audio?.provider === "indextts" ? "indextts"
+    : input.project.audio?.provider === "azure" ? "azure-speech"
     : input.project.audio?.provider === "openai" ? "openai-tts"
     : input.project.audio?.provider === "f5" ? "f5"
       : input.project.audio?.provider === "local" ? "local-tts" : undefined;
@@ -359,7 +384,7 @@ export async function runPublishStage(input: {
     runId: input.runId,
     runJournalPath: input.journalPath,
     url: input.url,
-    outputPath: input.story.outputPath,
+    outputPath,
     projectPath: input.story.projectPath,
     manifestPath: input.manifestPath,
     targetSeconds: input.targetSeconds,
@@ -374,6 +399,8 @@ export async function runPublishStage(input: {
     strategyTrajectory,
     loopBudget,
     production,
+    publishGuardIssues,
+    narrationProvenancePassed,
     templateLearning,
     providerHistory,
     passed,
@@ -383,7 +410,7 @@ export async function runPublishStage(input: {
     "",
     `- Run: ${input.runId}`,
     `- URL: ${input.url}`,
-    `- Output: ${input.story.outputPath}`,
+    `- Output: ${outputPath}`,
     `- Target: ${input.targetSeconds}s`,
     `- Engine: ${input.engine}`,
     `- Passed: ${passed}`,
@@ -429,7 +456,7 @@ export async function runPublishStage(input: {
   ].join("\n");
   await writeFile(markdownPath, markdown, "utf8");
   await recordStoryPlanOutcome(input.project, passed, Number(finalDraft?.metrics.scoreAverage ?? 0) - 78).catch(() => undefined);
-  return { passed, reportPath, markdownPath, productionReportPath, templateLearning, providerHistory };
+  return { passed, outputPath, reportPath, markdownPath, productionReportPath, templateLearning, providerHistory };
 }
 
 export function narrationBasename(runId: string, project: VideoProject) {

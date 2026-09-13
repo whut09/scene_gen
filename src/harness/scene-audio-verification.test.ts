@@ -137,6 +137,66 @@ test("semantic ASR accepts the Mandarin homophone transcription of Ornith", () =
   assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch"), false);
 });
 
+test("semantic ASR does not mask an LLM pronunciation drift as a valid project name", () => {
+  const project = projectFixture();
+  project.meta.title = "llm_wiki";
+  project.sources = [{ ...project.sources[0], kind: "github", repo: "nashsu/llm_wiki", url: "https://github.com/nashsu/llm_wiki" }];
+  project.narrationSegments = [
+    { sceneIndex: 0, text: "今日开源热点趋势项目推荐：LLM Wiki，持续构建文档知识库。", ttsText: "今日开源热点趋势项目推荐：LLM Wiki，持续构建文档知识库。", ttsProvider: "indextts", providerSynthesisChunks: ["今日开源热点趋势项目推荐：LLM Wiki，持续构建文档知识库。"] },
+    { sceneIndex: 1, text: "资料散落时，LMAkey先增量生成带来源的Wiki页面。", ttsText: "资料散落时，LLM Wiki先增量生成带来源的Wiki页面。", ttsProvider: "indextts", providerSynthesisChunks: ["资料散落时，LLM Wiki先增量生成带来源的Wiki页面。"] },
+  ];
+  project.narration = project.narrationSegments.map((segment) => segment.text).join("\n");
+  project.scenes = project.narrationSegments.map((segment) => ({ type: "title" as const, duration: 5, kicker: "场景", headline: segment.text, subhead: "语音验证", sources: ["fixture"] }));
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "今日开源热点趋势项目推荐LLM Wiki持续构建文档知识库。", confidence: 0.93 },
+    { sceneIndex: 1, text: "资料散落时LMAkey先增量生成带来源的Wiki页面。", confidence: 0.9 },
+  ]);
+  assert.ok(result.issues.some((item) => item.code === "audio_entity_mismatch" && item.sceneIndex === 1));
+});
+
+test("semantic ASR recognizes the continuous IndexTTS pronunciation of LLM", () => {
+  const project = projectFixture();
+  project.meta.title = "llm_wiki";
+  project.sources = [{ ...project.sources[0], kind: "github", repo: "nashsu/llm_wiki", url: "https://github.com/nashsu/llm_wiki" }];
+  project.narrationSegments = [
+    { sceneIndex: 0, text: "今日开源热点趋势项目推荐：LLM Wiki，持续构建文档知识库。", ttsText: "今日开源热点趋势项目推荐：LLM Wiki，持续构建文档知识库。", ttsProvider: "indextts", providerSynthesisChunks: ["今日开源热点趋势项目推荐：L-L-M Wiki，持续构建文档知识库。"] },
+    { sceneIndex: 1, text: "资料散落时，LLM Wiki先增量生成带来源的Wiki页面。", ttsText: "资料散落时，LLM Wiki先增量生成带来源的Wiki页面。", ttsProvider: "indextts", providerSynthesisChunks: ["资料散落时，L-L-M Wiki先增量生成带来源的Wiki页面。"] },
+  ];
+  project.narration = project.narrationSegments.map((segment) => segment.text).join("\n");
+  project.scenes = project.narrationSegments.map((segment) => ({ type: "title" as const, duration: 5, kicker: "场景", headline: segment.text, subhead: "语音验证", sources: ["fixture"] }));
+  const result = verifySceneTranscripts(project, [
+    { sceneIndex: 0, text: "今日开源热点趋势项目推荐 LLM Wiki持续构建文档知识库。", confidence: 0.93 },
+    { sceneIndex: 1, text: "资料散落时 LLM Wiki先增量生成带来源的Wiki页面。", confidence: 0.9 },
+  ]);
+  assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch"), false);
+  assert.equal(result.issues.some((item) => item.code === "audio_acronym_plan_unprotected"), false);
+});
+
+test("semantic ASR recognizes Whisper aliases for continuous IndexTTS LLM Wiki pronunciation", () => {
+  const project = projectFixture();
+  project.meta.title = "llm_wiki";
+  project.sources = [{ ...project.sources[0], kind: "github", repo: "nashsu/llm_wiki", url: "https://github.com/nashsu/llm_wiki" }];
+  project.narrationSegments = [{
+    sceneIndex: 0,
+    text: "今日开源热点趋势项目推荐：LLM Wiki，持续构建文档知识库。",
+    ttsText: "今日开源热点趋势项目推荐：LLM Wiki，持续构建文档知识库。",
+    ttsProvider: "indextts",
+    providerSynthesisText: "今日开源热点趋势项目推荐：L-L-M Wiki，持续构建文档知识库。",
+    providerSynthesisChunks: ["今日开源热点趋势项目推荐：L-L-M Wiki，持续构建文档知识库。"],
+  }];
+  project.narration = project.narrationSegments[0].text;
+  project.scenes = [{ type: "title", duration: 10, kicker: "开源项目", headline: project.narrationSegments[0].text, subhead: "语音验证", sources: ["fixture"] }];
+  for (const transcript of [
+    "今日开源热点趋势项目推荐 LLM Wiki持续构建文档知识库。",
+    "今日开源热点趋势项目推荐拉马Wiki持续构建文档知识库。",
+  ]) {
+    const result = verifySceneTranscripts(project, [{ sceneIndex: 0, text: transcript, confidence: 0.93 }]);
+    assert.equal(result.issues.some((item) => item.code === "audio_entity_mismatch"), false);
+    assert.equal(result.issues.some((item) => item.code === "audio_title_incomplete"), false);
+    assert.equal(result.titleAudioCoverage, 1);
+  }
+});
+
 test("AI entity verification rejects expansion to the Mandarin semantic form", () => {
   const project = projectFixture();
   project.narrationSegments![2].text = "AI 系统完成验证。";
@@ -336,6 +396,22 @@ test("moderate confidence ASR does not masquerade as a semantic TTS failure", ()
 
   assert.equal(result.issues.some((item) => item.code === "audio_semantic_mismatch"), false);
   assert.ok(result.issues.some((item) => item.code === "verification_inconclusive"));
+});
+
+test("strong semantic evidence can pass just below the semantic confidence target", () => {
+  const project = projectFixture();
+  project.narrationSegments = [project.narrationSegments![0]];
+  project.scenes = [project.scenes[0]];
+  project.narration = project.narrationSegments[0].text;
+  const result = verifySceneTranscripts(project, project.narrationSegments.map((segment) => ({
+    sceneIndex: segment.sceneIndex,
+    text: segment.text,
+    confidence: 0.838,
+    detectedLanguage: "zh",
+    languageConfidence: 0.99,
+  })));
+  assert.equal(result.issues.some((item) => item.code === "verification_inconclusive"), false);
+  assert.equal(result.issues.some((item) => item.code === "audio_semantic_mismatch"), false);
 });
 
 test("near-threshold semantic ASR remains inconclusive", () => {

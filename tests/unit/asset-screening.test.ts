@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { screenAssetFile, screenAssetMetadata } from "../../src/pipeline/asset-screening";
-import { assetPromotionIssues } from "../../src/harness/quality/video-rules";
+import { assetPromotionIssues, visualEvidenceIssues } from "../../src/harness/quality/video-rules";
 import type { VideoProject } from "../../src/pipeline/types";
 
 function crc32(value: Buffer) {
@@ -103,4 +103,22 @@ test("video asset gate blocks portrait assets with a dedicated issue", () => {
     { id: "portrait", kind: "image", role: "evidence", title: "人物肖像", sourceUrl: "https://cdn.example.com/person.png", src: "/generated/person.png", contentType: "image/png", license: "test", screening: { status: "rejected", reasons: ["human_face_detected"], detectorVersion: "test" } },
   ] } as VideoProject);
   assert.equal(issues[0]?.code, "asset_human_face_exposed");
+});
+
+test("final video gate requires accepted visual assets to be referenced by an evidence scene", () => {
+  const project = {
+    assets: [{ id: "safe", kind: "image", role: "evidence", title: "产品界面", sourceUrl: "https://cdn.example.com/ui.png", src: "/generated/ui.png", contentType: "image/png", license: "test", screening: { status: "passed", reasons: [], detectorVersion: "test" } }],
+    screenshots: [],
+    scenes: [{ type: "title", duration: 5, kicker: "测试", headline: "视觉门禁", subhead: "证据", sources: [] }],
+  } as VideoProject;
+  assert.equal(visualEvidenceIssues(project)[0]?.code, "visual_asset_not_embedded");
+});
+
+test("final video gate rejects an evidence image that is missing from disk", () => {
+  const project = {
+    assets: [],
+    screenshots: [],
+    scenes: [{ type: "web_screenshot_zoom", duration: 5, headline: "证据", shots: [{ id: "missing", title: "界面", source: "fixture", url: "https://example.com/ui.png", src: "/generated/does-not-exist.png", width: 1200, height: 900, highlight: { x: 0, y: 0, width: 1200, height: 900 } }] }],
+  } as VideoProject;
+  assert.equal(visualEvidenceIssues(project)[0]?.code, "visual_asset_missing");
 });

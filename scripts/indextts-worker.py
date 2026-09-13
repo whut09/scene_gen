@@ -18,7 +18,15 @@ def main():
     parser.add_argument("--ref-audio", required=True)
     parser.add_argument("--glossary", required=True)
     args = parser.parse_args()
-    root = Path(args.root).resolve()
+    launch_dir = Path.cwd()
+    root = Path(args.root)
+    root = root if root.is_absolute() else (launch_dir / root).resolve()
+    model_dir = Path(args.model_dir)
+    model_dir = model_dir if model_dir.is_absolute() else (launch_dir / model_dir).resolve()
+    ref_audio = Path(args.ref_audio)
+    ref_audio = ref_audio if ref_audio.is_absolute() else (launch_dir / ref_audio).resolve()
+    glossary_path = Path(args.glossary)
+    glossary_path = glossary_path if glossary_path.is_absolute() else (launch_dir / glossary_path).resolve()
     sys.path.insert(0, str(root))
     os.chdir(root)
     import soundfile as sf
@@ -28,11 +36,10 @@ def main():
     from indextts.infer_v2 import IndexTTS2
     torchaudio.save = lambda path, wav, sample_rate, **_: sf.write(path, wav.squeeze().detach().cpu().numpy().astype("int16"), sample_rate, subtype="PCM_16")
     started = time.perf_counter()
-    model_dir = str(Path(args.model_dir).resolve())
+    model_dir = str(model_dir)
     with contextlib.redirect_stdout(sys.stderr):
         aux = ensure_models_available(model_dir)
-        tts = IndexTTS2(cfg_path=str(Path(model_dir) / "config.yaml"), model_dir=model_dir, use_fp16=True, use_cuda_kernel=False, use_deepspeed=False, aux_paths=aux)
-        glossary_path = Path(args.glossary).resolve()
+        tts = IndexTTS2(cfg_path=str(Path(model_dir) / "config.yaml"), model_dir=model_dir, use_fp16=torch.cuda.is_available(), use_cuda_kernel=False, use_deepspeed=False, aux_paths=aux)
         if not tts.normalizer.load_glossary_from_yaml(str(glossary_path)):
             raise RuntimeError(f"IndexTTS2 glossary could not be loaded: {glossary_path}")
     glossary_hash = hashlib.sha256(glossary_path.read_bytes()).hexdigest()
@@ -52,7 +59,7 @@ def main():
                 torch.cuda.manual_seed_all(seed)
             with contextlib.redirect_stdout(sys.stderr):
                 tts.infer(
-                    spk_audio_prompt=str(Path(args.ref_audio).resolve()),
+                    spk_audio_prompt=str(ref_audio),
                     text=request["text"],
                     output_path=str(output_path),
                     use_random=False,

@@ -68,10 +68,12 @@ test("local provider gate rejects spaced or Chinese-homophone AI and accepts glo
   } satisfies VideoProject;
 
   assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected"), true);
-  project.narrationSegments![0].providerSynthesisText = "诶艾 For Beginners 是人工智能入门课程。";
-  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected"), true);
   project.narrationSegments![0].providerSynthesisText = "A-I For Beginners 是人工智能入门课程。";
-  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected"), false);
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected" || issue.code === "tts_ai_pronunciation_invalid"), false);
+  project.narrationSegments![0].providerSynthesisText = "AI For Beginners 是人工智能入门课程。";
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected" || issue.code === "tts_ai_pronunciation_invalid"), true);
+  project.narrationSegments![0].providerSynthesisText = "诶爱 For Beginners 是人工智能入门课程。";
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "audio_acronym_plan_unprotected" || issue.code === "tts_ai_pronunciation_invalid"), true);
 });
 
 test("audio gate rejects a repeated repository homepage title in provider synthesis text", () => {

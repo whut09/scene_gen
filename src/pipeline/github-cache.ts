@@ -3,6 +3,7 @@ import path from "node:path";
 import type { StoryManifestItem } from "./story-manifest";
 import type { VideoProject } from "./types";
 import { videoProjectSchema } from "./schemas";
+import { hasFixedReferenceNarrationProvenance } from "./tts-identity";
 
 export interface CompletedGithubCacheHit {
   projectPath: string;
@@ -52,6 +53,7 @@ export async function findCompletedGithubCache(input: {
   storiesDir: string;
   manifest?: StoryManifestItem[];
   runsDir: string;
+  requireFixedReferenceNarration?: boolean;
 }) {
   const key = githubRepositoryKey(input.url);
   if (!key) return null;
@@ -63,6 +65,7 @@ export async function findCompletedGithubCache(input: {
     if (seenProjects.has(absoluteProjectPath) || !await isFile(absoluteOutputPath)) return;
     const project = await readProject(absoluteProjectPath);
     if (!project || githubRepositoryKey(project.sources[0]?.url ?? "") !== key) return;
+    if (input.requireFixedReferenceNarration && !hasFixedReferenceNarrationProvenance(project)) return;
     seenProjects.add(absoluteProjectPath);
     candidates.push({ projectPath: absoluteProjectPath, project, outputPath: absoluteOutputPath, manifestItem });
   };

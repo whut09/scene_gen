@@ -4,7 +4,7 @@ import type { QualityEvaluation, QualityIssue } from "./quality";
 import type { StoryManifestItem } from "../pipeline/story-manifest";
 import { readStoryManifest } from "../pipeline/story-manifest";
 import type { VideoProject } from "../pipeline/types";
-import { compactProjectNarration, isProtectedDeterministicStorySource } from "../pipeline/story";
+import { compactProjectNarration, isProtectedDeterministicStorySource, retimeProjectToTarget } from "../pipeline/story";
 import { videoProjectSchema } from "../pipeline/schemas";
 import { fromRoot, loadDotEnv, parseArgs, readJson, slugify, writeJsonAtomic } from "../pipeline/utils";
 import { RunJournalStore } from "./run-journal";
@@ -49,6 +49,7 @@ import { publishAgentRun } from "./agent/publish";
 import { PronunciationAttemptLedger, phraseFingerprint, type PronunciationAttemptLedgerState, type PronunciationStrategy } from "../production/tts-routing";
 import { defaultTargetSecondsForUrl } from "../pipeline/content-strategy";
 import { findCompletedGithubCache, githubRepositoryKey } from "../pipeline/github-cache";
+import { requiresFixedReferenceNarration } from "../pipeline/tts-identity";
 
 
 async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undefined, runtimeConfig: RuntimeConfig) {
@@ -103,6 +104,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         storiesDir: fromRoot("public", "generated", "stories"),
         manifest: await readStoryManifest(fromRoot("public", "generated", "stories", "manifest.json")).catch(() => []),
         runsDir: fromRoot("dist", "runs"),
+        requireFixedReferenceNarration: requiresFixedReferenceNarration(runtimeConfig),
       });
       if (cacheHit) {
         console.log(`[harness-cache] GitHub 项目已生成，直接返回: ${cacheHit.outputPath}`);
@@ -122,6 +124,9 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     screenshotLimit = Number(args.screenshots ?? runtimeConfig.rendering.screenshotLimit);
     engine = (typeof args.engine === "string" ? args.engine : runtimeConfig.rendering.engine) as typeof engine;
     qualityProfile = (typeof args["quality-profile"] === "string" ? args["quality-profile"] : runtimeConfig.quality.profile) as typeof qualityProfile;
+    if (runtimeConfig.profile === "production" && qualityProfile !== "strict") {
+      throw new Error("Production runs require the strict quality gate; balanced or lenient quality is not allowed.");
+    }
     runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugify(url, "video")}`;
     runDir = fromRoot("dist", "runs", runId);
     journal = await RunJournalStore.create(runDir, {
@@ -158,10 +163,19 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       return status;
     };
     const existingManifestPath = journal.snapshot().artifacts.manifestPath;
+    let recoveredProjectForDraftGate = false;
     if (existingManifestPath && existsSync(existingManifestPath)) {
       state.manifestPath = existingManifestPath;
       state.story = (await readStoryManifest(existingManifestPath))[0];
       if (state.story) state.project = await readProject(state.story.projectPath);
+      const recoveryStage = explicitFromStage ?? forceStage;
+      const persistedDraftPassed = latestStageEvaluations(state.iterations).finalDraft?.passed === true;
+      if (state.project && recoveryStage && stageIndex(recoveryStage) >= stageIndex("draft-gate") && !persistedDraftPassed) {
+        const compacted = compactProjectNarration(state.project, targetSeconds);
+        state.project = retimeProjectToTarget(compacted, targetSeconds);
+        await writeJsonAtomic(state.story!.projectPath, videoProjectSchema.parse(state.project));
+        recoveredProjectForDraftGate = true;
+      }
     }
     const videoEvaluationPath = journal.snapshot().artifacts.videoEvaluation;
     if (videoEvaluationPath && existsSync(videoEvaluationPath)) state.video = normalizeStoredQualityEvaluation(await readJson<unknown>(videoEvaluationPath));
@@ -187,6 +201,13 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
     let globalRewriteEscalated = Boolean(journal.snapshot().artifacts.noProgressEscalation);
     let draftStrategy: LoopStrategyTrace | undefined;
     let { draftPassed, iteration } = initialDraftLoopState(state.iterations);
+    if (recoveredProjectForDraftGate && !draftPassed) {
+      draftPassed = false;
+      iteration = 1;
+    }
+    if (explicitFromStage && stageIndex(explicitFromStage) > stageIndex("draft-gate") && state.story && state.project) {
+      draftPassed = true;
+    }
     const revalidateDraftBeforeResume = shouldRevalidateDraftBeforeResume({ resumeValue, explicitFromStage, draftPassed });
     if (revalidateDraftBeforeResume) iteration = maxIterations;
 
@@ -229,6 +250,20 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       await persistStrategyTrajectory(journal, runDir, strategyTrajectory);
       draftPassed = gate.value.evaluation.passed;
       if (draftPassed) break;
+      const deterministicCompactionCodes = new Set(["platform_duration_mismatch", "narration_long", "scene_narration_overloaded"]);
+      const draftErrors = gate.value.evaluation.issues.filter((issue) => issue.severity === "error");
+      if (draftErrors.length > 0 && draftErrors.every((issue) => deterministicCompactionCodes.has(issue.code)) && state.project && state.story) {
+        const beforeCompaction = structuredClone(state.project);
+        state.project = retimeProjectToTarget(compactProjectNarration(state.project, targetSeconds), targetSeconds);
+        await writeJsonAtomic(state.story.projectPath, videoProjectSchema.parse(state.project));
+        const audit = createLoopAudit({ iteration, stage: "draft", before: beforeCompaction, after: state.project, evaluation: gate.value.evaluation, durationMs: 0, usage: {} });
+        current.audits = [...(current.audits ?? []), audit];
+        await persistLoopAudit(journal, runDir, audit);
+        draftStrategy = undefined;
+        iteration += 1;
+        startStage = "draft-gate";
+        continue;
+      }
       const draftHistory = state.iterations.filter((item) => item.draftProjectHash).map((item) => ({ projectHash: item.draftProjectHash, evaluation: item.draft }));
       let strategyHandlesNoProgress = false;
       if (hasRepeatedNoProgress(draftHistory)) {
@@ -265,6 +300,23 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         throw new Error("Deterministic curated story failed its draft gate; LLM revision and global regeneration are blocked to prevent content and audio regressions.");
       }
       if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
+        const deterministicCompactionCodes = new Set(["platform_duration_mismatch", "narration_long", "scene_narration_overloaded", "scene_narration_thin"]);
+        const draftErrors = gate.value.evaluation.issues.filter((issue) => issue.severity === "error");
+        const canCompactWithoutLlm = draftErrors.length > 0
+          && draftErrors.every((issue) => deterministicCompactionCodes.has(issue.code))
+          && Boolean(state.project && state.story);
+        if (canCompactWithoutLlm) {
+          const beforeCompaction = structuredClone(state.project);
+          state.project = retimeProjectToTarget(compactProjectNarration(state.project as VideoProject, targetSeconds), targetSeconds);
+          await writeJsonAtomic(state.story!.projectPath, videoProjectSchema.parse(state.project));
+          const audit = createLoopAudit({ iteration, stage: "draft", before: beforeCompaction, after: state.project, evaluation: gate.value.evaluation, durationMs: 0, usage: {} });
+          current.audits = [...(current.audits ?? []), audit];
+          await persistLoopAudit(journal, runDir, audit);
+          draftStrategy = undefined;
+          iteration += 1;
+          startStage = "draft-gate";
+          continue;
+        }
         const beforeRevision = structuredClone(state.project);
         const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-draft-revision-result.json`);
         const revisionSceneIndexes = draftStrategy?.strategyId === "widen-dirty-scope"

@@ -97,9 +97,11 @@ export function repositoryProjectTitleSummary(project: VideoProject) {
 }
 
 export function repositorySynthesisName(name: string) {
-  if (name.toLowerCase() === "ai-job-search") return "A-I Job Search";
+  if (name.toLowerCase() === "ai-job-search") return "AI Job Search";
+  if (name.toLowerCase() === "llm_wiki") return "LLM Wiki";
+  if (name.toLowerCase() === "teamai-cli") return "TeamAI CLI";
   if (name.toLowerCase() === "ai-memory") return "AI Memory";
-  if (name.toLowerCase() === "awesome-llm-apps") return "Awesome L-L-M Apps";
+  if (name.toLowerCase() === "awesome-llm-apps") return "Awesome LLM Apps";
   if (name.toLowerCase() === "scientific-agent-skills") return "Scientific Agent Skills";
   if (name.toLowerCase() === "openhuman") return "Open Human";
   if (name.toLowerCase() === "openmaic") return "Open M A I C";

@@ -37,3 +37,17 @@ test("pronunciation mismatch uses the stable scene-scoped repair protocol", () =
   assert.equal(evaluation.issues[0].retryable, true);
   assert.deepEqual(evaluation.issues[0].evidence, { phrase: "重构", expectedPinyin: "chong2 gou4", actualPinyin: "zhong4 gou4" });
 });
+
+test("quality evaluations deduplicate identical issues emitted by multiple gates", () => {
+  const evaluation = finalizeQualityEvaluation({
+    stage: "audio",
+    issues: [
+      { severity: "error", code: "audio_missing", sceneIndex: 1, message: "missing" },
+      { severity: "error", code: "audio_missing", sceneIndex: 1, message: "missing", evidence: { source: "structural" } },
+      { severity: "error", code: "audio_missing", sceneIndex: 2, message: "missing" },
+    ],
+    revisionNotes: [],
+    metrics: {},
+  });
+  assert.deepEqual(evaluation.issues.map((issue) => `${issue.code}:${issue.sceneIndex}`), ["audio_missing:1", "audio_missing:2"]);
+});

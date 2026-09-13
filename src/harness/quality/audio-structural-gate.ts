@@ -6,8 +6,9 @@ import type { VideoProject } from "../../pipeline/types";
 import { fromRoot } from "../../pipeline/utils";
 import type { QualityIssueInput } from "../quality-protocol";
 import { analyzeVoiceProfilesFromTimeline, MAX_VOICE_PITCH_SPREAD_SEMITONES, voicePitchSpreadSemitones } from "../../pipeline/tts/acoustic-stability";
+import { hasFixedReferenceNarrationProvenance, requiresFixedReferenceNarration } from "../../pipeline/tts-identity";
 
-export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v7-narration-identity";
+export const AUDIO_STRUCTURAL_GATE_VERSION = "audio-structural-v9-fixed-reference-provenance";
 
 export function indexTtsSpeakerDrift(input: { minimum: number; average: number; pairwiseMinimum: number; pairwiseAverage: number }, requiredSimilarity: number) {
   const thresholds = {
@@ -94,8 +95,26 @@ export async function runAudioStructuralGate(input: {
   const segmentLanguages = (project.narrationSegments ?? []).map((segment) => segment.ttsLanguage).filter((language): language is string => Boolean(language));
   const uniqueVoices = [...new Set(segmentVoices)];
   const uniqueLanguages = [...new Set(segmentLanguages.map((language) => language.toLowerCase()))];
+  const segmentProviders = (project.narrationSegments ?? []).map((segment) => segment.ttsProvider).filter((provider): provider is string => Boolean(provider));
   const narrationIdentity = config.tts.narrationIdentity;
   const actualRate = project.audio.metrics?.ttsRate;
+  const fixedReferenceProfile = requiresFixedReferenceNarration(config);
+  let auditedProvider: string | undefined;
+  try {
+    const selection = JSON.parse(project.audio.metrics?.providerSelection ?? "{}") as { selectedProviderId?: unknown };
+    auditedProvider = typeof selection.selectedProviderId === "string" ? selection.selectedProviderId : undefined;
+  } catch {
+    auditedProvider = undefined;
+  }
+  if (fixedReferenceProfile && project.audio.provider !== "indextts") {
+    issues.push({ severity: "error", code: "audio_forbidden_provider", message: "固定参考音色配置只允许使用本地 IndexTTS；检测到其他 TTS provider。", repairAction: "check-environment", retryable: false, evidence: { expectedProvider: "indextts", actualProvider: project.audio.provider, runtimeProfile: config.profile } });
+  }
+  if (fixedReferenceProfile && !hasFixedReferenceNarrationProvenance(project)) {
+    issues.push({ severity: "error", code: "audio_identity_metadata_missing", message: "生产音频缺少 IndexTTS provider provenance，无法证明没有混入 NVIDIA 或其他 TTS。", repairAction: "check-environment", retryable: false, evidence: { expectedProvider: "indextts", selectedProvider: project.audio.metrics?.selectedProvider ?? "missing", auditedProvider: auditedProvider ?? "missing", runtimeProfile: config.profile } });
+  }
+  if (fixedReferenceProfile && (segmentProviders.length !== (project.narrationSegments?.length ?? 0) || segmentProviders.some((provider) => provider !== "indextts"))) {
+    issues.push({ severity: "error", code: "audio_forbidden_provider", message: "固定参考音色配置的分段 TTS provider 不一致，禁止混入 NVIDIA 或其他 provider。", repairAction: "check-environment", retryable: false, evidence: { expectedProvider: "indextts", actualProviders: [...new Set(segmentProviders)], runtimeProfile: config.profile } });
+  }
   if (narrationIdentity.expectedProvider && project.audio.provider !== narrationIdentity.expectedProvider) {
     issues.push({ severity: "error", code: "audio_narration_profile_mismatch", message: "Narration provider changed from the configured publishing voice profile.", evidence: { expectedProvider: narrationIdentity.expectedProvider, actualProvider: project.audio.provider } });
   }
@@ -153,5 +172,5 @@ export async function runAudioStructuralGate(input: {
     acousticVoiceProfiles = "unavailable";
   }
   const passed = !issues.some((issue) => issue.severity === "error");
-  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, leadingSilenceSeconds: project.audio.metrics?.leadingSilenceSeconds ?? 0, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsRate: actualRate ?? -1, ttsSceneVoiceConsistency: uniqueVoices.length <= 1, ttsTransport: project.audio.metrics?.ttsTransport ?? "", ttsContinuousStream: project.audio.metrics?.ttsContinuousStream ?? false, voiceConsistencyRetryCount: project.audio.metrics?.voiceConsistencyRetryCount ?? 0, voiceRegeneratedSceneIndexes: project.audio.metrics?.voiceRegeneratedSceneIndexes ?? "", acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), minimumSpeakerSimilarity: Number(minimumSpeakerSimilarity.toFixed(4)), averageSpeakerSimilarity: Number(averageSpeakerSimilarity.toFixed(4)), pairwiseMinimumSpeakerSimilarity: Number(pairwiseMinimumSpeakerSimilarity.toFixed(4)), pairwiseAverageSpeakerSimilarity: Number(pairwiseAverageSpeakerSimilarity.toFixed(4)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
+  return { issues, passed, metrics: { structuralPassed: passed, audioExists: true, sampleRate: probe.sampleRate, channels: probe.channels, silenceRatio: probe.silenceRatio ?? -1, peakDb: probe.peakDb ?? -999, concatDuration: cursor, leadingSilenceSeconds: project.audio.metrics?.leadingSilenceSeconds ?? 0, ttsVoice: uniqueVoices.join(","), ttsLanguage: uniqueLanguages.join(","), ttsRate: actualRate ?? -1, selectedProvider: project.audio.metrics?.selectedProvider ?? auditedProvider ?? "", ttsSceneVoiceConsistency: uniqueVoices.length <= 1, ttsTransport: project.audio.metrics?.ttsTransport ?? "", ttsContinuousStream: project.audio.metrics?.ttsContinuousStream ?? false, voiceConsistencyRetryCount: project.audio.metrics?.voiceConsistencyRetryCount ?? 0, voiceRegeneratedSceneIndexes: project.audio.metrics?.voiceRegeneratedSceneIndexes ?? "", acousticVoiceSpreadSemitones: Number(acousticVoiceSpreadSemitones.toFixed(3)), minimumSpeakerSimilarity: Number(minimumSpeakerSimilarity.toFixed(4)), averageSpeakerSimilarity: Number(averageSpeakerSimilarity.toFixed(4)), pairwiseMinimumSpeakerSimilarity: Number(pairwiseMinimumSpeakerSimilarity.toFixed(4)), pairwiseAverageSpeakerSimilarity: Number(pairwiseAverageSpeakerSimilarity.toFixed(4)), acousticVoiceProfiles, structuralGateVersion: AUDIO_STRUCTURAL_GATE_VERSION } };
 }

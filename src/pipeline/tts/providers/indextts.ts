@@ -4,24 +4,28 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { getOrCreateMediaCache } from "../../../cache/media-cache";
 import { getRuntimeConfig, type RuntimeConfig } from "../../../config/runtime-config";
-import { indexTtsPronunciationInput } from "../../pronunciation/provider-adapters";
+import { assertIndexTtsAcronymReadings, indexTtsPronunciationInput } from "../../pronunciation/provider-adapters";
 import type { PronunciationPlan } from "../../pronunciation/schema";
 import { probeDuration, run } from "../process";
 import { concatNarrationSegments } from "../postprocess";
 
-export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v11-glossary-no-default-g2pw-worker";
+export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v15-glossary-acronym-audio-gate";
 type WorkerResult = { requestId: string; status: "succeeded"; outputPath: string; synthesisMs: number };
 
 class IndexTtsWorker {
   private child?: ChildProcessWithoutNullStreams;
   private ready?: Promise<void>;
+  private readySettled = false;
   private buffer = "";
+  private stderr = "";
   private pending = new Map<string, { resolve: (value: WorkerResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
 
   constructor(private readonly config: RuntimeConfig) {}
 
   start() {
     if (this.ready) return this.ready;
+    this.readySettled = false;
+    this.stderr = "";
     this.ready = new Promise<void>((resolve, reject) => {
       const cfg = this.config.tts.indextts;
       const child = spawn(cfg.python, [cfg.workerScript, "--root", cfg.root, "--model-dir", cfg.modelDir, "--ref-audio", cfg.refAudio, "--glossary", path.resolve(cfg.glossary)], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -44,6 +48,7 @@ class IndexTtsWorker {
             continue;
           }
           if (message.type === "ready") {
+            this.readySettled = true;
             clearTimeout(readyTimer);
             void readFile(cfg.glossary).then((content) => {
               const expectedHash = createHash("sha256").update(content).digest("hex");
@@ -59,14 +64,21 @@ class IndexTtsWorker {
           message.status === "succeeded" ? pending.resolve(message as WorkerResult) : pending.reject(new Error(message.error ?? "IndexTTS2 failed"));
         }
       });
-      child.stderr.on("data", () => undefined);
+      child.stderr.on("data", (chunk) => {
+        this.stderr = `${this.stderr}${chunk.toString()}`.slice(-4000);
+      });
       child.once("error", (error) => {
         clearTimeout(readyTimer);
+        this.readySettled = true;
         reject(error);
       });
-      child.once("exit", () => {
+      child.once("exit", (code) => {
         clearTimeout(readyTimer);
-        const error = new Error("IndexTTS2 worker exited");
+        const error = new Error(`IndexTTS2 worker exited before ready (code ${code ?? "unknown"})${this.stderr ? `: ${this.stderr.trim()}` : "."}`);
+        if (!this.readySettled) {
+          this.readySettled = true;
+          reject(error);
+        }
         for (const pending of this.pending.values()) {
           clearTimeout(pending.timer);
           pending.reject(error);
@@ -74,6 +86,7 @@ class IndexTtsWorker {
         this.pending.clear();
         this.ready = undefined;
         this.child = undefined;
+        this.readySettled = false;
       });
     });
     return this.ready;
@@ -126,15 +139,32 @@ function splitIndexTtsNaturalText(text: string, maximumCharacters: number) {
   const clauses = text.match(/[^，。！？；：,.!?;:]+[，。！？；：,.!?;:]?/gu) ?? [text];
   const chunks: string[] = [];
   let current = "";
+  const splitLongClause = (clause: string) => {
+    const parts: string[] = [];
+    let remaining = clause.trim();
+    while (remaining.length > maximumCharacters) {
+      const window = remaining.slice(0, maximumCharacters + 1);
+      const boundaryMatches = [...window.matchAll(/[，、；：,.!?;:\s]/gu)];
+      const boundary = boundaryMatches.at(-1)?.index;
+      const cut = boundary !== undefined && boundary >= Math.floor(maximumCharacters * 0.55)
+        ? boundary + 1
+        : maximumCharacters;
+      parts.push(remaining.slice(0, cut).trim());
+      remaining = remaining.slice(cut).trim();
+    }
+    if (remaining) parts.push(remaining);
+    return parts;
+  };
   for (const rawClause of clauses) {
     const clause = rawClause.trim();
     if (!clause) continue;
-    if (current && current.length + clause.length > maximumCharacters) {
-      chunks.push(current);
-      current = clause;
-      continue;
+    for (const part of splitLongClause(clause)) {
+      if (current && current.length + part.length > maximumCharacters) {
+        chunks.push(current);
+        current = "";
+      }
+      current += part;
     }
-    current += clause;
   }
   if (current) chunks.push(current);
   return chunks.length ? chunks : [text];
@@ -148,6 +178,7 @@ export async function releaseIndexTtsWorker() {
 
 export async function indexTts(input: { plan: PronunciationPlan; outputPath: string; force?: boolean; cacheSalt?: string; signal?: AbortSignal }, config = getRuntimeConfig()) {
   const pronunciation = indexTtsPronunciationInput(input.plan);
+  assertIndexTtsAcronymReadings(input.plan.synthesisText, pronunciation.text);
   const synthesisChunks = splitIndexTtsText(pronunciation.text);
   const referenceDurationSeconds = await probeDuration(config.tts.indextts.refAudio);
   if (referenceDurationSeconds < config.tts.indextts.minimumReferenceSeconds) throw new Error(`IndexTTS2 reference audio must be at least ${config.tts.indextts.minimumReferenceSeconds}s; received ${referenceDurationSeconds.toFixed(2)}s.`);
