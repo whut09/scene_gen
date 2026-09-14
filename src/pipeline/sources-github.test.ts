@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collectWebpage } from "./sources";
+import { collectWebpage, githubStarsFromHtml } from "./sources";
+
+test("GitHub star fallback parses the current repository counter markup", () => {
+  assert.equal(githubStarsFromHtml('<span id="repo-stars-counter-star" aria-label="1987 users starred this repository" title="1,987" class="Counter">2k</span>'), 1987);
+  assert.equal(githubStarsFromHtml('<a href="/owner/repo/stargazers"><span class="Counter">321</span></a>'), 321);
+});
 
 test("GitHub collection falls back to the raw README after API network failures", async () => {
   const originalFetch = globalThis.fetch;

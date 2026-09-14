@@ -445,7 +445,7 @@ export async function evaluateDraft(
     ...(project.narrationSegments ?? []).flatMap((segment) => [segment.text, segment.ttsText ?? "", segment.providerSynthesisText ?? ""]),
     ...project.scenes.map(sceneVisibleText),
   ].join(" ");
-  if (isNewsProject(project) && containsForbiddenSourceAttribution(spokenProjectText)) {
+  if (isNewsProject(project) && containsForbiddenSourceAttribution(publicProjectText)) {
     issues.push({ severity: "error", code: "source_attribution_exposed", message: "新闻画面或旁白不得出现网站、媒体或文章来源署名。" });
     revisionNotes.push("删除 IT之家、量子位、36氪、TechWeb 等网站来源文字，只保留事实内容。 ");
   }

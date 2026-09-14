@@ -179,8 +179,14 @@ function assertIntegerRange(name: string, value: unknown, minimum: number, maxim
 
 function assertUrl(value: unknown) {
   if (typeof value !== "string") return;
-  const url = new URL(value);
-  if (!new Set(["http:", "https:"]).has(url.protocol)) throw new Error("--url must use http or https.");
+  for (const candidate of value.split(/[\r\n,]+/u).map((item) => item.trim()).filter(Boolean)) {
+    const url = new URL(candidate);
+    if (!new Set(["http:", "https:"]).has(url.protocol)) throw new Error("--url must use http or https.");
+  }
+}
+
+function splitUrls(value: unknown) {
+  return typeof value === "string" ? value.split(/[\r\n,]+/u).map((item) => item.trim()).filter(Boolean) : [];
 }
 
 function harnessArgv(options: Record<string, string | number | boolean>, extras: string[] = []) {
@@ -356,9 +362,14 @@ export async function main(argv = process.argv.slice(2), signal?: AbortSignal) {
       return;
     }
     const runtimeConfig = await createRuntimeConfig(profileName);
-    const result = await runVideoAgent(harnessArgv(parsed.options), signal, runtimeConfig);
-    console.log(JSON.stringify(result, null, 2));
-    if (!result.passed) process.exitCode = 2;
+    const urls = splitUrls(parsed.options.url);
+    const results = [];
+    for (const url of urls) {
+      const result = await runVideoAgent(harnessArgv({ ...parsed.options, url }), signal, runtimeConfig);
+      results.push(result);
+      if (!result.passed) process.exitCode = 2;
+    }
+    console.log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
     return;
   }
   if (command === "resume") {

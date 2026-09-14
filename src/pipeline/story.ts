@@ -112,7 +112,8 @@ function displaySource(item: HotItem) {
   return "核心事实";
 }
 
-const forbiddenSourceAttribution = /(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|智东西|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|新浪网|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
+const forbiddenSourceAttribution = /新闻来源(?:\s*[：:|｜]\s*[^。！？!?；;\n]*)?|信息来源\s*[：:|｜]\s*[^。！？!?；;\n]*|(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|智东西|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|新浪网|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号|新京报贝壳财经|新京报|贝壳财经|财联社|证券时报|澎湃新闻|界面新闻|央视新闻|新华社|中国新闻网)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
+const standaloneSourceAttribution = /(^|[。！？!?；;\s])来源\s*[：:|｜]\s*[^。！？!?；;\n]*/giu;
 const forbiddenGithubPlatformReference = /(?:https?:\/\/)?(?:www\.)?github\.com(?:\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)?|\bgithub(?:\s+release)?\b/gi;
 const forbiddenPlatformPromotion = /(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)/gi;
 const explicitWebsiteReference = /(?:https?:\/\/|www\.)[^\s<>"'，。！？；;、）)】]+/giu;
@@ -136,7 +137,8 @@ export function scrubGithubReference(text: string, repositoryAddresses: string[]
 
 export function containsForbiddenSourceAttribution(text: string) {
   forbiddenSourceAttribution.lastIndex = 0;
-  return forbiddenSourceAttribution.test(text);
+  standaloneSourceAttribution.lastIndex = 0;
+  return forbiddenSourceAttribution.test(text) || standaloneSourceAttribution.test(text);
 }
 
 export function containsForbiddenPlatformPromotion(text: string) {
@@ -163,12 +165,15 @@ export function scrubSpokenAttribution(text: string) {
 
 export function scrubAttribution(text: string) {
   forbiddenSourceAttribution.lastIndex = 0;
+  standaloneSourceAttribution.lastIndex = 0;
   return text
+    .replace(standaloneSourceAttribution, "$1")
+    .replace(/(?:新京报贝壳财经|新京报|贝壳财经|财联社|证券时报|澎湃新闻|界面新闻|央视新闻|新华社|中国新闻网)\s*(?:讯|消息)?\s*[（(]?记者?\s*[\u4e00-\u9fa5]{2,8}\s*[）)]?/gu, "")
+    .replace(/(?:新京报贝壳财经|新京报|贝壳财经|财联社|证券时报|澎湃新闻|界面新闻|央视新闻|新华社|中国新闻网)\s*(?:讯|消息)?[：:]?/gu, "")
     .replace(/[^。！？!?；;\n]*(?:不代表(?:新浪网|本站|本平台)?观点或立场|如有关于作品内容、版权或其它问题请于作品发表后)[^。！？!?；;\n]*[。！？!?；;]?/giu, "")
     .replace(forbiddenSourceAttribution, "")
     .replace(/(^|[。！？\s])作者(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "$1")
     .replace(/编辑(?:\s*[：:|｜]\s*|\s+)[\u4e00-\u9fa5A-Za-z0-9_ -]{1,24}/g, "")
-    .replace(/(?:信息)?来源\s*[：:|｜]\s*[^。！？!?；;\n]*/gu, "")
     .replace(/图源\s*[：:|｜]?\s*[^，。！？；;\s]{0,32}/g, "")
     .replace(/(?:^|[。！？\s])记者\s+[\u4e00-\u9fa5]{2,4}(?=$|[“”"'，,。！？\s])/gu, " ")
     .replace(/[^。！？；;\n]*(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)[^。！？；;\n]*[。！？；;]?/gi, "")
@@ -723,6 +728,78 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^deskcommcrm$/i.test(name)) {
+    return {
+      titleSummary: "自托管 WhatsApp 销售 CRM",
+      theme: "把 WhatsApp 客户会话、销售线索和人工智能跟进放进自托管 CRM",
+      capability: "让人工智能代理接待和筛选客户、推动销售漏斗并在需要时转交人工，同时把客户数据留在自己的服务器",
+      workflow: "准备带容器环境的服务器、域名、数据库与模型密钥，运行安装脚本后连接 WhatsApp，再用一条真实销售流程检查接待、跟进和人工转交",
+      boundaries: "上线前要核对数据合规、账号权限、模型成本和消息渠道规则；自动销售动作、客户承诺与版本更新仍需人工审核和备份",
+      topics: ["智能销售 CRM", "WhatsApp 会话", "自托管", "人工转交", "销售自动化", "数据控制"],
+      metrics: [{ label: "部署方式", value: "自托管" }, { label: "核心渠道", value: "WhatsApp" }],
+      narration: [
+        "开源项目推荐：DeskcommCRM。它把客户会话、销售线索和智能跟进放在自己的服务器。",
+        "销售团队最怕客户消息散落、跟进中断。它让智能代理接待和筛选客户、推动销售漏斗，并在需要时把会话交给人工。",
+        "使用前准备服务器、域名、数据库和模型密钥，完成安装后连接 WhatsApp，再用一条真实销售流程检查接待、跟进和人工转交。",
+        "它适合希望自己控制客户数据的销售团队；上线前仍要核对隐私合规、账号权限、模型成本和消息渠道规则。",
+      ],
+      problemPoints: ["客户会话散落在 WhatsApp，销售线索容易漏跟进，人工和自动化也难共享状态。", "DeskcommCRM 把会话、销售漏斗、智能代理和人工转交放进同一套自托管工作台。", "团队可以保留数据控制权，但对外回复和客户承诺仍需明确审核边界。"],
+      steps: [
+        { label: "准备环境", detail: "准备服务器、域名、数据库和模型接口密钥。" },
+        { label: "部署系统", detail: "运行安装脚本并检查服务、HTTPS 和数据库健康状态。" },
+        { label: "连接渠道", detail: "接入 WhatsApp，用测试客户验证会话和销售漏斗。" },
+        { label: "设置转交", detail: "明确智能代理权限、花费上限和转交人工的条件。" },
+      ],
+    };
+  }
+  if (/^system_prompts_leaks$/i.test(name)) {
+    return {
+      titleSummary: "按产品版本整理系统提示词档案",
+      theme: "查阅不同人工智能产品和版本的系统提示词、工具说明与行为约束",
+      capability: "按厂商、产品和版本保存公开收集的提示词文本，便于研究者比较模型规则、工具边界和版本变化",
+      workflow: "先按厂商和产品找到目标文件，再核对文件日期与具体版本；比较差异时只引用必要片段，并用实际产品行为做交叉验证",
+      boundaries: "档案可能过时、不完整或未经厂商确认，不能当作当前产品的官方规范；研究时还要避免传播密钥、个人信息和其他敏感内容",
+      topics: ["提示词档案", "版本比较", "工具说明", "模型行为", "安全研究", "时效核对"],
+      metrics: [{ label: "组织方式", value: "厂商与版本" }, { label: "适用方向", value: "研究与审计" }],
+      narration: [
+        "开源项目推荐：system prompts leaks，按厂商、产品和版本整理提示词档案。",
+        "研究模型行为时，零散截图很难比较。这个档案把多个产品的文本放进统一目录，方便查看规则、工具边界和版本变化。",
+        "使用时先定位具体产品文件，再核对日期和版本；做差异比较只引用必要片段，并用实际产品行为交叉验证。",
+        "它适合安全研究和产品分析，但档案可能过时、不完整或未经厂商确认，不能当作当前产品的官方规范。",
+      ],
+      problemPoints: ["不同产品的隐藏规则分散在版本和客户端中，研究者很难持续比较。", "system prompts leaks 按厂商与版本归档文本，让规则、工具说明和变化更容易检索。", "归档内容只能作为研究样本，不能替代官方文档或当前产品实测。"],
+      steps: [
+        { label: "定位产品", detail: "按厂商目录找到目标产品和客户端。" },
+        { label: "核对版本", detail: "确认文件日期、模型版本和适用入口。" },
+        { label: "比较变化", detail: "对照必要片段，记录规则与工具说明的差异。" },
+        { label: "交叉验证", detail: "回到当前产品实测，不把归档文本视为官方承诺。" },
+      ],
+    };
+  }
+  if (/^mathmodelagent$/i.test(name)) {
+    return {
+      titleSummary: "端到端完成数学建模与论文验收",
+      theme: "把数学建模题目拆成分析、建模、编码、绘图、论文排版和验收流程",
+      capability: "由多个专门角色协作选择模型、运行代码、生成图表和 Typst 论文，并通过数值一致性、编译与页面检查发现低级错误",
+      workflow: "先用一个小题检查环境和模型接口，再启动完整建模流程；在模型选择、关键假设、数据结果和最终论文四个节点人工复核",
+      boundaries: "自动生成不等于论文正确或可以直接参赛，数据来源、假设、数值结果、引用和比赛规则必须由参赛者逐项验证",
+      topics: ["数学建模", "代码计算", "论文生成", "Typst 排版", "自动验收", "人工复核"],
+      metrics: [{ label: "论文模板", value: "17 套 Typst" }, { label: "验收流程", value: "9 步检查" }],
+      narration: [
+        "开源项目推荐：MathModelAgent，端到端完成数学建模与论文验收。",
+        "参赛者最耗时的是在模型、代码和论文之间切换。按项目计划，它让多个角色协作，并保留节点给用户确认。",
+        "使用时先检查环境和模型接口，再启动完整流程；拟定后重点复核模型选择、假设、数据结果和最终论文。",
+        "它能生成 Typst 论文并执行多步验收，但自动生成不等于结论正确；数据、引用、数值和比赛规则仍要逐项核对。",
+      ],
+      problemPoints: ["数学建模比赛时间紧，分析、代码、图表和论文排版之间频繁切换。", "MathModelAgent 用多个专门角色串联建模流程，并生成可继续修改的论文。", "数值一致性、编译和页面检查能发现低级错误，但核心结论仍需参赛者负责。"],
+      steps: [
+        { label: "检查环境", detail: "先运行环境检查，确认模型接口和论文工具可用。" },
+        { label: "分析题目", detail: "拆分目标、数据、假设和评价指标。" },
+        { label: "建模计算", detail: "运行代码与图表，核对中间数值和异常结果。" },
+        { label: "论文验收", detail: "生成 Typst 论文后检查引用、数值、编译和页面。" },
+      ],
+    };
+  }
   if (/^llm_wiki$/i.test(name)) {
     return {
       titleSummary: "持续构建文档知识库",

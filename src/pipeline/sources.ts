@@ -398,6 +398,20 @@ function githubReadmeDescription(readme: string, repoName: string) {
 
 type GithubRepositoryMetrics = NonNullable<HotItem["metrics"]>;
 
+export function githubStarsFromHtml(html: string) {
+  const patterns = [
+    /id=["']repo-stars-counter-star["'][^>]*\btitle=["']([\d,]+)["']/iu,
+    /aria-label=["']([\d,]+)\s+users?\s+starred\s+this\s+repository["']/iu,
+    /href=["'][^"']+\/stargazers["'][\s\S]{0,1200}?class=["'][^"']*Counter[^"']*["'][^>]*>([^<]+)</iu,
+  ];
+  for (const pattern of patterns) {
+    const raw = pattern.exec(html)?.[1]?.replace(/[^0-9]/gu, "");
+    const stars = Number(raw);
+    if (Number.isFinite(stars) && stars > 0) return stars;
+  }
+  return undefined;
+}
+
 function githubReadmeItem(url: string, target: NonNullable<ReturnType<typeof githubRepoFromUrl>>, readme: string, config: SourceConfig, repositoryMetrics: GithubRepositoryMetrics = {}): HotItem {
   const description = compactText(githubReadmeDescription(readme, target.repo), 260);
   const joined = [description, readme].join(" ");
@@ -445,12 +459,18 @@ async function githubRepositoryMetricsFallback(target: NonNullable<ReturnType<ty
     // the exact star counter and does not require an API token.
   }
   try {
-    const script = `$ErrorActionPreference='Stop'; $repo='${target.fullName}'; $html=(Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent'='Mozilla/5.0' } -Uri ('https://github.com/'+$repo)).Content; $escaped=[regex]::Escape($repo); $match=[regex]::Match($html, ('href="/'+$escaped+'/stargazers"[\\s\\S]{0,500}?Counter[^>]*>([^<]+)'), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase); if(-not $match.Success){ throw 'GitHub star counter unavailable' }; $raw=($match.Groups[1].Value -replace '[^0-9]',''); if(-not $raw){ throw 'GitHub star counter invalid' }; [pscustomobject]@{ stars=[int]$raw } | ConvertTo-Json -Compress`;
+    const script = `$ErrorActionPreference='Stop'; $repo='${target.fullName}'; $html=(Invoke-WebRequest -UseBasicParsing -Headers @{ 'User-Agent'='Mozilla/5.0' } -Uri ('https://github.com/'+$repo)).Content; $match=[regex]::Match($html, 'id=["'']repo-stars-counter-star["''][^>]*title=["'']([\\d,]+)["'']|aria-label=["'']([\\d,]+) users? starred this repository["'']', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase); if(-not $match.Success){ throw 'GitHub star counter unavailable' }; $raw=(($match.Groups[1].Value+$match.Groups[2].Value) -replace '[^0-9]',''); if(-not $raw){ throw 'GitHub star counter invalid' }; [pscustomobject]@{ stars=[int]$raw } | ConvertTo-Json -Compress`;
     const result = await runExternalProcess("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeoutMs: 30_000, retries: 0 });
     const parsed = JSON.parse(result.stdout.trim()) as { stars?: number };
     return Number.isFinite(parsed.stars) && Number(parsed.stars) > 0 ? { stars: Number(parsed.stars) } : {};
   } catch {
-    return {};
+    try {
+      const result = await runExternalProcess("curl", ["-L", "--fail", "--silent", "--show-error", "--max-time", "30", "-A", "scene-gen/0.1", `https://github.com/${target.fullName}`], { timeoutMs: 35_000, retries: 0 });
+      const stars = githubStarsFromHtml(result.stdout);
+      return stars ? { stars } : {};
+    } catch {
+      return {};
+    }
   }
 }
 

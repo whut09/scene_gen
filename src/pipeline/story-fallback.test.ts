@@ -1250,6 +1250,23 @@ test("requested repository batch uses distinct project-specific value propositio
   }
 });
 
+test("CRM, prompt archive, and math modeling requests keep distinct grounded profiles", () => {
+  const fixtures = [
+    { repo: "melgarafael/DeskcommCRM", content: "Self-hosted WhatsApp CRM with AI agents, sales pipeline, follow-up and human handoff.", expected: /自托管.*WhatsApp.*销售/s },
+    { repo: "asgeirtj/system_prompts_leaks", content: "System prompts organized by vendor, product and model version for research.", expected: /厂商.*版本.*工具.*交叉验证/s },
+    { repo: "jihe520/MathModelAgent", content: "Analyze math modeling problems, run code, draw charts, generate Typst papers and validate output.", expected: /数学建模.*编码.*Typst.*验收/s },
+  ];
+  for (const fixture of fixtures) {
+    const name = fixture.repo.split("/").at(-1)!;
+    const project = createStoryProject({ id: name, kind: "github", contentType: "repository", title: name, url: `https://github.com/${fixture.repo}`, source: "项目资料", summary: fixture.content, content: fixture.content, score: 1, tags: [], repo: fixture.repo, metrics: { stars: 1000 } });
+    assert.match(project.narration, fixture.expected);
+    assert.doesNotMatch(project.narration, /围绕实际开发任务整理的开源工具|将项目资料中的核心功能和使用路径组织为可查阅的工作流/);
+    if (fixture.repo === "melgarafael/DeskcommCRM") {
+      assert.ok((project.narrationSegments?.[0]?.text.length ?? Infinity) <= 72);
+    }
+  }
+});
+
 test("current news batch uses grounded complete deterministic profiles", () => {
   const fixtures = [
     {

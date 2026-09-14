@@ -13,7 +13,7 @@ import { narrationSynthesisText } from "../../src/pipeline/tts/segmentation";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
-import { containsForbiddenPlatformPromotion, scrubAttribution, scrubGithubReference, scrubSpokenAttribution } from "../../src/pipeline/story";
+import { containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution, scrubAttribution, scrubGithubReference, scrubSpokenAttribution } from "../../src/pipeline/story";
 import { expectedVideoFileName, homepageTitleBasedVideoPath, projectHomepageTitle, provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 import { ProjectSynthesisReadinessError, assertProjectReadyForSynthesis, projectSynthesisReadinessIssues, synthesisTargetSeconds } from "../../src/pipeline/synthesis-readiness";
 
@@ -215,11 +215,22 @@ test("news source websites are scrubbed and blocked by the draft gate", async ()
   assert.equal(scrubAttribution("这是来自IT之家的报道。"), "这是。");
   assert.equal(scrubAttribution("潮新闻客户端 记者 李稀“零基础月入过万”"), "“零基础月入过万”");
   assert.equal(scrubAttribution("图源：网络截图 烧钱的真相"), "烧钱的真相");
+  assert.equal(scrubAttribution("新京报贝壳财经讯（记者陈维城）智能编程普及让从业人员感到压力。"), "智能编程普及让从业人员感到压力。");
+  assert.equal(scrubAttribution("新闻来源：新京报贝壳财经"), "");
+  assert.equal(containsForbiddenSourceAttribution("新闻来源：新京报贝壳财经"), true);
   const project = createFixtureProject();
   project.sources[0] = { ...project.sources[0], url: "https://www.ithome.com/0/978/453.htm", contentType: "news" };
   project.narration = `${project.narration} 来自IT之家的报道。`;
   const result = await evaluateDraft(project, project.meta.durationSeconds, "");
   assert.equal(result.issues.some((issue) => issue.code === "source_attribution_exposed"), true);
+  project.narration = `${project.narration} 新闻来源：新京报贝壳财经。`;
+  project.narrationSegments![0].text = project.narration;
+  const labelResult = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(labelResult.issues.some((issue) => issue.code === "source_attribution_exposed"), true);
+  project.narration = project.narrationSegments![0].text = "视频首页标题。模型今天正式发布，用户可以直接使用。";
+  project.scenes[0] = { ...project.scenes[0], type: "title", subhead: "新闻来源：新京报贝壳财经" };
+  const visibleResult = await evaluateDraft(project, project.meta.durationSeconds, "");
+  assert.equal(visibleResult.issues.some((issue) => issue.code === "source_attribution_exposed"), true);
 });
 
 test("news gate rejects unexplained technical detail and missing audience value", async () => {
