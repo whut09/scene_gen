@@ -754,7 +754,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   }
   if (/^system_prompts_leaks$/i.test(name)) {
     return {
-      titleSummary: "按产品版本整理系统提示词档案",
+      titleSummary: "按厂商与产品版本整理提示词工具档案",
       theme: "查阅不同人工智能产品和版本的系统提示词、工具说明与行为约束",
       capability: "按厂商、产品和版本保存公开收集的提示词文本，便于研究者比较模型规则、工具边界和版本变化",
       workflow: "先按厂商和产品找到目标文件，再核对文件日期与具体版本；比较差异时只引用必要片段，并用实际产品行为做交叉验证",
@@ -762,7 +762,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       topics: ["提示词档案", "版本比较", "工具说明", "模型行为", "安全研究", "时效核对"],
       metrics: [{ label: "组织方式", value: "厂商与版本" }, { label: "适用方向", value: "研究与审计" }],
       narration: [
-        "开源项目推荐：system prompts leaks，按厂商、产品和版本整理提示词档案。",
+        "开源项目推荐：system prompts leaks，按厂商、产品版本整理提示词与工具档案。",
         "研究模型行为时，零散截图很难比较。这个档案把多个产品的文本放进统一目录，方便查看规则、工具边界和版本变化。",
         "使用时先定位具体产品文件，再核对日期和版本；做差异比较只引用必要片段，并用实际产品行为交叉验证。",
         "它适合安全研究和产品分析，但档案可能过时、不完整或未经厂商确认，不能当作当前产品的官方规范。",
@@ -787,7 +787,7 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
       metrics: [{ label: "论文模板", value: "17 套 Typst" }, { label: "验收流程", value: "9 步检查" }],
       narration: [
         "开源项目推荐：MathModelAgent，端到端完成数学建模与论文验收。",
-        "参赛者最耗时的是在模型、代码和论文之间切换。按项目计划，它让多个角色协作，并保留节点给用户确认。",
+        "参赛者最耗时的是在模型、编码和论文之间切换。按项目计划，它让多个角色协作，并保留节点给用户确认。",
         "使用时先检查环境和模型接口，再启动完整流程；拟定后重点复核模型选择、假设、数据结果和最终论文。",
         "它能生成 Typst 论文并执行多步验收，但自动生成不等于结论正确；数据、引用、数值和比赛规则仍要逐项核对。",
       ],
