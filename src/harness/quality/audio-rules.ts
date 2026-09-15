@@ -13,7 +13,7 @@ import type { AudioStructuralProbe } from "./audio-structural-gate";
 import type { AsrSceneTranscript } from "../scene-audio-verification";
 import type { PronunciationAssessmentResult } from "./azure-pronunciation-assessment";
 import type { PronunciationSpan } from "../../pipeline/pronunciation/schema";
-import { repositoryOpeningTitleCount, repositoryProjectName } from "../../pipeline/repository-project";
+import { repositoryOpeningTitleCount, repositoryProjectName, repositorySynthesisName, repositoryTitleIdentity } from "../../pipeline/repository-project";
 
 export interface AudioGateDependencies {
   structuralProbe?: (audioPath: string, signal?: AbortSignal) => Promise<AudioStructuralProbe>;
@@ -75,6 +75,31 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
     // A curated ttsText may intentionally omit secondary API names. Keep the
     // hard check for the project title and for unmodified synthesis text.
     const titleSpeech = canonicalSpeechText(prepareF5SynthesisText(project.meta.title));
+    // Repository names are display identities, not prose to be translated.
+    // Keep an English project title intact in the final synthesis input. This
+    // catches token-level corruption such as `system_prompts_leaks` becoming
+    // `System 提示词s Leaks` before an invalid audio artifact is published.
+    const repositoryName = repositoryProjectName(project);
+    const repositorySpeechName = repositoryName ? repositorySynthesisName(repositoryName) : "";
+    const repositorySpeechIdentity = repositoryTitleIdentity(repositorySpeechName);
+    const segmentIdentity = repositoryTitleIdentity(segment.text);
+    if (
+      repositoryName
+      && /[A-Za-z]{2,}/u.test(repositorySpeechName)
+      && repositorySpeechIdentity.length >= 4
+      && (segment.sceneIndex === 0 || segmentIdentity.includes(repositoryTitleIdentity(repositoryName)))
+      && !repositoryTitleIdentity(synthesisInput).includes(repositorySpeechIdentity)
+    ) {
+      issues.push({
+        severity: "error",
+        code: "tts_proper_name_translated",
+        message: `第 ${segment.sceneIndex + 1} 屏项目原名 ${repositoryName} 在 TTS 输入中被翻译或改写。`,
+        sceneIndex: segment.sceneIndex,
+        repairAction: "resynthesize-audio",
+        retryable: true,
+        evidence: { repositoryName, expectedSpeechName: repositorySpeechName, synthesisText: synthesisInput },
+      });
+    }
     const protectedLatinNames = (segment.text.match(/\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)+\b/g) ?? [])
       .filter((name) => !segment.ttsText || segment.ttsText === segment.text || titleSpeech.includes(canonicalSpeechText(prepareF5SynthesisText(name))));
     for (const name of protectedLatinNames) {
@@ -89,7 +114,6 @@ export function ttsConventionIssues(project: VideoProject): QualityIssueInput[] 
         : false;
       if (!canonicalSpeechText(prepared).includes(normalizedName) && !providerReading) issues.push({ severity: "error", code: "tts_proper_name_translated", message: `Scene ${segment.sceneIndex + 1} translated or rewrote the protected name '${name}'.`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, evidence: { properName: name, normalizedName, displayText: segment.text, synthesisText: synthesisInput } });
     }
-    const repositoryName = repositoryProjectName(project);
     const normalizedTitle = project.meta.title.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
     const normalizedSynthesis = synthesisInput.replace(/[\s。！？!?，,:："“”'‘’]/g, "").toLowerCase();
     const repeatedTitle = repositoryName

@@ -299,7 +299,7 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
       if (isProtectedDeterministicStorySource(url) && (gate.value.repairPlan.action === "revise-scenes" || gate.value.repairPlan.action === "regenerate-draft")) {
         throw new Error("Deterministic curated story failed its draft gate; LLM revision and global regeneration are blocked to prevent content and audio regressions.");
       }
-      if (gate.value.repairPlan.action === "revise-scenes" && gate.value.repairPlan.sceneIndexes.length) {
+      if (gate.value.repairPlan.action === "revise-scenes") {
         const deterministicCompactionCodes = new Set(["platform_duration_mismatch", "narration_long", "scene_narration_overloaded", "scene_narration_thin"]);
         const draftErrors = gate.value.evaluation.issues.filter((issue) => issue.severity === "error");
         const canCompactWithoutLlm = draftErrors.length > 0
@@ -319,11 +319,11 @@ async function runVideoAgentInternal(argv: string[], signal: AbortSignal | undef
         }
         const beforeRevision = structuredClone(state.project);
         const revisionResultPath = path.join(runDir, "loop", `iteration-${iteration}-draft-revision-result.json`);
-        const revisionSceneIndexes = draftStrategy?.strategyId === "widen-dirty-scope"
+        const revisionSceneIndexes = draftStrategy?.strategyId === "widen-dirty-scope" || !gate.value.repairPlan.sceneIndexes.length
           ? state.project.scenes.map((_, index) => index)
           : gate.value.repairPlan.sceneIndexes;
         const revision = await runStage({
-          journal, name: "revise", attempt: nextAttempt(journal, "revise"), inputs: { repairPlan: gate.value.repairPlan, strategy: draftStrategy }, timeoutMs: 210_000, signal,
+          journal, name: "revise", attempt: nextAttempt(journal, "revise"), inputs: { repairPlan: gate.value.repairPlan, strategy: draftStrategy }, timeoutMs: runtimeConfig.retry.stageTimeoutMs.revision, signal,
           task: (stageSignal) => runRevisionStage({ projectPath: state.story!.projectPath, sceneIndexes: revisionSceneIndexes, issues: combineNotes([...gate.value.evaluation.issues.map((issue) => `${issue.message}\nevidence=${JSON.stringify(issue.evidence)}`), ...gate.value.evaluation.revisionNotes]), promptStrategy: draftStrategy?.promptStrategy, providerStrategy: draftStrategy?.providerStrategy, resultPath: revisionResultPath, signal: stageSignal }),
           describe: () => ({ outputs: { projectPath: state.story!.projectPath }, suggestedAction: "revise-scenes" }),
         });

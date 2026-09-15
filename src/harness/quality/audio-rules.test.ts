@@ -28,6 +28,25 @@ test("proper-name guard accepts numeric speech normalization without translation
   assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "tts_proper_name_translated"), false);
 });
 
+test("repository title gate rejects translation of one English title token", () => {
+  const project = {
+    meta: { title: "system_prompts_leaks", createdAt: "2026-09-14T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 5, sourceCount: 1 },
+    narration: "今日开源热点趋势项目推荐：system_prompts_leaks｜整理公开提示词。",
+    narrationSegments: [{
+      sceneIndex: 0,
+      text: "今日开源热点趋势项目推荐：system_prompts_leaks｜整理公开提示词。",
+      ttsText: "今日开源热点趋势项目推荐：System 提示词s Leaks｜整理公开提示词。",
+      ttsProvider: "indextts",
+    }],
+    scenes: [{ type: "title" as const, duration: 5, kicker: "今日开源热点趋势项目推荐", headline: "今日开源热点趋势项目推荐：system_prompts_leaks｜整理公开提示词", subhead: "用途：整理公开提示词", sources: ["1 Stars"] }],
+    sources: [{ id: "repo", kind: "github" as const, title: "system_prompts_leaks", url: "https://github.com/asgeirtj/system_prompts_leaks", source: "项目资料", summary: "整理公开提示词", score: 1, tags: [], repo: "asgeirtj/system_prompts_leaks", metrics: { stars: 1 } }],
+  } satisfies VideoProject;
+
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "tts_proper_name_translated"), true);
+  project.narrationSegments![0].ttsText = "今日开源热点趋势项目推荐：System Prompts Leaks｜整理公开提示词。";
+  assert.equal(ttsConventionIssues(project).some((issue) => issue.code === "tts_proper_name_translated"), false);
+});
+
 test("news number gate requires natural readings for 90后 and 2000元", () => {
   const project = {
     meta: { title: "数字新闻", createdAt: "2026-07-30T00:00:00.000Z", width: 1080, height: 1920, fps: 30, durationSeconds: 5, sourceCount: 1 },

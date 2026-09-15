@@ -108,7 +108,11 @@ export function prepareF5SynthesisText(text: string) {
     .replace(/\bSol\b/gi, "索尔")
     .replace(/Codex(?![，、。！？；：,.!?;:])/gi, "Codex，")
     .replace(/OpenAI/gi, "欧盆艾，")
-    .replace(/Prompt/gi, "提示词")
+    // Only translate the standalone English word.  Matching the prefix of a
+    // plural or hyphenated product name (for example `System Prompts Leaks`)
+    // corrupts the proper name into `提示词s` and makes the spoken title differ
+    // from the title shown on screen.
+    .replace(/\bPrompt\b/gi, "提示词")
     .replace(/(?<=\d),(?=\d{3}(?:\D|$))/g, "")
     .replace(/(\d+)\s*[\/／]\s*(\d+)/g, (_, numerator: string, denominator: string) => `${numberToChinese(denominator)}分之${numberToChinese(numerator)}`)
     .replace(/(\d+)\s*[:\uff1a]\s*(\d+)/g, (_, left: string, right: string) => `${numberToChinese(left)}\u6bd4${numberToChinese(right)}`)

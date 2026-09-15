@@ -77,6 +77,7 @@ export function rankStoryPlanCandidates(
   expectedVisuals: readonly string[] = candidates[0]?.scenes.length === 4
     ? ["title", "briefing", "flow", "outro"]
     : ["title", "briefing", "chart", "flow", "outro"],
+  options: { relaxFactVetoes?: boolean } = {},
 ) {
   const knownClaims = new Map(ledger.claims.map((claim) => [claim.id, claim]));
   return candidates.map((candidate): StoryPlanRanking => {
@@ -85,25 +86,33 @@ export function rankStoryPlanCandidates(
     const allClaimIds = [...candidate.titleClaimIds, ...candidate.scenes.flatMap((scene) => scene.claimIds)];
     const unknownClaims = [...new Set(allClaimIds.filter((claimId) => !knownClaims.has(claimId)))];
     if (unknownClaims.length) rejectedReasons.push(`unknown-claims:${unknownClaims.join(",")}`);
+    let softVetoPenalty = 0;
     candidate.scenes.forEach((scene, index) => {
       if (scene.visual !== expectedVisuals[index]) rejectedReasons.push(`scene-${index}-visual-mismatch`);
       if (compact(scene.focus).length < 4 || compact(scene.focus).length > 120) rejectedReasons.push(`scene-${index}-unvisualizable-focus`);
       const evidence = scene.claimIds.map((claimId) => knownClaims.get(claimId)?.evidenceText ?? "").join(" ");
       const unsupportedPredicates = highRiskPredicatesInText(scene.focus).filter((predicate) => !evidence.includes(predicate));
-      if (unsupportedPredicates.length) rejectedReasons.push(`scene-${index}-unsupported-predicates:${unsupportedPredicates.join(",")}`);
       const unsupportedNumbers = [...new Set(scene.focus.match(/\d+(?:\.\d+)?%?/g) ?? [])].filter((number) => !evidence.includes(number));
-      if (unsupportedNumbers.length) rejectedReasons.push(`scene-${index}-unverified-numbers:${unsupportedNumbers.join(",")}`);
+      if (options.relaxFactVetoes) {
+        softVetoPenalty += unsupportedPredicates.length * 6 + unsupportedNumbers.length * 4;
+      } else {
+        if (unsupportedPredicates.length) rejectedReasons.push(`scene-${index}-unsupported-predicates:${unsupportedPredicates.join(",")}`);
+        if (unsupportedNumbers.length) rejectedReasons.push(`scene-${index}-unverified-numbers:${unsupportedNumbers.join(",")}`);
+      }
     });
     const focusSet = new Set(candidate.scenes.map((scene) => compact(scene.focus)));
     if (focusSet.size !== candidate.scenes.length) rejectedReasons.push("duplicate-scene-focus");
     const coreClaimIds = new Set(candidate.scenes.flatMap((scene) => scene.claimIds));
     const earlyClaimIds = new Set(candidate.scenes.slice(0, Math.ceil(candidate.scenes.length / 2)).flatMap((scene) => scene.claimIds));
     const earlyClaimCoverage = coreClaimIds.size ? earlyClaimIds.size / coreClaimIds.size : 1;
-    if (earlyClaimCoverage < 0.7) rejectedReasons.push(`core-value-too-late:${earlyClaimCoverage.toFixed(2)}`);
+    if (earlyClaimCoverage < (options.relaxFactVetoes ? 0.35 : 0.7)) rejectedReasons.push(`core-value-too-late:${earlyClaimCoverage.toFixed(2)}`);
     if (candidate.estimatedSeconds < targetSeconds * 0.65 || candidate.estimatedSeconds > targetSeconds * 1.45) rejectedReasons.push("estimated-duration-out-of-range");
     const titleEvidence = candidate.titleClaimIds.map((id) => knownClaims.get(id)?.evidenceText ?? "").join(" ");
     const unsupportedTitlePredicates = highRiskPredicatesInText(candidate.title).filter((predicate) => !titleEvidence.includes(predicate));
-    if (unsupportedTitlePredicates.length) rejectedReasons.push(`unsupported-title-predicates:${unsupportedTitlePredicates.join(",")}`);
+    if (unsupportedTitlePredicates.length) {
+      if (options.relaxFactVetoes) softVetoPenalty += unsupportedTitlePredicates.length * 6;
+      else rejectedReasons.push(`unsupported-title-predicates:${unsupportedTitlePredicates.join(",")}`);
+    }
 
     const usedClaims = new Set(allClaimIds.filter((claimId) => knownClaims.has(claimId)));
     const factCoverage = clamp((usedClaims.size / Math.max(1, Math.min(ledger.claims.length, 12))) * 100);
@@ -114,7 +123,7 @@ export function rankStoryPlanCandidates(
     const ttsReadability = clamp(100 - (candidate.title.match(/[A-Z0-9_.+-]{5,}/g)?.length ?? 0) * 12 - Math.max(0, titleLength - 30) * 4);
     const fingerprint = storyPlanFingerprint(candidate);
     const historicalEffect = historyScore(fingerprint, history);
-    const total = clamp(factCoverage * 0.3 + titleHook * 0.2 + informationDiversity * 0.16 + visualFeasibility * 0.14 + ttsReadability * 0.1 + historicalEffect * 0.1 - rejectedReasons.length * 25);
+    const total = clamp(factCoverage * 0.3 + titleHook * 0.2 + informationDiversity * 0.16 + visualFeasibility * 0.14 + ttsReadability * 0.1 + historicalEffect * 0.1 - rejectedReasons.length * 25 - softVetoPenalty);
     return { candidate, fingerprint, rejectedReasons, scores: { factCoverage, titleHook, informationDiversity, visualFeasibility, ttsReadability, historicalEffect, total } };
   }).sort((left, right) => Number(Boolean(left.rejectedReasons.length)) - Number(Boolean(right.rejectedReasons.length)) || right.scores.total - left.scores.total || left.candidate.id.localeCompare(right.candidate.id));
 }
@@ -182,7 +191,7 @@ export async function planStoryCandidates(input: {
     if (!content) throw new Error("Story planning returned no content.");
     const candidates = storyPlanResponseSchema.parse(normalizeStoryPlanPayload(JSON.parse(content), expectedVisuals)).candidates;
     if (candidates.length !== requestedCandidates) throw new Error(`Story planning returned ${candidates.length}/${requestedCandidates} candidates.`);
-    const rankings = rankStoryPlanCandidates(candidates, input.project.factLedger, input.targetSeconds, await readHistory(), expectedVisuals);
+    const rankings = rankStoryPlanCandidates(candidates, input.project.factLedger, input.targetSeconds, await readHistory(), expectedVisuals, { relaxFactVetoes: input.project.sources[0]?.kind === "github" });
     const selected = rankings.find((ranking) => ranking.rejectedReasons.length === 0);
     if (!selected) throw new Error(`Every story plan was deterministically rejected: ${rankings.map((ranking) => `${ranking.candidate.id}[${ranking.rejectedReasons.join(",")}]`).join("; ")}`);
     const tokens = payload.usage?.total_tokens ?? 0;

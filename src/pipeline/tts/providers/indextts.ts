@@ -9,7 +9,7 @@ import type { PronunciationPlan } from "../../pronunciation/schema";
 import { probeDuration, run } from "../process";
 import { concatNarrationSegments } from "../postprocess";
 
-export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v15-glossary-acronym-audio-gate";
+export const INDEXTTS_FRONTEND_VERSION = "indextts2-fixed-reference-v16-stable-seed-glossary-acronym-audio-gate";
 type WorkerResult = { requestId: string; status: "succeeded"; outputPath: string; synthesisMs: number };
 
 class IndexTtsWorker {
@@ -184,9 +184,9 @@ export async function indexTts(input: { plan: PronunciationPlan; outputPath: str
   if (referenceDurationSeconds < config.tts.indextts.minimumReferenceSeconds) throw new Error(`IndexTTS2 reference audio must be at least ${config.tts.indextts.minimumReferenceSeconds}s; received ${referenceDurationSeconds.toFixed(2)}s.`);
   const referenceAudioHash = createHash("sha256").update(await readFile(config.tts.indextts.refAudio)).digest("hex");
   const glossaryHash = createHash("sha256").update(await readFile(config.tts.indextts.glossary)).digest("hex");
-  const seedIdentity = createHash("sha256").update(`${input.plan.planHash}:${input.cacheSalt ?? ""}`).digest("hex");
-  const seedOffset = Number.parseInt(seedIdentity.slice(0, 8), 16);
-  const seed = (config.tts.indextts.seed + seedOffset) & 0x7FFFFFFF;
+  // Keep the fixed-reference speaker deterministic across stories and rebuilds.
+  // Text-specific seeds subtly change prosody even when the reference voice is the same.
+  const seed = config.tts.indextts.seed & 0x7FFFFFFF;
   const identity = { provider: "indextts", model: "IndexTTS2", text: pronunciation.text, synthesisChunks, pronunciationPlanHash: input.plan.planHash, glossaryHash, referenceAudioHash, referenceDurationSeconds, useRandom: false, seed, topP: config.tts.indextts.topP, topK: config.tts.indextts.topK, temperature: config.tts.indextts.temperature, repetitionPenalty: config.tts.indextts.repetitionPenalty, tempo: config.tts.indextts.tempo, loudnessLufs: config.tts.indextts.loudnessLufs, truePeakDb: config.tts.indextts.truePeakDb, frontendVersion: INDEXTTS_FRONTEND_VERSION, cacheSalt: input.cacheSalt ?? "" };
   const cacheKey = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
   let result: WorkerResult | undefined;

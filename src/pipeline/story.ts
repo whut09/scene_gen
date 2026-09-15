@@ -68,11 +68,13 @@ function splitOversizedChunk(chunk: string, maxCharacters: number) {
 }
 
 function removeNarrationLead(value: string) {
-  return value.replace(/^(?:\u8fd9\u6761\u65b0\u95fb\u8bb2\u7684\u662f|\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f)[\uff1a:,\uff0c\s]*/u, "").trim();
+  return value.replace(/^(?:\u8fd9(?:\u6761|\u5219)?\u65b0\u95fb|\u65b0\u95fb)?(?:\u8bf4|\u8bb2)\u7684\u662f[\uff1a:,\uff0c\s]*/u, "")
+    .replace(/^\u8fd9\u7bc7\u6280\u672f\u6587\u7ae0\u8ba8\u8bba\u7684\u662f[\uff1a:,\uff0c\s]*/u, "")
+    .trim();
 }
 
 export function isProtectedDeterministicStorySource(url: string) {
-  return /ithome\.com\/(?:1\/000\/719|0\/999\/683)|36kr\.com\/p\/(?:3974225141231879|3973247412580615|3974571498057985)/i.test(url);
+  return /ithome\.com\/(?:1\/000\/719|1\/002\/602|0\/999\/683)|36kr\.com\/p\/(?:3974225141231879|3973247412580615|3974571498057985)/i.test(url);
 }
 
 export function splitArticleIntoSemanticChunks(text: string, maxCharacters = 72) {
@@ -112,7 +114,7 @@ function displaySource(item: HotItem) {
   return "核心事实";
 }
 
-const forbiddenSourceAttribution = /新闻来源(?:\s*[：:|｜]\s*[^。！？!?；;\n]*)?|信息来源\s*[：:|｜]\s*[^。！？!?；;\n]*|(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|智东西|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|新浪网|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号|新京报贝壳财经|新京报|贝壳财经|财联社|证券时报|澎湃新闻|界面新闻|央视新闻|新华社|中国新闻网)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
+const forbiddenSourceAttribution = /(?:新闻来源|信息来源|文章来源)(?:\s*[：:|｜]\s*[^。！？!?；;\n]*)?|(?:来自|据|援引|转引)?\s*(?:IT之家|ITHome|QbitAI|qbitai[.]com|量子位|智东西|腾讯新闻|腾讯网|36氪|TechWeb|钛媒体官方网站|钛媒体|新浪科技|新浪网|搜狐科技|潮新闻客户端|潮新闻|新华网|同花顺财经|同花顺|百度百家号|百家号|新京报贝壳财经|新京报|贝壳财经|财联社|证券时报|澎湃新闻|界面新闻|央视新闻|新华社|中国新闻网)(?:的?(?:消息|报道|获悉|文章|网站))?/gi;
 const standaloneSourceAttribution = /(^|[。！？!?；;\s])来源\s*[：:|｜]\s*[^。！？!?；;\n]*/giu;
 const forbiddenGithubPlatformReference = /(?:https?:\/\/)?(?:www\.)?github\.com(?:\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)?)?|\bgithub(?:\s+release)?\b/gi;
 const forbiddenPlatformPromotion = /(?:火山方舟|方舟体验中心|体验中心上线|附相关链接|相关链接|点击链接|前往体验)/gi;
@@ -271,6 +273,15 @@ export const GENERIC_NARRATION_FILLERS = [
   "这说明",
   "这条新闻讲的是",
   "这条新闻说的是",
+  "这则新闻讲的是",
+  "这则新闻说的是",
+  "新闻讲的是",
+  "新闻说的是",
+  "讲的是",
+  "说的是",
+  "新闻来源",
+  "信息来源",
+  "文章来源",
   "这条新闻的核心价值",
   "这条新闻真正的信号",
   "这条新闻的重点",
@@ -292,7 +303,7 @@ export function cleanNarrationNoise(text: string) {
   let cleaned = text
     .replace(/(?:GPT|Wa|Chat|Sol)\s*\.\.\./gi, "")
     .replace(/\.{3,}|…{1,}/gu, "")
-    .replace(/(?:所以)?(?:这意味着|这说明|这条新闻讲的是|这条新闻说的是|这条新闻的核心价值|这条新闻真正的信号|这条新闻的重点|这次真正改变的是|真正改变的是|这条新闻真正说了什么|对普通用户来说|普通读者先看|用途：用于文字和推理任务|用途：用于文字生成和推理任务)\s*[，,：:]?\s*/gu, "")
+    .replace(/(?:所以)?(?:这意味着|这说明|这(?:条|则)?新闻(?:讲|说)的是|(?:讲|说)的是|这条新闻的核心价值|这条新闻真正的信号|这条新闻的重点|这次真正改变的是|真正改变的是|这条新闻真正说了什么|对普通用户来说|普通读者先看|新闻来源|信息来源|文章来源|用途：用于文字和推理任务|用途：用于文字生成和推理任务)\s*[，,：:]?\s*/gu, "")
     .replace(/(?:Chat优化版|Coding热辣滚烫|好你个奥特曼|但事实上)(?:[。！？!?，,；;]?)/gu, "")
     .replace(/(^|[。！？!?])(?:关键是|真正改变的是|要知道|如今|此前|其中|最后|所以|但是|以及|例如|除文本外|值得注意的是|此前报道|试了|创)[。！？!?]/gu, "$1")
     .replace(/\s*[|｜]\s*/gu, "，")
@@ -4102,6 +4113,7 @@ export function createStoryProject(
   if (/ithome\.com\/0\/996\/120/i.test(clean.url)) return createAstraDemoProject(clean, options);
   if (/qbitai\.com\/2026\/08\/481372/i.test(clean.url)) return createQwenLocalDeploymentProject(clean, options);
   if (/ithome\.com\/0\/998\/997/i.test(clean.url)) return createQwenDriveProject(clean, options);
+  if (/ithome\.com\/1\/002\/602/i.test(clean.url)) return createStepAudio3Project(clean, options);
   if (/zhidx\.com\/p\/591381/i.test(clean.url)) return createHiDreamO1EmbodiedProject(clean, options);
   if (/36kr\.com\/p\/3956946155355267/i.test(clean.url)) return createGlmFlashDomesticComputeProject(clean, options);
   if (/qbitai\.com\/2026\/08\/480001/i.test(clean.url)) return createQwenOfficeFlashProject(clean, options);
@@ -4174,6 +4186,9 @@ function createGeneralNewsProject(
   options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
 ): VideoProject {
   const topicText = `${item.title} ${item.summary}`;
+  const isGraduateAiStory = /AI时代最尴尬的一代|刚毕业的大学生/u.test(topicText);
+  const isDeepSeekCodeRumor = /DeepSeek.*Code\s*2\.0|3万亿参数.*Code\s*2\.0/iu.test(topicText);
+  const isModelStory = /模型|语音|音频|ASR|TTS|AI/iu.test(topicText);
   const isTechnicalArticle = contentTypeForItem(item) === "technical-article";
   const isChipStory =
     /芯片|AI芯片|推理芯片|自研芯片|造芯|算力芯片/i.test(topicText) &&
@@ -4276,7 +4291,7 @@ function createGeneralNewsProject(
             headline: "\u7ed3\u8bba\u6210\u7acb\u7684\u8fb9\u754c",
             bullets: [sentenceAt(9), sentenceAt(10), sentenceAt(11)],
           },
-          narration: narrationAt(9, 2),
+          narration: `${narrationAt(9, 2)}${isModelStory ? "实际效果和运行速度仍取决于具体设备、任务和网络。" : ""}`,
         },
       ]
     : isChipStory
@@ -4369,7 +4384,11 @@ function createGeneralNewsProject(
             subhead: coverSummary,
             sources: ["事实", "影响", "边界"],
           },
-          narration: `${title}。${coverSummary}。`,
+          narration: isGraduateAiStory
+            ? `${title}。AI 正在减少初级岗位，刚毕业的年轻人获得经验的第一层台阶变窄了。新闻日期：${item.publishedAt ?? "2026年9月14日"}。`
+            : isDeepSeekCodeRumor
+              ? `${title}。传闻中的 Code 2.0 如果属实，重点是三万亿参数规模和面向编程任务的模型竞争。新闻日期：${item.publishedAt ?? "2026年9月14日"}。`
+              : `${title}。${coverSummary}。`,
         },
         {
           scene: {
@@ -4423,7 +4442,9 @@ function createGeneralNewsProject(
   const narrationSections = sections.map((section, index) => {
     return { ...section, narration: limitNarration(section.narration, index === 0 ? 100 : 110) };
   });
-  const scenes = applySectionDurations(narrationSections, Number(process.env.STORY_MAX_SECONDS ?? 96));
+  // Keep the generic news fallback within the short-video gate's hard limit.
+  // Curated profiles can still provide their own maxSeconds/minSeconds policy.
+  const scenes = applySectionDurations(narrationSections, Number(process.env.STORY_MAX_SECONDS ?? 60));
   const durationSeconds = scenes.reduce((sum, scene) => sum + scene.duration, 0);
   const project = {
     meta: {
@@ -4446,6 +4467,36 @@ function createGeneralNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createStepAudio3Project(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, contentType: "news" };
+  const title = speechFriendlyTitle(storyItem.title);
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 10, kicker: "五款语音模型发布", headline: shortTitle(title, 46), subhead: "覆盖实时对话、识别、合成、完整音频与音乐创作", sources: ["StepAudio 3", "五款模型", "语音交互"] },
+      narration: `${title}。阶跃一次发布五款语音模型，覆盖实时对话、语音识别、语音合成、完整音频和音乐创作。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "实时对话能边听边做事", source: "公开测试", title: "对话节奏 98.9%，语音推理 99.7%", summary: "模型支持全双工对话、打断、推理和异步工具调用。", metrics: [{ label: "对话节奏", value: "98.9%" }, { label: "语音推理", value: "99.7%" }], points: ["判断何时接话或等待。", "支持用户临时打断。", "长任务运行时仍可继续交流。"] },
+      narration: "实时对话模型支持边听边说、用户打断和异步工具调用。公开测试中，对话节奏综合得分百分之九十八点九，语音推理准确率百分之九十九点七。",
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "识别不只转文字", source: "语音识别能力", title: "词错误率 1.7%", summary: "覆盖中英文、方言、混说、长音频和专业场景。", metrics: [{ label: "词错误率", value: "1.7%" }, { label: "输入", value: "方言与混说" }], points: ["理解人名、地名和专业术语。", "处理低声、快语速和背景音乐。", "适合会议、字幕和客服场景。"] },
+      narration: "语音识别模型的词错误率为百分之一点七，并列榜单第一。它支持中英文、方言、混合表达、长音频和专业术语，可用于会议纪要、字幕与客服。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "从一句描述到完整声音", steps: [{ label: "真人级合成", detail: "控制语气、节奏、停顿和情绪。" }, { label: "完整音频", detail: "同时生成人声、音效、环境声和配乐。" }, { label: "音乐创作", detail: "支持歌词、清唱和记谱输入。" }, { label: "继续修改", detail: "用自然语言调整风格和结构。" }] },
+      narration: "语音合成采用低延迟流式生成，可以边生成边播放。完整音频模型还能同时处理人声、音效、环境声和配乐；音乐模型支持歌词、清唱与记谱输入。",
+    },
+    {
+      scene: { type: "outro", duration: 11, headline: "已开放使用，效果仍要实测", bullets: ["五款模型均已开放使用。", "实时体验受网络和任务复杂度影响。", "榜单成绩不能替代真实业务测试。"] },
+      narration: "五款模型均已开放使用。开发者和内容团队可以按实时交互、转写或创作需求选择；实际延迟、稳定性和生成效果，仍要结合网络、设备与任务测试。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 58 });
 }
 
 function createClaudeRiemannRecordProject(

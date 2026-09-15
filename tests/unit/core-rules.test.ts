@@ -13,7 +13,7 @@ import { narrationSynthesisText } from "../../src/pipeline/tts/segmentation";
 import { selectTemplateForScene } from "../../src/templates/template-registry";
 import { syncCueCandidates } from "../../src/production/visual-planner";
 import { createFixtureProject } from "../fixtures/project";
-import { containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution, scrubAttribution, scrubGithubReference, scrubSpokenAttribution } from "../../src/pipeline/story";
+import { containsForbiddenPlatformPromotion, containsForbiddenSourceAttribution, genericNarrationFillerMatches, scrubAttribution, scrubGithubReference, scrubSpokenAttribution } from "../../src/pipeline/story";
 import { expectedVideoFileName, homepageTitleBasedVideoPath, projectHomepageTitle, provisionalVideoFileName, titleBasedVideoPath, videoFileNameFromTitle } from "../../src/pipeline/output-naming";
 import { ProjectSynthesisReadinessError, assertProjectReadyForSynthesis, projectSynthesisReadinessIssues, synthesisTargetSeconds } from "../../src/pipeline/synthesis-readiness";
 
@@ -218,6 +218,7 @@ test("news source websites are scrubbed and blocked by the draft gate", async ()
   assert.equal(scrubAttribution("新京报贝壳财经讯（记者陈维城）智能编程普及让从业人员感到压力。"), "智能编程普及让从业人员感到压力。");
   assert.equal(scrubAttribution("新闻来源：新京报贝壳财经"), "");
   assert.equal(containsForbiddenSourceAttribution("新闻来源：新京报贝壳财经"), true);
+  assert.deepEqual(genericNarrationFillerMatches("这则新闻说的是市场变化。新闻来源：公开资料。"), ["这则新闻说的是", "新闻说的是", "说的是", "新闻来源"]);
   const project = createFixtureProject();
   project.sources[0] = { ...project.sources[0], url: "https://www.ithome.com/0/978/453.htm", contentType: "news" };
   project.narration = `${project.narration} 来自IT之家的报道。`;

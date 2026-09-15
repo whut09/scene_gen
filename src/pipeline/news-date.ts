@@ -59,7 +59,7 @@ function removeRepeatedOpeningTitle(value: string, title: string) {
     repeatedIndex = suffix.indexOf(title);
   }
   return `${prefix}${suffix}`
-    .replace(/这条新闻讲的是\s*[：:]\s*[。！？!?]?/g, "")
+    .replace(/(?:这(?:条|则)?新闻|新闻)?(?:讲|说)的是\s*[：:]?\s*[。！？!?]?/gu, "")
     .replace(/([。！？!?])\s*([。！？!?])/g, "$1")
     .trim();
 }

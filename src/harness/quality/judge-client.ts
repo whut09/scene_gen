@@ -109,7 +109,7 @@ export async function callQualityJudge(project: VideoProject, feedbackGuidance: 
         model: judgeModel,
         ...chatCompletionCompatibility(judgeModel),
         temperature: 0.1,
-        max_tokens: compact ? 1400 : 2200,
+        max_tokens: compact ? 6000 : 10000,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemContent },

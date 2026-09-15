@@ -145,6 +145,8 @@ export function normalizeDirectedStoryPayload(value: unknown, selectedPlan: Stor
       if (!Array.isArray(section.claimIds) || section.claimIds.length === 0) {
         section.claimIds = selectedPlan.scenes[index]?.claimIds;
       }
+      const expectedVisual = selectedPlan.scenes[index]?.visual;
+      if (expectedVisual) section.visual = expectedVisual;
       if (Array.isArray(section.bars)) {
         section.bars = section.bars.map((rawBar) => {
           if (!rawBar || typeof rawBar !== "object" || Array.isArray(rawBar)) return rawBar;

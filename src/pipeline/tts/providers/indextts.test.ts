@@ -38,6 +38,13 @@ test("IndexTTS keeps standalone LLM in one glossary-protected synthesis unit", (
   }).text, "L-L-M Wiki");
 });
 
+test("TTS does not translate a word inside an English project title", () => {
+  assert.equal(
+    prepareF5SynthesisText("System Prompts Leaks 用于整理公开提示词。"),
+    "System Prompts Leaks 用于整理公开提示词。",
+  );
+});
+
 test("IndexTTS does not split AI or GB into standalone audio chunks", async () => {
   const { plan } = await compilePronunciationPlan({ displayText: "AI 模型可在16GB GPU运行。" });
   const providerText = indexTtsPronunciationInput(plan).text;
