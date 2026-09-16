@@ -335,41 +335,47 @@ export async function improveWithOpenAI(
     .filter(Boolean)
     .join("\n");
 
-  const response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      ...chatCompletionCompatibility(model),
-      temperature: 0.28,
-      messages: [
-        { role: "system", content: guidance },
-        {
-          role: "user",
-          content: JSON.stringify({
-            currentTitle: project.meta.title,
-            selectedPlan: planning.selected,
-            factLedger: project.factLedger,
-            sourceArticle: project.sources.map((item) => ({
-              title: item.title,
-              summary: item.summary,
-              content: item.content,
-              publishedAt: item.publishedAt,
-              kind: item.kind,
-              repo: item.repo,
-              metrics: item.metrics,
-              tags: item.tags,
-              research: item.research,
-            })),
-          }),
-        },
-      ],
-      response_format: { type: "json_object" },
-    }),
-  }, { label: "story-llm", timeoutMs: Number(process.env.NEWS_LLM_TIMEOUT_MS ?? 120_000) });
+  let response: Response;
+  try {
+    response = await fetchWithRetry(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        ...chatCompletionCompatibility(model),
+        temperature: 0.28,
+        messages: [
+          { role: "system", content: guidance },
+          {
+            role: "user",
+            content: JSON.stringify({
+              currentTitle: project.meta.title,
+              selectedPlan: planning.selected,
+              factLedger: project.factLedger,
+              sourceArticle: project.sources.map((item) => ({
+                title: item.title,
+                summary: item.summary,
+                content: item.content,
+                publishedAt: item.publishedAt,
+                kind: item.kind,
+                repo: item.repo,
+                metrics: item.metrics,
+                tags: item.tags,
+                research: item.research,
+              })),
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    }, { label: "story-llm", timeoutMs: Number(process.env.NEWS_LLM_TIMEOUT_MS ?? 120_000) });
+  } catch (error) {
+    console.warn(`[llm] story expansion failed: ${(error as Error).message}`);
+    return project;
+  }
 
   if (!response.ok) {
     console.warn(`[llm] OpenAI failed: ${response.status} ${await response.text()}`);

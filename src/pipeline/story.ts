@@ -685,6 +685,7 @@ function repositoryKnownStars(item: HotItem) {
     "every-app/open-seo": 14751,
     "Osmantic/ODS": 5043,
     "ayghri/i-have-adhd": 32208,
+    "OpenBMB/VoxCPM": 37600,
   };
   return known[item.repo ?? ""] ?? Number.NaN;
 }
@@ -739,6 +740,82 @@ function repositoryProfile(item: HotItem): RepositoryProfile {
   const content = item.content ?? "";
   const name = repositoryName(item);
   const topics = repositoryTopics(content);
+  if (/^colibri$/i.test(name)) {
+    return {
+      titleSummary: "纯 C 磁盘流式运行超大模型",
+      theme: "让超出本机内存的大型混合专家模型在消费级设备上运行",
+      capability: "用纯 C 推理引擎把专家权重按需从磁盘流入，让约二点八万亿参数的模型在三十二 GB 内存设备上运行",
+      workflow: "先编译零依赖的 C 引擎，再选择模型和 CPU 或 GPU 后端；用项目提供的基准脚本比较内存、磁盘和吞吐表现",
+      boundaries: "磁盘流式会受到 SSD 延迟、内存容量和带宽影响，适合研究和本地推理实验，不等于所有模型都能达到实时速度",
+      topics: ["纯 C 推理", "混合专家模型", "磁盘流式", "CPU 或 GPU", "本地运行"],
+      metrics: [{ label: "实现", value: "纯 C" }, { label: "模型规模", value: "约 2.8T 参数" }, { label: "依赖", value: "零依赖" }],
+      narration: [
+        "开源项目推荐：colibri。它把超出本机内存的大型混合专家模型变成本地可运行的推理任务。",
+        "传统加载方式会把整套权重塞进内存，消费级设备很快遇到上限。colibri 改为按需从磁盘流入专家权重，约二点八万亿参数模型也能在三十二 GB 设备上启动。",
+        "使用时先编译纯 C、零依赖的引擎，再选择模型和 CPU 或 GPU 后端；项目提供基准脚本，可比较不同内存、磁盘和吞吐配置。",
+        "它适合本地推理研究和硬件实验，但速度会受 SSD 延迟、内存容量和带宽影响，不能把单项基准当成所有模型的实时保证。",
+      ],
+      problemPoints: ["大型混合专家模型常因权重体量超过内存，无法在普通设备上启动。", "colibri 用磁盘流式加载和纯 C 引擎降低本地运行门槛。", "实际吞吐仍取决于 SSD、内存和带宽，部署前需要自己基准测试。"],
+      steps: [{ label: "编译引擎", detail: "构建纯 C、零依赖的本地推理程序。" }, { label: "选择模型", detail: "按模型家族和权重位置配置运行参数。" }, { label: "运行基准", detail: "比较 CPU、GPU、内存和磁盘配置。" }, { label: "评估吞吐", detail: "用真实上下文长度检查速度和稳定性。" }],
+    };
+  }
+  if (/^open-code-review$/i.test(name)) {
+    return {
+      titleSummary: "面向代码变更的 AI 审查 CLI",
+      theme: "让团队把代码审查接进终端、编辑器和持续集成流程",
+      capability: "读取 Git diff 和完整文件上下文，通过可配置模型与规则引擎生成行级结构化审查意见",
+      workflow: "安装 CLI 后配置模型端点，先审查一次 diff，再按目录规则接入 CI；需要全量检查时使用 scan 并保留审查记录",
+      boundaries: "审查结果依赖模型、规则和上下文质量，安全敏感变更仍需人工复核，密钥和代码内容也要按组织策略管理",
+      topics: ["代码审查", "CLI", "CI/CD", "规则引擎", "多模型接入"],
+      metrics: [{ label: "入口", value: "CLI" }, { label: "模式", value: "Diff 与 Scan" }, { label: "集成", value: "CI/CD 与编辑器" }],
+      narration: [
+        "开源项目推荐：open-code-review。它把 AI 代码审查接进终端、编辑器和持续集成。",
+        "只看 diff 容易漏掉上下文问题。这个工具能读取变更文件、搜索代码库，再生成带行级位置的结构化意见，也支持 scan 检查完整文件。",
+        "最短路径是安装 CLI、配置一个兼容模型端点，先审查一次 diff，再按目录规则接入 CI；团队还可以连接编辑器和代码托管流程。",
+        "它适合团队建立统一审查入口，但结果仍取决于模型和上下文；安全敏感代码、密钥和高风险变更必须保留人工复核。",
+      ],
+      problemPoints: ["代码审查常被分散在人工评论、脚本和不同工具里，容易漏掉上下文。", "open-code-review 用统一 CLI、规则和模型端点输出可定位的审查意见。", "它提高覆盖率，不会替代安全敏感变更的人工批准。"],
+      steps: [{ label: "安装 CLI", detail: "安装命令行工具并配置模型端点。" }, { label: "审查 Diff", detail: "先对一次变更生成行级审查意见。" }, { label: "接入 CI", detail: "按目录和语言规则加入持续集成。" }, { label: "人工复核", detail: "对安全、权限和破坏性变更保留批准环节。" }],
+    };
+  }
+  if (/^agent-reach$/i.test(name)) {
+    return {
+      titleSummary: "让智能体访问真实网页与资料",
+      theme: "把搜索、网页、社交和多媒体资料接入智能体工作流",
+      capability: "提供可组合的检索与内容获取工具，让智能体在真实网络中搜索、阅读、提取和交叉核对信息",
+      workflow: "按文档安装依赖并配置需要的服务，再从一个搜索或网页读取任务开始；对关键结论保存原始页面和时间戳",
+      boundaries: "外部网站会变化、限流或要求登录，抓取结果必须核对时效和权限，不能把自动检索当成事实准确保证",
+      topics: ["网页访问", "搜索", "内容提取", "智能体工具", "资料核验"],
+      metrics: [{ label: "用途", value: "真实网络" }, { label: "能力", value: "搜索与提取" }, { label: "重点", value: "可核验资料" }],
+      narration: [
+        "开源项目推荐：Agent-Reach。它把真实网页和外部资料接进智能体工作流。",
+        "很多智能体只能处理已经放进上下文的文本，遇到网页、搜索结果或多媒体资料就停住。Agent-Reach 提供可组合的访问和提取工具，让任务继续往真实网络走。",
+        "使用时先按文档安装需要的依赖，再从一个搜索或网页读取任务开始；关键结论要保存原始页面、时间和检索条件，方便回看。",
+        "它适合研究、情报整理和自动化资料收集，但网站会变化、限流或要求登录，抓取结果仍需核对时效、权限和事实边界。",
+      ],
+      problemPoints: ["智能体如果拿不到真实网页和外部资料，就无法完成很多检索型任务。", "Agent-Reach 把搜索、阅读和内容提取能力整理成可调用工具。", "外部页面不稳定，关键结论必须保留证据并二次核对。"],
+      steps: [{ label: "安装依赖", detail: "按文档准备运行环境和需要的服务。" }, { label: "选择工具", detail: "从搜索或网页读取这类最小任务开始。" }, { label: "保存证据", detail: "记录原始页面、时间和检索条件。" }, { label: "交叉核对", detail: "对变化快或高风险信息做第二来源验证。" }],
+    };
+  }
+  if (/^voxcpm$/i.test(name)) {
+    return {
+      titleSummary: "多语言无分词语音生成与克隆",
+      theme: "用上下文感知的语音模型生成自然多语言语音并设计音色",
+      capability: "提供无分词语音生成、上下文韵律控制、音色设计和真实感语音克隆，支持三十种语言与多种方言",
+      workflow: "准备参考音频和文本，先用本地推理生成短句，再调节控制指令、推理步数和音色；需要服务化时接入兼容 API",
+      boundaries: "实时系数取决于显卡、音频长度和推理设置，克隆声音要获得授权，商用内容还需检查隐私、版权和滥用风险",
+      topics: ["语音合成", "多语言", "音色设计", "语音克隆", "实时流式"],
+      metrics: [{ label: "语言", value: "30 种" }, { label: "输出", value: "48kHz" }, { label: "实时系数", value: "约 0.3" }],
+      narration: [
+        "开源项目推荐：VoxCPM。它用无分词模型生成多语言语音，也支持音色设计和真实感克隆。",
+        "传统语音合成往往先把文字切成 token，再拼接声音。VoxCPM 直接结合文本上下文、韵律和参考音频，生成更连贯的语气、停顿和情绪。",
+        "项目支持三十种语言和多种中文方言，输出最高四十八 kHz 音频；准备一段有授权的参考音频，就能先生成短句，再调整控制指令和推理步数。",
+        "公开 GPU 基准的实时系数约为零点三，但速度取决于显卡、音频长度和设置。声音克隆还要遵守授权、隐私和商用边界。",
+      ],
+      problemPoints: ["语音模型常把文字和声音分开处理，语气、停顿和跨语言表现不够自然。", "VoxCPM 通过上下文感知生成、音色设计和参考音频克隆改善完整表达。", "实时速度和克隆安全都需要在自己的设备与授权范围内验证。"],
+      steps: [{ label: "准备音频", detail: "使用获得授权的参考音频和对应文本。" }, { label: "生成短句", detail: "先在本地运行一小段文本检查音色和韵律。" }, { label: "调整控制", detail: "修改控制指令、推理步数和音频设置。" }, { label: "检查授权", detail: "发布前核对声音授权、隐私和商用范围。" }],
+    };
+  }
   if (/^deskcommcrm$/i.test(name)) {
     return {
       titleSummary: "自托管 WhatsApp 销售 CRM",
@@ -4114,6 +4191,7 @@ export function createStoryProject(
   if (/qbitai\.com\/2026\/08\/481372/i.test(clean.url)) return createQwenLocalDeploymentProject(clean, options);
   if (/ithome\.com\/0\/998\/997/i.test(clean.url)) return createQwenDriveProject(clean, options);
   if (/ithome\.com\/1\/002\/602/i.test(clean.url)) return createStepAudio3Project(clean, options);
+  if (/ithome\.com\/1\/002\/824/i.test(clean.url)) return createGemini38LiveProject(clean, options);
   if (/zhidx\.com\/p\/591381/i.test(clean.url)) return createHiDreamO1EmbodiedProject(clean, options);
   if (/36kr\.com\/p\/3956946155355267/i.test(clean.url)) return createGlmFlashDomesticComputeProject(clean, options);
   if (/qbitai\.com\/2026\/08\/480001/i.test(clean.url)) return createQwenOfficeFlashProject(clean, options);
@@ -4495,6 +4573,36 @@ function createStepAudio3Project(
     {
       scene: { type: "outro", duration: 11, headline: "已开放使用，效果仍要实测", bullets: ["五款模型均已开放使用。", "实时体验受网络和任务复杂度影响。", "榜单成绩不能替代真实业务测试。"] },
       narration: "五款模型均已开放使用。开发者和内容团队可以按实时交互、转写或创作需求选择；实际延迟、稳定性和生成效果，仍要结合网络、设备与任务测试。",
+    },
+  ], options, { maxSeconds: 60, minSeconds: 58 });
+}
+
+function createGemini38LiveProject(
+  item: HotItem,
+  options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number },
+): VideoProject {
+  const storyItem: HotItem = { ...item, contentType: "news" };
+  const title = speechFriendlyTitle(storyItem.title);
+  return createCuratedNewsProject(storyItem, [
+    {
+      scene: { type: "title", duration: 10, kicker: "实时语音模型更新", headline: shortTitle(title, 46), subhead: "两款模型分别面向规模化对话和复杂任务推理", sources: ["Gemini 3.8 Live", "97种语言", "实时对话"] },
+      narration: `${title}。`,
+    },
+    {
+      scene: { type: "briefing_points", duration: 13, headline: "一个重成本，一个重复杂任务", source: "产品定位", title: "Live 负责规模化，Extended Thinking 负责多步推理", summary: "两款模型都针对语音交互优化，但服务目标不同。", metrics: [{ label: "语言切换", value: "97 种" }, { label: "定位", value: "规模化与复杂任务" }], points: ["Live 兼顾对话流畅和视觉理解。", "Extended Thinking 面向高复杂度任务。", "两者都可在对话中执行后台任务。"] },
+      narration: "Live 面向规模化和成本效率，Extended Thinking 面向复杂任务推理；两款模型都能在对话不中断时处理后台任务。",
+    },
+    {
+      scene: { type: "signal_chart", duration: 13, headline: "语音质量和推理成绩同时上升", bars: [{ label: "语音质量", value: 82.6, detail: "语音对语音质量指数总排名第一。", color: "#42d392" }, { label: "语音推理", value: 97.7, detail: "Big Bench Audio 得分百分之九十七点七。", color: "#7dd3fc" }, { label: "智能体任务", value: 68.6, detail: "τ-Voice 任务完成率。", color: "#f97316" }] },
+      narration: "Extended Thinking 的语音质量指数得分百分之八十二点六，Big Bench Audio 得分百分之九十七点七，智能体任务完成率百分之六十八点六。",
+    },
+    {
+      scene: { type: "flow", duration: 13, headline: "从 API 到真实语音界面", steps: [{ label: "接入 API", detail: "通过 Gemini Live API 调用实时模型。" }, { label: "连接平台", detail: "接入声网、LiveKit 或 Pipecat 等语音界面。" }, { label: "后台执行", detail: "工具和 API 调用不打断当前对话。" }, { label: "控制成本", detail: "Live 面向规模化和成本效率。" }] },
+      narration: "开发者可通过 Gemini Live API 构建语音界面，工具和 API 调用在后台执行；云端 API 不要求本地硬件，延迟取决于网络。",
+    },
+    {
+      scene: { type: "outro", duration: 11, headline: "使用入口分批提供，价格要按任务核算", bullets: ["开发者可在 Gemini API 和 AI Studio 使用。", "普通用户可在 Gemini Live 体验。", "定价和延迟仍要按调用量实测。"] },
+      narration: "开发者可通过 Gemini API 和 Google AI Studio 使用，普通用户可在 Gemini Live 体验；定价、延迟和效果仍要按调用量实测。",
     },
   ], options, { maxSeconds: 60, minSeconds: 58 });
 }
