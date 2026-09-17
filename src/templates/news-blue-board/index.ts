@@ -87,14 +87,14 @@ export const newsBlueBoardTemplate: HtmlTemplateDefinition = {
     } else if (scene.type === "web_screenshot_zoom") {
       body = `<main class="hv-main"><h1>${escapeHtml(scene.headline)}</h1>
         <section style="display:grid;grid-template-columns:repeat(${Math.min(2, Math.max(1, scene.shots.length))},1fr);gap:18px;margin-top:34px;align-items:start;">
-          ${scene.shots.slice(0, 2).map((shot) => `<article class="hv-card" style="padding:12px;">
-            <img src="${escapeHtml(shot.src)}" data-focal-point="center" style="display:block;width:100%;height:650px;object-fit:contain;object-position:50% 50%;background:#eef2f7;filter:saturate(.9) brightness(1.08);opacity:.9;" />
+            ${scene.shots.slice(0, 2).map((shot, index) => `<article class="hv-card" style="padding:12px;">
+              <img src="${escapeHtml(shot.src)}" data-focal-point="center" style="display:block;width:100%;height:650px;object-fit:contain;object-position:50% 50%;background:#eef2f7;filter:saturate(.9) brightness(1.08);opacity:.9;animation:sg-evidence-pan 2.4s ${index * 0.18}s ease-out both;transform-origin:50% 50%;" />
             <p style="margin:16px 8px 8px;font-size:25px;line-height:1.25;">${escapeHtml(shot.title || sceneHeadline(scene))}</p>
           </article>`).join("")}
         </section></main>`;
     } else {
       body = `<main class="hv-main"><h1>${escapeHtml(sceneHeadline(scene))}</h1></main>`;
     }
-    return commonHtml({ title: sceneHeadline(scene), body, width, height, durationSec: scene.duration, theme: "blue" });
+    return commonHtml({ title: sceneHeadline(scene), body, width, height, durationSec: scene.duration, theme: "blue", extraCss: "@keyframes sg-evidence-pan{from{transform:scale(1);filter:saturate(.9) brightness(1.08)}to{transform:scale(1.06);filter:saturate(1) brightness(1)}}" });
   },
 };

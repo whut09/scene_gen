@@ -85,11 +85,11 @@ export function assetPromotionIssues(project: VideoProject): QualityIssueInput[]
     const metadata = screenAssetMetadata({ title: asset.title, url: asset.sourceUrl });
     const reasons = [...new Set([...(asset.screening?.status === "rejected" ? asset.screening.reasons : []), ...(metadata.status === "rejected" ? metadata.reasons : [])])];
     if (reasons.length === 0) return [];
-    const humanFace = reasons.some((reason) => reason === "human_face_detected" || reason === "human_portrait_metadata" || reason === "human_face_scan_unavailable");
+    const humanFace = reasons.some((reason) => reason === "human_face_detected" || reason === "human_portrait_metadata");
     return [{
       severity: "error",
       code: humanFace ? "asset_human_face_exposed" : "asset_promotional_content_exposed",
-      message: humanFace ? `素材 ${asset.title || asset.id} 包含人物肖像或无法完成人脸检测，禁止进入成片。` : `素材 ${asset.title || asset.id} 包含二维码或广告引导，禁止进入成片。`,
+      message: humanFace ? `素材 ${asset.title || asset.id} 包含人物肖像，禁止进入成片。` : `素材 ${asset.title || asset.id} 包含二维码或广告引导，禁止进入成片。`,
       repairAction: "switch-template",
       retryable: true,
       evidence: { assetId: asset.id, assetTitle: asset.title, reasons },
@@ -105,12 +105,14 @@ function localVisualAssetPath(src: string) {
 
 export function visualEvidenceIssues(project: VideoProject): QualityIssueInput[] {
   const embeddedSources = [...new Set(project.scenes.flatMap((scene) => scene.type === "web_screenshot_zoom" ? scene.shots.map((shot) => shot.src) : []))];
-  const acceptedSources = [
-    ...(project.assets ?? []).filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected").map((asset) => asset.src),
-    ...(project.screenshots ?? []).map((shot) => shot.src),
-  ];
-  if (acceptedSources.length > 0 && !acceptedSources.some((src) => embeddedSources.includes(src))) {
-    return [{ severity: "error", code: "visual_asset_not_embedded", message: "已通过筛选的视觉素材没有出现在最终证据场景。", repairAction: "revise-scenes", retryable: true, evidence: { assetSources: acceptedSources } }];
+  const acceptedAssetSources = (project.assets ?? [])
+    .filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected")
+    .map((asset) => asset.src);
+  const embeddedScreenshotSources = (project.screenshots ?? [])
+    .map((shot) => shot.src)
+    .filter((src) => embeddedSources.includes(src));
+  if (acceptedAssetSources.length > 0 && !acceptedAssetSources.some((src) => embeddedSources.includes(src))) {
+    return [{ severity: "error", code: "visual_asset_not_embedded", message: "已通过筛选的视觉素材没有出现在最终证据场景。", repairAction: "revise-scenes", retryable: true, evidence: { assetSources: acceptedAssetSources, embeddedScreenshots: embeddedScreenshotSources } }];
   }
   const missingSources = embeddedSources.filter((src) => {
     const localPath = localVisualAssetPath(src);

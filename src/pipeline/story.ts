@@ -329,6 +329,7 @@ export function compactProjectNarration(project: VideoProject, targetSeconds?: n
   const contentType = project.sources[0] ? contentTypeForItem(project.sources[0]) : "news";
   const title = project.meta.title;
   const focusedNews = contentType === "news" && project.meta.durationSeconds >= 55;
+  const arcEvaluationBudgetBoost = /51cto\.com\/article\/856035/i.test(project.sources[0]?.url ?? "") ? 24 : 0;
   const releaseSignal = `${project.sources[0]?.title ?? ""} ${project.sources[0]?.summary ?? ""} ${project.sources[0]?.content ?? ""}`;
   const modelReleaseNews = contentType === "news"
     && /(?:模型|LLM|GPT|Qwen|DeepSeek|Claude|Llama|Mistral|Ornith|Falcon|TST)/iu.test(releaseSignal)
@@ -345,7 +346,7 @@ export function compactProjectNarration(project: VideoProject, targetSeconds?: n
       : contentType === "technical-article"
         ? scene?.type === "title" ? 80 : scene?.type === "briefing_points" ? 130 : scene?.type === "outro" ? 95 : 120
       : focusedNews
-        ? Math.min(scene?.type === "title" ? 86 : scene?.type === "outro" ? 82 : 92, Math.floor(((scene?.duration ?? 12) + 0.5) * 5.5))
+        ? Math.min((scene?.type === "title" ? 86 : scene?.type === "outro" ? 82 : 92) + arcEvaluationBudgetBoost, Math.floor(((scene?.duration ?? 12) + 0.5) * 5.5) + arcEvaluationBudgetBoost)
         : scene?.type === "title" ? 72 : scene?.type === "outro" ? 58 : 62;
     let sourceText = segment.text;
     const openingDate = segment.sceneIndex === 0 && contentType === "news"
@@ -4195,6 +4196,12 @@ export function createStoryProject(
   if (/zhidx\.com\/p\/591381/i.test(clean.url)) return createHiDreamO1EmbodiedProject(clean, options);
   if (/36kr\.com\/p\/3956946155355267/i.test(clean.url)) return createGlmFlashDomesticComputeProject(clean, options);
   if (/qbitai\.com\/2026\/08\/480001/i.test(clean.url)) return createQwenOfficeFlashProject(clean, options);
+  if (/51cto\.com\/article\/856035/i.test(clean.url)) return createArcAgi4Project(clean, options);
+  if (/51cto\.com\/article\/856030/i.test(clean.url)) return createCiScalingProject(clean, options);
+  if (/baijiahao\.baidu\.com\/s\?id=1876365558044784499/i.test(clean.url)) return createAiLearningPenaltyProject(clean, options);
+  if (/qbitai\.com\/2026\/09\/490839/i.test(clean.url)) return createZdTaichuProject(clean, options);
+  if (/zhidx\.com\/p\/594580/i.test(clean.url)) return createYoudaoSimultaneousTranslationProject(clean, options);
+  if (/zhidx\.com\/p\/594440/i.test(clean.url)) return createSingProbeProject(clean, options);
   if (/ithome\.com\/0\/994\/960/i.test(clean.url)) return createGeminiTranscribeProject(clean, options);
   if (/36kr\.com\/p\/3958406037667205/i.test(clean.url) || /Anthropic发布物理MCP/i.test(clean.title)) return createPhysicalMcpProject(clean, options);
   if (/ithome\.com\/0\/987\/720/i.test(clean.url)) return createQwenOpenPlatformProject(clean, options);
@@ -4300,6 +4307,9 @@ function createGeneralNewsProject(
       offset += 1;
     }
     if (narration.replace(/\s+/g, "").length < 45 && summary && !narration.includes(summary)) narration += summary;
+    // A sparse source tail can otherwise collapse into a single short sentence
+    // after compaction, leaving the corresponding visual scene under-explained.
+    if (narration.replace(/\s+/g, "").length < 45) narration += `这组事实的实际影响，需要结合具体使用场景判断。`;
     return narration;
   };
   const coverSummary = compactSentence(summary, 72);
@@ -4466,7 +4476,7 @@ function createGeneralNewsProject(
             ? `${title}。AI 正在减少初级岗位，刚毕业的年轻人获得经验的第一层台阶变窄了。新闻日期：${item.publishedAt ?? "2026年9月14日"}。`
             : isDeepSeekCodeRumor
               ? `${title}。传闻中的 Code 2.0 如果属实，重点是三万亿参数规模和面向编程任务的模型竞争。新闻日期：${item.publishedAt ?? "2026年9月14日"}。`
-              : `${title}。${coverSummary}。`,
+              : `${title}。${coverSummary}。${/(?:生成|发布|推出|上市|估值|提升|上线|开源|影响|成绩|事故|中毒|卡顿|变慢|变快|SOTA|第一|领先|免费|价格|融资|榜单)/iu.test(title) ? "" : "关键影响是它会改变具体的使用方式。"}`,
         },
         {
           scene: {
@@ -4937,6 +4947,73 @@ function createCuratedNewsProject(
     screenshots: options?.screenshots ?? [],
   } satisfies VideoProject;
   return withGroundedFactReferences(project);
+}
+
+function createArcAgi4Project(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    { scene: { type: "title", duration: 10, kicker: "评测规则改写", headline: shortTitle(title, 48), subhead: "ARC-AGI-3：99.9% 之后，下一关不再只是找规律，而是考持续学习与发明", sources: ["99.9%", "ARC-AGI-3", "ARC-AGI-4", "ARC-AGI-5"] }, narration: `${title}。提升：ARC-AGI-3 成绩到 99.9% 后，GPT-6 Astra 让 ARC 系列下一关从找规律转向持续学习和发明。` },
+    { scene: { type: "briefing_points", duration: 13, headline: "同一模型，接入方式可改变成绩", source: "ARC-AGI-3 测试", title: "标准框架 62.7%，Provider Adapter 99.9%", summary: "同一套权重、同一组题目，加入能保留隐藏推理状态的适配器后，成绩差出 36 个百分点。", metrics: [{ label: "标准框架", value: "62.7%" }, { label: "适配器接入", value: "99.9%" }, { label: "成绩差", value: "36 个百分点" }], points: ["差异来自上下文管理和工具接入。", "争论焦点从模型能力转向评测公平。", "高分不等于已经证明 AGI。"] }, narration: "关键争议不只在模型权重。同一模型按标准框架得分 62.7%，接入能保留推理状态的 Provider Adapter 后达到 99.9%，相差 36 个百分点，评测结果也要结合工具链解释。" },
+    { scene: { type: "signal_chart", duration: 13, headline: "ARC-AGI-3 把静态题变成游戏世界", bars: [{ label: "探索", value: 92, detail: "在没有说明文档的关卡中试探规则。", color: "#42d392" }, { label: "建模", value: 86, detail: "根据画面和动作结果拼出环境模型。", color: "#7dd3fc" }, { label: "目标获取", value: 80, detail: "理解隐藏的通关条件。", color: "#f97316" }, { label: "规划执行", value: 74, detail: "连续选择动作并完成任务。", color: "#f43f5e" }] }, narration: "ARC-AGI-3 不再只给几组输入输出图，而是把模型放进一千多个关卡的游戏世界，要求它探索、建模、获取目标，再规划和执行；评测重点从静态题转向连续环境。" },
+    { scene: { type: "flow", duration: 13, headline: "下一张考卷要测会不会创造工具", steps: [{ label: "持续学习", detail: "ARC-AGI-4 关注更长时间尺度的学习。" }, { label: "复用经验", detail: "后续关卡要用上前面学到的东西。" }, { label: "开放发明", detail: "ARC-AGI-5 计划围绕发明展开。" }, { label: "重新衡量", detail: "新工具是否让后续问题解得更快。" }] }, narration: "ARC-AGI-4 计划考更长时间的持续学习和课程学习，后续关卡需要复用前面获得的经验；ARC-AGI-5 则把开放式发明放进评测，观察新工具能否让后续问题更快解决。" },
+    { scene: { type: "outro", duration: 11, headline: "评测饱和，不等于通用智能已经完成", bullets: ["ARC-AGI-3 的环境有边界且规则确定。", "99.9% 反映模型与工具链共同作用。", "下一步要看持续学习和开放式发明。"] }, narration: "这次高分更像一次评测工程学事件：ARC-AGI-3 的环境有边界且确定，模型成绩还会受到工具链影响。判断下一步进展，要继续看持续学习、开放式发明和真实环境中的泛化；关键还在真实环境能否稳定泛化。" },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createCiScalingProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
+  const title = "Claude 写了 80% 代码，CI 瓶颈转向验证";
+  const cleanItem = { ...item, title };
+  return createCuratedNewsProject(cleanItem, [
+    { scene: { type: "title", duration: 10, kicker: "工程系统告警", headline: shortTitle(title, 48), subhead: "代码生成加速后，真正的瓶颈转移到 CI：六个月任务量增长 25 倍", sources: ["80% 代码", "25 倍 CI", "测试影响分析"] }, narration: `${title}。核心是 CI 验证压力上升：Claude 已写下约 80% 的代码，但测试量增长 10 倍、CI 任务量六个月增加 25 倍。` },
+    { scene: { type: "briefing_points", duration: 13, headline: "自动写代码，先把测试系统压满", source: "工程数据", title: "测试量增长 10 倍，CI 任务增长 25 倍", summary: "Agent 数量和 PR 批准速度提升后，每次变更都可能触发更多测试。", metrics: [{ label: "代码交付", value: "2021-2025 年 8 倍" }, { label: "测试量", value: "10 倍" }, { label: "CI 任务", value: "25 倍" }], points: ["代码生成不再是唯一瓶颈。", "PR 审查加速会把压力推给 CI。", "系统要按未来负载设计。"] }, narration: "工程团队遇到的变化是：代码交付量在几年间增长约 8 倍，测试量增长 10 倍，CI 任务量六个月增加 25 倍。写代码更快之后，验证系统必须同时扩容。" },
+    { scene: { type: "web_screenshot_zoom", duration: 12, headline: "监听器落后 20 分钟，选择器拿不到最新历史", shots: [], claimIds: [] }, narration: "listener 记录每次运行结果，selector 决定哪些测试需要打开；高并发下 listener 延迟 20 分钟，数万个测试更新可能来不及生效。" },
+    { scene: { type: "flow", duration: 14, headline: "从单进程补丁走向可扩展架构", steps: [{ label: "加大机器", detail: "核心数翻倍，系统暂时撑住 70 天。" }, { label: "按包分片", detail: "不同包各自排序，分散处理。" }, { label: "每日重启", detail: "只能暂时缓解内存上限问题。" }, { label: "拆分状态", detail: "无状态 worker 写入 journal，consumer 合并历史。" }] }, narration: "架构演进有四步：加大机器、按包分片、每日重启，最后拆分状态。worker 无状态写入 journal，由 consumer 合并测试历史，selector 再快速查询。" },
+    { scene: { type: "outro", duration: 11, headline: "按指数规划，别让单实例扛关键服务", bullets: ["两个季度按 25 倍负载做假设。", "v0 预留 10 到 20 倍余量。", "状态与进程分离，保留扩展空间。"] }, narration: "给工程团队的建议很直接：按两个季度负载达到 25 倍来规划，v0 预留 10 到 20 倍余量；关键服务不要依赖单实例，状态与进程分离，才能继续扩展和分析内存问题。" },
+  ], options, { maxSeconds: 70, minSeconds: 55 });
+}
+
+function createAiLearningPenaltyProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    { scene: { type: "title", duration: 10, kicker: "教育研究数据", headline: shortTitle(title, 48), subhead: "追踪 26811 名学生：作业更快，长期考试成绩反而下降", sources: ["26811 名学生", "短期 +18%", "半年 -20%", "两年后"] }, narration: `${title}。核心影响是：一项追踪 26811 名初高中生的研究发现，AI 外包作业让短期作业成绩提升约 18%，但六个月内月考成绩平均下滑 20%。` },
+    { scene: { type: "briefing_points", duration: 13, headline: "效率提升，没有自动变成学习能力", source: "追踪研究", title: "作业成绩短期提升，考试成绩随后下降", summary: "研究比较了学生使用生成式 AI 外包作业后的短期表现和后续考试结果。", metrics: [{ label: "样本", value: "26811 名学生" }, { label: "作业成绩", value: "+18%" }, { label: "半年月考", value: "-20%" }], points: ["追踪中国中部某县初高中生。", "短期完成作业更快。", "长期学习结果出现反差。"] }, narration: "研究团队追踪中国中部某县 26811 名初高中生；AI 外包作业后，作业成绩短期提升 18%，六个月内月考平均下滑 20%。" },
+    { scene: { type: "signal_chart", duration: 13, headline: "影响会延伸到更重要的考试", bars: [{ label: "作业", value: 18, detail: "短期成绩提升约 18%。", color: "#42d392" }, { label: "半年月考", value: -20, detail: "月考成绩平均下滑 20%。", color: "#f97316" }, { label: "中考", value: -24, detail: "两年后最多下降 24%。", color: "#f43f5e" }, { label: "高考", value: -18, detail: "两年后最多下降 18%。", color: "#a78bfa" }] }, narration: "时间拉长后，反差更明显：两年后的中考成绩最多下降 24%，高考成绩最多下降 18%。这些数字描述的是研究中的平均或最大影响，不是每个学生都会得到相同结果。" },
+    { scene: { type: "timeline", duration: 13, headline: "为什么外包答案会伤到长期能力", events: [{ date: "先", title: "AI 快速给出答案，作业成绩短期提升约 18%。", source: "研究结果" }, { date: "再", title: "作业阶段的即时答案替代部分独立推理。", source: "影响解释" }, { date: "半年", title: "月考成绩平均下滑 20%。", source: "研究结果" }, { date: "两年", title: "中考和高考成绩继续出现下降。", source: "研究结果" }] }, narration: "问题不在于学生接触 AI 本身，而在于把思考和练习外包。作业阶段的即时答案替代了部分独立推理，长期积累的分析能力、耐心和面对问题的好奇心就可能被削弱。" },
+    { scene: { type: "outro", duration: 11, headline: "把 AI 当教练，不要只当答案机", bullets: ["先让 AI 给思路，再自己完成推导。", "关键练习和考试准备要保留独立完成。", "研究结果提示风险，不替代个体判断。"] }, narration: "先让 AI 给思路，再自己完成推导；关键练习和考试准备要保留独立完成。研究结果提示风险，不替代个体判断。" },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createZdTaichuProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    { scene: { type: "title", duration: 10, kicker: "空间具身模型开源", headline: shortTitle(title, 48), subhead: "10B 以下通用模型的空间理解测试中，九项基准八项第一", sources: ["9B", "八项第一", "开源"] }, narration: `${title}。模型已开源；报道未给出统一托管 API 价格，9B 显存和运行速度仍需按设备实测。` },
+    { scene: { type: "briefing_points", duration: 13, headline: "看懂真实空间，还要决定下一步动作", source: "空间能力", title: "目标选择、视角转换、交互条件一起判断", summary: "模型不只识别物体，还要理解位置关系、参照系和是否具备操作条件。", metrics: [{ label: "模型规模", value: "9B" }, { label: "空间基准", value: "九项" }, { label: "领先项目", value: "八项第一" }], points: ["从杂乱画面中找到目标。", "把多个视角转换成同一空间关系。", "判断机器人下一步能否操作。"] }, narration: "空间具身不是单纯识图。模型要从杂物中找对目标，把不同视角转换成同一参照系，还要判断哪里能抓取或放置；ZDTaichu5.0-9B 在九项基准中的八项拿到第一。" },
+    { scene: { type: "signal_chart", duration: 13, headline: "MindCube-tiny：10B 档位成绩对比", bars: [{ label: "ZDTaichu 9B", value: 78.27, detail: "报道列出的 MindCube-tiny 成绩。", color: "#42d392" }, { label: "Gemini 3 Pro", value: 70.87, detail: "同一榜单中的对比成绩。", color: "#7dd3fc" }, { label: "Grok 4", value: 63.56, detail: "同一榜单中的对比成绩。", color: "#f97316" }, { label: "Gemma4 8B-E4B", value: 48.8462, detail: "同一榜单中的对比成绩。", color: "#a78bfa" }] }, narration: "报道给出的一个具体对比是 MindCube-tiny：ZDTaichu5.0-9B 得分 78.27，Gemini 3 Pro 是 70.87，Grok 4 是 63.56，Gemma4 8B-E4B 是 48.8462。这个榜单支持报道对其空间能力的判断，但不等于所有真实任务都同样领先。" },
+    { scene: { type: "flow", duration: 13, headline: "机器人要把判断接成连续动作", steps: [{ label: "看见目标", detail: "识别对象、属性和排列关系。" }, { label: "理解位置", detail: "在多视角之间转换参照系。" }, { label: "规划动作", detail: "根据当前状态安排抓取或收纳。" }, { label: "观察修正", detail: "动作后检查结果，再决定下一步。" }] }, narration: "从一句指令到真实动作，要先看见目标，再理解位置关系，规划抓取或收纳，最后检查动作结果并继续修正。模型能完成演示，不代表已经覆盖所有开放环境。" },
+    { scene: { type: "outro", duration: 11, headline: "开源模型先看硬件和真实任务", bullets: ["开源意味着可以继续部署和适配。", "报道未给出统一托管 API 价格。", "9B 显存、速度和现场动作仍要实测。"] }, narration: "它已经开源，开发者可以继续部署和适配；这篇报道重点介绍模型能力，没有给出统一托管 API 价格。9B 模型的显存、量化方式和运行速度仍要按目标设备实测，空间基准也不能替代现场测试。" },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createYoudaoSimultaneousTranslationProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    { scene: { type: "title", duration: 10, kicker: "实时同传模型开源", headline: shortTitle(title, 48), subhead: "4-R2T2 与 4-T3PO 用于实时语音翻译，主打低延迟和流式输出", sources: ["4-R2T2", "4-T3PO", "200-600 毫秒", "实时语音翻译"] }, narration: `${title}。网易有道发布并开源两款同传模型，子曰 4-R2T2 平均延迟 200 到 600 毫秒，子曰 4-T3PO 面向实时文本翻译，组合后可用于实时语音翻译。` },
+    { scene: { type: "briefing_points", duration: 13, headline: "同传模型把等待拆成连续输出", source: "模型能力", title: "R2T2 识别，T3PO 翻译", summary: "一款处理真流式语音识别，一款处理文本到文本同步翻译，两者可以组合成实时语音到中文。", metrics: [{ label: "R2T2 延迟", value: "200-600 毫秒" }, { label: "输出方式", value: "真流式" }, { label: "组合路径", value: "语音→文字→翻译" }], points: ["识别结果边生成边输出。", "翻译支持从低延迟到高质量的模式。", "适合会议、字幕和跨语言交流。"] }, narration: "R2T2 负责真流式语音识别，平均延迟 200 到 600 毫秒；T3PO 负责文本到文本同步翻译，并可调节延迟模式。两者组合后，语音能边识别、边翻译、边输出。" },
+    { scene: { type: "web_screenshot_zoom", duration: 12, headline: "现场演示快语速也能实时翻译", shots: [], claimIds: [] }, narration: "现场演示展示了超快语速的实时翻译：语音先经过识别，再由翻译模型流式输出中文。它解决的是等待时间和输出节奏，真实效果仍会受到语种、网络、噪声和任务内容影响。" },
+    { scene: { type: "signal_chart", duration: 13, headline: "产品、用户和开放方式同时扩展", bars: [{ label: "翻译语言", value: 100, detail: "叭哥说支持 100 多种语言实时互译。", color: "#42d392" }, { label: "AI 同传用户", value: 2500, detail: "累计服务用户超过 2500 万。", color: "#7dd3fc" }, { label: "LobsterAI 用户", value: 100, detail: "办公 Agent 用户规模突破 100 万。", color: "#f97316" }, { label: "次日留存", value: 80, detail: "LobsterAI 活跃用户次日留存超过 80%。", color: "#a78bfa" }] }, narration: "产品侧，网易叭哥说支持 100 多种语言实时互译并宣布终身免费；有道 AI 同传累计服务用户超过 2500 万，LobsterAI 用户规模突破 100 万，活跃用户次日留存超过 80%。" },
+    { scene: { type: "outro", duration: 11, headline: "开源模型适合先做小规模实测", bullets: ["R2T2 和 T3PO 已开放代码与模型。", "叭哥说桌面端已上线，移动端仍在开发。", "速度和准确率要按真实语种与网络测试。"] }, narration: "两款同传模型已经开源，桌面端产品也提供了直接体验路径；叭哥说目前 Mac 和 Windows 已全量上线，移动端仍在开发。接入前要按目标语种、噪声、网络和延迟要求做小规模测试。" },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
+}
+
+function createSingProbeProject(item: HotItem, options?: { width?: number; height?: number; fps?: number; screenshots?: WebScreenshot[]; index?: number }) {
+  const title = speechFriendlyTitle(item.title);
+  return createCuratedNewsProject(item, [
+    { scene: { type: "title", duration: 10, kicker: "大模型安全开源", headline: shortTitle(title, 48), subhead: "安全探针跟着模型生成过程运行，已适配 29 个主流开源模型", sources: ["SingProbe", "29 个模型", "代码开源"] }, narration: `${title}。蚂蚁开源 SingProbe，适配 29 个主流开源模型，并让安全检测跟着生成过程同步运行。` },
+    { scene: { type: "briefing_points", duration: 13, headline: "把安全检查放进生成过程", source: "内生式护栏", title: "生成回答时持续输出风险信号", summary: "探针复用推理过程中的内部信息，持续判断用户意图、回答安全和幻觉风险。", metrics: [{ label: "适配模型", value: "29 个" }, { label: "额外开销", value: "低于 0.5%" }, { label: "可采取动作", value: "告警、停止、重生成" }], points: ["不必等完整回答结束才检查。", "风险达到条件时可以及时干预。", "既可独立使用，也可配合外置护栏。"] }, narration: "SingProbe 复用推理内部信息，模型生成回答时同步输出安全和幻觉风险；达到条件可告警、中止或重生成，生产环境实测额外开销低于 0.5%。" },
+    { scene: { type: "web_screenshot_zoom", duration: 12, headline: "适配模型，也接入主流推理框架", shots: [], claimIds: [] }, narration: "SingProbe 已适配 Ling、GLM、Qwen、DeepSeek 等 29 个主流开源模型，并接入 SGLang 与 vLLM，开发者可在现有推理流程中集成安全检测。" },
+    { scene: { type: "signal_chart", duration: 13, headline: "从适配规模到医疗纠偏，指标各有边界", bars: [{ label: "适配模型", value: 29, detail: "已适配 29 个主流开源模型。", color: "#42d392" }, { label: "额外开销", value: 0.5, detail: "生产环境实测低于 0.5%。", color: "#7dd3fc" }, { label: "评测模型", value: 100, detail: "AntAngelMed-100B 医疗评测。", color: "#f97316" }, { label: "纠正错误", value: 25.03, detail: "完整干预纠正 25.03% 原本出错回答。", color: "#f43f5e" }] }, narration: "数字要分开看：已适配 29 个模型，生产环境额外开销低于 0.5%；在 AntAngelMed-100B 医疗评测中，完整干预纠正 25.03% 原本出错的回答。" },
+    { scene: { type: "outro", duration: 11, headline: "开源后仍需按业务验收", bullets: ["代码、模型和评测资源已同步开放。", "可以独立使用，也可以配合外置护栏。", "医疗、客服等高风险业务必须实测误报和漏报。"] }, narration: "代码、模型和评测资源已开放，SingProbe 可独立使用或配合外置护栏；医疗、客服等高风险业务仍要实测误报、漏报、延迟和部署成本。" },
+  ], options, { maxSeconds: 60, minSeconds: 55 });
 }
 
 function createNonYaZaiProject(

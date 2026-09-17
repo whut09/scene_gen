@@ -792,14 +792,15 @@ export async function evaluateDraft(
 
   const acceptedImageAssets = (project.assets ?? []).filter((asset) => asset.kind === "image" && asset.screening?.status !== "rejected");
   const embeddedImageSources = new Set(project.scenes.flatMap((scene) => scene.type === "web_screenshot_zoom" ? scene.shots.map((shot) => shot.src) : []));
-  const sourceVisualSources = [...acceptedImageAssets.map((asset) => asset.src), ...(project.screenshots ?? []).map((shot) => shot.src)];
-  const embeddedImageAssets = sourceVisualSources.filter((src) => embeddedImageSources.has(src));
-  if (sourceVisualSources.length > 0 && embeddedImageAssets.length === 0) {
+  const acceptedAssetSources = acceptedImageAssets.map((asset) => asset.src);
+  const embeddedImageAssets = acceptedAssetSources.filter((src) => embeddedImageSources.has(src));
+  const embeddedScreenshots = (project.screenshots ?? []).filter((shot) => embeddedImageSources.has(shot.src));
+  if (acceptedAssetSources.length > 0 && embeddedImageAssets.length === 0) {
     issues.push({
       severity: "error",
       code: "visual_asset_not_embedded",
       message: "已通过筛选的真实图片没有进入任何证据画面。",
-      evidence: { assetIds: acceptedImageAssets.map((asset) => asset.id), assetSources: sourceVisualSources },
+      evidence: { assetIds: acceptedImageAssets.map((asset) => asset.id), assetSources: acceptedAssetSources, embeddedScreenshots: embeddedScreenshots.map((shot) => shot.src) },
     });
     revisionNotes.push("将通过图片筛选的效果图或演示图嵌入对应证据屏，不要只把图片留在项目 JSON 中。");
   }
@@ -820,7 +821,13 @@ export async function evaluateDraft(
   const sourceVisualAssetCandidates = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetSafeCandidates ?? source.metrics?.visualAssetCandidates ?? 0)), 0);
   const sourceVisualAssetSafeCandidates = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetSafeCandidates ?? 0)), 0);
   const sourceVisualAssetAccepted = Math.max(...project.sources.map((source) => Number(source.metrics?.visualAssetAccepted ?? acceptedImageAssets.length)), 0);
-  if (sourceVisualAssetSafeCandidates > 0 && sourceVisualAssetAccepted === 0 && (project.screenshots?.length ?? 0) === 0) {
+  // GitHub sources only track visualAssetCandidates (README images minus badge
+  // noise), so an accepted count of zero with candidates present means the
+  // asset collector silently produced nothing — exactly the blind spot that
+  // let repository videos publish with no real imagery.
+  const sourceVisualAssetMissing = (sourceVisualAssetSafeCandidates > 0 || project.sources.some((source) => source.kind === "github" && Number(source.metrics?.visualAssetCandidates ?? 0) > 0))
+    && sourceVisualAssetAccepted === 0;
+  if (sourceVisualAssetMissing) {
     issues.push({
       severity: "error",
       code: "visual_asset_missing",

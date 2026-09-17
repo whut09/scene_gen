@@ -34,3 +34,7 @@ glasswing-web-video/url-news/
 test-results/
 __pycache__/
 *.pyc
+.agnes/
+.freebuff/
+.runtime/
+.workbuddy/

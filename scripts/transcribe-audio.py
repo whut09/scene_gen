@@ -107,11 +107,27 @@ def transcribe_whisper_with_confidence(recognizer, audio, language, include_word
             timestamped = recognizer(
                 {"array": samples, "sampling_rate": target_rate},
                 return_timestamps="word",
-                generate_kwargs={"language": language, "task": "transcribe"},
+                # Transformers' Whisper timestamp path can produce a beam/token
+                # length mismatch with the default decoder. Greedy decoding is
+                # deterministic here and keeps the word alignment output valid.
+                generate_kwargs={"language": language, "task": "transcribe", "num_beams": 1},
             )
             result["words"] = words_from_result(timestamped)
             if timestamped.get("text"):
                 result["text"] = timestamped["text"].strip()
+            if not result["words"]:
+                # Some short Mandarin clips return text but no word chunks.
+                # Retry the stable segment-timestamp path so the caller still
+                # gets real acoustic timing evidence instead of fabricated
+                # proportional word positions.
+                segmented = recognizer(
+                    {"array": samples, "sampling_rate": target_rate},
+                    return_timestamps=True,
+                    generate_kwargs={"language": language, "task": "transcribe", "num_beams": 1},
+                )
+                result["words"] = words_from_result(segmented)
+                if segmented.get("text"):
+                    result["text"] = segmented["text"].strip()
         except (RuntimeError, ValueError):
             result["wordTimestampsUnavailable"] = True
     return result
@@ -139,7 +155,7 @@ def main():
             return transcribe_whisper_with_confidence(recognizer, audio, args.language, include_words)
         if include_words:
             try:
-                result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe"})
+                result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe", "num_beams": 1})
                 return {
                     "text": result.get("text", "").strip(),
                     "confidence": confidence_from_result(result),
@@ -148,7 +164,7 @@ def main():
             except (TypeError, ValueError):
                 pass
         try:
-            result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe"})
+            result = recognizer(audio, return_timestamps="word", generate_kwargs={"language": args.language, "task": "transcribe", "num_beams": 1})
         except (TypeError, ValueError):
             result = recognizer(audio, generate_kwargs={"language": args.language, "task": "transcribe"})
         return {"text": result.get("text", "").strip(), "confidence": confidence_from_result(result)}

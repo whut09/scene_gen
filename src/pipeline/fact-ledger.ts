@@ -12,6 +12,12 @@ function claimId(sourceId: string, predicate: string, value: string) {
   return `fact-${createHash("sha256").update(JSON.stringify({ sourceId, predicate, value })).digest("hex").slice(0, 20)}`;
 }
 
+function sourceSubject(source: HotItem) {
+  return [source.repo, source.title, source.url, source.id]
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .find(Boolean) ?? "来源未知";
+}
+
 export function qualifiersInText(text: string) {
   return [...new Set(qualifiers.flatMap((pattern) => [...text.matchAll(pattern)].map((match) => match[0])))];
 }
@@ -27,7 +33,7 @@ function sentenceClaim(source: HotItem, text: string, confidence: number, fromCo
   const predicate = risky.find((item) => text.includes(item)) ?? "陈述";
   const evidenceStart = fromContent ? source.content?.indexOf(text) : undefined;
   return {
-    id: claimId(source.id, predicate, text), subject: source.repo ?? source.title, predicate, value: text,
+    id: claimId(source.id, predicate, text), subject: sourceSubject(source), predicate, value: text,
     qualifiers: qualifiersInText(text), sourceId: source.id, evidenceText: text,
     ...(typeof evidenceStart === "number" && evidenceStart >= 0 ? { evidenceStart, evidenceEnd: evidenceStart + text.length } : {}), confidence,
   };
@@ -57,7 +63,7 @@ export function buildFactLedger(sources: HotItem[]): FactLedger {
       const value = String(rawValue);
       const predicate = `指标:${key.trim()}`;
       const claim: FactClaim = {
-        id: claimId(source.id, predicate, value), subject: source.repo ?? source.title, predicate, value,
+        id: claimId(source.id, predicate, value), subject: sourceSubject(source), predicate, value,
         qualifiers: qualifiersInText(value), sourceId: source.id, evidenceText: `${key}：${value}`, confidence: 0.98,
       };
       claims.set(claim.id, claim);

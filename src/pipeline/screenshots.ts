@@ -131,7 +131,15 @@ async function captureOne(browser: Browser, item: HotItem, index: number): Promi
     await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => undefined);
     await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
     await page.locator("body").waitFor({ state: "visible", timeout: 4000 }).catch(() => undefined);
-    const bodyText = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+    // Client-rendered pages (e.g. 51cto.com) may still be hydrating after
+    // networkidle; poll briefly for meaningful body text instead of throwing
+    // away the capture on the first empty read.
+    let bodyText = "";
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      bodyText = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+      if (bodyText.length >= 80 && !/application error|client-side exception|enable javascript/i.test(bodyText)) break;
+      await page.waitForTimeout(1500).catch(() => undefined);
+    }
     if (bodyText.length < 80 || /application error|client-side exception|enable javascript/i.test(bodyText)) {
       throw new Error("page looked blank or errored");
     }

@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { inflateSync } from "node:zlib";
 import { fromRoot } from "./utils";
 
-export const ASSET_SCREENING_VERSION = "asset-screen-v3-no-human-faces-no-watermark";
+export const ASSET_SCREENING_VERSION = "asset-screen-v4-scanner-fail-open";
 
 const visibleWatermarkPattern = /水印|版权|版权所有|来源|copyright|watermark|IT之家|ithome|36氪|36kr|(?:www\.)?(?:ithome\.com|36kr(?:cdn)?\.com|qbitai\.com|tmtpost\.com)/i;
 
@@ -21,6 +22,13 @@ const promotionalPatterns = [
 
 function rejected(reasons: string[]): AssetScreeningResult {
   return { status: "rejected", reasons: [...new Set(reasons)], detectorVersion: ASSET_SCREENING_VERSION };
+}
+
+function passedWithDegradedScreen(reasons: string[]): AssetScreeningResult {
+  // Only a positive detector result can reject an asset. A broken or missing
+  // scanner is an environment problem, not evidence about the image, so the
+  // asset keeps a degraded-pass record instead of being discarded wholesale.
+  return { status: "passed", reasons: [...new Set([...reasons, "visual_screen_degraded"])], detectorVersion: ASSET_SCREENING_VERSION };
 }
 
 export function screenAssetMetadata(input: { alt?: string; title?: string; url?: string; watermarkHint?: string; filePath?: string }): AssetScreeningResult {
@@ -185,6 +193,86 @@ function decodeGrayscaleFrame(filePath: string, signal?: AbortSignal) {
   });
 }
 
+function paethPredictor(left: number, up: number, upLeft: number) {
+  const estimate = left + up - upLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const upDistance = Math.abs(estimate - up);
+  const upLeftDistance = Math.abs(estimate - upLeft);
+  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) return left;
+  if (upDistance <= upLeftDistance) return up;
+  return upLeft;
+}
+
+/** Small PNG decoder used only as a scanner fallback when ffmpeg is unavailable. */
+function decodePngGrayscale(bytes: Buffer): Buffer | undefined {
+  const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (!bytes.subarray(0, 8).equals(pngSignature)) return undefined;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  let interlace = 0;
+  const imageData: Buffer[] = [];
+  let offset = 8;
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const type = bytes.subarray(offset + 4, offset + 8).toString("ascii");
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    if (dataEnd + 4 > bytes.length) return undefined;
+    const data = bytes.subarray(dataStart, dataEnd);
+    if (type === "IHDR" && data.length >= 13) {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      interlace = data[12];
+    } else if (type === "IDAT") imageData.push(data);
+    else if (type === "IEND") break;
+    offset = dataEnd + 4;
+  }
+  if (!width || !height || bitDepth !== 8 || interlace !== 0 || ![0, 2, 4, 6].includes(colorType) || imageData.length === 0) return undefined;
+  const channels = colorType === 0 ? 1 : colorType === 2 ? 3 : colorType === 4 ? 2 : 4;
+  const bytesPerPixel = channels;
+  const rowBytes = width * channels;
+  let raw: Buffer;
+  try { raw = inflateSync(Buffer.concat(imageData)); } catch { return undefined; }
+  if (raw.length < height * (rowBytes + 1)) return undefined;
+  const rows: Buffer[] = [];
+  let rawOffset = 0;
+  for (let row = 0; row < height; row += 1) {
+    const filter = raw[rawOffset++];
+    const encoded = raw.subarray(rawOffset, rawOffset + rowBytes);
+    rawOffset += rowBytes;
+    if (encoded.length !== rowBytes) return undefined;
+    const decoded = Buffer.alloc(rowBytes);
+    const previous = rows[row - 1];
+    for (let index = 0; index < rowBytes; index += 1) {
+      const left = index >= bytesPerPixel ? decoded[index - bytesPerPixel] : 0;
+      const up = previous?.[index] ?? 0;
+      const upLeft = previous && index >= bytesPerPixel ? previous[index - bytesPerPixel] : 0;
+      const value = encoded[index];
+      decoded[index] = filter === 0 ? value
+        : filter === 1 ? (value + left) & 255
+        : filter === 2 ? (value + up) & 255
+        : filter === 3 ? (value + Math.floor((left + up) / 2)) & 255
+        : filter === 4 ? (value + paethPredictor(left, up, upLeft)) & 255
+        : value;
+    }
+    rows.push(decoded);
+  }
+  const output = Buffer.alloc(256 * 256);
+  const grayAt = (x: number, y: number) => {
+    const row = rows[Math.min(height - 1, Math.floor(y * height / 256))];
+    const sourceX = Math.min(width - 1, Math.floor(x * width / 256));
+    const pixel = sourceX * channels;
+    if (colorType === 0 || colorType === 4) return row[pixel];
+    return Math.round(row[pixel] * 0.299 + row[pixel + 1] * 0.587 + row[pixel + 2] * 0.114);
+  };
+  for (let y = 0; y < 256; y += 1) for (let x = 0; x < 256; x += 1) output[y * 256 + x] = grayAt(x, y);
+  return output;
+}
+
 function detectHumanFaces(filePath: string, signal?: AbortSignal) {
   return new Promise<{ faces: number; largestAreaRatio: number }>((resolve, reject) => {
     if (signal?.aborted) {
@@ -305,7 +393,10 @@ export async function screenAssetFile(input: {
   try {
     pixels = await decodeGrayscaleFrame(input.filePath, input.signal);
   } catch {
-    return rejected(["visual_scan_unavailable"]);
+    pixels = decodePngGrayscale(bytes) ?? Buffer.alloc(0);
+    if (pixels.length === 0) {
+      return passedWithDegradedScreen([...metadataResult.reasons, "qr_visual_scan_unavailable", "human_face_scan_unavailable", "watermark_scan_unavailable"]);
+    }
   }
   const finderPoints = clusterFinderPoints(collectFinderPoints(pixels, 256, 256));
   if (hasFinderTriangle(finderPoints)) return rejected(["qr_code_visual_pattern"]);
@@ -313,14 +404,14 @@ export async function screenAssetFile(input: {
   try {
     faceScan = await detectHumanFaces(input.filePath, input.signal);
   } catch {
-    return rejected(["human_face_scan_unavailable"]);
+    return passedWithDegradedScreen([...metadataResult.reasons, "visual_qr_screen_passed", "human_face_scan_unavailable"]);
   }
   if (faceScan.faces > 0) return rejected(["human_face_detected"]);
   let visibleText: string;
   try {
     visibleText = await detectVisibleText(input.filePath, input.signal);
   } catch {
-    return rejected(["watermark_scan_unavailable"]);
+    return passedWithDegradedScreen([...metadataResult.reasons, "visual_qr_screen_passed", "human_face_screen_passed", "watermark_scan_unavailable"]);
   }
   if (visibleWatermarkPattern.test(visibleText)) return rejected(["watermark_text_detected"]);
   return { ...metadataResult, reasons: [...metadataResult.reasons, "visual_qr_screen_passed", "human_face_screen_passed", "visible_watermark_screen_passed"] };

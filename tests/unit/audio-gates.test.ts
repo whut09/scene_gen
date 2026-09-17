@@ -348,6 +348,11 @@ test("IndexTTS speaker gate tolerates a small pairwise content-sensitive dip whe
   assert.equal(result.drift, false);
 });
 
+test("IndexTTS speaker gate accepts a lower pairwise minimum when reference averages are stable", () => {
+  const result = indexTtsSpeakerDrift({ minimum: 0.607, average: 0.743, pairwiseMinimum: 0.740, pairwiseAverage: 0.889 }, 0.8);
+  assert.equal(result.drift, false);
+});
+
 test("IndexTTS speaker gate rejects one scene changing speaker identity", () => {
   const result = indexTtsSpeakerDrift({ minimum: 0.74, average: 0.78, pairwiseMinimum: 0.61, pairwiseAverage: 0.81 }, 0.8);
   assert.equal(result.drift, true);

@@ -75,8 +75,17 @@ async function fetchTextWithBrowser(url: string, timeoutMs = 30000) {
     const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     if (response && !response.ok()) throw new Error(`${response.status()} ${response.statusText()}`);
     await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+    // Client-rendered pages (e.g. 51cto.com) can still be hydrating after
+    // networkidle; poll briefly for meaningful body text instead of returning
+    // an empty script shell.
+    let bodyText = "";
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      bodyText = await page.locator("body").innerText({ timeout: 3000 }).catch(() => "");
+      if (bodyText.length >= 80 && !/application error|client-side exception|enable javascript/i.test(bodyText)) break;
+      await page.waitForTimeout(1500).catch(() => undefined);
+    }
     const html = await page.content();
-    if (html.length < 200) throw new Error("browser returned an empty webpage");
+    if (html.length < 200 || bodyText.length < 80) throw new Error("browser returned an empty webpage");
     return html;
   } finally {
     await browser.close().catch(() => undefined);
@@ -159,9 +168,10 @@ export function extractReadableWebpage(document: Document, url: string) {
     console.warn(`[webpage] readability failed for ${url}; using DOM fallback: ${(error as Error).message}`);
   }
   const rawTitle = compactText(article?.title ?? document.title ?? url, 140);
-  const title = /cloud\.tencent\.com\/developer\/article\//i.test(url)
-    ? rawTitle.replace(/[-_|]\s*\u817e\u8baf\u4e91\u5f00\u53d1\u8005\u793e\u533a\s*[-_|]\s*\u817e\u8baf\u4e91\s*$/u, "").trim()
-    : rawTitle;
+  const withoutSiteBrand = rawTitle.replace(/\s*[-_|·]\s*[A-Za-z0-9][A-Za-z0-9.-]*\.(?:com|cn|net|org|io|cc|co|dev|ai|me|info)\b\.?\s*$/iu, "").trim();
+  const title = (/cloud\.tencent\.com\/developer\/article\//i.test(url)
+    ? withoutSiteBrand.replace(/[-_|]\s*\u817e\u8baf\u4e91\u5f00\u53d1\u8005\u793e\u533a\s*[-_|]\s*\u817e\u8baf\u4e91\s*$/u, "").trim()
+    : withoutSiteBrand) || rawTitle;
   const content = compactText(article?.textContent ?? fallbackArticleText(document) ?? title, 4200);
   const summary = compactText(article?.excerpt ?? content ?? title, 360);
   return { title, content, summary };
@@ -588,12 +598,29 @@ export async function collectWebpage(urls: string[], config: SourceConfig): Prom
         continue;
       }
       const html = await fetchWebpageText(url);
-      const dom = createWebpageDom(html, url);
-      const { title, content, summary } = extractReadableWebpage(dom.window.document, url);
+      let dom = createWebpageDom(html, url);
+      let { title, content, summary } = extractReadableWebpage(dom.window.document, url);
+      // CSR pages return an HTTP 200 script shell with no readable text, which the
+      // fetch fallbacks never see as a failure. Re-render in a real browser before
+      // letting an empty shell poison the fact ledger and downstream gates.
+      const staticTextLength = title.length + content.length;
+      if (staticTextLength < 160) {
+        try {
+          const renderedHtml = await fetchTextWithBrowser(url);
+          const renderedDom = createWebpageDom(renderedHtml, url);
+          const rendered = extractReadableWebpage(renderedDom.window.document, url);
+          if (rendered.title.length + rendered.content.length > staticTextLength) {
+            dom = renderedDom;
+            ({ title, content, summary } = rendered);
+          }
+        } catch (renderError) {
+          console.warn(`[webpage] ${url} browser render fallback failed: ${(renderError as Error).message}`);
+        }
+      }
       const joined = `${title} ${summary}`;
       const publishedAt = extractWebpagePublishedAt(dom.window.document) ?? new Date().toISOString();
       const articleImageCandidates = extractArticleImageCandidates(dom.window.document, url);
-      const articleImageAudit = { candidateCount: 0, acceptedCount: 0, watermarkRejectedCount: 0, unsafeRejectedCount: 0 };
+      const articleImageAudit = { candidateCount: 0, acceptedCount: 0, watermarkRejectedCount: 0, unsafeRejectedCount: 0, degradedScreenCount: 0 };
       const articleImages = await collectArticleImages({
         document: dom.window.document,
         pageUrl: url,

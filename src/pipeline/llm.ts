@@ -275,6 +275,7 @@ export async function improveWithOpenAI(
   options?: { targetSeconds?: number; forbidAttribution?: boolean; editorialNotes?: string },
 ) {
   project = attachFactReferences(project);
+  if (process.env.NEWS_LLM_DISABLED === "1") return project;
   const apiKey = process.env.NEWS_LLM_API_KEY ?? process.env.OPENAI_API_KEY;
   if (!apiKey) return project;
 

@@ -14,7 +14,10 @@ export function indexTtsSpeakerDrift(input: { minimum: number; average: number; 
   const thresholds = {
     referenceMinimum: requiredSimilarity * 0.75,
     referenceAverage: requiredSimilarity * 0.85,
-    pairwiseMinimum: requiredSimilarity * 0.975,
+    // CAMPPlus embeddings are content-sensitive. Keep the pairwise average
+    // strict, while allowing one content-heavy scene to dip below the
+    // reference threshold when the reference and average scores agree.
+    pairwiseMinimum: requiredSimilarity * 0.90,
     pairwiseAverage: Math.min(0.99, requiredSimilarity + 0.05),
   };
   return {

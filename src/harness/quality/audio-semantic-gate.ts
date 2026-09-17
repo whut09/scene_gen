@@ -9,7 +9,7 @@ import { speechNormalizationDictionaryHash } from "../speech-normalization";
 import { transcribeNarrationScenes, verifySceneTranscripts, type AsrSceneTranscript } from "../scene-audio-verification";
 import { projectAudioPath } from "./audio-structural-gate";
 
-export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v11-canonical-ai-lama-hard-ending";
+export const AUDIO_SEMANTIC_GATE_VERSION = "audio-semantic-v25-zero-model-list-merge";
 export type AsrProviderId = "whisper" | "sensevoice" | "funasr" | "mock";
 
 const cachedAsrSchema = z.object({ version: z.literal(1), key: z.string().length(64), transcripts: z.array(z.object({ sceneIndex: z.number().int().nonnegative(), text: z.string(), confidence: z.number().nullable().optional(), detectedLanguage: z.string().min(1), languageConfidence: z.number().min(0).max(1), words: z.array(z.object({ text: z.string(), startSeconds: z.number(), endSeconds: z.number(), confidence: z.number().nullable().optional() })).optional() })) }).strict();

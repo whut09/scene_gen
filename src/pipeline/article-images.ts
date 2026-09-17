@@ -22,6 +22,8 @@ export interface ArticleImageCollectionAudit {
   acceptedCount: number;
   watermarkRejectedCount: number;
   unsafeRejectedCount: number;
+  /** Positive rejections that came from an unavailable scanner, not from image evidence. */
+  degradedScreenCount: number;
 }
 
 function imageUrlFromElement(element: Element) {
@@ -212,6 +214,9 @@ export async function collectArticleImages(input: {
           else input.audit.unsafeRejectedCount += 1;
         }
         continue;
+      }
+      if (screening.reasons.includes("visual_screen_degraded")) {
+        if (input.audit) input.audit.degradedScreenCount += 1;
       }
       const ocrText = await optionalOcr(filePath);
       if (hasWatermarkSignal(ocrText)) {
