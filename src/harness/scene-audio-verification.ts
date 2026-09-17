@@ -301,7 +301,7 @@ function normalizeSemanticAsrVariants(text: string, expectedText = "") {
     .replace(/趨勢/gu, "趋势")
     .replace(/項目/gu, "项目")
     .replace(/推薦/gu, "推荐")
-    .replace(/二百/gu, "两百")
+    .replace(/(?:二百|两百)/gu, "二百")
     .replace(/超级群/gu, "超集群")
     .replace(/极群/gu, "集群")
     .replace(/新文日期/gu, "新闻日期")
@@ -331,7 +331,13 @@ function hasTimedTransliteratedTitle(
   return characterRecall(expectedBoundary, actualOpening.slice(alias.length, alias.length + expectedBoundary.length + 3)) >= 0.6;
 }
 
-function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
+function unexpectedRepeatedPhrase(expectedText: string, actualText: string, rawActualText = actualText, rawExpectedText = expectedText) {
+  const repeatedLatinToken = rawActualText.match(/([A-Za-z][A-Za-z0-9._+-]{1,})\s+\1\b/iu);
+  if (repeatedLatinToken && !/([A-Za-z][A-Za-z0-9._+-]{1,})\s+\1\b/iu.test(rawExpectedText)) {
+    const phrase = repeatedLatinToken[1];
+    const normalizedPhrase = canonicalSpeechText(prepareF5SynthesisText(phrase));
+    return { phrase, repeats: 2, index: Math.max(0, actualText.indexOf(normalizedPhrase)) };
+  }
   const maximumBlockWidth = Math.min(80, Math.floor(actualText.length / 2));
   for (let width = maximumBlockWidth; width >= 8; width -= 1) {
     for (let index = 0; index + width * 2 <= actualText.length; index += 1) {
@@ -352,7 +358,7 @@ function unexpectedRepeatedPhrase(expectedText: string, actualText: string) {
       if (/^[a-z]+$/i.test(phrase)) {
         const previous = actualText[index - 1] ?? "";
         const next = actualText[index + width * repeats] ?? "";
-        if (/[a-z0-9]/i.test(previous) || /[a-z0-9]/i.test(next)) continue;
+        if (/[a-z]/i.test(previous) || /[a-z]/i.test(next)) continue;
       }
       if (repeats >= minimumRepeats && !expectedText.includes(phrase.repeat(repeats))) return { phrase, repeats, index };
     }
@@ -425,7 +431,7 @@ export function verifySceneTranscripts(project: VideoProject, transcripts: AsrSc
     if (typeof confidence === "number" && confidence >= Math.min(minimumConfidence, 0.68) && anchorOffset > 0) {
       issues.push({ severity: "error", code: "audio_scene_opening_artifact", message: `第 ${segment.sceneIndex + 1} 屏音频开头包含额外发音、漏读或变音。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { expectedPrefix: expectedAnchor, actualPrefix: openingWindow, anchorOffset, openingCoverage: Number(openingCoverage.toFixed(3)), asrConfidence: confidence } });
     }
-    const repeatedPhrase = unexpectedRepeatedPhrase(expectedText, actualText);
+    const repeatedPhrase = unexpectedRepeatedPhrase(expectedText, actualText, transcript.text, expectedSynthesisText(segment));
     if (typeof confidence === "number" && confidence >= minimumConfidence && repeatedPhrase) {
       issues.push({ severity: "error", code: "audio_repeated_phrase", message: `第 ${segment.sceneIndex + 1} 屏检测到旁白异常连续重复。`, sceneIndex: segment.sceneIndex, repairAction: "resynthesize-audio", retryable: true, issueClass: "hard", evidence: { transcript: transcript.text, repeatedPhrase: repeatedPhrase.phrase, repeatCount: repeatedPhrase.repeats, characterOffset: repeatedPhrase.index, asrConfidence: confidence } });
     }

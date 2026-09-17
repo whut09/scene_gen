@@ -21,6 +21,8 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
   const sourceUrl = `https://github.com/${repo}`;
   const storiesDir = fromRoot("public", "generated", "stories");
   const cachedProjectPath = path.join(storiesDir, `cache-${cacheId}.json`);
+  const cachedOutputPath = path.join(storiesDir, `cache-${cacheId}.mp4`);
+  const cacheRunDir = fromRoot("dist", "runs", `cache-test-${cacheId}`);
   const runDir = await mkdtemp(path.join(tmpdir(), "scene-gen-cache-run-"));
   const resultPath = path.join(runDir, "generation-result.json");
   await mkdir(storiesDir, { recursive: true });
@@ -56,6 +58,12 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
       repo,
     }],
   }), "utf8");
+  await mkdir(cacheRunDir, { recursive: true });
+  await writeFile(cachedOutputPath, "cache fixture", "utf8");
+  await writeFile(path.join(cacheRunDir, "run.json"), JSON.stringify({
+    status: "succeeded",
+    artifacts: { projectPath: cachedProjectPath, outputPath: cachedOutputPath },
+  }), "utf8");
 
   try {
     await execFileAsync(process.execPath, [
@@ -67,7 +75,11 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
       "--skip-tts",
       "--run-dir", runDir,
       "--result-file", resultPath,
-    ], { cwd: fromRoot(), windowsHide: true });
+    ], {
+      cwd: fromRoot(),
+      windowsHide: true,
+      env: { ...process.env, TTS_LOCK_IDENTITY: "0" },
+    });
 
     const result = generationResultSchema.parse(JSON.parse(await readFile(resultPath, "utf8")));
     assert.equal(result.cacheHit, true);
@@ -76,6 +88,8 @@ test("GitHub cache writes an explicit run-scoped generation result", async () =>
     assert.notEqual(result.stories[0].projectPath, cachedProjectPath);
   } finally {
     await rm(cachedProjectPath, { force: true });
+    await rm(cachedOutputPath, { force: true });
+    await rm(cacheRunDir, { recursive: true, force: true });
     await rm(runDir, { recursive: true, force: true });
   }
 });

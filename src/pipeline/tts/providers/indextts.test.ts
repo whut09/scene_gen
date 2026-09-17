@@ -22,7 +22,7 @@ test("IndexTTS uses official glossary-compatible acronym spelling", async () => 
   const providerText = indexTtsPronunciationInput(plan).text;
   assert.equal(providerText, "A-I 和 A-G-I 通过 OpenAI A-P-I 接入模型。");
   assert.deepEqual(splitIndexTtsText(providerText), [providerText]);
-  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v15-glossary-acronym-audio-gate");
+  assert.equal(INDEXTTS_FRONTEND_VERSION, "indextts2-fixed-reference-v16-stable-seed-glossary-acronym-audio-gate");
 });
 
 test("IndexTTS keeps standalone LLM in one glossary-protected synthesis unit", () => {
